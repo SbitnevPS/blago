@@ -82,7 +82,7 @@ require_once __DIR__ . '/includes/header.php';
 <!-- Последние заявки -->
 <div class="card mt-xl">
     <div class="card__header">
-        <div class="flex justify-between items-center">
+        <div class="flex justify-between items-center w-100">
             <h3>Последние заявки</h3>
 <a href="/admin/applications" class="btn btn--secondary btn--sm">
 Все заявки<i class="fas fa-arrow-right"></i>

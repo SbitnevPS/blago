@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="../../css/<?= htmlspecialchars($style) ?>">
     <?php endforeach; ?>
 <?php endif; ?>
+
 </head>
 <body>
  <!-- Sidebar -->
