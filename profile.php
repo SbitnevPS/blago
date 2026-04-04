@@ -92,42 +92,7 @@ generateCSRFToken();
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Мой профиль - ДетскиеКонкурсы.рф</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="/css/style.css">
-<style>
- .profile-card {
- max-width:600px;
- margin:0 auto;
- }
-        
- .profile-avatar {
- width:100px;
- height:100px;
- border-radius:50%;
- background: var(--color-primary-light);
- display: flex;
- align-items: center;
- justify-content: center;
- margin:0 auto var(--space-lg);
- font-size:40px;
- color: var(--color-primary);
- }
-        
- .profile-section {
- margin-bottom: var(--space-xl);
- }
-        
- .profile-section__title {
- font-size: var(--font-size-lg);
- font-weight: var(--font-weight-semibold);
- margin-bottom: var(--space-md);
- padding-bottom: var(--space-sm);
- border-bottom:1px solid var(--color-border);
- }
-</style>
+<?php include __DIR__ . '/includes/site-head.php'; ?>
 </head>
 <body>
 <?php include __DIR__ . '/header.php'; ?>

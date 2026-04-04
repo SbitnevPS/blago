@@ -17,85 +17,8 @@ $currentPage = 'applications';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Мои заявки - ДетскиеКонкурсы.рф</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css">
-    <style>
-        .application-card {
-            display: flex;
-            flex-direction: column;
-            background: var(--color-surface);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-md);
-            overflow: hidden;
-            transition: all var(--transition-base);
-        }
-        
-        .application-card:hover {
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-lg);
-        }
-        
-        .application-card__header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            padding: var(--space-lg);
-            border-bottom: 1px solid var(--color-border);
-        }
-        
-        .application-card__title {
-            font-size: var(--font-size-lg);
-            font-weight: var(--font-weight-semibold);
-            margin-bottom: var(--space-xs);
-        }
-        
-        .application-card__contest {
-            color: var(--color-primary);
-            font-size: var(--font-size-sm);
-        }
-        
-        .application-card__body {
-            padding: var(--space-lg);
-            flex: 1;
-        }
-        
-        .application-card__info {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: var(--space-md);
-        }
-        
-        .application-card__info-item {
-            display: flex;
-            flex-direction: column;
-            gap: var(--space-xs);
-        }
-        
-        .application-card__info-label {
-            font-size: var(--font-size-xs);
-            color: var(--color-text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .application-card__info-value {
-            font-size: var(--font-size-base);
-            font-weight: var(--font-weight-medium);
-        }
-        
-        .application-card__footer {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: var(--space-md) var(--space-lg);
-            background: var(--color-bg);
-            border-top: 1px solid var(--color-border);
-        }
-    </style>
-</head>
+    <?php include __DIR__ . '/includes/site-head.php'; ?>
+    </head>
 <body>
     <!-- Навигация -->
 <?php include __DIR__ . '/header.php'; ?>

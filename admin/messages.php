@@ -662,13 +662,4 @@ document.addEventListener('keydown', function(e) {
 });
 </script>
 
-<style>
-.priority-option {
- transition: all0.2s;
-}
-.priority-option:hover {
- border-color: #9CA3AF !important;
-}
-</style>
-
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
