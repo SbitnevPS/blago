@@ -1,11 +1,14 @@
 <?php
 // admin/contests.php - Управление конкурсами
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../includes/init.php';
 
 // Проверка авторизации админа
 if (!isAdmin()) {
  redirect('/admin/login');
 }
+
+check_csrf();
 
 $admin = getCurrentUser();
 $currentPage = 'contests';
@@ -89,6 +92,7 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                     <div class="flex gap-sm">
                         <form method="POST" style="display: inline;">
+                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">
                             <input type="hidden" name="action" value="toggle_publish">
                             <button type="submit" class="btn btn--ghost btn--sm" title="Переключить публикацию">
@@ -99,6 +103,7 @@ require_once __DIR__ . '/includes/header.php';
                             <i class="fas fa-edit"></i>
                         </a>
                         <form method="POST" style="display: inline;" onsubmit="return confirm('Вы уверены? Все заявки этого конкурса будут удалены.');">
+                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">
                             <input type="hidden" name="action" value="delete">
                             <button type="submit" class="btn btn--ghost btn--sm" style="color: var(--color-error);" title="Удалить">

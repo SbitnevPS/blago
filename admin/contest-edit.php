@@ -1,11 +1,14 @@
 <?php
 // admin/contest-edit.php - Редактирование/создание конкурса
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../includes/init.php';
 
 // Проверка авторизации админа
 if (!isAdmin()) {
     redirect('/admin/login');
 }
+
+check_csrf();
 
 $admin = getCurrentUser();
 $contest_id = $_GET['id'] ?? 0;
@@ -125,6 +128,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <form method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
     <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
     
     <div class="card mb-lg">

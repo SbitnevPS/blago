@@ -1,11 +1,14 @@
 <?php
 // admin/application-view.php - Просмотр заявки
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../includes/init.php';
 
 // Проверка авторизации админа
 if (!isAdmin()) {
     redirect('/admin/login');
 }
+
+check_csrf();
 
 $admin = getCurrentUser();
 $application_id = $_GET['id'] ?? 0;
@@ -94,7 +97,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card__header" style="padding:20px24px;">
 <div class="flex justify-between items-center" style="flex-wrap: wrap; gap:16px;">
 <div>
-<h2 style="font-size:20px; margin-bottom:4px;">Заявка #<?= $application_id ?></h2>
+<h2 style="font-size:20px; margin-bottom:4px;">Заявка #<?= e($application_id) ?></h2>
 <p class="text-secondary"><?= htmlspecialchars($application['contest_title']) ?></p>
 </div>
 <div class="flex gap-md items-center" style="flex-shrink:0;">
@@ -102,6 +105,7 @@ require_once __DIR__ . '/includes/header.php';
 <i class="fas fa-envelope"></i> Сообщение
 </button>
 <form method="POST" class="flex gap-md items-center">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
 <input type="hidden" name="action" value="update_status">
 <select name="status" class="form-select" style="width:140px; padding:8px12px;">
@@ -115,6 +119,7 @@ require_once __DIR__ . '/includes/header.php';
 </button>
 </form>
 <form method="POST" onsubmit="return confirm('Удалить заявку?');">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
 <input type="hidden" name="action" value="delete">
 <button type="submit" class="btn" style="background:#FEE2E2; color:#DC2626; padding:14px 16px; border-radius:8px; border:none; cursor:pointer;">
@@ -251,7 +256,8 @@ require_once __DIR__ . '/includes/header.php';
 <h3>Отправить сообщение пользователю</h3>
 <button type="button" class="modal__close" onclick="closeMessageModal()">&times;</button>
 </div>
-<form method="POST" action="application-view.php?id=<?= $application_id ?>">
+<form method="POST" action="application-view.php?id=<?= e($application_id) ?>">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
 <input type="hidden" name="action" value="send_message">
 <div class="modal__body">

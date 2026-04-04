@@ -1,6 +1,9 @@
 <?php
 // debug-session.php - Диагностика сессии
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/includes/init.php';
+
+check_csrf();
 
 echo "<h3>📊 Диагностика сессии</h3>";
 echo "<pre>";
@@ -20,6 +23,7 @@ echo "</pre>";
 
 echo "<h4>Тест: установить сессию админа</h4>";
 echo "<form method='POST'>";
+echo "<input type='hidden' name='csrf' value='" . e(csrf_token()) . "'>";
 echo "<button name='set_admin' value='1' class='btn btn-primary'>Войти как админ</button>";
 echo "</form>";
 

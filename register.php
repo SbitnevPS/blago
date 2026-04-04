@@ -1,6 +1,7 @@
 <?php
 // register.php - Регистрация нового пользователя
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/includes/init.php';
 
 // Если уже авторизован - редирект на главную
 if (isAuthenticated()) {
@@ -8,6 +9,8 @@ if (isAuthenticated()) {
 }
 
 $error = '';
+
+check_csrf();
 $success = '';
 
 // Обработка формы регистрации
@@ -233,6 +236,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  <?php endif; ?>
  
 <form method="POST">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
  
 <div class="form-row">

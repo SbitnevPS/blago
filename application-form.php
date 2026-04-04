@@ -1,6 +1,7 @@
 <?php
 // application-form.php - Форма заявки
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/includes/init.php';
 
 // Регионы России
 $regions = [
@@ -39,6 +40,8 @@ if (!$contest) {
 
 $user = getCurrentUser();
 $error = '';
+
+check_csrf();
 $success = '';
 
 // Директория пользователя для рисунков
@@ -400,7 +403,7 @@ generateCSRFToken();
 
 <main class="container" style="padding: var(--space-xl) var(--space-lg); max-width:900px;">
 <div class="flex items-center gap-md mb-lg">
-<a href="/contest/<?= $contest_id ?>" class="btn btn--ghost"><i class="fas fa-arrow-left"></i> Назад</a>
+<a href="/contest/<?= e($contest_id) ?>" class="btn btn--ghost"><i class="fas fa-arrow-left"></i> Назад</a>
 </div>
         
 <h1 class="mb-lg">Заявка на участие в конкурсе</h1>
@@ -420,6 +423,7 @@ generateCSRFToken();
 </div>
         
 <form method="POST" enctype="multipart/form-data" id="applicationForm">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
 <input type="hidden" name="action" value="submit" id="formAction">
 <input type="hidden" name="application_id" value="">
@@ -455,7 +459,7 @@ generateCSRFToken();
 <select name="organization_region" class="form-select" id="orgRegion">
 <option value="">Выберите регион</option>
 <?php foreach ($regions as $r): ?>
-<option value="<?= $r ?>" <?= ($user['organization_region'] ?? '') === $r ? 'selected' : '' ?>><?= $r ?></option>
+<option value="<?= e($r) ?>" <?= ($user['organization_region'] ?? '') === $r ? 'selected' : '' ?>><?= e($r) ?></option>
 <?php endforeach; ?>
 </select>
 </div>
@@ -632,7 +636,7 @@ generateCSRFToken();
  });
  }
         
- const contestId = <?= $contest_id ?>;
+ const contestId = <?= e($contest_id) ?>;
         
 function handleFileSelect(file, index) {
  const area = document.getElementById(`drawingUpload_${index}`);

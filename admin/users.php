@@ -1,11 +1,14 @@
 <?php
 // admin/users.php - Управление пользователями
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../includes/init.php';
 
 // Проверка авторизации админа
 if (!isAdmin()) {
     redirect('/admin/login');
 }
+
+check_csrf();
 
 $admin = getCurrentUser();
 $currentPage = 'users';
@@ -52,6 +55,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card mb-lg">
     <div class="card__body">
         <form method="GET" class="flex gap-md" style="align-items: flex-end;">
+            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <div style="flex: 1; max-width: 400px;">
                 <label class="form-label">Поиск</label>
                 <input type="text" name="search" class="form-input" 
@@ -72,7 +76,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card">
     <div class="card__header">
         <div class="flex justify-between items-center">
-            <h3>Пользователи (<?= $totalUsers ?>)</h3>
+            <h3>Пользователи (<?= e($totalUsers) ?>)</h3>
         </div>
     </div>
     <div class="card__body" style="padding: 0;">
@@ -140,7 +144,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php if ($totalPages > 1): ?>
         <div class="flex justify-between items-center" style="padding: 16px 20px; border-top: 1px solid var(--color-border);">
             <div class="text-secondary" style="font-size: 14px;">
-                Страница <?= $page ?> из <?= $totalPages ?>
+                Страница <?= e($page) ?> из <?= e($totalPages) ?>
             </div>
             <div class="flex gap-sm">
                 <?php if ($page > 1): ?>
