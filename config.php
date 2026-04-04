@@ -46,35 +46,50 @@ function isAuthenticated() {
     return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
 }
 
+function isAdminAuthenticated() {
+    return isset($_SESSION['admin_user_id']) && !empty($_SESSION['admin_user_id']);
+}
+
 function getCurrentUserId() {
     return $_SESSION['user_id'] ?? null;
 }
 
+function getCurrentAdminId() {
+    return $_SESSION['admin_user_id'] ?? null;
+}
+
 function getCurrentUser() {
-    if (!isAuthenticated()) return null;
+    $sessionUserId = getCurrentUserId() ?? getCurrentAdminId();
+    if (!$sessionUserId) {
+        return null;
+    }
     
     global $pdo;
     $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-    $stmt->execute([$_SESSION['user_id']]);
+    $stmt->execute([$sessionUserId]);
     return $stmt->fetch();
 }
 
 function isAdmin() {
-    // Проверяем сессию
-    if (isset($_SESSION['is_admin']) && $_SESSION['is_admin'] === true) {
+    // Миграция со старой схемы сессии (is_admin + user_id)
+    if (!isAdminAuthenticated() && isset($_SESSION['is_admin']) && $_SESSION['is_admin'] === true && isAuthenticated()) {
+        $_SESSION['admin_user_id'] = $_SESSION['user_id'];
+    }
+    
+    if (!isAdminAuthenticated()) {
+        return false;
+    }
+
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT id, is_admin FROM users WHERE id = ?");
+    $stmt->execute([getCurrentAdminId()]);
+    $admin = $stmt->fetch();
+
+    if ($admin && (int) $admin['is_admin'] === 1) {
         return true;
     }
     
-    // Проверяем в базе данных
-    if (isAuthenticated()) {
-        global $pdo;
-        $user = getCurrentUser();
-        if ($user && $user['is_admin'] == 1) {
-            $_SESSION['is_admin'] = true;
-            return true;
-        }
-    }
-    
+    unset($_SESSION['admin_user_id'], $_SESSION['is_admin']);
     return false;
 }
 

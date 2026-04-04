@@ -4,7 +4,7 @@ require_once __DIR__ . '/config.php';
 
 // Если уже авторизован - редирект на главную
 if (isAuthenticated()) {
- redirect('/');
+    redirect('/');
 }
 
 $error = '';
@@ -25,8 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
  if ($user && password_verify($password, $user['password'])) {
  // Успешный вход
- $_SESSION['user_id'] = $user['id'];
- redirect('/');
+            $_SESSION['user_id'] = $user['id'];
+            redirect('/');
  } else {
  $error = 'Неверный email или пароль';
  }
