@@ -14,9 +14,15 @@ $admin = getCurrentUser();
 $currentPage = 'contests';
 $pageTitle = 'Конкурсы';
 $breadcrumb = 'Управление конкурсами';
+$pageStyles = ['admin-contests.css'];
 
 // Обработка действий
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+if (isPostRequest() && isset($_POST['action'])) {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $_SESSION['error_message'] = 'Ошибка безопасности: неверный CSRF токен';
+        redirect('contests.php');
+    }
+
     $contest_id = intval($_POST['contest_id'] ?? 0);
     
     if ($_POST['action'] === 'toggle_publish') {
@@ -56,6 +62,16 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php unset($_SESSION['success_message']); endif; ?>
 
+<?php if (isset($_SESSION['error_message'])): ?>
+<div class="alert alert--error alert--permanent mb-lg">
+    <i class="fas fa-exclamation-circle alert__icon"></i>
+    <div class="alert__content">
+        <div class="alert__message"><?= htmlspecialchars($_SESSION['error_message']) ?></div>
+    </div>
+    <button type="button" class="btn-close"></button>
+</div>
+<?php unset($_SESSION['error_message']); endif; ?>
+
 <!-- Кнопка добавления -->
 <div class="flex justify-between items-center mb-lg">
     <h1>Конкурсы</h1>
@@ -67,8 +83,8 @@ require_once __DIR__ . '/includes/header.php';
 <!-- Список конкурсов -->
 <?php if (empty($contests)): ?>
     <div class="card">
-        <div class="card__body text-center" style="padding: 60px 20px;">
-            <div style="font-size: 48px; color: var(--color-text-muted); margin-bottom: 16px;">
+        <div class="card__body text-center contests-empty-state">
+            <div class="contests-empty-state__icon">
                 <i class="fas fa-trophy"></i>
             </div>
             <h3>Конкурсов пока нет</h3>
@@ -91,8 +107,11 @@ require_once __DIR__ . '/includes/header.php';
                         </span>
                     </div>
                     <div class="flex gap-sm">
+
                         <form method="POST" style="display: inline;">
                             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                        <form method="POST" class="inline-form">
+                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">
                             <input type="hidden" name="action" value="toggle_publish">
                             <button type="submit" class="btn btn--ghost btn--sm" title="Переключить публикацию">
@@ -104,9 +123,11 @@ require_once __DIR__ . '/includes/header.php';
                         </a>
                         <form method="POST" style="display: inline;" onsubmit="return confirm('Вы уверены? Все заявки этого конкурса будут удалены.');">
                             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                        <form method="POST" class="inline-form" onsubmit="return confirm('Вы уверены? Все заявки этого конкурса будут удалены.');">
+                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">
                             <input type="hidden" name="action" value="delete">
-                            <button type="submit" class="btn btn--ghost btn--sm" style="color: var(--color-error);" title="Удалить">
+                            <button type="submit" class="btn btn--ghost btn--sm btn-delete-contest" title="Удалить">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </form>
@@ -114,11 +135,11 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
             <div class="card__body">
-                <p class="text-secondary" style="font-size: 14px; line-height: 1.6;">
+                <p class="text-secondary contest-description">
                     <?= htmlspecialchars(mb_substr(strip_tags($contest['description'] ?? ''), 0, 200)) ?>...
                 </p>
                 
-                <div class="flex gap-lg mt-md" style="font-size: 13px; color: var(--color-text-secondary);">
+                <div class="flex gap-lg mt-md contest-meta">
                     <?php if ($contest['date_from']): ?>
                         <span><i class="fas fa-calendar"></i> С <?= date('d.m.Y', strtotime($contest['date_from'])) ?></span>
                     <?php endif; ?>

@@ -5,7 +5,7 @@ require_once __DIR__ . '/../includes/init.php';
 
 // Если уже админ - редирект
 if (isAdmin()) {
- redirect('/');
+    redirect('/admin');
 }
 
 $error = '';
@@ -36,11 +36,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  $error = 'У вас нет доступа к админ-панели';
  } else {
  // Успешный вход
- $_SESSION['user_id'] = $admin['id'];
- $_SESSION['is_admin'] = true;
- // Редирект в админ-панель
- header("Location: /admin");
- exit;
+                $_SESSION['admin_user_id'] = $admin['id'];
+                $_SESSION['is_admin'] = true;
+                
+                // Редирект в админ-панель
+                header('Location: /admin');
+                exit;
  }
  }
 }

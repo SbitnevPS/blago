@@ -66,49 +66,64 @@ function isAuthenticated() {
     return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
 }
 
+function isAdminAuthenticated() {
+    return isset($_SESSION['admin_user_id']) && !empty($_SESSION['admin_user_id']);
+}
+
 function getCurrentUserId() {
     return $_SESSION['user_id'] ?? null;
 }
 
+function getCurrentAdminId() {
+    return $_SESSION['admin_user_id'] ?? null;
+}
+
 function getCurrentUser() {
-    if (!isAuthenticated()) return null;
+    $sessionUserId = getCurrentUserId() ?? getCurrentAdminId();
+    if (!$sessionUserId) {
+        return null;
+    }
     
     global $pdo;
     $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-    $stmt->execute([$_SESSION['user_id']]);
+    $stmt->execute([$sessionUserId]);
     return $stmt->fetch();
 }
 
 function isAdmin() {
-    // Проверяем сессию
-    if (isset($_SESSION['is_admin']) && $_SESSION['is_admin'] === true) {
+    // Миграция со старой схемы сессии (is_admin + user_id)
+    if (!isAdminAuthenticated() && isset($_SESSION['is_admin']) && $_SESSION['is_admin'] === true && isAuthenticated()) {
+        $_SESSION['admin_user_id'] = $_SESSION['user_id'];
+    }
+    
+    if (!isAdminAuthenticated()) {
+        return false;
+    }
+
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT id, is_admin FROM users WHERE id = ?");
+    $stmt->execute([getCurrentAdminId()]);
+    $admin = $stmt->fetch();
+
+    if ($admin && (int) $admin['is_admin'] === 1) {
         return true;
     }
     
-    // Проверяем в базе данных
-    if (isAuthenticated()) {
-        global $pdo;
-        $user = getCurrentUser();
-        if ($user && $user['is_admin'] == 1) {
-            $_SESSION['is_admin'] = true;
-            return true;
-        }
-    }
-    
+    unset($_SESSION['admin_user_id'], $_SESSION['is_admin']);
     return false;
 }
 
 function redirect($url) {
- // Убираем .php из URL если есть
- $url = str_replace('.php', '', $url);
- 
- // Если URL не начинается с /, добавляем его
- if (strpos($url, '/') !==0 && strpos($url, 'http') !==0) {
- $url = '/' . $url;
- }
- 
- header('Location: ' . $url);
- exit;
+    // Убираем .php из URL если есть
+    $url = str_replace('.php', '', $url);
+    
+    // Если URL не начинается с /, добавляем его
+    if (strpos($url, '/') !== 0 && strpos($url, 'http') !== 0) {
+        $url = '/' . $url;
+    }
+    
+    header('Location: ' . $url);
+    exit;
 }
 
 function generateCSRFToken() {
@@ -120,6 +135,17 @@ function generateCSRFToken() {
 
 function verifyCSRFToken($token) {
     return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
+}
+
+function isPostRequest() {
+    return $_SERVER['REQUEST_METHOD'] === 'POST';
+}
+
+function jsonResponse($payload, $statusCode = 200) {
+    http_response_code($statusCode);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($payload);
+    exit;
 }
 
 // Функции для работы с загрузками
@@ -178,86 +204,86 @@ function getActiveContests() {
 
 // Функция для получения заявок пользователя
 function getUserApplications($userId) {
- global $pdo;
- $stmt = $pdo->prepare("
- SELECT a.*, c.title as contest_title, c.id as contest_id,
- (SELECT COUNT(*) FROM participants WHERE application_id = a.id) as participants_count
- FROM applications a
- JOIN contests c ON a.contest_id = c.id
- WHERE a.user_id = ?
- ORDER BY a.created_at DESC
- ");
- $stmt->execute([$userId]);
- return $stmt->fetchAll();
+    global $pdo;
+    $stmt = $pdo->prepare("
+        SELECT a.*, c.title as contest_title, c.id as contest_id,
+               (SELECT COUNT(*) FROM participants WHERE application_id = a.id) as participants_count
+        FROM applications a
+        JOIN contests c ON a.contest_id = c.id
+        WHERE a.user_id = ?
+        ORDER BY a.created_at DESC
+    ");
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll();
 }
 
 // Функция для создания превью изображения
 function createThumbnail($sourcePath, $outputDir, $outputFilename, $maxWidth, $maxHeight) {
- if (!extension_loaded('gd')) {
- return false;
- }
+    if (!extension_loaded('gd')) {
+        return false;
+    }
     
- $ext = strtolower(pathinfo($sourcePath, PATHINFO_EXTENSION));
+    $ext = strtolower(pathinfo($sourcePath, PATHINFO_EXTENSION));
     
- // Определяем тип изображения
- switch ($ext) {
- case 'jpg':
- case 'jpeg':
- $image = imagecreatefromjpeg($sourcePath);
- break;
- case 'png':
- $image = imagecreatefrompng($sourcePath);
- break;
- case 'gif':
- $image = imagecreatefromgif($sourcePath);
- break;
- case 'webp':
- $image = imagecreatefromwebp($sourcePath);
- break;
- case 'tif':
- case 'tiff':
- $image = imagecreatefromstring(file_get_contents($sourcePath));
- break;
- case 'bmp':
- $image = imagecreatefromstring(file_get_contents($sourcePath));
- break;
- default:
- return false;
- }
+    // Определяем тип изображения
+    switch ($ext) {
+        case 'jpg':
+        case 'jpeg':
+            $image = imagecreatefromjpeg($sourcePath);
+            break;
+        case 'png':
+            $image = imagecreatefrompng($sourcePath);
+            break;
+        case 'gif':
+            $image = imagecreatefromgif($sourcePath);
+            break;
+        case 'webp':
+            $image = imagecreatefromwebp($sourcePath);
+            break;
+        case 'tif':
+        case 'tiff':
+            $image = imagecreatefromstring(file_get_contents($sourcePath));
+            break;
+        case 'bmp':
+            $image = imagecreatefromstring(file_get_contents($sourcePath));
+            break;
+        default:
+            return false;
+    }
     
- if (!$image) {
- return false;
- }
+    if (!$image) {
+        return false;
+    }
     
- $width = imagesx($image);
- $height = imagesy($image);
+    $width = imagesx($image);
+    $height = imagesy($image);
     
- // Вычисляем размеры превью
- $ratio = min($maxWidth / $width, $maxHeight / $height);
- $newWidth = round($width * $ratio);
- $newHeight = round($height * $ratio);
+    // Вычисляем размеры превью
+    $ratio = min($maxWidth / $width, $maxHeight / $height);
+    $newWidth = round($width * $ratio);
+    $newHeight = round($height * $ratio);
     
- // Создаем новое изображение
- $thumb = imagecreatetruecolor($newWidth, $newHeight);
+    // Создаем новое изображение
+    $thumb = imagecreatetruecolor($newWidth, $newHeight);
     
- // Для PNG сохраняем прозрачность
- if ($ext === 'png') {
- imagealphablending($thumb, false);
- imagesavealpha($thumb, true);
- $transparent = imagecolorallocatealpha($thumb,0,0,0,127);
- imagefill($thumb,0,0, $transparent);
- }
+    // Для PNG сохраняем прозрачность
+    if ($ext === 'png') {
+        imagealphablending($thumb, false);
+        imagesavealpha($thumb, true);
+        $transparent = imagecolorallocatealpha($thumb, 0, 0, 0, 127);
+        imagefill($thumb, 0, 0, $transparent);
+    }
     
- // Изменяем размер
- imagecopyresampled($thumb, $image,0,0,0,0, $newWidth, $newHeight, $width, $height);
+    // Изменяем размер
+    imagecopyresampled($thumb, $image, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
     
- // Сохраняем как JPEG
- $outputPath = $outputDir . '/' . $outputFilename;
- imagejpeg($thumb, $outputPath,85);
+    // Сохраняем как JPEG
+    $outputPath = $outputDir . '/' . $outputFilename;
+    imagejpeg($thumb, $outputPath, 85);
     
- // Освобождаем память
- imagedestroy($image);
- imagedestroy($thumb);
+    // Освобождаем память
+    imagedestroy($image);
+    imagedestroy($thumb);
     
  // Возвращаем URL для превью
  return '/uploads/drawings/temp/' . $outputFilename;
