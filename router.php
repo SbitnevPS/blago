@@ -13,24 +13,15 @@ if (preg_match('/\.php$/i', $requestUri)) {
  // Маппинг старых URL на новые
  $mapping = [
  '/index' => '/',
- '/login' => '/login',
- '/register' => '/register',
- '/logout' => '/logout',
- '/contests' => '/contests',
  '/contest-view' => '/contest',
- '/my-applications' => '/my-applications',
  '/application-view' => '/application',
- '/application-form' => '/application-form',
- '/profile' => '/profile',
- '/messages' => '/messages',
  ];
  
- if (isset($mapping[$path])) {
- $newUrl = $mapping[$path];
- // Добавляем query string если есть
- $qs = strtok($requestUri, '?');
- if ($qs && $qs !== $path . '.php') {
- $newUrl .= '?' . substr($qs, strlen($path) +1);
+ $newUrl = $mapping[$path] ?? $path;
+ $qs = parse_url($requestUri, PHP_URL_QUERY);
+ if (!empty($newUrl)) {
+ if ($qs) {
+ $newUrl .= '?' . $qs;
  }
  header('Location: ' . $newUrl);
  exit;
@@ -58,27 +49,28 @@ if (empty($path)) {
 // Маршруты
 $routes = [
  // Главная - список конкурсов
- '/' => ['file' => 'contests.php', 'name' => 'home'],
+ '/' => ['file' => 'app/views/public/contests.php', 'name' => 'home'],
  
  // Авторизация
- '/login' => ['file' => 'login.php', 'name' => 'login'],
- '/register' => ['file' => 'register.php', 'name' => 'register'],
- '/logout' => ['file' => 'logout.php', 'name' => 'logout'],
+ '/login' => ['file' => 'app/views/public/login.php', 'name' => 'login'],
+ '/register' => ['file' => 'app/views/public/register.php', 'name' => 'register'],
+ '/logout' => ['file' => 'app/views/public/logout.php', 'name' => 'logout'],
  
  // Конкурсы
- '/contests' => ['file' => 'contests.php', 'name' => 'contests'],
- '/contest/{id}' => ['file' => 'contest-view.php', 'name' => 'contest-view'],
+ '/contests' => ['file' => 'app/views/public/contests.php', 'name' => 'contests'],
+ '/contest/{id}' => ['file' => 'app/views/public/contest-view.php', 'name' => 'contest-view'],
  
  // Заявки
- '/my-applications' => ['file' => 'my-applications.php', 'name' => 'my-applications'],
- '/application/{id}' => ['file' => 'my-application-view.php', 'name' => 'application-view'],
- '/application-form' => ['file' => 'application-form.php', 'name' => 'application-form'],
+ '/my-applications' => ['file' => 'app/views/public/my-applications.php', 'name' => 'my-applications'],
+ '/application/{id}' => ['file' => 'app/views/public/my-application-view.php', 'name' => 'application-view'],
+ '/application-form' => ['file' => 'app/views/public/application-form.php', 'name' => 'application-form'],
  
  // Профиль
- '/profile' => ['file' => 'profile.php', 'name' => 'profile'],
+ '/profile' => ['file' => 'app/views/public/profile.php', 'name' => 'profile'],
  
  // Сообщения
- '/messages' => ['file' => 'messages.php', 'name' => 'messages'],
+ '/messages' => ['file' => 'app/views/public/messages.php', 'name' => 'messages'],
+ '/mark-message-read' => ['file' => 'mark-message-read.php', 'name' => 'mark-message-read'],
  
  // Админка
  '/admin' => ['file' => 'admin/index.php', 'name' => 'admin'],

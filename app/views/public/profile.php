@@ -1,7 +1,7 @@
 <?php
 // profile.php - Редактирование профиля пользователя
-require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/includes/init.php';
+require_once dirname(__DIR__, 3) . '/config.php';
+require_once dirname(__DIR__, 3) . '/includes/init.php';
 
 // Проверка авторизации
 if (!isAuthenticated()) {
@@ -92,10 +92,10 @@ generateCSRFToken();
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Мой профиль - ДетскиеКонкурсы.рф</title>
-<?php include __DIR__ . '/includes/site-head.php'; ?>
+<?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 </head>
 <body>
-<?php include __DIR__ . '/header.php'; ?>
+<?php include dirname(__DIR__) . '/partials/header.php'; ?>
 
 <main class="container" style="padding: var(--space-xl) var(--space-lg);">
 <h1 class="mb-lg text-center">Мой профиль</h1>

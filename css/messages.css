@@ -28,6 +28,7 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     padding: var(--space-xl);
+    box-shadow: var(--shadow-sm);
 }
 
 .message-detail__date {
@@ -38,6 +39,15 @@
 
 .message-detail__text {
     line-height: 1.8;
+    white-space: pre-line;
+}
+
+.message-card {
+    box-shadow: var(--shadow-sm);
+}
+
+.message-card--unread {
+    border-left: 4px solid var(--color-primary);
 }
 
 .message-priority-badge {

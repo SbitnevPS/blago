@@ -1,6 +1,6 @@
 <?php
 // my-application-view.php - Просмотр заявки пользователем
-require_once __DIR__ . '/config.php';
+require_once dirname(__DIR__, 3) . '/config.php';
 
 // Проверка авторизации
 if (!isAuthenticated()) {
@@ -46,10 +46,10 @@ $currentPage = 'applications';
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Заявка #<?= $applicationId ?> - ДетскиеКонкурсы.рф</title>
-<?php include __DIR__ . '/includes/site-head.php'; ?>
+<?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 </head>
 <body>
-<?php include __DIR__ . '/header.php'; ?>
+<?php include dirname(__DIR__) . '/partials/header.php'; ?>
 
 <main class="container" style="padding: var(--space-xl) var(--space-lg);">
 <div class="application-detail">
