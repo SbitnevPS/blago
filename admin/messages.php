@@ -313,7 +313,7 @@ foreach ($messages as $msg) {
 <button type="button" class="btn btn--ghost btn--sm" onclick="viewMessage(<?= $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)" title="Просмотреть">
 <i class="fas fa-eye"></i>
 </button>
-<button type="button" class="btn btn--ghost btn--sm" onclick="deleteMessage(<?= $msg['id'] ?>, <?= !empty($msg['is_broadcast']) ? 'true' : 'false' ?>, '<?= htmlspecialchars(addslashes($msg['subject'])) ?>')" title="Удалить" style="color:#EF4444;">
+<button type="button" class="btn btn--ghost btn--sm" onclick="deleteMessage(<?= (int) $msg['id'] ?>, <?= !empty($msg['is_broadcast']) ? 'true' : 'false' ?>, <?= json_encode($msg['subject'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)" title="Удалить" style="color:#EF4444;">
 <i class="fas fa-trash"></i>
 </button>
 </div>
@@ -333,7 +333,7 @@ foreach ($messages as $msg) {
 
 <!-- Пагинация -->
 <?php if ($totalPages >1): ?>
-<div class="flex justify-between items-center" style="padding:16px20px; border-top:1px solid var(--color-border);">
+<div class="flex justify-between items-center" style="padding:16px 20px; border-top:1px solid var(--color-border);">
 <div class="text-secondary" style="font-size:14px;">
  Страница <?= e($page) ?> из <?= e($totalPages) ?>
 </div>
@@ -356,7 +356,7 @@ foreach ($messages as $msg) {
 
 <!-- Модальное окно отправки сообщения -->
 <div class="modal" id="sendMessageModal">
-<div class="modal__content" style="max-width:600px;">
+<div class="modal__content message-modal">
 <div class="modal__header">
 <h3>Написать сообщение</h3>
 <button type="button" class="modal__close" onclick="closeSendModal()">&times;</button>
@@ -368,24 +368,24 @@ foreach ($messages as $msg) {
 <div class="modal__body">
 <div class="form-group">
 <label class="form-label">Получатель</label>
-<div style="position:relative;">
+<div class="message-recipient-search">
 <input type="text" class="form-input" id="userSearch" placeholder="Начните вводить имя, фамилию или email..." autocomplete="off">
 <input type="hidden" name="user_id" id="userId">
-<div id="userResults" style="position:absolute; top:100%; left:0; right:0; background:white; border:1px solid #E5E7EB; border-radius:8px; margin-top:4px; max-height:250px; overflow-y:auto; display:none; z-index:100; box-shadow:04px12px rgba(0,0,0,0.1);">
+<div id="userResults" class="user-results">
 </div>
 </div>
 </div>
 
 <div class="form-group">
-<div class="flex items-center justify-between" style="padding:12px; background:#F9FAFB; border-radius:8px; margin-bottom:16px;">
+<div class="broadcast-toggle">
 <div>
-<div style="font-weight:500;">Отправить всем участникам</div>
-<div style="font-size:12px; color:#6B7280;">Сообщение будет отправлено всем зарегистрированным пользователям</div>
+<div class="broadcast-toggle__title">Отправить всем участникам</div>
+<div class="broadcast-toggle__subtitle">Сообщение будет отправлено всем зарегистрированным пользователям</div>
 </div>
-<label style="position:relative; display:inline-block; width:50px; height:26px;">
-<input type="checkbox" name="send_to_all" value="1" id="sendToAll" style="opacity:0; width:0; height:0;" onchange="toggleUserSelect()">
-<span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#D1D5DB; border-radius:26px; transition:0.3s;" id="toggleBg"></span>
-<span style="position:absolute; content:''; height:20px; width:20px; left:3px; bottom:3px; background:white; border-radius:50%; transition:0.3s;" id="toggleKnob"></span>
+<label class="switch">
+<input type="checkbox" name="send_to_all" value="1" id="sendToAll" onchange="toggleUserSelect()">
+<span class="switch__track"></span>
+<span class="switch__thumb"></span>
 </label>
 </div>
 </div>
@@ -420,7 +420,10 @@ foreach ($messages as $msg) {
 </div>
 
 <div class="form-group">
+<div class="flex justify-between items-center gap-sm">
 <label class="form-label">Текст сообщения</label>
+<span class="message-form__counter" id="messageCounter">0 символов</span>
+</div>
 <textarea name="message" class="form-textarea" rows="5" required placeholder="Введите текст сообщения"></textarea>
 </div>
 </div>
@@ -524,8 +527,6 @@ function openSendModal() {
  const userSearch = document.getElementById('userSearch');
  const userId = document.getElementById('userId');
  const sendToAll = document.getElementById('sendToAll');
- const toggleBg = document.getElementById('toggleBg');
- const toggleKnob = document.getElementById('toggleKnob');
  
  userSearch.value = '';
  userSearch.disabled = false;
@@ -533,8 +534,6 @@ function openSendModal() {
  userSearch.style.pointerEvents = 'auto';
  userId.value = '';
  sendToAll.checked = false;
- toggleBg.style.background = '#D1D5DB';
- toggleKnob.style.transform = 'translateX(0)';
 }
 
 function closeSendModal() {
@@ -559,24 +558,13 @@ function toggleUserSelect() {
  }
 }
 
-// Стили переключателя
-document.getElementById('sendToAll').addEventListener('change', function() {
- const bg = document.getElementById('toggleBg');
- const knob = document.getElementById('toggleKnob');
- if (this.checked) {
- bg.style.background = '#6366F1';
- knob.style.transform = 'translateX(24px)';
- } else {
- bg.style.background = '#D1D5DB';
- knob.style.transform = 'translateX(0)';
- }
-});
-
 // Поиск пользователей
 let searchTimeout;
 const userSearchInput = document.getElementById('userSearch');
 const userResults = document.getElementById('userResults');
 const userIdInput = document.getElementById('userId');
+const messageField = document.querySelector('textarea[name="message"]');
+const messageCounter = document.getElementById('messageCounter');
 
 userSearchInput.addEventListener('input', function() {
  clearTimeout(searchTimeout);
@@ -594,19 +582,30 @@ userSearchInput.addEventListener('input', function() {
  .then(users => {
  if (users.length >0) {
  userResults.innerHTML = users.map(u => 
- '<div class="user-result" style="padding:12px16px; cursor:pointer; border-bottom:1px solid #F3F4F6;" onmouseover="this.style.background=\'#F9FAFB\'" onmouseout="this.style.background=\'white\'" onclick="selectUser(' + u.id + ', \'' + escapeHtml(u.name + ' ' + u.surname + ' (' + u.email + ')') + '\')">' +
- '<div style="font-weight:500;">' + escapeHtml(u.name + ' ' + u.surname) + '</div>' +
- '<div style="font-size:12px; color:#6B7280;">' + escapeHtml(u.email) + '</div>' +
- '</div>'
+ '<button type="button" class="user-results__item" onclick="selectUser(' + u.id + ', \'' + escapeHtml(u.name + ' ' + u.surname + ' (' + u.email + ')') + '\')">' +
+ '<div class="user-results__name">' + escapeHtml(u.name + ' ' + u.surname) + '</div>' +
+ '<div class="user-results__email">' + escapeHtml(u.email) + '</div>' +
+ '</button>'
  ).join('');
  userResults.style.display = 'block';
  } else {
- userResults.innerHTML = '<div style="padding:12px16px; color:#6B7280;">Пользователи не найдены</div>';
+ userResults.innerHTML = '<div class="user-results__empty">Пользователи не найдены</div>';
  userResults.style.display = 'block';
  }
  });
  },300);
 });
+
+function updateMessageCounter() {
+ if (!messageField || !messageCounter) return;
+ const count = messageField.value.trim().length;
+ messageCounter.textContent = count + ' символов';
+}
+
+if (messageField) {
+ messageField.addEventListener('input', updateMessageCounter);
+ updateMessageCounter();
+}
 
 function selectUser(id, name) {
  userIdInput.value = id;

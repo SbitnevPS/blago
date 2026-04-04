@@ -8,13 +8,14 @@
  padding:0;
  }
         
- body {
- display: flex;
- min-height:100vh;
- font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
- background: #FAFBFC;
- color: #1F2937;
- }
+body {
+display: flex;
+min-height:100vh;
+font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+background: linear-gradient(180deg, #f8fafc 0%, #f3f4f6 100%);
+color: #1F2937;
+line-height: 1.5;
+}
         
  a {
  text-decoration: none;
@@ -89,14 +90,14 @@
  }
         
  /* Admin Content */
- .admin-content {
- flex:1;
- margin-left:260px;
- padding: 24px;
- background: #FAFBFC;
- min-height:100vh;
- width: calc(100% -260px);
- }
+.admin-content {
+flex:1;
+margin-left:260px;
+padding: 24px;
+background: transparent;
+min-height:100vh;
+width: calc(100% -260px);
+}
         
  .admin-header {
  display: flex;
@@ -188,17 +189,18 @@
  margin-bottom:24px;
  }
         
- .stat-card {
- background: white;
- border-radius:12px;
- padding: 20px;
- display: flex;
- align-items: center;
- gap:16px;
- box-shadow:0 1px 3px rgba(0,0,0,0.05);
- cursor: pointer;
- transition: .2s, box-shadow0.2s;
- }
+.stat-card {
+background: white;
+border-radius:12px;
+padding: 20px;
+display: flex;
+align-items: center;
+gap:16px;
+box-shadow:0 1px 3px rgba(0,0,0,0.05);
+cursor: pointer;
+transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+border: 1px solid #eef2f7;
+}
         
  .stat-card:hover {
  transform: translateY(-2px);
@@ -228,12 +230,14 @@
  }
         
  /* Card */
- .card {
- background: white;
- border-radius:12px;
- box-shadow:0 1px 3px rgba(0,0,0,0.05);
- margin-bottom:24px;
- }
+.card {
+background: white;
+border-radius:12px;
+box-shadow:0 1px 3px rgba(0,0,0,0.05);
+border: 1px solid #e6ebf2;
+margin-bottom:24px;
+overflow: hidden;
+}
         
  .card__header {
  padding: 16px 20px;
@@ -258,10 +262,11 @@
  }
         
  /* Table */
- .table {
- width:100%;
- border-collapse: collapse;
- }
+.table {
+width:100%;
+border-collapse: collapse;
+font-size: 14px;
+}
         
  .table th,
  .table td {
@@ -270,10 +275,10 @@
  border-bottom:1px solid #E5E7EB;
  }
         
- .table th {
- background: #F9FAFB;
- font-weight:600;
- font-size:13px;
+.table th {
+background: #F9FAFB;
+font-weight:600;
+font-size:13px;
  color: #6B7280;
  text-transform: uppercase;
  letter-spacing: 0.5px;
@@ -288,7 +293,7 @@
  }
         
  /* Buttons */
- .btn {
+.btn {
  display: inline-flex;
  align-items: center;
  justify-content: center;
@@ -299,7 +304,7 @@
  font-weight:500;
  cursor: pointer;
  border: none;
- transition: .2s;
+transition: .2s;
  text-decoration: none;
  }
         
@@ -431,49 +436,51 @@
         
  .form-input,
  .form-select,
- .form-textarea {
- width:100%;
- padding: 10px 14px;
- border:1px solid #D1D5DB;
- border-radius:8px;
- font-size:14px;
- transition: border-color0.2s, box-shadow0.2s;
- }
+.form-textarea {
+width:100%;
+padding: 10px 14px;
+border:1px solid #D1D5DB;
+border-radius:8px;
+font-size:14px;
+transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+background: #fff;
+}
         
  .form-input:focus,
  .form-select:focus,
- .form-textarea:focus {
- outline: none;
- border-color: #6366F1;
- box-shadow:0 03px rgba(99,102,241,0.1);
- }
+.form-textarea:focus {
+outline: none;
+border-color: #6366F1;
+box-shadow:0 0 0 3px rgba(99,102,241,0.12);
+}
         
  /* Modal */
- .modal {
+.modal {
  display: none;
  position: fixed;
  top:0;
  left:0;
  right:0;
  bottom:0;
- background: rgba(0,0,0,0.5);
+background: rgba(0,0,0,0.5);
  z-index:1000;
  align-items: center;
  justify-content: center;
- }
+}
         
  .modal.active {
  display: flex;
  }
         
- .modal__content {
- background: white;
- border-radius:12px;
+.modal__content {
+background: white;
+border-radius:12px;
  max-width:500px;
  width:90%;
  max-height:90vh;
- overflow-y: auto;
- }
+overflow-y: auto;
+box-shadow: 0 25px 60px rgba(15, 23, 42, 0.35);
+}
         
  .modal__header {
  padding: 20px;
@@ -509,7 +516,7 @@
  }
         
  /* Responsive */
- @media (max-width:768px) {
+@media (max-width:768px) {
  .admin-sidebar {
  transform: translateX(-100%);
  transition: .3s;
@@ -519,19 +526,24 @@
  transform: translateX(0);
  }
             
- .admin-content {
- margin-left:0;
- width:100%;
- }
+.admin-content {
+margin-left:0;
+width:100%;
+padding: 16px;
+}
             
  .admin-toggle {
  display: flex;
  }
             
- .stats-grid {
- grid-template-columns:1fr;
- }
- }
+.stats-grid {
+grid-template-columns:1fr;
+}
+
+.card__body {
+overflow-x: auto;
+}
+}
         
  .admin-toggle {
  display: none;

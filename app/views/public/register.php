@@ -1,7 +1,7 @@
 <?php
 // register.php - Регистрация нового пользователя
-require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/includes/init.php';
+require_once dirname(__DIR__, 3) . '/config.php';
+require_once dirname(__DIR__, 3) . '/includes/init.php';
 
 // Если уже авторизован - редирект на главную
 if (isAuthenticated()) {
@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Регистрация - ДетскиеКонкурсы.рф</title>
-<?php include __DIR__ . '/includes/site-head.php'; ?>
+<?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 </head>
 <body>
 <div class="register-page">

@@ -1,6 +1,6 @@
 <?php
 // messages.php - Сообщения пользователя
-require_once __DIR__ . '/config.php';
+require_once dirname(__DIR__, 3) . '/config.php';
 
 // Проверка авторизации
 if (!isAuthenticated()) {
@@ -32,8 +32,8 @@ $unreadCount = $unreadCount->fetchColumn();
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Сообщения - ДетскиеКонкурсы.рф</title>
-<?php include __DIR__ . '/includes/site-head.php'; ?>
-<link rel="stylesheet" href="css/messages.css">
+<?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
+<link rel="stylesheet" href="/css/messages.css">
 </head>
 <body>
 <nav class="navbar">
@@ -43,10 +43,10 @@ $unreadCount = $unreadCount->fetchColumn();
 <i class="fas fa-paint-brush navbar__logo-icon"></i> ДетскиеКонкурсы.рф
 </a>
 <div class="navbar__menu">
-<a href="contests.php" class="navbar__link">Конкурсы</a>
-<a href="my-applications.php" class="navbar__link">Мои заявки</a>
-<a href="profile.php" class="navbar__link">Мой профиль</a>
-<a href="messages.php" class="navbar__link navbar__link--active messages-link">
+<a href="/contests" class="navbar__link">Конкурсы</a>
+<a href="/my-applications" class="navbar__link">Мои заявки</a>
+<a href="/profile" class="navbar__link">Мой профиль</a>
+<a href="/messages" class="navbar__link navbar__link--active messages-link">
 <i class="fas fa-envelope"></i> Сообщения
  <?php if ($unreadCount >0): ?>
 <span class="messages-badge messages-badge--pulse"><?= $unreadCount ?></span>
@@ -60,7 +60,7 @@ $unreadCount = $unreadCount->fetchColumn();
 <i class="fas fa-user navbar__avatar-icon"></i>
 </div>
  <?php endif; ?>
-<a href="logout.php" class="btn btn--ghost btn--sm"><i class="fas fa-sign-out-alt"></i></a>
+<a href="/logout" class="btn btn--ghost btn--sm"><i class="fas fa-sign-out-alt"></i></a>
 </div>
 </div>
 </div>
@@ -84,7 +84,13 @@ $unreadCount = $unreadCount->fetchColumn();
 <div id="messagesList">
  <?php foreach ($messages as $msg): ?>
 <div class="message-card <?= $msg['is_read'] ? '' : 'message-card--unread' ?>" 
- onclick="showMessage(<?= $msg['id'] ?>, '<?= htmlspecialchars(addslashes($msg['subject'])) ?>', '<?= htmlspecialchars(addslashes($msg['message'])) ?>', '<?= htmlspecialchars(date('d.m.Y H:i', strtotime($msg['created_at']))) ?>', '<?= $msg['priority'] ?>')">
+ onclick='showMessage(
+ <?= (int) $msg['id'] ?>,
+ <?= json_encode($msg['subject'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+ <?= json_encode($msg['message'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+ <?= json_encode(date('d.m.Y H:i', strtotime($msg['created_at'])), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+ <?= json_encode($msg['priority'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>
+ )'>
 <div class="message-card__header">
 <div class="message-card__title">
  <?php if ($msg['priority'] === 'critical'): ?>
@@ -126,7 +132,7 @@ $unreadCount = $unreadCount->fetchColumn();
 </footer>
 
 <script>
-let currentUnreadCount = <?= $unreadCount ?>;
+let currentUnreadCount = <?= (int) $unreadCount ?>;
 
 function showMessage(id, title, content, date, priority) {
     document.getElementById('messagesList').style.display = 'none';
@@ -143,7 +149,7 @@ function showMessage(id, title, content, date, priority) {
     }
     
     document.getElementById('detailPriority').innerHTML = priorityHtml;
-    document.getElementById('detailContent').innerHTML = content.replace(/\n/g, '<br>');
+    document.getElementById('detailContent').textContent = content;
     window.scrollTo(0,0);
     
     // Помечаем сообщение как прочитанное
@@ -155,7 +161,7 @@ function markAsRead(messageId) {
     formData.append('id', messageId);
     formData.append('csrf_token', '<?= generateCSRFToken() ?>');
     
-    fetch('/mark-message-read.php', {
+    fetch('/mark-message-read', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
