@@ -157,7 +157,7 @@ function showMessage(id, title, content, date, priority) {
 function markAsRead(messageId) {
     const formData = new URLSearchParams();
     formData.append('id', messageId);
-    formData.append('csrf_token', '<?= generateCSRFToken() ?>');
+    formData.append('csrf', '<?= csrf_token() ?>');
     
     fetch('/mark-message-read.php', {
         method: 'POST',

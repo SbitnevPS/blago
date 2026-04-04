@@ -8,7 +8,7 @@ if (!isAdmin()) {
 }
 
 $admin = getCurrentAdmin();
-$application_id = $_GET['id'] ?? 0;
+$application_id = (int)($_GET['id'] ?? 0);
 
 // Получаем заявку
 $stmt = $pdo->prepare("
@@ -33,37 +33,41 @@ $stmt->execute([$application_id]);
 $participants = $stmt->fetchAll();
 
 // Обработка изменения статуса
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!check_csrf()) {
         $error = 'Ошибка безопасности';
-    } elseif ($_POST['action'] === 'update_status') {
-        $newStatus = $_POST['status'] ?? $application['status'];
-        $stmt = $pdo->prepare("UPDATE applications SET status = ?, updated_at = NOW() WHERE id = ?");
-        $stmt->execute([$newStatus, $application_id]);
-        $application['status'] = $newStatus;
-        $_SESSION['success_message'] = 'Статус обновлён';
-} elseif ($_POST['action'] === 'delete') {
- // Удаляем участников и заявку
- $pdo->prepare("DELETE FROM participants WHERE application_id = ?")->execute([$application_id]);
- $pdo->prepare("DELETE FROM applications WHERE id = ?")->execute([$application_id]);
- $_SESSION['success_message'] = 'Заявка удалена';
- redirect('applications.php');
- } elseif ($_POST['action'] === 'send_message') {
- $subject = trim($_POST['subject'] ?? '');
- $message = trim($_POST['message'] ?? '');
- $priority = $_POST['priority'] ?? 'normal';
- 
- if (empty($subject) || empty($message)) {
- $error = 'Заполните тему и текст сообщения';
- } else {
- $stmt = $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
- $stmt->execute([$application['user_id'], $admin['id'], $subject, $message, $priority]);
- $_SESSION['success_message'] = 'Сообщение отправлено';
- }
- }
+    } else {
+        $action = $_POST['action'] ?? '';
+        
+        if ($action === 'update_status') {
+            $newStatus = $_POST['status'] ?? $application['status'];
+            $stmt = $pdo->prepare("UPDATE applications SET status = ?, updated_at = NOW() WHERE id = ?");
+            $stmt->execute([$newStatus, $application_id]);
+            $application['status'] = $newStatus;
+            $_SESSION['success_message'] = 'Статус обновлён';
+        } elseif ($action === 'delete') {
+            // Удаляем участников и заявку
+            $pdo->prepare("DELETE FROM participants WHERE application_id = ?")->execute([$application_id]);
+            $pdo->prepare("DELETE FROM applications WHERE id = ?")->execute([$application_id]);
+            $_SESSION['success_message'] = 'Заявка удалена';
+            redirect('applications.php');
+        } elseif ($action === 'send_message') {
+            $subject = trim($_POST['subject'] ?? '');
+            $message = trim($_POST['message'] ?? '');
+            $priority = $_POST['priority'] ?? 'normal';
+            
+            if (empty($subject) || empty($message)) {
+                $error = 'Заполните тему и текст сообщения';
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
+                $stmt->execute([$application['user_id'], $admin['id'], $subject, $message, $priority]);
+                $_SESSION['success_message'] = 'Сообщение отправлено';
+            }
+        }
+    }
 }
 
-generateCSRFToken();
+$csrf = csrf_token();
 
 $currentPage = 'applications';
 $pageTitle = 'Заявка #' . $application_id;
@@ -102,7 +106,7 @@ require_once __DIR__ . '/includes/header.php';
 <i class="fas fa-envelope"></i> Сообщение
 </button>
 <form method="POST" class="flex gap-md items-center">
-<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+<input type="hidden" name="csrf" value="<?= $csrf ?>">
 <input type="hidden" name="action" value="update_status">
 <select name="status" class="form-select" style="width:140px; padding:8px12px;">
 <option value="draft" <?= $application['status'] === 'draft' ? 'selected' : '' ?>>Черновик</option>
@@ -115,7 +119,7 @@ require_once __DIR__ . '/includes/header.php';
 </button>
 </form>
 <form method="POST" onsubmit="return confirm('Удалить заявку?');">
-<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+<input type="hidden" name="csrf" value="<?= $csrf ?>">
 <input type="hidden" name="action" value="delete">
 <button type="submit" class="btn" style="background:#FEE2E2; color:#DC2626; padding:10px16px; border-radius:8px; border:none; cursor:pointer;">
 <i class="fas fa-trash"></i> Удалить
@@ -252,7 +256,7 @@ require_once __DIR__ . '/includes/header.php';
 <button type="button" class="modal__close" onclick="closeMessageModal()">&times;</button>
 </div>
 <form method="POST" action="application-view.php?id=<?= $application_id ?>">
-<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+<input type="hidden" name="csrf" value="<?= $csrf ?>">
 <input type="hidden" name="action" value="send_message">
 <div class="modal__body">
 <div class="form-group">

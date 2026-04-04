@@ -116,15 +116,28 @@ function redirect($url) {
     exit;
 }
 
-function generateCSRFToken() {
+function csrf_token() {
     if (!isset($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
     return $_SESSION['csrf_token'];
 }
 
-function verifyCSRFToken($token) {
+function check_csrf($token = null) {
+    if ($token === null) {
+        $token = $_POST['csrf'] ?? $_POST['csrf_token'] ?? '';
+    }
+    
     return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
+}
+
+// Backward compatibility wrappers
+function generateCSRFToken() {
+    return csrf_token();
+}
+
+function verifyCSRFToken($token) {
+    return check_csrf($token);
 }
 
 function isPostRequest() {

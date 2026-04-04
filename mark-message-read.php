@@ -10,7 +10,7 @@ if (!isPostRequest()) {
     jsonResponse(['success' => false, 'error' => 'Method not allowed'], 405);
 }
 
-if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+if (!check_csrf()) {
     jsonResponse(['success' => false, 'error' => 'Invalid CSRF token'], 403);
 }
 

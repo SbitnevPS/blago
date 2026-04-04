@@ -15,7 +15,7 @@ $pageStyles = ['admin-contests.css'];
 
 // Обработка действий
 if (isPostRequest() && isset($_POST['action'])) {
-    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+    if (!check_csrf()) {
         $_SESSION['error_message'] = 'Ошибка безопасности: неверный CSRF токен';
         redirect('contests.php');
     }
@@ -105,7 +105,7 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                     <div class="flex gap-sm">
                         <form method="POST" class="inline-form">
-                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">
                             <input type="hidden" name="action" value="toggle_publish">
                             <button type="submit" class="btn btn--ghost btn--sm" title="Переключить публикацию">
@@ -116,7 +116,7 @@ require_once __DIR__ . '/includes/header.php';
                             <i class="fas fa-edit"></i>
                         </a>
                         <form method="POST" class="inline-form" onsubmit="return confirm('Вы уверены? Все заявки этого конкурса будут удалены.');">
-                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">
                             <input type="hidden" name="action" value="delete">
                             <button type="submit" class="btn btn--ghost btn--sm btn-delete-contest" title="Удалить">
