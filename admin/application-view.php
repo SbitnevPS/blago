@@ -117,8 +117,8 @@ require_once __DIR__ . '/includes/header.php';
 <form method="POST" onsubmit="return confirm('Удалить заявку?');">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
 <input type="hidden" name="action" value="delete">
-<button type="submit" class="btn" style="background:#FEE2E2; color:#DC2626; padding:10px16px; border-radius:8px; border:none; cursor:pointer;">
-<i class="fas fa-trash"></i> Удалить
+<button type="submit" class="btn" style="background:#FEE2E2; color:#DC2626; padding:14px 16px; border-radius:8px; border:none; cursor:pointer;">
+<i class="fas fa-trash"></i>
 </button>
 </form>
 </div>
@@ -196,13 +196,13 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- Участники -->
-<h2 class="mb-lg">Участники (<?= count($participants) ?>)</h2>
+<h4 class="mb-lg">Количество участников - <?= count($participants) ?></h4>
 
 <?php foreach ($participants as $i => $p): ?>
 <div class="card mb-lg">
     <div class="card__header">
-        <div class="flex justify-between items-center">
-            <h3>Участник <?= $i + 1 ?></h3>
+        <div class="flex justify-between items-center w-100">
+            <h3>Участник #<?= $i + 1 ?></h3>
             <?php if ($p['drawing_file']): ?>
             <span class="badge badge--success">
                 <i class="fas fa-image"></i> Рисунок загружен

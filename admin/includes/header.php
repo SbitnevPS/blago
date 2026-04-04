@@ -35,7 +35,11 @@
  text-decoration: none;
  color: inherit;
  }
-        
+
+ .w-100 {
+	width: 100%;
+}
+
  /* Admin Sidebar */
  .admin-sidebar {
  width:260px;

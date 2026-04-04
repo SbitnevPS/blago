@@ -242,7 +242,7 @@ require_once __DIR__ . '/includes/header.php';
 <!-- Список сообщений -->
 <div class="card">
 <div class="card__header">
-<div class="flex justify-between items-center">
+<div class="flex justify-between items-center w-100">
 <h3>Сообщения (<?= $totalMessages ?>)</h3>
 <button type="button" class="btn btn--primary" onclick="openSendModal()">
 <i class="fas fa-pen"></i> Написать сообщение
@@ -292,7 +292,7 @@ foreach ($messages as $msg) {
 <?php endif; ?>
 </div>
 </td>
-<td><?= htmlspecialchars($msg['subject']) ?></td>
+<td style="font-size: var(--font-size-sm);"><?= htmlspecialchars($msg['subject']) ?></td>
 <td>
 <?php if ($msg['priority'] === 'critical'): ?>
 <span class="badge" style="background:#EF4444; color:white;">Критическое</span>
