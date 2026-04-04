@@ -214,42 +214,4 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
-<style>
-    .stat-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 16px;
-        background: white;
-        border-radius: 20px;
-        text-decoration: none;
-        color: var(--color-text-secondary);
-        font-size: 14px;
-        border: 1px solid var(--color-border);
-        transition: all 0.2s;
-    }
-    
-    .stat-pill:hover {
-        border-color: var(--color-primary);
-        color: var(--color-primary);
-    }
-    
-    .stat-pill--active {
-        background: var(--color-primary);
-        color: white;
-        border-color: var(--color-primary);
-    }
-    
-    .stat-pill__count {
-        background: rgba(0,0,0,0.1);
-        padding: 2px 8px;
-        border-radius: 10px;
-        font-weight: 600;
-    }
-    
-    .stat-pill--active .stat-pill__count {
-        background: rgba(255,255,255,0.2);
-    }
-</style>
-
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

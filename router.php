@@ -135,15 +135,10 @@ if ($currentRoute) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>404 - Страница не найдена</title>
-<style>
- body { font-family: Inter, sans-serif; display: flex; align-items: center; justify-content: center; min-height:100vh; margin:0; background: #F9FAFB; }
- .error-page { text-align: center; }
- .error-page h1 { font-size:72px; color: #6366F1; margin:0; }
- .error-page p { color: #6B7280; font-size:18px; }
- .error-page a { display: inline-block; margin-top:20px; padding:12px24px; background: #6366F1; color: white; text-decoration: none; border-radius:8px; }
-</style>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/user-assets.css">
 </head>
-<body>
+<body class="error-page-body">
 <div class="error-page">
 <h1>404</h1>
 <p>Страница не найдена</p>

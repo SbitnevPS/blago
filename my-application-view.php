@@ -46,25 +46,7 @@ $currentPage = 'applications';
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Заявка #<?= $applicationId ?> - ДетскиеКонкурсы.рф</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="/css/style.css">
-<style>
- .application-detail { max-width:900px; margin:0 auto; }
- .application-detail__header { margin-bottom: var(--space-xl); }
- .application-detail__title { font-size: var(--font-size-2xl); margin-bottom: var(--space-sm); }
- .application-detail__meta { display: flex; gap: var(--space-lg); flex-wrap: wrap; color: var(--color-text-secondary); font-size: var(--font-size-sm); }
- .participant-card { background: var(--color-bg); border-radius: var(--radius-lg); padding: var(--space-lg); margin-bottom: var(--space-lg); border:1px solid var(--color-border); }
- .participant-card__title { font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); margin-bottom: var(--space-md); display: flex; align-items: center; gap: var(--space-sm); }
- .participant-card__number { background: var(--color-primary); color: white; width:24px; height:24px; border-radius:50%; display: flex; align-items: center; justify-content: center; font-size:12px; }
- .participant-card__field { margin-bottom: var(--space-sm); }
- .participant-card__label { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
- .participant-card__value { font-weight: var(--font-weight-medium); }
- .drawing-preview { margin-top: var(--space-md); }
- .drawing-preview__image { width:200px; height:200px; object-fit: cover; border-radius: var(--radius-md); border:2px solid var(--color-border); }
-</style>
+<?php include __DIR__ . '/includes/site-head.php'; ?>
 </head>
 <body>
 <?php include __DIR__ . '/header.php'; ?>
