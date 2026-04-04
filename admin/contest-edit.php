@@ -7,7 +7,7 @@ if (!isAdmin()) {
     redirect('/admin/login');
 }
 
-$admin = getCurrentUser();
+$admin = getCurrentAdmin();
 $contest_id = $_GET['id'] ?? 0;
 $isEdit = !empty($contest_id);
 

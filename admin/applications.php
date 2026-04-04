@@ -7,7 +7,7 @@ if (!isAdmin()) {
     redirect('/admin/login');
 }
 
-$admin = getCurrentUser();
+$admin = getCurrentAdmin();
 $currentPage = 'applications';
 $pageTitle = 'Заявки';
 $breadcrumb = 'Управление заявками';

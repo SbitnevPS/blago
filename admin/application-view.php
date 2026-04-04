@@ -7,7 +7,7 @@ if (!isAdmin()) {
     redirect('/admin/login');
 }
 
-$admin = getCurrentUser();
+$admin = getCurrentAdmin();
 $application_id = $_GET['id'] ?? 0;
 
 // Получаем заявку

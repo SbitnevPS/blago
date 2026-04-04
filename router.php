@@ -4,37 +4,47 @@
 
 // Если обращение напрямую к .php файлу - редиректим на ЧПУ
 $requestUri = $_SERVER['REQUEST_URI'];
-if (preg_match('/\.php$/i', $requestUri)) {
- $path = strtok($requestUri, '?');
- $path = str_replace('.php', '', $path);
- $path = rtrim($path, '/');
- if (empty($path)) $path = '/';
- 
- // Маппинг старых URL на новые
- $mapping = [
- '/index' => '/',
- '/login' => '/login',
- '/register' => '/register',
- '/logout' => '/logout',
- '/contests' => '/contests',
- '/contest-view' => '/contest',
- '/my-applications' => '/my-applications',
- '/application-view' => '/application',
- '/application-form' => '/application-form',
- '/profile' => '/profile',
- '/messages' => '/messages',
- ];
- 
- if (isset($mapping[$path])) {
- $newUrl = $mapping[$path];
- // Добавляем query string если есть
- $qs = strtok($requestUri, '?');
- if ($qs && $qs !== $path . '.php') {
- $newUrl .= '?' . substr($qs, strlen($path) +1);
- }
- header('Location: ' . $newUrl);
- exit;
- }
+$parsedUri = parse_url($requestUri);
+$requestPath = $parsedUri['path'] ?? '/';
+
+if (preg_match('/\.php$/i', $requestPath)) {
+    $path = str_replace('.php', '', $requestPath);
+    $path = rtrim($path, '/');
+    if (empty($path)) {
+        $path = '/';
+    }
+    
+    // Маппинг старых URL на новые
+    $mapping = [
+        '/index' => '/',
+        '/login' => '/login',
+        '/register' => '/register',
+        '/logout' => '/logout',
+        '/contests' => '/contests',
+        '/contest-view' => '/contest',
+        '/my-applications' => '/my-applications',
+        '/application-view' => '/application',
+        '/application-form' => '/application-form',
+        '/profile' => '/profile',
+        '/messages' => '/messages',
+        '/admin/index' => '/admin',
+        '/admin/login' => '/admin/login',
+        '/admin/contests' => '/admin/contests',
+        '/admin/applications' => '/admin/applications',
+        '/admin/users' => '/admin/users',
+        '/admin/messages' => '/admin/messages',
+        '/admin/search-users' => '/admin/search-users',
+    ];
+    
+    if (isset($mapping[$path])) {
+        $newUrl = $mapping[$path];
+        if (!empty($parsedUri['query'])) {
+            $newUrl .= '?' . $parsedUri['query'];
+        }
+        
+        header('Location: ' . $newUrl);
+        exit;
+    }
 }
 
 // Получаем запрошенный путь

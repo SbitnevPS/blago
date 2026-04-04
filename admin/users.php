@@ -7,7 +7,7 @@ if (!isAdmin()) {
     redirect('/admin/login');
 }
 
-$admin = getCurrentUser();
+$admin = getCurrentAdmin();
 $currentPage = 'users';
 $pageTitle = 'Пользователи';
 $breadcrumb = 'Управление пользователями';

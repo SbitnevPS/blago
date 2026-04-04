@@ -2,35 +2,39 @@
 // mark-message-read.php - Пометка сообщения как прочитанного
 require_once __DIR__ . '/config.php';
 
-header('Content-Type: application/json; charset=utf-8');
-
 if (!isAuthenticated()) {
- echo json_encode(['success' => false, 'error' => 'Not authenticated']);
- exit;
+    jsonResponse(['success' => false, 'error' => 'Not authenticated'], 401);
 }
 
-$messageId = $_GET['id'] ?? null;
+if (!isPostRequest()) {
+    jsonResponse(['success' => false, 'error' => 'Method not allowed'], 405);
+}
 
-if (!$messageId) {
- echo json_encode(['success' => false, 'error' => 'No message ID']);
- exit;
+if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+    jsonResponse(['success' => false, 'error' => 'Invalid CSRF token'], 403);
+}
+
+$messageId = intval($_POST['id'] ?? 0);
+
+if ($messageId <= 0) {
+    jsonResponse(['success' => false, 'error' => 'Invalid message ID'], 400);
 }
 
 $userId = getCurrentUserId();
 
 try {
- // Проверяем, что сообщение принадлежит пользователю
- $stmt = $pdo->prepare("SELECT id FROM admin_messages WHERE id = ? AND user_id = ?");
- $stmt->execute([$messageId, $userId]);
- $message = $stmt->fetch();
- 
- if ($message) {
- $stmt = $pdo->prepare("UPDATE admin_messages SET is_read =1 WHERE id = ?");
- $stmt->execute([$messageId]);
- echo json_encode(['success' => true]);
- } else {
- echo json_encode(['success' => false, 'error' => 'Message not found']);
- }
+    // Проверяем, что сообщение принадлежит пользователю
+    $stmt = $pdo->prepare("SELECT id FROM admin_messages WHERE id = ? AND user_id = ?");
+    $stmt->execute([$messageId, $userId]);
+    $message = $stmt->fetch();
+    
+    if ($message) {
+        $stmt = $pdo->prepare("UPDATE admin_messages SET is_read = 1 WHERE id = ?");
+        $stmt->execute([$messageId]);
+        jsonResponse(['success' => true]);
+    } else {
+        jsonResponse(['success' => false, 'error' => 'Message not found'], 404);
+    }
 } catch (Exception $e) {
- echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    jsonResponse(['success' => false, 'error' => 'Internal server error'], 500);
 }

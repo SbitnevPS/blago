@@ -37,23 +37,14 @@ $unreadCount = $unreadCount->fetchColumn();
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="css/style.css">
-<style>
- .messages-page { max-width:800px; margin:0 auto; }
- .messages-page__header { margin-bottom: var(--space-xl); }
- .message-detail { display: none; }
- .message-detail.active { display: block; }
- .message-detail__back { margin-bottom: var(--space-lg); }
- .message-detail__content { background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-xl); border:1px solid var(--color-border); }
- .message-detail__date { color: var(--color-text-tertiary); font-size: var(--font-size-sm); margin-bottom: var(--space-lg); }
- .message-detail__text { line-height:1.8; }
-</style>
+<link rel="stylesheet" href="css/messages.css">
 </head>
 <body>
 <nav class="navbar">
 <div class="container">
 <div class="navbar__inner">
 <a href="/" class="navbar__logo">
-<i class="fas fa-paint-brush" style="color: var(--color-primary);"></i> ДетскиеКонкурсы.рф
+<i class="fas fa-paint-brush navbar__logo-icon"></i> ДетскиеКонкурсы.рф
 </a>
 <div class="navbar__menu">
 <a href="contests.php" class="navbar__link">Конкурсы</a>
@@ -69,8 +60,8 @@ $unreadCount = $unreadCount->fetchColumn();
  <?php if (!empty($user['avatar_url'])): ?>
 <img src="<?= htmlspecialchars($user['avatar_url']) ?>" alt="" class="navbar__avatar">
  <?php else: ?>
-<div class="navbar__avatar" style="background: var(--color-primary-light); display: flex; align-items: center; justify-content: center;">
-<i class="fas fa-user" style="color: var(--color-primary);"></i>
+<div class="navbar__avatar navbar__avatar--placeholder">
+<i class="fas fa-user navbar__avatar-icon"></i>
 </div>
  <?php endif; ?>
 <a href="logout.php" class="btn btn--ghost btn--sm"><i class="fas fa-sign-out-alt"></i></a>
@@ -80,7 +71,7 @@ $unreadCount = $unreadCount->fetchColumn();
 </div>
 </nav>
 
-<main class="container" style="padding: var(--space-xl) var(--space-lg);">
+<main class="container messages-container">
 <div class="messages-page">
 <div class="messages-page__header">
 <h1>Сообщения</h1>
@@ -101,9 +92,9 @@ $unreadCount = $unreadCount->fetchColumn();
 <div class="message-card__header">
 <div class="message-card__title">
  <?php if ($msg['priority'] === 'critical'): ?>
-<span class="badge" style="background:#EF4444; color:white; font-size:10px; margin-right:8px;">КРИТИЧЕСКОЕ</span>
+<span class="badge message-priority-badge message-priority-badge--critical">КРИТИЧЕСКОЕ</span>
  <?php elseif ($msg['priority'] === 'important'): ?>
-<span class="badge" style="background:#F59E0B; color:white; font-size:10px; margin-right:8px;">ВАЖНОЕ</span>
+<span class="badge message-priority-badge message-priority-badge--important">ВАЖНОЕ</span>
  <?php endif; ?>
 <?= htmlspecialchars($msg['subject']) ?>
 </div>
@@ -142,60 +133,68 @@ $unreadCount = $unreadCount->fetchColumn();
 let currentUnreadCount = <?= $unreadCount ?>;
 
 function showMessage(id, title, content, date, priority) {
- document.getElementById('messagesList').style.display = 'none';
- document.getElementById('messageDetail').classList.add('active');
- document.getElementById('detailTitle').textContent = title;
- document.getElementById('detailDate').textContent = date;
- 
- // Priority badge
- let priorityHtml = '';
- if (priority === 'critical') {
- priorityHtml = '<span class="badge" style="background:#EF4444; color:white; padding:6px14px; font-size:12px;"><i class="fas fa-exclamation-triangle"></i> КРИТИЧЕСКОЕ СООБЩЕНИЕ</span>';
- } else if (priority === 'important') {
- priorityHtml = '<span class="badge" style="background:#F59E0B; color:white; padding:6px14px; font-size:12px;"><i class="fas fa-exclamation-circle"></i> ВАЖНОЕ СООБЩЕНИЕ</span>';
- }
- document.getElementById('detailPriority').innerHTML = priorityHtml;
- 
- document.getElementById('detailContent').innerHTML = content.replace(/\n/g, '<br>');
- window.scrollTo(0,0);
- 
- // Помечаем сообщение как прочитанное
- markAsRead(id);
+    document.getElementById('messagesList').style.display = 'none';
+    document.getElementById('messageDetail').classList.add('active');
+    document.getElementById('detailTitle').textContent = title;
+    document.getElementById('detailDate').textContent = date;
+    
+    // Priority badge
+    let priorityHtml = '';
+    if (priority === 'critical') {
+        priorityHtml = '<span class="badge message-detail-priority message-detail-priority--critical"><i class="fas fa-exclamation-triangle"></i> КРИТИЧЕСКОЕ СООБЩЕНИЕ</span>';
+    } else if (priority === 'important') {
+        priorityHtml = '<span class="badge message-detail-priority message-detail-priority--important"><i class="fas fa-exclamation-circle"></i> ВАЖНОЕ СООБЩЕНИЕ</span>';
+    }
+    
+    document.getElementById('detailPriority').innerHTML = priorityHtml;
+    document.getElementById('detailContent').innerHTML = content.replace(/\n/g, '<br>');
+    window.scrollTo(0,0);
+    
+    // Помечаем сообщение как прочитанное
+    markAsRead(id);
 }
         
 function markAsRead(messageId) {
- fetch('/mark-message-read.php?id=' + messageId)
- .then(response => response.json())
- .then(data => {
- if (data.success && currentUnreadCount >0) {
- currentUnreadCount--;
- updateUnreadBadge();
- }
- });
+    const formData = new URLSearchParams();
+    formData.append('id', messageId);
+    formData.append('csrf_token', '<?= generateCSRFToken() ?>');
+    
+    fetch('/mark-message-read.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString(),
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success && currentUnreadCount > 0) {
+                currentUnreadCount--;
+                updateUnreadBadge();
+            }
+        });
 }
 
 function updateUnreadBadge() {
- const badge = document.querySelector('.messages-badge');
- if (currentUnreadCount >0) {
- if (badge) {
- badge.textContent = currentUnreadCount;
- } else {
- const link = document.querySelector('.messages-link');
- const newBadge = document.createElement('span');
- newBadge.className = 'messages-badge messages-badge--pulse';
- newBadge.textContent = currentUnreadCount;
- link.appendChild(newBadge);
- }
- } else {
- if (badge) {
- badge.remove();
- }
- }
+    const badge = document.querySelector('.messages-badge');
+    if (currentUnreadCount > 0) {
+        if (badge) {
+            badge.textContent = currentUnreadCount;
+        } else {
+            const link = document.querySelector('.messages-link');
+            const newBadge = document.createElement('span');
+            newBadge.className = 'messages-badge messages-badge--pulse';
+            newBadge.textContent = currentUnreadCount;
+            link.appendChild(newBadge);
+        }
+    } else if (badge) {
+        badge.remove();
+    }
 }
         
 function hideMessage() {
- document.getElementById('messageDetail').classList.remove('active');
- document.getElementById('messagesList').style.display = 'block';
+    document.getElementById('messageDetail').classList.remove('active');
+    document.getElementById('messagesList').style.display = 'block';
 }
 </script>
 </body>

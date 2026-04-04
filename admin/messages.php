@@ -3,7 +3,7 @@ require_once __DIR__ . '/../config.php';
 if (!isAdmin()) {
 redirect('/admin/login');
 }
-$admin = getCurrentUser();
+$admin = getCurrentAdmin();
 $currentPage = 'messages';
 $pageTitle = 'Сообщения';
 $breadcrumb = 'Все отправленные сообщения';
