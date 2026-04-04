@@ -1,11 +1,14 @@
 <?php
 // admin/applications.php - Список заявок
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../includes/init.php';
 
 // Проверка авторизации админа
 if (!isAdmin()) {
     redirect('/admin/login');
 }
+
+check_csrf();
 
 $admin = getCurrentUser();
 $currentPage = 'applications';
@@ -72,6 +75,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card mb-lg">
     <div class="card__body">
         <form method="GET" class="flex gap-md" style="flex-wrap: wrap; align-items: flex-end;">
+            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <div style="min-width: 200px;">
                 <label class="form-label">Статус</label>
                 <select name="status" class="form-select">
@@ -129,7 +133,7 @@ require_once __DIR__ . '/includes/header.php';
 <!-- Список заявок -->
 <div class="card">
     <div class="card__header">
-        <h3>Заявки (<?= $totalApps ?>)</h3>
+        <h3>Заявки (<?= e($totalApps) ?>)</h3>
     </div>
     <div class="card__body" style="padding: 0;">
         <table class="table">
@@ -191,16 +195,16 @@ require_once __DIR__ . '/includes/header.php';
         <?php if ($totalPages > 1): ?>
         <div class="flex justify-between items-center" style="padding: 16px 20px; border-top: 1px solid var(--color-border);">
             <div class="text-secondary" style="font-size: 14px;">
-                Страница <?= $page ?> из <?= $totalPages ?>
+                Страница <?= e($page) ?> из <?= e($totalPages) ?>
             </div>
             <div class="flex gap-sm">
                 <?php if ($page > 1): ?>
-                    <a href="?page=<?= $page - 1 ?>&status=<?= $status ?>&contest_id=<?= $contest_id ?>&search=<?= urlencode($search) ?>" class="btn btn--ghost btn--sm">
+                    <a href="?page=<?= $page - 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-left"></i>
                     </a>
                 <?php endif; ?>
                 <?php if ($page < $totalPages): ?>
-                    <a href="?page=<?= $page + 1 ?>&status=<?= $status ?>&contest_id=<?= $contest_id ?>&search=<?= urlencode($search) ?>" class="btn btn--ghost btn--sm">
+                    <a href="?page=<?= $page + 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-right"></i>
                     </a>
                 <?php endif; ?>

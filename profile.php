@@ -1,6 +1,7 @@
 <?php
 // profile.php - Редактирование профиля пользователя
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/includes/init.php';
 
 // Проверка авторизации
 if (!isAuthenticated()) {
@@ -9,6 +10,8 @@ if (!isAuthenticated()) {
 
 $user = getCurrentUser();
 $error = '';
+
+check_csrf();
 $success = '';
 
 // Обработка формы
@@ -159,6 +162,7 @@ generateCSRFToken();
 </div>
             
 <form method="POST">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                 
  <!-- Основные данные -->
@@ -223,7 +227,7 @@ generateCSRFToken();
 <select name="organization_region" class="form-select">
 <option value="">Выберите регион</option>
 <?php foreach ($regions as $r): ?>
-<option value="<?= $r ?>" <?= ($user['organization_region'] ?? '') === $r ? 'selected' : '' ?>><?= $r ?></option>
+<option value="<?= e($r) ?>" <?= ($user['organization_region'] ?? '') === $r ? 'selected' : '' ?>><?= e($r) ?></option>
 <?php endforeach; ?>
 </select>
 </div>

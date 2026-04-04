@@ -42,6 +42,26 @@ try {
 session_start();
 
 // Функции
+function e($value) {
+    return htmlspecialchars((string) ($value ?? ''), ENT_QUOTES, 'UTF-8');
+}
+
+function csrf_token() {
+    return generateCSRFToken();
+}
+
+function check_csrf() {
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+        return;
+    }
+
+    $token = $_POST['csrf'] ?? ($_POST['csrf_token'] ?? '');
+    if (!verifyCSRFToken($token)) {
+        http_response_code(403);
+        exit('CSRF token validation failed');
+    }
+}
+
 function isAuthenticated() {
     return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
 }

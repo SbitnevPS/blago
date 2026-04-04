@@ -1,11 +1,14 @@
 <?php
 // admin/contests.php - Управление конкурсами
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../includes/init.php';
 
 // Проверка авторизации админа
 if (!isAdmin()) {
  redirect('/admin/login');
 }
+
+check_csrf();
 
 $admin = getCurrentUser();
 $currentPage = 'contests';
@@ -104,6 +107,9 @@ require_once __DIR__ . '/includes/header.php';
                         </span>
                     </div>
                     <div class="flex gap-sm">
+
+                        <form method="POST" style="display: inline;">
+                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                         <form method="POST" class="inline-form">
                             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">
@@ -115,6 +121,8 @@ require_once __DIR__ . '/includes/header.php';
                         <a href="contest-edit.php?id=<?= $contest['id'] ?>" class="btn btn--ghost btn--sm" title="Редактировать">
                             <i class="fas fa-edit"></i>
                         </a>
+                        <form method="POST" style="display: inline;" onsubmit="return confirm('Вы уверены? Все заявки этого конкурса будут удалены.');">
+                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                         <form method="POST" class="inline-form" onsubmit="return confirm('Вы уверены? Все заявки этого конкурса будут удалены.');">
                             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">

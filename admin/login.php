@@ -1,6 +1,7 @@
 <?php
 // admin/login.php - Вход в админ-панель
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../includes/init.php';
 
 // Если уже админ - редирект
 if (isAdmin()) {
@@ -8,6 +9,8 @@ if (isAdmin()) {
 }
 
 $error = '';
+
+check_csrf();
 
 // Обработка формы
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -182,6 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  <?php endif; ?>
             
 <form method="POST">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <div class="form-group">
 <label class="form-label">Email</label>
 <input type="email" name="email" class="form-input" required placeholder="admin@example.com">

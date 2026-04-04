@@ -1,8 +1,11 @@
 <?php
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../includes/init.php';
 if (!isAdmin()) {
 redirect('/admin/login');
 }
+
+check_csrf();
 $admin = getCurrentUser();
 $currentPage = 'messages';
 $pageTitle = 'Сообщения';
@@ -174,7 +177,7 @@ require_once __DIR__ . '/includes/header.php';
 <i class="fas fa-envelope"></i>
 </div>
 <div class="stat-card__content">
-<div class="stat-card__value"><?= $totalMessages ?></div>
+<div class="stat-card__value"><?= e($totalMessages) ?></div>
 <div class="stat-card__label">Всего сообщений</div>
 </div>
 </div>
@@ -214,6 +217,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card mb-lg">
 <div class="card__body">
 <form method="GET" class="flex gap-md" style="align-items:flex-end; flex-wrap:wrap;">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <div style="flex:1; min-width:250px;">
 <label class="form-label">Поиск</label>
 <input type="text" name="search" class="form-input" 
@@ -243,7 +247,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card">
 <div class="card__header">
 <div class="flex justify-between items-center w-100">
-<h3>Сообщения (<?= $totalMessages ?>)</h3>
+<h3>Сообщения (<?= e($totalMessages) ?>)</h3>
 <button type="button" class="btn btn--primary" onclick="openSendModal()">
 <i class="fas fa-pen"></i> Написать сообщение
 </button>
@@ -253,12 +257,12 @@ require_once __DIR__ . '/includes/header.php';
 <table class="table">
 <thead>
 <tr>
-<th><a href="?sort=<?= $sort === 'id_desc' ? 'id_asc' : 'id_desc' ?>&search=<?= urlencode($search) ?>&priority=<?= $priority ?>" style="color:inherit; text-decoration:none;">ID <?= $sort === 'id_desc' ? '↓' : ($sort === 'id_asc' ? '↑' : '') ?></a></th>
+<th><a href="?sort=<?= $sort === 'id_desc' ? 'id_asc' : 'id_desc' ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>" style="color:inherit; text-decoration:none;">ID <?= $sort === 'id_desc' ? '↓' : ($sort === 'id_asc' ? '↑' : '') ?></a></th>
 <th>Получатель</th>
 <th>Тема</th>
 <th>Приоритет</th>
 <th>Отправил</th>
-<th><a href="?sort=<?= $sort === 'date_desc' ? 'date_asc' : 'date_desc' ?>&search=<?= urlencode($search) ?>&priority=<?= $priority ?>" style="color:inherit; text-decoration:none;">Дата <?= $sort === 'date_desc' ? '↓' : ($sort === 'date_asc' ? '↑' : '') ?></a></th>
+<th><a href="?sort=<?= $sort === 'date_desc' ? 'date_asc' : 'date_desc' ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>" style="color:inherit; text-decoration:none;">Дата <?= $sort === 'date_desc' ? '↓' : ($sort === 'date_asc' ? '↑' : '') ?></a></th>
 <th style="width:140px;">Действия</th>
 </tr>
 </thead>
@@ -331,16 +335,16 @@ foreach ($messages as $msg) {
 <?php if ($totalPages >1): ?>
 <div class="flex justify-between items-center" style="padding:16px20px; border-top:1px solid var(--color-border);">
 <div class="text-secondary" style="font-size:14px;">
- Страница <?= $page ?> из <?= $totalPages ?>
+ Страница <?= e($page) ?> из <?= e($totalPages) ?>
 </div>
 <div class="flex gap-sm">
 <?php if ($page >1): ?>
-<a href="?page=<?= $page -1 ?>&search=<?= urlencode($search) ?>&priority=<?= $priority ?>&sort=<?= $sort ?>" class="btn btn--ghost btn--sm">
+<a href="?page=<?= $page -1 ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>&sort=<?= e($sort) ?>" class="btn btn--ghost btn--sm">
 <i class="fas fa-chevron-left"></i>
 </a>
 <?php endif; ?>
 <?php if ($page< $totalPages): ?>
-<a href="?page=<?= $page +1 ?>&search=<?= urlencode($search) ?>&priority=<?= $priority ?>&sort=<?= $sort ?>" class="btn btn--ghost btn--sm">
+<a href="?page=<?= $page +1 ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>&sort=<?= e($sort) ?>" class="btn btn--ghost btn--sm">
 <i class="fas fa-chevron-right"></i>
 </a>
 <?php endif; ?>
@@ -358,6 +362,7 @@ foreach ($messages as $msg) {
 <button type="button" class="modal__close" onclick="closeSendModal()">&times;</button>
 </div>
 <form method="POST" id="sendMessageForm">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
 <input type="hidden" name="action" value="send_message">
 <div class="modal__body">

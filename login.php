@@ -1,6 +1,7 @@
 <?php
 // login.php - Вход через VK или по email/паролю
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/includes/init.php';
 
 // Если уже авторизован - редирект на главную
 if (isAuthenticated()) {
@@ -8,6 +9,8 @@ if (isAuthenticated()) {
 }
 
 $error = '';
+
+check_csrf();
 
 // Обработка формы входа
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -267,6 +270,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  
  <!-- Форма входа по email -->
 <form method="POST" class="login-form active" id="form-email">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <div class="form-group">
 <label class="form-label">Email</label>
 <input type="email" name="email" class="form-input" required placeholder="example@mail.ru">
