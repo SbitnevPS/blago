@@ -163,6 +163,7 @@ function getSystemSettings() {
         'application_declined_message' => 'Ваша заявка отклонена администратором.',
         'application_revision_subject' => 'Заявка отправлена на корректировку',
         'application_revision_message' => 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.',
+
     ];
 
     if (!is_file(SETTINGS_FILE)) {

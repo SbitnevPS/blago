@@ -25,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'application_declined_message' => trim($_POST['application_declined_message'] ?? ''),
             'application_revision_subject' => trim($_POST['application_revision_subject'] ?? ''),
             'application_revision_message' => trim($_POST['application_revision_message'] ?? ''),
+
         ];
 
         if (saveSystemSettings($payload)) {

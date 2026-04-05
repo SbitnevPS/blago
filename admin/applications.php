@@ -158,6 +158,7 @@ require_once __DIR__ . '/includes/header.php';
                         'submitted' => 'Отправлена',
                         'approved' => 'Заявка принята',
                         'rejected' => 'Отклонена/отменена',
+                        'rejected' => 'Отменена',
                     ];
                     $statusClasses = [
                         'draft' => 'badge--warning',
@@ -174,6 +175,7 @@ require_once __DIR__ . '/includes/header.php';
                     } elseif ($app['status'] === 'rejected') {
                         $rowStyle = 'background:#FEE2E2;';
                     }
+                    $rowStyle = $app['status'] === 'approved' ? 'background:#ECFDF5;' : '';
                 ?>
                 <tr style="<?= $rowStyle ?>">
                     <td>#<?= $app['id'] ?></td>
@@ -195,6 +197,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td>
                         <span class="badge <?= $statusClasses[$app['status']] ?? 'badge--warning' ?>">
                             <?= htmlspecialchars($isRevisionState ? 'На корректировке' : ($statusLabels[$app['status']] ?? ucfirst((string) $app['status']))) ?>
+                            <?= htmlspecialchars($statusLabels[$app['status']] ?? ucfirst((string) $app['status'])) ?>
                         </span>
                     </td>
                     <td><?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></td>

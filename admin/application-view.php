@@ -103,6 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
         $_SESSION['success_message'] = 'Заявка отклонена';
         redirect('/admin/applications');
+
 } elseif ($_POST['action'] === 'delete') {
  // Удаляем участников и заявку
  $pdo->prepare("DELETE FROM participants WHERE application_id = ?")->execute([$application_id]);
@@ -298,6 +299,7 @@ require_once __DIR__ . '/includes/header.php';
 <form method="POST">
 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+
 <input type="hidden" name="action" value="cancel_application">
 <button type="submit" class="btn" style="background:#FEE2E2; color:#B91C1C; padding:10px16px; border-radius:8px; border:none; cursor:pointer;">
 <i class="fas fa-ban"></i> Отмена
