@@ -27,7 +27,7 @@ $stmt->execute([$application_id]);
 $application = $stmt->fetch();
 
 if (!$application) {
-    redirect('applications.php');
+    redirect('/admin/applications');
 }
 
 // Получаем участников
@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $pdo->prepare("DELETE FROM participants WHERE application_id = ?")->execute([$application_id]);
  $pdo->prepare("DELETE FROM applications WHERE id = ?")->execute([$application_id]);
  $_SESSION['success_message'] = 'Заявка удалена';
- redirect('applications.php');
+ redirect('/admin/applications');
  } elseif ($_POST['action'] === 'send_message') {
  $subject = trim($_POST['subject'] ?? '');
  $message = trim($_POST['message'] ?? '');
@@ -99,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  }
 
  $_SESSION['success_message'] = 'Проверка рисунка обновлена';
- redirect('application-view.php?id=' . $application_id);
+ redirect('/admin/application/' . $application_id);
  } elseif ($_POST['action'] === 'save_drawing_edit') {
      header('Content-Type: application/json');
      $participantId = intval($_POST['participant_id'] ?? 0);
@@ -172,7 +172,7 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <div class="flex items-center gap-md mb-lg">
-    <a href="applications.php" class="btn btn--ghost">
+    <a href="/admin/applications" class="btn btn--ghost">
         <i class="fas fa-arrow-left"></i> Назад
     </a>
 </div>
@@ -377,7 +377,7 @@ require_once __DIR__ . '/includes/header.php';
 <h3>Отправить сообщение пользователю</h3>
 <button type="button" class="modal__close" onclick="closeMessageModal()">&times;</button>
 </div>
-<form method="POST" action="application-view.php?id=<?= e($application_id) ?>">
+<form method="POST" action="/admin/application/<?= e($application_id) ?>">
 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
 <input type="hidden" name="action" value="send_message">
@@ -542,7 +542,7 @@ document.getElementById('saveDrawingChanges').addEventListener('click', function
  formData.append('crop_w', String(cropData.width));
  formData.append('crop_h', String(cropData.height));
 
- fetch('application-view.php?id=<?= e($application_id) ?>', { method: 'POST', body: formData })
+ fetch('/admin/application/<?= e($application_id) ?>', { method: 'POST', body: formData })
   .then(r => r.json())
   .then(data => {
    if (!data.success) {
