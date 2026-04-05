@@ -34,6 +34,9 @@ if (!$application) {
 $stmt = $pdo->prepare("SELECT * FROM participants WHERE application_id = ?");
 $stmt->execute([$application_id]);
 $participants = $stmt->fetchAll();
+$participantColumns = $pdo->query("DESCRIBE participants")->fetchAll(PDO::FETCH_COLUMN);
+$hasDrawingCompliantColumn = in_array('drawing_compliant', $participantColumns, true);
+$hasDrawingCommentColumn = in_array('drawing_comment', $participantColumns, true);
 
 function scaleToMinSide($image, $minSide = 1500) {
     $srcW = imagesx($image);
@@ -86,19 +89,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $isCompliant = isset($_POST['drawing_compliant']) ? 1 : 0;
  $comment = trim($_POST['comment'] ?? '');
 
- $stmt = $pdo->prepare("
- UPDATE participants 
- SET drawing_compliant = ?, drawing_comment = ?
- WHERE id = ? AND application_id = ?
- ");
- $stmt->execute([$isCompliant, $isCompliant ? null : $comment, $participantId, $application_id]);
+ if ($hasDrawingCompliantColumn && $hasDrawingCommentColumn) {
+     $stmt = $pdo->prepare("
+     UPDATE participants 
+     SET drawing_compliant = ?, drawing_comment = ?
+     WHERE id = ? AND application_id = ?
+     ");
+     $stmt->execute([$isCompliant, $isCompliant ? null : $comment, $participantId, $application_id]);
+ } elseif ($hasDrawingCompliantColumn) {
+     $stmt = $pdo->prepare("
+     UPDATE participants 
+     SET drawing_compliant = ?
+     WHERE id = ? AND application_id = ?
+     ");
+     $stmt->execute([$isCompliant, $participantId, $application_id]);
+ } elseif ($hasDrawingCommentColumn) {
+     $stmt = $pdo->prepare("
+     UPDATE participants 
+     SET drawing_comment = ?
+     WHERE id = ? AND application_id = ?
+     ");
+     $stmt->execute([$isCompliant ? null : $comment, $participantId, $application_id]);
+ }
 
  if (!$isCompliant) {
      addCorrection($application_id, 'Рисунок не соответствует условиям конкурса', $comment ?: 'Требуется корректировка рисунка', $participantId);
      allowApplicationEdit($application_id);
  }
 
- $_SESSION['success_message'] = 'Проверка рисунка обновлена';
+ if (!$hasDrawingCompliantColumn || !$hasDrawingCommentColumn) {
+     $_SESSION['success_message'] = 'Проверка сохранена (рекомендуется применить миграцию add_drawing_review_and_editing.sql)';
+ } else {
+     $_SESSION['success_message'] = 'Проверка рисунка обновлена';
+ }
  redirect('/admin/application/' . $application_id);
  } elseif ($_POST['action'] === 'save_drawing_edit') {
      header('Content-Type: application/json');

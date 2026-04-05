@@ -43,7 +43,7 @@ class LocalValetDriver extends ValetDriver
      */
     private function resolvePath(string $sitePath, string $uri): ?string
     {
-        $relativePath = ltrim(parse_url($uri, PHP_URL_PATH) ?? '', '/');
+        $relativePath = ltrim(rawurldecode(parse_url($uri, PHP_URL_PATH) ?? ''), '/');
         $candidate = realpath($sitePath . '/' . $relativePath);
         $rootPath = realpath($sitePath);
 

@@ -75,7 +75,7 @@ require_once __DIR__ . '/includes/header.php';
 <!-- Кнопка добавления -->
 <div class="flex justify-between items-center mb-lg">
     <h1>Конкурсы</h1>
-    <a href="contest-edit.php" class="btn btn--primary">
+    <a href="/admin/contest-edit" class="btn btn--primary">
         <i class="fas fa-plus"></i> Новый конкурс
     </a>
 </div>
@@ -89,7 +89,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <h3>Конкурсов пока нет</h3>
             <p class="text-secondary mt-sm">Создайте первый конкурс</p>
-            <a href="contest-edit.php" class="btn btn--primary mt-lg">
+            <a href="/admin/contest-edit" class="btn btn--primary mt-lg">
                 <i class="fas fa-plus"></i> Создать конкурс
             </a>
         </div>
@@ -108,8 +108,6 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                     <div class="flex gap-sm">
 
-                        <form method="POST" style="display: inline;">
-                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                         <form method="POST" class="inline-form">
                             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">
@@ -118,11 +116,9 @@ require_once __DIR__ . '/includes/header.php';
                                 <i class="fas fa-<?= $contest['is_published'] ? 'eye-slash' : 'eye' ?>"></i>
                             </button>
                         </form>
-                        <a href="contest-edit.php?id=<?= $contest['id'] ?>" class="btn btn--ghost btn--sm" title="Редактировать">
+                        <a href="/admin/contest/<?= $contest['id'] ?>" class="btn btn--ghost btn--sm" title="Редактировать">
                             <i class="fas fa-edit"></i>
                         </a>
-                        <form method="POST" style="display: inline;" onsubmit="return confirm('Вы уверены? Все заявки этого конкурса будут удалены.');">
-                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                         <form method="POST" class="inline-form" onsubmit="return confirm('Вы уверены? Все заявки этого конкурса будут удалены.');">
                             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">
