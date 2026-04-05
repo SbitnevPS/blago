@@ -2,6 +2,26 @@
 // router.php - Простой роутер для ЧПУ
 // Этот файл должен быть включен в начале каждой страницы
 
+// Отдаем существующие статические файлы напрямую (в т.ч. с urlencoded именами)
+$requestPath = rawurldecode(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/');
+$docRoot = realpath(__DIR__);
+$staticCandidate = realpath(__DIR__ . '/' . ltrim($requestPath, '/'));
+
+if (
+ $docRoot !== false &&
+ $staticCandidate !== false &&
+ strpos($staticCandidate, $docRoot) === 0 &&
+ is_file($staticCandidate) &&
+ strtolower(pathinfo($staticCandidate, PATHINFO_EXTENSION)) !== 'php'
+) {
+ $mimeType = function_exists('mime_content_type') ? mime_content_type($staticCandidate) : null;
+ if (!headers_sent() && $mimeType) {
+ header('Content-Type: ' . $mimeType);
+ }
+ readfile($staticCandidate);
+ exit;
+}
+
 // Если обращение напрямую к .php файлу - редиректим на ЧПУ
 $requestUri = $_SERVER['REQUEST_URI'];
 if (preg_match('/\.php$/i', $requestUri)) {
