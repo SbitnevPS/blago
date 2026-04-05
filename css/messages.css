@@ -92,3 +92,17 @@
 .navbar__avatar-icon {
     color: var(--color-primary);
 }
+
+@media (max-width: 768px) {
+    .messages-container {
+        padding: var(--space-lg) var(--space-md);
+    }
+
+    .message-detail__content {
+        padding: var(--space-lg);
+    }
+
+    .message-detail__date {
+        margin-bottom: var(--space-md);
+    }
+}
