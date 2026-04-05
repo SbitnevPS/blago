@@ -95,9 +95,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $_SESSION['success_message'] = 'Заявка отменена';
         redirect('/admin/applications');
     } elseif ($_POST['action'] === 'decline_application') {
-        $stmt = $pdo->prepare("UPDATE applications SET status = 'declined', updated_at = NOW() WHERE id = ?");
+        // В ряде БД статус отклонения хранится как `rejected` (без `declined` в ENUM),
+        // поэтому сохраняем совместимое значение.
+        $stmt = $pdo->prepare("UPDATE applications SET status = 'rejected', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
-        $application['status'] = 'declined';
+        $application['status'] = 'rejected';
 
         $subject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
         $message = getSystemSetting('application_declined_message', 'Ваша заявка отклонена администратором.') . "\n\nНомер заявки: #" . $application_id;
