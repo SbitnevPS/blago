@@ -82,7 +82,7 @@ $disputeChatMessages = [];
 if (in_array($application['status'], ['declined', 'rejected'], true)) {
     try {
         $stmt = $pdo->prepare("
-        SELECT m.*, u.name, u.surname, u.is_admin
+        SELECT m.*, u.name, u.surname, u.patronymic, u.is_admin
         FROM messages m
         JOIN users u ON u.id = m.created_by
         WHERE m.user_id = ? AND m.application_id = ? AND m.title = ?
@@ -207,7 +207,14 @@ $currentPage = 'applications';
                     <div style="align-self: <?= $isAdminMessage ? 'flex-start' : 'flex-end' ?>; max-width: 80%;">
                         <div style="padding:12px 14px; border-radius:12px; background: <?= $isAdminMessage ? '#EEF2FF' : '#DCFCE7' ?>;">
                             <div style="font-size:12px; color:#6B7280; margin-bottom:6px;">
-                                <?= htmlspecialchars(trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''))) ?>
+                                <?php
+                                    $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''));
+                                    $chatAuthorPatronymic = trim((string) ($chatMessage['patronymic'] ?? ''));
+                                ?>
+                                <?= htmlspecialchars(trim($chatAuthorName . ' ' . $chatAuthorPatronymic)) ?>
+                                <?php if ($isAdminMessage && $chatAuthorName !== '' && $chatAuthorPatronymic !== ''): ?>
+                                    <span style="font-size:11px; color:#4F46E5; margin-left:6px;">руководитель проекта</span>
+                                <?php endif; ?>
                                 • <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?>
                             </div>
                             <div style="white-space:pre-wrap; line-height:1.5;"><?= htmlspecialchars($chatMessage['content']) ?></div>
@@ -223,7 +230,7 @@ $currentPage = 'applications';
             <input type="hidden" name="action" value="dispute_reply">
             <div class="form-group">
                 <label class="form-label">Ваш ответ в чате</label>
-                <textarea name="dispute_reason" class="form-input" rows="4" required placeholder="Напишите сообщение администратору..."></textarea>
+                <textarea name="dispute_reason" class="form-input js-chat-hotkey" rows="4" required placeholder="Напишите сообщение администратору..."></textarea>
             </div>
             <button type="submit" class="btn btn--primary">
                 <i class="fas fa-paper-plane"></i> Оспорить решение
@@ -370,8 +377,8 @@ foreach ($participants as $participant) {
 <button type="button" class="modal__close" onclick="closeGallery()">&times;</button>
 </div>
 <div class="modal__body">
-<img id="galleryImage" src="" alt="Рисунок" style="width:100%; max-height:70vh; object-fit:contain; border-radius:12px; background:#111;">
-<div class="flex gap-sm mt-md" id="galleryThumbs" style="overflow:auto;"></div>
+<img id="galleryImage" src="" alt="Рисунок" style="width:100%; max-height:min(62vh, calc(100vh - 280px)); object-fit:contain; border-radius:12px; background:#111;">
+<div class="flex gap-sm mt-md" id="galleryThumbs" style="overflow:auto; max-height:96px;"></div>
 </div>
 </div>
 </div>
@@ -417,6 +424,22 @@ document.addEventListener('keydown', (e) => {
  if (e.key === 'Escape') closeGallery();
  if (e.key === 'ArrowRight') openGallery((galleryCurrent + 1) % galleryItems.length);
  if (e.key === 'ArrowLeft') openGallery((galleryCurrent - 1 + galleryItems.length) % galleryItems.length);
+});
+
+document.querySelectorAll('.js-chat-hotkey').forEach((textarea) => {
+ textarea.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+   event.preventDefault();
+   const form = textarea.closest('form');
+   if (form) form.submit();
+  }
+ });
+});
+
+document.getElementById('galleryModal').addEventListener('click', (event) => {
+ if (event.target === event.currentTarget) {
+  closeGallery();
+ }
 });
 </script>
 <?php endif; ?>
