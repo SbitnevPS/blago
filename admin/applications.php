@@ -178,8 +178,8 @@ require_once __DIR__ . '/includes/header.php';
                     $rowStyle = $app['status'] === 'approved' ? 'background:#ECFDF5;' : '';
                 ?>
                 <tr style="<?= $rowStyle ?>">
-                    <td>#<?= $app['id'] ?></td>
-                    <td>
+                    <td data-label="ID">#<?= $app['id'] ?></td>
+                    <td data-label="Пользователь">
                         <div class="flex items-center gap-md">
                             <?php if (!empty($app['avatar_url'])): ?>
                                 <img src="<?= htmlspecialchars($app['avatar_url']) ?>" 
@@ -192,16 +192,16 @@ require_once __DIR__ . '/includes/header.php';
                             <span><?= htmlspecialchars(($app['name'] ?? '') . ' ' . ($app['surname'] ?? '')) ?></span>
                         </div>
                     </td>
-                    <td><?= htmlspecialchars($app['contest_title'] ?? '—') ?></td>
-                    <td><?= $app['participants_count'] ?></td>
-                    <td>
+                    <td data-label="Конкурс"><?= htmlspecialchars($app['contest_title'] ?? '—') ?></td>
+                    <td data-label="Участников"><?= $app['participants_count'] ?></td>
+                    <td data-label="Статус">
                         <span class="badge <?= $statusClasses[$app['status']] ?? 'badge--warning' ?>">
                             <?= htmlspecialchars($isRevisionState ? 'На корректировке' : ($statusLabels[$app['status']] ?? ucfirst((string) $app['status']))) ?>
                             <?= htmlspecialchars($statusLabels[$app['status']] ?? ucfirst((string) $app['status'])) ?>
                         </span>
                     </td>
-                    <td><?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></td>
-                    <td>
+                    <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></td>
+                    <td data-label="Действия">
                         <a href="/admin/application/<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
                             <i class="fas fa-eye"></i>
                         </a>

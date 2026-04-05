@@ -292,24 +292,24 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
                 <?php foreach ($disputeThreads as $thread): ?>
                 <tr>
-                    <td><?= htmlspecialchars($thread['title']) ?></td>
-                    <td><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 120)) ?></td>
-                    <td><?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></td>
-                    <td>
+                    <td data-label="Тема"><?= htmlspecialchars($thread['title']) ?></td>
+                    <td data-label="Последнее сообщение"><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 120)) ?></td>
+                    <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></td>
+                    <td data-label="Новое">
                         <?php if ((int) ($thread['unread_count'] ?? 0) > 0): ?>
                             <span class="badge" style="background:#F59E0B; color:white;">Новое: <?= (int) $thread['unread_count'] ?></span>
                         <?php else: ?>
                             —
                         <?php endif; ?>
                     </td>
-                    <td>
+                    <td data-label="Заявка">
                         <?php if (!empty($thread['application_id'])): ?>
                             <a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a>
                         <?php else: ?>
                             —
                         <?php endif; ?>
                     </td>
-                    <td>
+                    <td data-label="Действия">
                         <a class="btn btn--ghost btn--sm" href="/admin/messages?dispute_application_id=<?= (int) $thread['application_id'] ?>">
                             <i class="fas fa-comments"></i> Открыть чат
                         </a>
@@ -472,8 +472,8 @@ foreach ($messages as $msg) {
  }
 ?>
 <tr>
-<td>#<?= $msg['id'] ?></td>
-<td>
+<td data-label="ID">#<?= $msg['id'] ?></td>
+<td data-label="Получатель">
 <div class="flex items-center gap-sm">
 <?php if (!empty($msg['is_broadcast'])): ?>
 <div>
@@ -490,8 +490,8 @@ foreach ($messages as $msg) {
 <?php endif; ?>
 </div>
 </td>
-<td style="font-size: var(--font-size-sm);"><?= htmlspecialchars($msg['subject']) ?></td>
-<td>
+<td data-label="Тема" style="font-size: var(--font-size-sm);"><?= htmlspecialchars($msg['subject']) ?></td>
+<td data-label="Приоритет">
 <?php if ($msg['priority'] === 'critical'): ?>
 <span class="badge" style="background:#EF4444; color:white;">Критическое</span>
 <?php elseif ($msg['priority'] === 'important'): ?>
@@ -500,9 +500,9 @@ foreach ($messages as $msg) {
 <span class="badge" style="background:#6B7280; color:white;">Обычное</span>
 <?php endif; ?>
 </td>
-<td><?= htmlspecialchars(($msg['admin_name'] ?? 'Админ') . ' ' . ($msg['admin_surname'] ?? '')) ?></td>
-<td><?= date('d.m.Y H:i', strtotime($msg['created_at'])) ?></td>
-<td>
+<td data-label="Отправил"><?= htmlspecialchars(($msg['admin_name'] ?? 'Админ') . ' ' . ($msg['admin_surname'] ?? '')) ?></td>
+<td data-label="Дата"><?= date('d.m.Y H:i', strtotime($msg['created_at'])) ?></td>
+<td data-label="Действия">
 <div class="flex gap-sm">
 <button type="button" class="btn btn--ghost btn--sm" onclick="viewMessage(<?= $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)" title="Просмотреть">
 <i class="fas fa-eye"></i>

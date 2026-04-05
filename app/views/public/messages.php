@@ -118,15 +118,15 @@ $unreadCount = $unreadCount->fetchColumn();
             <tbody>
             <?php foreach ($disputeChats as $chat): ?>
                 <tr>
-                    <td>
+                    <td data-label="Тема">
                         <div class="font-semibold"><?= htmlspecialchars($chat['title']) ?></div>
                         <?php if ((int) $chat['unread_count'] > 0): ?>
                             <span class="badge" style="background:#F59E0B; color:white; margin-top:4px;">Новое: <?= (int) $chat['unread_count'] ?></span>
                         <?php endif; ?>
                     </td>
-                    <td><?= htmlspecialchars(mb_substr((string) ($chat['last_message'] ?? ''), 0, 120)) ?></td>
-                    <td><?= date('d.m.Y H:i', strtotime($chat['last_message_at'])) ?></td>
-                    <td>
+                    <td data-label="Последнее сообщение"><?= htmlspecialchars(mb_substr((string) ($chat['last_message'] ?? ''), 0, 120)) ?></td>
+                    <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($chat['last_message_at'])) ?></td>
+                    <td data-label="Действия">
                         <a class="btn btn--ghost btn--sm" href="/application/<?= (int) $chat['application_id'] ?>#dispute-chat">
                             <i class="fas fa-comments"></i> Открыть чат
                         </a>

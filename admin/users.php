@@ -96,8 +96,8 @@ require_once __DIR__ . '/includes/header.php';
 <tbody>
  <?php foreach ($users as $user): ?>
 <tr>
-<td>#<?= $user['id'] ?></td>
-<td>
+<td data-label="ID">#<?= $user['id'] ?></td>
+<td data-label="Пользователь">
 <div class="flex items-center gap-md">
  <?php if (!empty($user['avatar_url'])): ?>
 <img src="<?= htmlspecialchars($user['avatar_url']) ?>" 
@@ -113,16 +113,16 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 </div>
 </td>
-<td><?= htmlspecialchars($user['vk_id'] ?? '') ?></td>
-<td><?= htmlspecialchars($user['email'] ?: '—') ?></td>
-<td><?= $user['applications_count'] ?></td>
-<td><?= date('d.m.Y', strtotime($user['created_at'])) ?></td>
-<td>
+<td data-label="VK ID"><?= htmlspecialchars($user['vk_id'] ?? '') ?></td>
+<td data-label="Email"><?= htmlspecialchars($user['email'] ?: '—') ?></td>
+<td data-label="Заявок"><?= $user['applications_count'] ?></td>
+<td data-label="Дата регистрации"><?= date('d.m.Y', strtotime($user['created_at'])) ?></td>
+<td data-label="Роль">
  <?php if ($user['is_admin']): ?>
 <span class="badge badge--primary" style="font-size:10px;">Админ</span>
  <?php endif; ?>
 </td>
-<td>
+<td data-label="Действия">
 <a href="user-view.php?id=<?= $user['id'] ?>" class="btn btn--primary" style="padding:10px16px; font-size:13px; display:flex; align-items:center; gap:6px; white-space:nowrap;">
 <i class="fas fa-eye"></i> Профиль
 </a>
