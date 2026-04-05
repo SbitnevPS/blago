@@ -51,6 +51,8 @@ try {
 $unreadCount = $pdo->prepare("SELECT COUNT(*) FROM admin_messages WHERE user_id = ? AND is_read =0");
 $unreadCount->execute([$userId]);
 $unreadCount = $unreadCount->fetchColumn();
+$declinedSubject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
+$currentPage = 'messages';
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -62,36 +64,7 @@ $unreadCount = $unreadCount->fetchColumn();
 <link rel="stylesheet" href="/css/messages.css">
 </head>
 <body>
-<nav class="navbar">
-<div class="container">
-<div class="navbar__inner">
-<a href="/" class="navbar__logo">
-<i class="fas fa-paint-brush navbar__logo-icon"></i> ДетскиеКонкурсы.рф
-</a>
-<div class="navbar__menu">
-<a href="/contests" class="navbar__link"><i class="fas fa-trophy"></i><span class="navbar__link-text">Конкурсы</span></a>
-<a href="/my-applications" class="navbar__link"><i class="fas fa-file-alt"></i><span class="navbar__link-text">Мои заявки</span></a>
-<a href="/profile" class="navbar__link"><i class="fas fa-user"></i><span class="navbar__link-text">Профиль</span></a>
-<a href="/messages" class="navbar__link navbar__link--active messages-link">
-<i class="fas fa-envelope"></i><span class="navbar__link-text">Сообщения</span>
- <?php if ($unreadCount >0): ?>
-<span class="messages-badge messages-badge--pulse"><?= $unreadCount ?></span>
- <?php endif; ?>
-</a>
-<div class="navbar__user">
- <?php if (!empty($user['avatar_url'])): ?>
-<img src="<?= htmlspecialchars($user['avatar_url']) ?>" alt="" class="navbar__avatar">
- <?php else: ?>
-<div class="navbar__avatar navbar__avatar--placeholder">
-<i class="fas fa-user navbar__avatar-icon"></i>
-</div>
- <?php endif; ?>
-<a href="/logout" class="btn btn--ghost btn--sm"><i class="fas fa-sign-out-alt"></i></a>
-</div>
-</div>
-</div>
-</div>
-</nav>
+<?php include dirname(__DIR__) . '/partials/header.php'; ?>
 
 <main class="container messages-container">
 <div class="messages-page">
@@ -148,19 +121,27 @@ $unreadCount = $unreadCount->fetchColumn();
  <?php else: ?>
 <div id="messagesList">
  <?php foreach ($messages as $msg): ?>
+<?php
+    $messagePriority = $msg['priority'];
+    if ((string) $msg['subject'] === $declinedSubject) {
+        $messagePriority = 'critical';
+    }
+?>
 <div class="message-card <?= $msg['is_read'] ? '' : 'message-card--unread' ?>" 
  onclick='showMessage(
  <?= (int) $msg['id'] ?>,
  <?= json_encode($msg['subject'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
  <?= json_encode($msg['message'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
  <?= json_encode(date('d.m.Y H:i', strtotime($msg['created_at'])), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
- <?= json_encode($msg['priority'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>
+ <?= json_encode($messagePriority, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+ <?= (int) preg_match('/#(\\d+)/u', (string) $msg['message'], $idMatches) ? (int) $idMatches[1] : 0 ?>,
+ <?= json_encode(((string) $msg['subject'] === $declinedSubject), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>
  )'>
 <div class="message-card__header">
 <div class="message-card__title">
- <?php if ($msg['priority'] === 'critical'): ?>
+ <?php if ($messagePriority === 'critical'): ?>
 <span class="badge message-priority-badge message-priority-badge--critical">КРИТИЧЕСКОЕ</span>
- <?php elseif ($msg['priority'] === 'important'): ?>
+ <?php elseif ($messagePriority === 'important'): ?>
 <span class="badge message-priority-badge message-priority-badge--important">ВАЖНОЕ</span>
  <?php endif; ?>
 <?= htmlspecialchars($msg['subject']) ?>
@@ -182,6 +163,11 @@ $unreadCount = $unreadCount->fetchColumn();
 <h2 id="detailTitle"></h2>
 <div class="message-detail__date" id="detailDate"></div>
 <div class="message-detail__text" id="detailContent"></div>
+<div class="mt-lg" id="detailActionWrap" style="display:none;">
+    <a class="btn btn--secondary" id="detailActionLink" href="#">
+        <i class="fas fa-file-alt"></i> Перейти к заявке
+    </a>
+</div>
 </div>
 </div>
  <?php endif; ?>
@@ -199,7 +185,7 @@ $unreadCount = $unreadCount->fetchColumn();
 <script>
 let currentUnreadCount = <?= (int) $unreadCount ?>;
 
-function showMessage(id, title, content, date, priority) {
+function showMessage(id, title, content, date, priority, applicationId, isDeclinedNotice) {
     document.getElementById('messagesList').style.display = 'none';
     document.getElementById('messageDetail').classList.add('active');
     document.getElementById('detailTitle').textContent = title;
@@ -215,6 +201,14 @@ function showMessage(id, title, content, date, priority) {
     
     document.getElementById('detailPriority').innerHTML = priorityHtml;
     document.getElementById('detailContent').textContent = content;
+    const actionWrap = document.getElementById('detailActionWrap');
+    const actionLink = document.getElementById('detailActionLink');
+    if (isDeclinedNotice && applicationId > 0) {
+        actionLink.href = '/application/' + applicationId;
+        actionWrap.style.display = 'block';
+    } else {
+        actionWrap.style.display = 'none';
+    }
     window.scrollTo(0,0);
     
     // Помечаем сообщение как прочитанное

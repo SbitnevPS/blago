@@ -39,7 +39,6 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
                                 </div>
                             <?php endif; ?>
                             <span class="navbar__user-name"><?= htmlspecialchars($user['name'] ?? 'Пользователь') ?></span>
-                            <i class="fas fa-chevron-down navbar__chevron"></i>
                         </div>
 
                         <div class="navbar__user-menu">
@@ -63,12 +62,22 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
                     </div>
 
                 <?php else: ?>
-                    <a href="/login" class="btn btn--secondary">
-                        <i class="fas fa-sign-in-alt"></i> Войти
-                    </a>
-                    <a href="/register" class="btn btn--primary">
-                        <i class="fas fa-user-plus"></i> Регистрация
-                    </a>
+                    <div class="navbar__user-dropdown" id="guestDropdown">
+                        <div class="navbar__user-trigger navbar__user-trigger--guest" onclick="toggleGuestMenu()">
+                            <div class="navbar__avatar navbar__avatar--placeholder">
+                                <i class="fas fa-user navbar__avatar-icon"></i>
+                            </div>
+                            <span class="navbar__user-name">Профиль</span>
+                        </div>
+                        <div class="navbar__user-menu">
+                            <a href="/login" class="navbar__user-menu__item">
+                                <i class="fas fa-sign-in-alt"></i> Войти
+                            </a>
+                            <a href="/register" class="navbar__user-menu__item">
+                                <i class="fas fa-user-plus"></i> Регистрация
+                            </a>
+                        </div>
+                    </div>
                 <?php endif; ?>
             </div>
         </div>
@@ -77,7 +86,25 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
 
 <script>
 function toggleUserMenu() {
-document.getElementById('userDropdown').classList.toggle('active');
+const dropdown = document.getElementById('userDropdown');
+if (dropdown) {
+    dropdown.classList.toggle('active');
+}
+const guestDropdown = document.getElementById('guestDropdown');
+if (guestDropdown) {
+    guestDropdown.classList.remove('active');
+}
+}
+
+function toggleGuestMenu() {
+const dropdown = document.getElementById('guestDropdown');
+if (dropdown) {
+    dropdown.classList.toggle('active');
+}
+const userDropdown = document.getElementById('userDropdown');
+if (userDropdown) {
+    userDropdown.classList.remove('active');
+}
 }
 
 // Закрыть меню при клике вне
@@ -85,6 +112,10 @@ document.addEventListener('click', function(e) {
 const dropdown = document.getElementById('userDropdown');
 if (dropdown && !dropdown.contains(e.target)) {
 dropdown.classList.remove('active');
+}
+const guestDropdown = document.getElementById('guestDropdown');
+if (guestDropdown && !guestDropdown.contains(e.target)) {
+guestDropdown.classList.remove('active');
 }
 });
 </script>

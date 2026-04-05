@@ -46,45 +46,19 @@ $currentPage = 'applications';
 <div class="cards-grid">
 <?php foreach ($applications as $app): ?>
 <?php
-    $statusLabels = [
-        'draft' => 'Черновик',
-        'submitted' => 'Отправлена',
-        'revision' => 'На корректировке',
-        'approved' => 'Заявка принята',
-        'declined' => 'Заявка отклонена',
-        'rejected' => 'Заявка отклонена',
-        'cancelled' => 'Отменена',
-        'pending' => 'На рассмотрении',
-    ];
-    $statusClassMap = [
-        'approved' => 'badge--success',
-        'submitted' => 'badge--success',
-        'pending' => 'badge--warning',
-        'revision' => 'badge--warning',
-        'draft' => 'badge--secondary',
-        'declined' => 'badge--error',
-        'rejected' => 'badge--error',
-        'cancelled' => 'badge--error',
-    ];
-    $statusClass = $statusClassMap[$app['status']] ?? 'badge--warning';
-    $cardStyle = '';
-    if ($app['status'] === 'approved') {
-        $cardStyle = 'background:#ECFDF5;';
-    } elseif ($app['status'] === 'revision') {
-        $cardStyle = 'background:#FEF9C3;';
-    } elseif (in_array($app['status'], ['cancelled', 'declined'], true)) {
-        $cardStyle = 'background:#FEE2E2;';
-    }
+    $statusMeta = getApplicationStatusMeta($app['status']);
+    $statusClass = $statusMeta['badge_class'];
+    $cardStyle = $statusMeta['row_style'];
 ?>
 <a href="/application/<?= $app['id'] ?>" class="application-card application-card--link" style="<?= $cardStyle ?>">
 <div class="application-card__header">
 <div>
+<span class="badge application-card__status <?= $statusClass ?>">
+<?= htmlspecialchars($statusMeta['label']) ?>
+</span>
 <h3 class="application-card__title">Заявка #<?= (int) $app['id'] ?></h3>
 <div class="application-card__contest"><?= htmlspecialchars($app['contest_title']) ?></div>
 </div>
-<span class="badge application-card__status <?= $statusClass ?>">
-<?= htmlspecialchars($statusLabels[$app['status']] ?? ucfirst((string) $app['status'])) ?>
-</span>
 </div>
 <div class="application-card__body">
 <div class="application-card__info">
@@ -99,10 +73,9 @@ $currentPage = 'applications';
 </div>
 </div>
 <div class="application-card__footer">
-<span class="text-secondary application-card__more">
-<i class="fas fa-eye"></i> Подробнее
+<span class="application-card__more-btn">
+<i class="fas fa-eye"></i> Подробнее <i class="fas fa-chevron-right application-card__arrow"></i>
 </span>
-<i class="fas fa-chevron-right application-card__arrow"></i>
 </div>
 </a>
 <?php endforeach; ?>
