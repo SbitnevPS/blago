@@ -52,7 +52,7 @@ require_once __DIR__ . '/includes/header.php';
 <h2><?= htmlspecialchars($contest['title']) ?></h2>
 <p class="text-secondary mt-sm">Всего заявок: <?= count($applications) ?></p>
 </div>
-<a href="contest-edit.php?id=<?= $contest_id ?>" class="btn btn--secondary">
+<a href="/admin/contest/<?= $contest_id ?>" class="btn btn--secondary">
 <i class="fas fa-edit"></i> Редактировать
 </a>
 </div>

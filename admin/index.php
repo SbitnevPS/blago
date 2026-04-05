@@ -153,7 +153,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <div class="card__body">
 <div class="flex gap-md" style="flex-wrap: wrap;">
-<a href="/admin/contest-edit.php" class="btn btn--primary">
+<a href="/admin/contest-edit" class="btn btn--primary">
 <i class="fas fa-plus"></i> Новый конкурс
 </a>
 <a href="/admin/contests" class="btn btn--secondary">

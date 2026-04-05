@@ -75,6 +75,7 @@ $routes = [
  // Админка
  '/admin' => ['file' => 'admin/index.php', 'name' => 'admin'],
  '/admin/contests' => ['file' => 'admin/contests.php', 'name' => 'admin-contests'],
+ '/admin/contest-edit' => ['file' => 'admin/contest-edit.php', 'name' => 'admin-contest-create'],
  '/admin/contest/{id}' => ['file' => 'admin/contest-edit.php', 'name' => 'admin-contest-edit'],
  '/admin/applications' => ['file' => 'admin/applications.php', 'name' => 'admin-applications'],
  '/admin/application/{id}' => ['file' => 'admin/application-view.php', 'name' => 'admin-application-view'],
