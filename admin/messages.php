@@ -279,13 +279,13 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <?php if (isset($error)): ?>
-<div class="alert alert--error mb-lg">
+<div class="alert alert--error mb-lg js-toast-alert">
 <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?>
 </div>
 <?php endif; ?>
 
 <?php if (isset($success)): ?>
-<div class="alert alert--success mb-lg">
+<div class="alert alert--success mb-lg js-toast-alert">
 <i class="fas fa-check-circle"></i> <?= htmlspecialchars($success) ?>
 </div>
 <?php endif; ?>
@@ -885,6 +885,14 @@ document.getElementById('viewMessageModal').addEventListener('click', function(e
 });
 
 document.addEventListener('keydown', function(e) {
+ if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+ const activeTextarea = document.activeElement;
+ if (activeTextarea && activeTextarea.classList.contains('js-chat-hotkey')) {
+ e.preventDefault();
+ const form = activeTextarea.closest('form');
+ if (form) form.submit();
+ }
+ }
  if (e.key === 'Escape') {
  closeViewModal();
  closeSendModal();
@@ -952,6 +960,61 @@ document.querySelectorAll('.js-chat-hotkey, textarea[name="message"]').forEach((
   }
  });
 });
+
+function closeDisputeChatModal() {
+ const chatModal = document.getElementById('disputeChatModal');
+ if (chatModal) {
+ window.location.href = '/admin/messages';
+ }
+}
+
+const disputeChatModal = document.getElementById('disputeChatModal');
+if (disputeChatModal) {
+ disputeChatModal.addEventListener('click', function(e) {
+ if (e.target === disputeChatModal) {
+ closeDisputeChatModal();
+ }
+ });
+}
+
+function showToast(message, type = 'success') {
+ const toast = document.createElement('div');
+ toast.className = 'alert ' + (type === 'success' ? 'alert--success' : 'alert--error');
+ toast.style.cssText = 'position:fixed; top:20px; right:20px; z-index:3000; min-width:260px; max-width:420px; box-shadow:0 12px 30px rgba(0,0,0,.12); opacity:0; transform:translateY(-8px); transition:opacity .25s ease, transform .25s ease;';
+ toast.textContent = message;
+ document.body.appendChild(toast);
+ requestAnimationFrame(() => {
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+ });
+ setTimeout(() => {
+  toast.style.opacity = '0';
+  toast.style.transform = 'translateY(-8px)';
+  setTimeout(() => toast.remove(), 260);
+ }, 2600);
+}
+
+document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
+ const type = alertEl.classList.contains('alert--error') ? 'error' : 'success';
+ showToast(alertEl.textContent.trim(), type);
+ alertEl.remove();
+});
+
+function closeDisputeChatModal() {
+ const chatModal = document.getElementById('disputeChatModal');
+ if (chatModal) {
+ window.location.href = '/admin/messages';
+ }
+}
+
+const disputeChatModal = document.getElementById('disputeChatModal');
+if (disputeChatModal) {
+ disputeChatModal.addEventListener('click', function(e) {
+ if (e.target === disputeChatModal) {
+ closeDisputeChatModal();
+ }
+ });
+}
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

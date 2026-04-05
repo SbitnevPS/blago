@@ -124,13 +124,13 @@ $currentPage = 'applications';
 <main class="container" style="padding: var(--space-xl) var(--space-lg);">
 <div class="application-detail">
 <?php if (!empty($_SESSION['success_message'])): ?>
-<div class="alert alert--success mb-lg">
+<div class="alert alert--success mb-lg js-toast-alert">
 <i class="fas fa-check-circle"></i> <?= htmlspecialchars($_SESSION['success_message']) ?>
 </div>
 <?php unset($_SESSION['success_message']); endif; ?>
 
 <?php if (!empty($_SESSION['error_message'])): ?>
-<div class="alert alert--error mb-lg">
+<div class="alert alert--error mb-lg js-toast-alert">
 <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($_SESSION['error_message']) ?>
 </div>
 <?php unset($_SESSION['error_message']); endif; ?>
