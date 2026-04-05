@@ -82,8 +82,10 @@ require_once __DIR__ . '/includes/header.php';
                     <option value="">Все статусы</option>
                     <option value="draft" <?= $status === 'draft' ? 'selected' : '' ?>>Черновики</option>
                     <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>Отправленные</option>
+                    <option value="revision" <?= $status === 'revision' ? 'selected' : '' ?>>Требуют исправлений</option>
                     <option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Принятые</option>
-                    <option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Отклонённые/отменённые</option>
+                    <option value="declined" <?= $status === 'declined' ? 'selected' : '' ?>>Отклонённые</option>
+                    <option value="cancelled" <?= $status === 'cancelled' ? 'selected' : '' ?>>Отменённые</option>
                 </select>
             </div>
             <div style="min-width: 200px;">
@@ -153,29 +155,12 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
                 <?php foreach ($applications as $app): ?>
                 <?php
-                    $statusLabels = [
-                        'draft' => 'Черновик',
-                        'submitted' => 'Отправлена',
-                        'approved' => 'Заявка принята',
-                        'rejected' => 'Отклонена/отменена',
-                        'rejected' => 'Отменена',
-                    ];
-                    $statusClasses = [
-                        'draft' => 'badge--warning',
-                        'submitted' => 'badge--success',
-                        'approved' => 'badge--success',
-                        'rejected' => 'badge--warning',
-                    ];
-                    $rowStyle = '';
+                    $statusMeta = getApplicationStatusMeta($app['status']);
+                    $rowStyle = $statusMeta['row_style'];
                     $isRevisionState = isset($app['allow_edit']) && (int) $app['allow_edit'] === 1 && $app['status'] !== 'approved';
-                    if ($app['status'] === 'approved') {
-                        $rowStyle = 'background:#ECFDF5;';
-                    } elseif ($isRevisionState) {
+                    if ($isRevisionState) {
                         $rowStyle = 'background:#FEF9C3;';
-                    } elseif ($app['status'] === 'rejected') {
-                        $rowStyle = 'background:#FEE2E2;';
                     }
-                    $rowStyle = $app['status'] === 'approved' ? 'background:#ECFDF5;' : '';
                 ?>
                 <tr style="<?= $rowStyle ?>">
                     <td data-label="ID">#<?= $app['id'] ?></td>
@@ -195,9 +180,8 @@ require_once __DIR__ . '/includes/header.php';
                     <td data-label="Конкурс"><?= htmlspecialchars($app['contest_title'] ?? '—') ?></td>
                     <td data-label="Участников"><?= $app['participants_count'] ?></td>
                     <td data-label="Статус">
-                        <span class="badge <?= $statusClasses[$app['status']] ?? 'badge--warning' ?>">
-                            <?= htmlspecialchars($isRevisionState ? 'На корректировке' : ($statusLabels[$app['status']] ?? ucfirst((string) $app['status']))) ?>
-                            <?= htmlspecialchars($statusLabels[$app['status']] ?? ucfirst((string) $app['status'])) ?>
+                        <span class="badge <?= $isRevisionState ? 'badge--warning' : $statusMeta['badge_class'] ?>">
+                            <?= htmlspecialchars($isRevisionState ? 'Требует исправлений' : $statusMeta['label']) ?>
                         </span>
                     </td>
                     <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></td>

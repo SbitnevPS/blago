@@ -72,33 +72,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt->execute([$application_id]);
         $application['status'] = 'approved';
 
-        $subject = getSystemSetting('application_approved_subject', 'Ваша заявка принята');
-        $message = getSystemSetting('application_approved_message', 'Ваша заявка принята, ожидайте результаты конкурса.');
-        $stmt = $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())");
-        $stmt->execute([$application['user_id'], $admin['id'], $subject, $message]);
+        $pdo->prepare("DELETE FROM admin_messages WHERE user_id = ? AND message LIKE ?")
+            ->execute([$application['user_id'], '%#' . $application_id . '%']);
+        $pdo->prepare("DELETE FROM messages WHERE user_id = ? AND application_id = ?")
+            ->execute([$application['user_id'], $application_id]);
+        $pdo->prepare("UPDATE application_corrections SET is_resolved = 1, resolved_at = NOW() WHERE application_id = ?")
+            ->execute([$application_id]);
+        disallowApplicationEdit($application_id);
 
         $_SESSION['success_message'] = 'Заявка принята';
         redirect('/admin/applications');
     } elseif ($_POST['action'] === 'cancel_application') {
-        $stmt = $pdo->prepare("UPDATE applications SET status = 'rejected', updated_at = NOW() WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE applications SET status = 'cancelled', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
-        $application['status'] = 'rejected';
+        $application['status'] = 'cancelled';
 
         $subject = getSystemSetting('application_cancelled_subject', 'Ваша заявка отменена');
-        $message = getSystemSetting('application_cancelled_message', 'Ваша заявка отменена администратором.');
+        $message = getSystemSetting('application_cancelled_message', 'Ваша заявка отменена администратором.') . "\n\nНомер заявки: #" . $application_id;
         $stmt = $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'normal', NOW())");
         $stmt->execute([$application['user_id'], $admin['id'], $subject, $message]);
 
         $_SESSION['success_message'] = 'Заявка отменена';
         redirect('/admin/applications');
     } elseif ($_POST['action'] === 'decline_application') {
-        $stmt = $pdo->prepare("UPDATE applications SET status = 'rejected', updated_at = NOW() WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE applications SET status = 'declined', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
-        $application['status'] = 'rejected';
+        $application['status'] = 'declined';
 
         $subject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
-        $message = getSystemSetting('application_declined_message', 'Ваша заявка отклонена администратором.');
-        $stmt = $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())");
+        $message = getSystemSetting('application_declined_message', 'Ваша заявка отклонена администратором.') . "\n\nНомер заявки: #" . $application_id;
+        $stmt = $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'critical', NOW())");
         $stmt->execute([$application['user_id'], $admin['id'], $subject, $message]);
 
         $_SESSION['success_message'] = 'Заявка отклонена';
@@ -153,11 +156,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if (!$isCompliant) {
      addCorrection($application_id, 'Рисунок не соответствует условиям конкурса', $comment ?: 'Требуется корректировка рисунка', $participantId);
      allowApplicationEdit($application_id);
-     $pdo->prepare("UPDATE applications SET status = 'submitted', updated_at = NOW() WHERE id = ?")->execute([$application_id]);
+     $pdo->prepare("UPDATE applications SET status = 'revision', updated_at = NOW() WHERE id = ?")->execute([$application_id]);
      $subject = getSystemSetting('application_revision_subject', 'Заявка отправлена на корректировку');
-     $messageText = getSystemSetting('application_revision_message', 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.');
+     $messageText = getSystemSetting('application_revision_message', 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.') . "\n\nНомер заявки: #" . $application_id;
      $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())")
          ->execute([$application['user_id'], $admin['id'], $subject, $messageText]);
+ } else {
+     $pdo->prepare("
+     UPDATE application_corrections
+     SET is_resolved = 1, resolved_at = NOW()
+     WHERE application_id = ? AND participant_id = ? AND is_resolved = 0
+     ")->execute([$application_id, $participantId]);
+
+     $revisionSubject = getSystemSetting('application_revision_subject', 'Заявка отправлена на корректировку');
+     $pdo->prepare("
+     DELETE FROM admin_messages
+     WHERE user_id = ? AND subject = ? AND message LIKE ?
+     ")->execute([$application['user_id'], $revisionSubject, '%#' . $application_id . '%']);
+
+     $openCorrectionsStmt = $pdo->prepare("SELECT COUNT(*) FROM application_corrections WHERE application_id = ? AND is_resolved = 0");
+     $openCorrectionsStmt->execute([$application_id]);
+     $openCorrectionsCount = (int) $openCorrectionsStmt->fetchColumn();
+     if ($openCorrectionsCount === 0 && $application['status'] === 'revision') {
+         $pdo->prepare("UPDATE applications SET status = 'submitted', updated_at = NOW() WHERE id = ?")->execute([$application_id]);
+         disallowApplicationEdit($application_id);
+     }
  }
 
  if (!$hasDrawingCompliantColumn || !$hasDrawingCommentColumn) {
@@ -243,6 +266,28 @@ require_once __DIR__ . '/includes/header.php';
     </a>
 </div>
 
+<div class="flex gap-md mb-lg" style="flex-wrap:wrap;">
+    <button type="button" class="btn" style="background:#EEF2FF; color:#6366F1;" onclick="openMessageModal()">
+        <i class="fas fa-envelope"></i> Сообщение
+    </button>
+    <form method="POST">
+        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+        <input type="hidden" name="action" value="cancel_application">
+        <button type="submit" class="btn" style="background:#FEE2E2; color:#B91C1C;">
+            <i class="fas fa-ban"></i> Отмена
+        </button>
+    </form>
+    <form method="POST" onsubmit="return confirm('Удалить заявку?');">
+        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+        <input type="hidden" name="action" value="delete">
+        <button type="submit" class="btn" style="background:#FEE2E2; color:#DC2626;">
+            <i class="fas fa-trash"></i> Удалить
+        </button>
+    </form>
+</div>
+
 <!-- Сообщения -->
 <?php if (isset($_SESSION['success_message'])): ?>
 <div class="alert alert--success alert--permanent mb-lg">
@@ -262,57 +307,11 @@ require_once __DIR__ . '/includes/header.php';
 <h2 style="font-size:20px; margin-bottom:4px;">Заявка #<?= e($application_id) ?></h2>
 <p class="text-secondary"><?= htmlspecialchars($application['contest_title']) ?></p>
 </div>
-<div class="flex gap-md items-center" style="flex-shrink:0;">
-<button type="button" class="btn" style="background:#EEF2FF; color:#6366F1; padding:10px16px; border-radius:8px; border:none; cursor:pointer;" onclick="openMessageModal()">
-<i class="fas fa-envelope"></i> Сообщение
-</button>
-<form method="POST" class="flex gap-md items-center">
-<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-<input type="hidden" name="action" value="update_status">
-<select name="status" class="form-select" style="width:140px; padding:8px12px;">
-<option value="draft" <?= $application['status'] === 'draft' ? 'selected' : '' ?>>Черновик</option>
-<option value="submitted" <?= $application['status'] === 'submitted' ? 'selected' : '' ?>>Отправлена</option>
-<option value="approved" <?= $application['status'] === 'approved' ? 'selected' : '' ?>>Принята</option>
-<option value="rejected" <?= $application['status'] === 'rejected' ? 'selected' : '' ?>>Отклонена/отменена</option>
-</select>
-<button type="submit" class="btn btn--primary" style="padding:10px20px;">
-<i class="fas fa-save"></i> Сохранить заявку
-</button>
-</form>
-<form method="POST">
-<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-<input type="hidden" name="action" value="approve_application">
-<button type="submit" class="btn" style="background:#D1FAE5; color:#065F46; padding:10px16px; border-radius:8px; border:none; cursor:pointer;">
-<i class="fas fa-check"></i> Заявка принята
-</button>
-</form>
-<form method="POST">
-<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-<input type="hidden" name="action" value="decline_application">
-<button type="submit" class="btn" style="background:#FECACA; color:#991B1B; padding:10px16px; border-radius:8px; border:none; cursor:pointer;">
-<i class="fas fa-times-circle"></i> Заявка отклонена
-</button>
-</form>
-<form method="POST">
-<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-
-<input type="hidden" name="action" value="cancel_application">
-<button type="submit" class="btn" style="background:#FEE2E2; color:#B91C1C; padding:10px16px; border-radius:8px; border:none; cursor:pointer;">
-<i class="fas fa-ban"></i> Отмена
-</button>
-</form>
-<form method="POST" onsubmit="return confirm('Удалить заявку?');">
-<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-<input type="hidden" name="action" value="delete">
-<button type="submit" class="btn" style="background:#FEE2E2; color:#DC2626; padding:14px 16px; border-radius:8px; border:none; cursor:pointer;">
-<i class="fas fa-trash"></i>
-</button>
-</form>
+<div style="flex-shrink:0;">
+<?php $statusMeta = getApplicationStatusMeta($application['status']); ?>
+<span class="badge <?= $statusMeta['badge_class'] ?>" style="font-size:14px; padding:8px 12px;">
+    <?= htmlspecialchars($statusMeta['label']) ?>
+</span>
 </div>
 </div>
 </div>
@@ -403,8 +402,27 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 <div class="card__body">
-<div style="display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap;">
-    <div style="flex:1; min-width:300px;">
+<div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;">
+ <?php if ($p['drawing_file']): ?>
+        <div style="flex:0 0 360px; max-width:100%;">
+            <label class="form-label">Рисунок</label>
+            <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
+            <div style="max-width: 360px;">
+                <img src="<?= htmlspecialchars($drawingUrl) ?>" 
+                     data-participant-id="<?= (int) $p['id'] ?>"
+                     class="js-admin-drawing"
+                     alt="Рисунок участника" 
+                     style="width: 100%; border-radius: var(--radius-lg); border: 2px solid var(--color-border);">
+            </div>
+            <div class="flex gap-sm mt-md" style="flex-wrap: wrap;">
+                <button type="button" class="btn btn--secondary js-open-editor" data-participant-id="<?= (int) $p['id'] ?>" data-image-src="<?= htmlspecialchars($drawingUrl) ?>">
+                    <i class="fas fa-crop-alt"></i> Редактировать рисунок
+                </button>
+            </div>
+        </div>
+        <?php endif; ?>
+
+    <div style="flex:1; min-width:280px; max-width:680px;">
         <div class="form-row" style="gap:20px;">
             <div class="form-group">
                 <label class="form-label">ФИО участника</label>
@@ -428,43 +446,27 @@ require_once __DIR__ . '/includes/header.php';
             <label class="form-label">Адрес организации</label>
             <p><?= htmlspecialchars($p['organization_address'] ?? '—') ?></p>
         </div>
-    </div>
-
- <?php if ($p['drawing_file']): ?>
-        <div class="form-group" style="width:360px; margin:0;">
-            <label class="form-label">Рисунок</label>
-            <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
-            <div style="max-width: 360px;">
-                <img src="<?= htmlspecialchars($drawingUrl) ?>" 
-                     data-participant-id="<?= (int) $p['id'] ?>"
-                     class="js-admin-drawing"
-                     alt="Рисунок участника" 
-                     style="width: 100%; border-radius: var(--radius-lg); border: 2px solid var(--color-border);">
-            </div>
-            <div class="flex gap-sm mt-md" style="flex-wrap: wrap;">
-                <button type="button" class="btn btn--secondary js-open-editor" data-participant-id="<?= (int) $p['id'] ?>" data-image-src="<?= htmlspecialchars($drawingUrl) ?>">
-                    <i class="fas fa-crop-alt"></i> Редактировать рисунок
-                </button>
-            </div>
-            <form method="POST" class="mt-md" style="border:1px solid #E5E7EB; padding:16px; border-radius:12px; background:#F8FAFC;">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="toggle_drawing_compliance">
-                <input type="hidden" name="participant_id" value="<?= (int) $p['id'] ?>">
-                <div class="flex gap-md items-center" style="flex-wrap:wrap;">
-                    <label style="display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700;padding:10px 14px;background:#ECFDF5;border-radius:10px;">
+        <form method="POST" class="mt-md" style="border:1px solid #E5E7EB; padding:16px; border-radius:12px; background:#F8FAFC;">
+            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+            <input type="hidden" name="action" value="toggle_drawing_compliance">
+            <input type="hidden" name="participant_id" value="<?= (int) $p['id'] ?>">
+            <div class="flex gap-md items-center" style="flex-wrap:wrap;">
+                <label class="ios-toggle-wrap">
+                    <span class="ios-toggle-label">Соответствует условиям конкурса</span>
+                    <span class="ios-toggle">
                         <input type="checkbox" name="drawing_compliant" value="1" <?= isset($p['drawing_compliant']) && (int)$p['drawing_compliant'] === 1 ? 'checked' : '' ?>>
-                        Соответствует условиям конкурса
-                    </label>
-                    <button type="submit" class="btn btn--primary">Сохранить проверку</button>
-                </div>
-                <div class="mt-sm">
-                    <label class="form-label">Что исправить (если не соответствует)</label>
-                    <textarea class="form-textarea" name="comment" rows="2" placeholder="Укажите, что нужно исправить"><?= htmlspecialchars($p['drawing_comment'] ?? '') ?></textarea>
-                </div>
-            </form>
-        </div>
-        <?php endif; ?>
+                        <span class="ios-toggle__slider"></span>
+                    </span>
+                </label>
+                <button type="submit" class="btn btn--primary">Сохранить проверку</button>
+            </div>
+            <div class="mt-sm">
+                <label class="form-label">Что исправить (если не соответствует)</label>
+                <textarea class="form-textarea" name="comment" rows="2" placeholder="Укажите, что нужно исправить"><?= htmlspecialchars($p['drawing_comment'] ?? '') ?></textarea>
+            </div>
+        </form>
+    </div>
 </div>
     </div>
 </div>
@@ -477,6 +479,29 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 </div>
 <?php endif; ?>
+
+<div class="card mb-lg">
+    <div class="card__body">
+        <div class="flex gap-md" style="flex-wrap:wrap; justify-content:flex-end;">
+            <form method="POST">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="decline_application">
+                <button type="submit" class="btn" style="background:#FECACA; color:#991B1B;">
+                    <i class="fas fa-times-circle"></i> Заявка отклонена
+                </button>
+            </form>
+            <form method="POST">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="approve_application">
+                <button type="submit" class="btn" style="background:#D1FAE5; color:#065F46;">
+                    <i class="fas fa-check"></i> Заявка принята
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
 
 <!-- Модальное окно отправки сообщения -->
 <div class="modal" id="messageModal">
