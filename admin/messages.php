@@ -15,6 +15,7 @@ $disputeThreadSubjectPrefix = 'Оспаривание решения по зая
 $selectedDisputeApplicationId = intval($_GET['dispute_application_id'] ?? 0);
 $disputeThreads = [];
 $selectedDisputeMessages = [];
+$disputeRecipientName = 'Пользователь';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply_dispute') {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -108,6 +109,16 @@ if ($selectedDisputeApplicationId > 0) {
     ");
         $selectedStmt->execute([$selectedDisputeApplicationId, $threadSubject]);
         $selectedDisputeMessages = $selectedStmt->fetchAll();
+
+        $recipientId = (int) ($selectedDisputeMessages[0]['user_id'] ?? 0);
+        if ($recipientId > 0) {
+            $recipientStmt = $pdo->prepare("SELECT surname, name FROM users WHERE id = ? LIMIT 1");
+            $recipientStmt->execute([$recipientId]);
+            $recipient = $recipientStmt->fetch();
+            if (!empty($recipient)) {
+                $disputeRecipientName = trim(($recipient['surname'] ?? '') . ' ' . ($recipient['name'] ?? ''));
+            }
+        }
     } catch (Exception $e) {
         $selectedDisputeMessages = [];
     }
@@ -268,13 +279,13 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <?php if (isset($error)): ?>
-<div class="alert alert--error mb-lg">
+<div class="alert alert--error mb-lg js-toast-alert">
 <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?>
 </div>
 <?php endif; ?>
 
 <?php if (isset($success)): ?>
-<div class="alert alert--success mb-lg">
+<div class="alert alert--success mb-lg js-toast-alert">
 <i class="fas fa-check-circle"></i> <?= htmlspecialchars($success) ?>
 </div>
 <?php endif; ?>
@@ -343,16 +354,18 @@ require_once __DIR__ . '/includes/header.php';
             <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px;">
                 <?php foreach ($selectedDisputeMessages as $chatMessage): ?>
                     <?php $fromAdmin = (int) ($chatMessage['is_admin'] ?? 0) === 1; ?>
-                    <div style="align-self: <?= $fromAdmin ? 'flex-end' : 'flex-start' ?>; max-width: 78%;">
-                        <div style="padding:12px 14px; border-radius:12px; background: <?= $fromAdmin ? '#DCFCE7' : '#EEF2FF' ?>;">
+                    <div style="align-self: <?= $fromAdmin ? 'flex-start' : 'flex-end' ?>; max-width: 78%;">
+                        <div style="padding:12px 14px; border-radius:12px; background: <?= $fromAdmin ? '#EEF2FF' : '#DCFCE7' ?>;">
                             <div style="font-size:12px; color:#6B7280; margin-bottom:6px;">
-                                <?php
-                                    $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''));
-                                    $chatAuthorPatronymic = trim((string) ($chatMessage['patronymic'] ?? ''));
-                                ?>
-                                <?= htmlspecialchars(trim($chatAuthorName . ' ' . $chatAuthorPatronymic)) ?>
-                                <?php if ($fromAdmin && $chatAuthorName !== '' && $chatAuthorPatronymic !== ''): ?>
+                                <?php if ($fromAdmin): ?>
+                                    <?php
+                                        $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''));
+                                        $chatAuthorPatronymic = trim((string) ($chatMessage['patronymic'] ?? ''));
+                                    ?>
+                                    <?= htmlspecialchars(trim($chatAuthorName . ' ' . $chatAuthorPatronymic)) ?>
                                     <span style="font-size:11px; color:#4F46E5; margin-left:6px;">руководитель проекта</span>
+                                <?php else: ?>
+                                    <?= htmlspecialchars($disputeRecipientName !== '' ? $disputeRecipientName : 'Собеседник') ?>
                                 <?php endif; ?>
                                 • <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?>
                             </div>
@@ -521,8 +534,8 @@ foreach ($messages as $msg) {
 <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($msg['created_at'])) ?></td>
 <td data-label="Действия">
 <div class="flex gap-sm">
-<button type="button" class="btn btn--ghost btn--sm" onclick="event.stopPropagation(); viewMessage(<?= (int) $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)" title="Просмотреть">
-<i class="fas fa-eye"></i>
+<button type="button" class="btn btn--ghost btn--sm" onclick="event.stopPropagation(); viewMessage(<?= (int) $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)" title="Просмотр">
+<i class="fas fa-eye"></i> Просмотр
 </button>
 <button type="button" class="btn btn--ghost btn--sm" onclick="event.stopPropagation(); deleteMessage(<?= (int) $msg['id'] ?>, <?= !empty($msg['is_broadcast']) ? 'true' : 'false' ?>, <?= json_encode($msg['subject'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)" title="Удалить" style="color:#EF4444;">
 <i class="fas fa-trash"></i>
@@ -664,6 +677,8 @@ foreach ($messages as $msg) {
 </div>
 
 <script>
+const csrfTokenValue = <?= json_encode(csrf_token(), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+
 function filterByPriority(priority) {
  const url = new URL(window.location.href);
  if (priority) {
@@ -703,13 +718,11 @@ function deleteMessage(id, isBroadcast, subject) {
  return;
  }
  
- const csrfToken = document.querySelector('input[name="csrf_token"]').value;
- 
  const formData = new FormData();
  formData.append('action', 'delete_message');
  formData.append('message_id', id);
  formData.append('is_broadcast', isBroadcast ? '1' : '0');
- formData.append('csrf_token', csrfToken);
+ formData.append('csrf_token', csrfTokenValue);
  
  fetch(window.location.href, {
  method: 'POST',
@@ -718,13 +731,14 @@ function deleteMessage(id, isBroadcast, subject) {
  .then(response => response.json())
  .then(data => {
  if (data.success) {
- window.location.reload();
+ showToast('Сообщение удалено', 'success');
+ setTimeout(() => window.location.reload(), 450);
  } else {
- alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+ showToast('Ошибка: ' + (data.error || 'Неизвестная ошибка'), 'error');
  }
  })
  .catch(error => {
- alert('Ошибка при удалении сообщения: ' + error.message);
+ showToast('Ошибка при удалении сообщения: ' + error.message, 'error');
  console.error(error);
  });
 }
@@ -878,6 +892,45 @@ document.addEventListener('keydown', function(e) {
  closeSendModal();
  closeDisputeChatModal();
  }
+});
+
+function closeDisputeChatModal() {
+ const chatModal = document.getElementById('disputeChatModal');
+ if (chatModal) {
+ window.location.href = '/admin/messages';
+ }
+}
+
+const disputeChatModal = document.getElementById('disputeChatModal');
+if (disputeChatModal) {
+ disputeChatModal.addEventListener('click', function(e) {
+ if (e.target === disputeChatModal) {
+ closeDisputeChatModal();
+ }
+ });
+}
+
+function showToast(message, type = 'success') {
+ const toast = document.createElement('div');
+ toast.className = 'alert ' + (type === 'success' ? 'alert--success' : 'alert--error');
+ toast.style.cssText = 'position:fixed; top:20px; right:20px; z-index:3000; min-width:260px; max-width:420px; box-shadow:0 12px 30px rgba(0,0,0,.12); opacity:0; transform:translateY(-8px); transition:opacity .25s ease, transform .25s ease;';
+ toast.textContent = message;
+ document.body.appendChild(toast);
+ requestAnimationFrame(() => {
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+ });
+ setTimeout(() => {
+  toast.style.opacity = '0';
+  toast.style.transform = 'translateY(-8px)';
+  setTimeout(() => toast.remove(), 260);
+ }, 2600);
+}
+
+document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
+ const type = alertEl.classList.contains('alert--error') ? 'error' : 'success';
+ showToast(alertEl.textContent.trim(), type);
+ alertEl.remove();
 });
 
 function closeDisputeChatModal() {

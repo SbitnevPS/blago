@@ -124,13 +124,13 @@ $currentPage = 'applications';
 <main class="container" style="padding: var(--space-xl) var(--space-lg);">
 <div class="application-detail">
 <?php if (!empty($_SESSION['success_message'])): ?>
-<div class="alert alert--success mb-lg">
+<div class="alert alert--success mb-lg js-toast-alert">
 <i class="fas fa-check-circle"></i> <?= htmlspecialchars($_SESSION['success_message']) ?>
 </div>
 <?php unset($_SESSION['success_message']); endif; ?>
 
 <?php if (!empty($_SESSION['error_message'])): ?>
-<div class="alert alert--error mb-lg">
+<div class="alert alert--error mb-lg js-toast-alert">
 <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($_SESSION['error_message']) ?>
 </div>
 <?php unset($_SESSION['error_message']); endif; ?>
@@ -207,13 +207,15 @@ $currentPage = 'applications';
                     <div style="align-self: <?= $isAdminMessage ? 'flex-start' : 'flex-end' ?>; max-width: 80%;">
                         <div style="padding:12px 14px; border-radius:12px; background: <?= $isAdminMessage ? '#EEF2FF' : '#DCFCE7' ?>;">
                             <div style="font-size:12px; color:#6B7280; margin-bottom:6px;">
-                                <?php
-                                    $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''));
-                                    $chatAuthorPatronymic = trim((string) ($chatMessage['patronymic'] ?? ''));
-                                ?>
-                                <?= htmlspecialchars(trim($chatAuthorName . ' ' . $chatAuthorPatronymic)) ?>
-                                <?php if ($isAdminMessage && $chatAuthorName !== '' && $chatAuthorPatronymic !== ''): ?>
+                                <?php if ($isAdminMessage): ?>
+                                    <?php
+                                        $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''));
+                                        $chatAuthorPatronymic = trim((string) ($chatMessage['patronymic'] ?? ''));
+                                    ?>
+                                    <?= htmlspecialchars(trim($chatAuthorName . ' ' . $chatAuthorPatronymic)) ?>
                                     <span style="font-size:11px; color:#4F46E5; margin-left:6px;">руководитель проекта</span>
+                                <?php else: ?>
+                                    <?= htmlspecialchars(trim(($user['surname'] ?? '') . ' ' . ($user['name'] ?? ''))) ?>
                                 <?php endif; ?>
                                 • <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?>
                             </div>
@@ -426,6 +428,14 @@ document.addEventListener('keydown', (e) => {
  if (e.key === 'ArrowLeft') openGallery((galleryCurrent - 1 + galleryItems.length) % galleryItems.length);
 });
 
+document.getElementById('galleryModal').addEventListener('click', (event) => {
+ if (event.target === event.currentTarget) {
+  closeGallery();
+ }
+});
+</script>
+<?php endif; ?>
+<script>
 document.querySelectorAll('.js-chat-hotkey').forEach((textarea) => {
  textarea.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
@@ -436,12 +446,28 @@ document.querySelectorAll('.js-chat-hotkey').forEach((textarea) => {
  });
 });
 
-document.getElementById('galleryModal').addEventListener('click', (event) => {
- if (event.target === event.currentTarget) {
-  closeGallery();
- }
+function showToast(message, type = 'success') {
+ const toast = document.createElement('div');
+ toast.className = 'alert ' + (type === 'success' ? 'alert--success' : 'alert--error');
+ toast.style.cssText = 'position:fixed; top:20px; right:20px; z-index:3000; min-width:260px; max-width:420px; box-shadow:0 12px 30px rgba(0,0,0,.12); opacity:0; transform:translateY(-8px); transition:opacity .25s ease, transform .25s ease;';
+ toast.textContent = message;
+ document.body.appendChild(toast);
+ requestAnimationFrame(() => {
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+ });
+ setTimeout(() => {
+  toast.style.opacity = '0';
+  toast.style.transform = 'translateY(-8px)';
+  setTimeout(() => toast.remove(), 260);
+ }, 2600);
+}
+
+document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
+ const type = alertEl.classList.contains('alert--error') ? 'error' : 'success';
+ showToast(alertEl.textContent.trim(), type);
+ alertEl.remove();
 });
 </script>
-<?php endif; ?>
 </body>
 </html>
