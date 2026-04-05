@@ -10,6 +10,108 @@ $admin = getCurrentUser();
 $currentPage = 'messages';
 $pageTitle = 'Сообщения';
 $breadcrumb = 'Все отправленные сообщения';
+
+$disputeThreadSubjectPrefix = 'Оспаривание решения по заявке #';
+$selectedDisputeApplicationId = intval($_GET['dispute_application_id'] ?? 0);
+$disputeThreads = [];
+$selectedDisputeMessages = [];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply_dispute') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Ошибка безопасности';
+    } else {
+        $disputeApplicationId = intval($_POST['dispute_application_id'] ?? 0);
+        $replyText = trim($_POST['reply_text'] ?? '');
+        if ($disputeApplicationId <= 0 || $replyText === '') {
+            $error = 'Заполните текст ответа';
+        } else {
+            try {
+                $threadSubject = $disputeThreadSubjectPrefix . $disputeApplicationId;
+                $userStmt = $pdo->prepare("
+                SELECT m.user_id
+                FROM messages m
+                WHERE m.application_id = ? AND m.title = ?
+                ORDER BY m.created_at DESC
+                LIMIT 1
+                ");
+                $userStmt->execute([$disputeApplicationId, $threadSubject]);
+                $targetUserId = (int) $userStmt->fetchColumn();
+
+                if ($targetUserId > 0) {
+                    $insertStmt = $pdo->prepare("
+                    INSERT INTO messages (user_id, application_id, title, content, created_by, created_at, is_read)
+                    VALUES (?, ?, ?, ?, ?, NOW(), 0)
+                    ");
+                    $insertStmt->execute([
+                        $targetUserId,
+                        $disputeApplicationId,
+                        $threadSubject,
+                        $replyText,
+                        $admin['id'],
+                    ]);
+                    $_SESSION['success_message'] = 'Ответ отправлен в чат';
+                    redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
+                } else {
+                    $error = 'Чат не найден';
+                }
+            } catch (Exception $e) {
+                $error = 'Не удалось отправить ответ';
+            }
+        }
+    }
+}
+
+try {
+    $threadsStmt = $pdo->query("
+    SELECT
+        m.application_id,
+        m.title,
+        MAX(m.created_at) AS last_message_at,
+        SUM(CASE WHEN m.is_read = 0 AND u.is_admin = 0 THEN 1 ELSE 0 END) AS unread_count,
+        SUBSTRING_INDEX(
+            GROUP_CONCAT(m.content ORDER BY m.created_at DESC SEPARATOR '||__||'),
+            '||__||',
+            1
+        ) AS last_message
+    FROM messages m
+    JOIN users u ON u.id = m.created_by
+    WHERE m.title LIKE 'Оспаривание решения по заявке%'
+    GROUP BY m.application_id, m.title
+    ORDER BY last_message_at DESC
+    ");
+    $disputeThreads = $threadsStmt->fetchAll();
+} catch (Exception $e) {
+    $disputeThreads = [];
+}
+
+if ($selectedDisputeApplicationId > 0) {
+    try {
+        $threadSubject = $disputeThreadSubjectPrefix . $selectedDisputeApplicationId;
+        $markReadStmt = $pdo->prepare("
+        UPDATE messages m
+        JOIN users u ON u.id = m.created_by
+        SET m.is_read = 1
+        WHERE m.application_id = ?
+          AND m.title = ?
+          AND m.is_read = 0
+          AND u.is_admin = 0
+        ");
+        $markReadStmt->execute([$selectedDisputeApplicationId, $threadSubject]);
+
+        $selectedStmt = $pdo->prepare("
+        SELECT m.*, u.name, u.surname, u.is_admin
+    FROM messages m
+    JOIN users u ON u.id = m.created_by
+    WHERE m.application_id = ?
+      AND m.title = ?
+    ORDER BY m.created_at ASC
+    ");
+        $selectedStmt->execute([$selectedDisputeApplicationId, $threadSubject]);
+        $selectedDisputeMessages = $selectedStmt->fetchAll();
+    } catch (Exception $e) {
+        $selectedDisputeMessages = [];
+    }
+}
 // --- Фильтры ---
 $search = $_GET['search'] ?? '';
 $priority = $_GET['priority'] ?? '';
@@ -167,6 +269,98 @@ require_once __DIR__ . '/includes/header.php';
 <?php if (isset($success)): ?>
 <div class="alert alert--success mb-lg">
 <i class="fas fa-check-circle"></i> <?= htmlspecialchars($success) ?>
+</div>
+<?php endif; ?>
+
+<?php if (!empty($disputeThreads)): ?>
+<div class="card mb-lg">
+    <div class="card__header">
+        <h3>Чаты: оспаривание решения по заявке</h3>
+    </div>
+    <div class="card__body" style="padding:0;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Тема</th>
+                    <th>Последнее сообщение</th>
+                    <th>Дата</th>
+                    <th>Новое</th>
+                    <th>Заявка</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($disputeThreads as $thread): ?>
+                <tr>
+                    <td><?= htmlspecialchars($thread['title']) ?></td>
+                    <td><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 120)) ?></td>
+                    <td><?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></td>
+                    <td>
+                        <?php if ((int) ($thread['unread_count'] ?? 0) > 0): ?>
+                            <span class="badge" style="background:#F59E0B; color:white;">Новое: <?= (int) $thread['unread_count'] ?></span>
+                        <?php else: ?>
+                            —
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <?php if (!empty($thread['application_id'])): ?>
+                            <a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a>
+                        <?php else: ?>
+                            —
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <a class="btn btn--ghost btn--sm" href="/admin/messages?dispute_application_id=<?= (int) $thread['application_id'] ?>">
+                            <i class="fas fa-comments"></i> Открыть чат
+                        </a>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($selectedDisputeApplicationId > 0): ?>
+<div class="card mb-lg">
+    <div class="card__header">
+        <h3>Чат по заявке #<?= (int) $selectedDisputeApplicationId ?></h3>
+    </div>
+    <div class="card__body">
+        <?php if (empty($selectedDisputeMessages)): ?>
+            <p class="text-secondary">Сообщения не найдены.</p>
+        <?php else: ?>
+            <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px;">
+                <?php foreach ($selectedDisputeMessages as $chatMessage): ?>
+                    <?php $fromAdmin = (int) ($chatMessage['is_admin'] ?? 0) === 1; ?>
+                    <div style="align-self: <?= $fromAdmin ? 'flex-end' : 'flex-start' ?>; max-width: 78%;">
+                        <div style="padding:12px 14px; border-radius:12px; background: <?= $fromAdmin ? '#DCFCE7' : '#EEF2FF' ?>;">
+                            <div style="font-size:12px; color:#6B7280; margin-bottom:6px;">
+                                <?= htmlspecialchars(trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''))) ?>
+                                • <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?>
+                            </div>
+                            <div style="white-space:pre-wrap; line-height:1.5;"><?= htmlspecialchars($chatMessage['content']) ?></div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
+        <form method="POST">
+            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+            <input type="hidden" name="action" value="reply_dispute">
+            <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
+            <div class="form-group">
+                <label class="form-label">Ответ в чате</label>
+                <textarea name="reply_text" class="form-textarea" rows="4" required placeholder="Введите сообщение пользователю..."></textarea>
+            </div>
+            <button type="submit" class="btn btn--primary">
+                <i class="fas fa-paper-plane"></i> Ответить
+            </button>
+        </form>
+    </div>
 </div>
 <?php endif; ?>
 

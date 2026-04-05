@@ -91,6 +91,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
         $_SESSION['success_message'] = 'Заявка отменена';
         redirect('/admin/applications');
+    } elseif ($_POST['action'] === 'decline_application') {
+        $stmt = $pdo->prepare("UPDATE applications SET status = 'rejected', updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$application_id]);
+        $application['status'] = 'rejected';
+
+        $subject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
+        $message = getSystemSetting('application_declined_message', 'Ваша заявка отклонена администратором.');
+        $stmt = $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())");
+        $stmt->execute([$application['user_id'], $admin['id'], $subject, $message]);
+
+        $_SESSION['success_message'] = 'Заявка отклонена';
+        redirect('/admin/applications');
+
 } elseif ($_POST['action'] === 'delete') {
  // Удаляем участников и заявку
  $pdo->prepare("DELETE FROM participants WHERE application_id = ?")->execute([$application_id]);
@@ -140,6 +153,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if (!$isCompliant) {
      addCorrection($application_id, 'Рисунок не соответствует условиям конкурса', $comment ?: 'Требуется корректировка рисунка', $participantId);
      allowApplicationEdit($application_id);
+     $pdo->prepare("UPDATE applications SET status = 'submitted', updated_at = NOW() WHERE id = ?")->execute([$application_id]);
+     $subject = getSystemSetting('application_revision_subject', 'Заявка отправлена на корректировку');
+     $messageText = getSystemSetting('application_revision_message', 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.');
+     $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())")
+         ->execute([$application['user_id'], $admin['id'], $subject, $messageText]);
  }
 
  if (!$hasDrawingCompliantColumn || !$hasDrawingCommentColumn) {
@@ -256,7 +274,7 @@ require_once __DIR__ . '/includes/header.php';
 <option value="draft" <?= $application['status'] === 'draft' ? 'selected' : '' ?>>Черновик</option>
 <option value="submitted" <?= $application['status'] === 'submitted' ? 'selected' : '' ?>>Отправлена</option>
 <option value="approved" <?= $application['status'] === 'approved' ? 'selected' : '' ?>>Принята</option>
-<option value="rejected" <?= $application['status'] === 'rejected' ? 'selected' : '' ?>>Отклонена</option>
+<option value="rejected" <?= $application['status'] === 'rejected' ? 'selected' : '' ?>>Отклонена/отменена</option>
 </select>
 <button type="submit" class="btn btn--primary" style="padding:10px20px;">
 <i class="fas fa-save"></i> Сохранить заявку
@@ -273,6 +291,15 @@ require_once __DIR__ . '/includes/header.php';
 <form method="POST">
 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+<input type="hidden" name="action" value="decline_application">
+<button type="submit" class="btn" style="background:#FECACA; color:#991B1B; padding:10px16px; border-radius:8px; border:none; cursor:pointer;">
+<i class="fas fa-times-circle"></i> Заявка отклонена
+</button>
+</form>
+<form method="POST">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+
 <input type="hidden" name="action" value="cancel_application">
 <button type="submit" class="btn" style="background:#FEE2E2; color:#B91C1C; padding:10px16px; border-radius:8px; border:none; cursor:pointer;">
 <i class="fas fa-ban"></i> Отмена
@@ -376,22 +403,38 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 <div class="card__body">
-<div class="form-row">
-<div class="form-group">
-<label class="form-label">ФИО участника</label>
-<p class="font-semibold"><?= htmlspecialchars($p['fio']) ?></p>
-</div>
-<div class="form-group">
-<label class="form-label">Возраст</label>
-<p><?= $p['age'] ?> лет</p>
-</div>
-</div>
-        
+<div style="display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap;">
+    <div style="flex:1; min-width:300px;">
+        <div class="form-row" style="gap:20px;">
+            <div class="form-group">
+                <label class="form-label">ФИО участника</label>
+                <p class="font-semibold"><?= htmlspecialchars($p['fio']) ?></p>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Возраст</label>
+                <p><?= $p['age'] ?> лет</p>
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Регион</label>
+            <p><?= htmlspecialchars($p['region'] ?? '—') ?></p>
+        </div>
+        <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Организация</label>
+            <p><?= htmlspecialchars($p['organization_name'] ?? '—') ?></p>
+        </div>
+        <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Адрес организации</label>
+            <p><?= htmlspecialchars($p['organization_address'] ?? '—') ?></p>
+        </div>
+    </div>
+
  <?php if ($p['drawing_file']): ?>
-        <div class="form-group mt-lg">
+        <div class="form-group" style="width:360px; margin:0;">
             <label class="form-label">Рисунок</label>
             <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
-            <div style="max-width: 520px;">
+            <div style="max-width: 360px;">
                 <img src="<?= htmlspecialchars($drawingUrl) ?>" 
                      data-participant-id="<?= (int) $p['id'] ?>"
                      class="js-admin-drawing"
@@ -422,6 +465,7 @@ require_once __DIR__ . '/includes/header.php';
             </form>
         </div>
         <?php endif; ?>
+</div>
     </div>
 </div>
 <?php endforeach; ?>

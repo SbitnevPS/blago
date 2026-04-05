@@ -82,6 +82,8 @@ require_once __DIR__ . '/includes/header.php';
                     <option value="">Все статусы</option>
                     <option value="draft" <?= $status === 'draft' ? 'selected' : '' ?>>Черновики</option>
                     <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>Отправленные</option>
+                    <option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Принятые</option>
+                    <option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Отклонённые/отменённые</option>
                 </select>
             </div>
             <div style="min-width: 200px;">
@@ -155,6 +157,7 @@ require_once __DIR__ . '/includes/header.php';
                         'draft' => 'Черновик',
                         'submitted' => 'Отправлена',
                         'approved' => 'Заявка принята',
+                        'rejected' => 'Отклонена/отменена',
                         'rejected' => 'Отменена',
                     ];
                     $statusClasses = [
@@ -163,6 +166,15 @@ require_once __DIR__ . '/includes/header.php';
                         'approved' => 'badge--success',
                         'rejected' => 'badge--warning',
                     ];
+                    $rowStyle = '';
+                    $isRevisionState = isset($app['allow_edit']) && (int) $app['allow_edit'] === 1 && $app['status'] !== 'approved';
+                    if ($app['status'] === 'approved') {
+                        $rowStyle = 'background:#ECFDF5;';
+                    } elseif ($isRevisionState) {
+                        $rowStyle = 'background:#FEF9C3;';
+                    } elseif ($app['status'] === 'rejected') {
+                        $rowStyle = 'background:#FEE2E2;';
+                    }
                     $rowStyle = $app['status'] === 'approved' ? 'background:#ECFDF5;' : '';
                 ?>
                 <tr style="<?= $rowStyle ?>">
@@ -184,6 +196,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td><?= $app['participants_count'] ?></td>
                     <td>
                         <span class="badge <?= $statusClasses[$app['status']] ?? 'badge--warning' ?>">
+                            <?= htmlspecialchars($isRevisionState ? 'На корректировке' : ($statusLabels[$app['status']] ?? ucfirst((string) $app['status']))) ?>
                             <?= htmlspecialchars($statusLabels[$app['status']] ?? ucfirst((string) $app['status'])) ?>
                         </span>
                     </td>

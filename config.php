@@ -159,6 +159,11 @@ function getSystemSettings() {
         'application_approved_message' => 'Ваша заявка принята, ожидайте результаты конкурса.',
         'application_cancelled_subject' => 'Ваша заявка отменена',
         'application_cancelled_message' => 'Ваша заявка отменена администратором.',
+        'application_declined_subject' => 'Ваша заявка отклонена',
+        'application_declined_message' => 'Ваша заявка отклонена администратором.',
+        'application_revision_subject' => 'Заявка отправлена на корректировку',
+        'application_revision_message' => 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.',
+
     ];
 
     if (!is_file(SETTINGS_FILE)) {
@@ -559,9 +564,29 @@ function getUserMessages($userId, $limit =20) {
 // Функция для получения непрочитанных сообщений
 function getUnreadMessageCount($userId) {
  global $pdo;
+ $count = 0;
+
  $stmt = $pdo->prepare("SELECT COUNT(*) FROM admin_messages WHERE user_id = ? AND is_read =0");
  $stmt->execute([$userId]);
- return $stmt->fetchColumn();
+ $count += (int) $stmt->fetchColumn();
+
+ try {
+     $stmt = $pdo->prepare("
+     SELECT COUNT(*)
+     FROM messages m
+     JOIN users u ON u.id = m.created_by
+     WHERE m.user_id = ?
+       AND m.is_read = 0
+       AND u.is_admin = 1
+       AND m.title LIKE 'Оспаривание решения по заявке%'
+     ");
+     $stmt->execute([$userId]);
+     $count += (int) $stmt->fetchColumn();
+ } catch (Exception $e) {
+     // Таблица messages может отсутствовать на старых инсталляциях
+ }
+
+ return $count;
 }
 
 // Функция для создания сообщения
@@ -588,6 +613,23 @@ function markAllMessagesAsRead($userId) {
  global $pdo;
  $stmt = $pdo->prepare("UPDATE messages SET is_read =1 WHERE user_id = ? AND is_read =0");
  $stmt->execute([$userId]);
+}
+
+function getAdminUnreadDisputeCount() {
+ global $pdo;
+ try {
+     $stmt = $pdo->query("
+     SELECT COUNT(*)
+     FROM messages m
+     JOIN users u ON u.id = m.created_by
+     WHERE m.is_read = 0
+       AND u.is_admin = 0
+       AND m.title LIKE 'Оспаривание решения по заявке%'
+     ");
+     return (int) $stmt->fetchColumn();
+ } catch (Exception $e) {
+     return 0;
+ }
 }
 
 // Функция для поиска пользователей (для автодополнения)

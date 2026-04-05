@@ -160,6 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  source_info = ?,
  colleagues_info = ?,
  status = ?,
+ allow_edit = ?,
  updated_at = NOW()
  WHERE id = ? AND user_id = ?
  ");
@@ -168,6 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $source_info,
  $colleagues_info,
  $action === 'submit' ? 'submitted' : 'draft',
+ $action === 'submit' ? 0 : 1,
  $application_id,
  $user['id']
  ]);
@@ -200,7 +202,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $participant_count =0;
                 
  foreach ($participants as $pIndex => $participant) {
- $fio = trim($participant['fio'] ?? '');
+ $surname = trim($participant['surname'] ?? '');
+ $name = trim($participant['name'] ?? '');
+ $patronymic = trim($participant['patronymic'] ?? '');
+ $legacyFio = trim($participant['fio'] ?? '');
+ $fio = trim($surname . ' ' . $name . ' ' . $patronymic);
+ if ($fio === '' && $legacyFio !== '') {
+ $fio = $legacyFio;
+ $parts = preg_split('/\s+/', $legacyFio);
+ $surname = $parts[0] ?? '';
+ $name = $parts[1] ?? '';
+ $patronymic = $parts[2] ?? '';
+ }
  if (empty($fio)) continue;
                     
  $age = intval($participant['age'] ??0);
@@ -213,16 +226,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if (!empty($tempFile)) {
  $tempFilePath = $tempPath . '/' . $tempFile;
  if (file_exists($tempFilePath)) {
- // Парсим ФИО участника для названия файла
- $parts = explode(' ', trim($fio));
- $surname = $parts[0] ?? 'Unknown';
- $name = $parts[1] ?? '';
- $patronymic = $parts[2] ?? '';
+ // Используем раздельные ФИО для названия файла
+ $fileSurname = $surname !== '' ? $surname : 'Unknown';
+ $fileName = $name;
+ $filePatronymic = $patronymic;
 
  // Новое имя файла: Фамилия_Имя_Отчество_возраст.jpg
- $newFilename = sanitizeFilename($surname) . '_' . 
- sanitizeFilename($name) . '_' . 
- sanitizeFilename($patronymic) . '_' . 
+ $newFilename = sanitizeFilename($fileSurname) . '_' . 
+ sanitizeFilename($fileName) . '_' . 
+ sanitizeFilename($filePatronymic) . '_' . 
  intval($age) . '.jpg';
 
  // Обработка изображения (resize + конвертация в JPG)
@@ -460,8 +472,12 @@ generateCSRFToken();
     
 <script>
  const initialParticipants = <?= json_encode(array_map(function($p) use ($user) {
+     $parts = preg_split('/\s+/', trim((string)($p['fio'] ?? '')));
      return [
          'fio' => $p['fio'] ?? '',
+         'surname' => $parts[0] ?? '',
+         'name' => $parts[1] ?? '',
+         'patronymic' => $parts[2] ?? '',
          'age' => $p['age'] ?? '',
          'temp_file' => '',
          'existing_drawing_file' => $p['drawing_file'] ?? '',
@@ -497,9 +513,19 @@ generateCSRFToken();
 <div class="form-section__title">Данные участника</div>
 <div class="form-row">
 <div class="form-group">
-<label class="form-label form-label--required">ФИО участника</label>
-<input type="text" name="participants[${index}][fio]" class="form-input" required value="${data?.fio || ''}" placeholder="Иванов Иван Иванович">
+<label class="form-label form-label--required">Фамилия участника</label>
+<input type="text" name="participants[${index}][surname]" class="form-input" required value="${data?.surname || ''}" placeholder="Иванов">
 </div>
+<div class="form-group">
+<label class="form-label form-label--required">Имя участника</label>
+<input type="text" name="participants[${index}][name]" class="form-input" required value="${data?.name || ''}" placeholder="Иван">
+</div>
+<div class="form-group">
+<label class="form-label form-label--required">Отчество участника</label>
+<input type="text" name="participants[${index}][patronymic]" class="form-input" required value="${data?.patronymic || ''}" placeholder="Иванович">
+</div>
+</div>
+<div class="form-row">
 <div class="form-group">
 <label class="form-label form-label--required">Возраст</label>
 <input type="number" name="participants[${index}][age]" class="form-input" min="1" max="18" required value="${data?.age || ''}">

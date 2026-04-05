@@ -3,6 +3,7 @@
 $safePageTitle = htmlspecialchars($pageTitle ?? 'Админ-панель', ENT_QUOTES, 'UTF-8');
 $safeHeaderTitle = htmlspecialchars($pageTitle ?? 'Панель управления', ENT_QUOTES, 'UTF-8');
 $safeBreadcrumb = isset($breadcrumb) ? htmlspecialchars($breadcrumb, ENT_QUOTES, 'UTF-8') : null;
+$adminUnreadDisputes = function_exists('getAdminUnreadDisputeCount') ? getAdminUnreadDisputeCount() : 0;
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -31,6 +32,9 @@ $safeBreadcrumb = isset($breadcrumb) ? htmlspecialchars($breadcrumb, ENT_QUOTES,
 </a>
 <a href="/admin/messages.php" class="admin-sidebar__link <?= $currentPage === 'messages' ? 'admin-sidebar__link--active' : '' ?>">
 <i class="fas fa-envelope"></i> Сообщения
+<?php if ($adminUnreadDisputes > 0): ?>
+<span class="badge badge--warning" style="margin-left:8px;"><?= (int) $adminUnreadDisputes ?></span>
+<?php endif; ?>
 </a>
 
 <div class="admin-sidebar__section">Конкурсы</div>
