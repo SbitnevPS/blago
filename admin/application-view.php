@@ -80,9 +80,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $_SESSION['success_message'] = 'Заявка принята';
         redirect('/admin/applications');
     } elseif ($_POST['action'] === 'cancel_application') {
-        $stmt = $pdo->prepare("UPDATE applications SET status = 'cancelled', updated_at = NOW() WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE applications SET status = 'rejected', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
-        $application['status'] = 'cancelled';
+        $application['status'] = 'rejected';
 
         $subject = getSystemSetting('application_cancelled_subject', 'Ваша заявка отменена');
         $message = getSystemSetting('application_cancelled_message', 'Ваша заявка отменена администратором.');
@@ -92,9 +92,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $_SESSION['success_message'] = 'Заявка отменена';
         redirect('/admin/applications');
     } elseif ($_POST['action'] === 'decline_application') {
-        $stmt = $pdo->prepare("UPDATE applications SET status = 'declined', updated_at = NOW() WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE applications SET status = 'rejected', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
-        $application['status'] = 'declined';
+        $application['status'] = 'rejected';
 
         $subject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
         $message = getSystemSetting('application_declined_message', 'Ваша заявка отклонена администратором.');
@@ -152,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if (!$isCompliant) {
      addCorrection($application_id, 'Рисунок не соответствует условиям конкурса', $comment ?: 'Требуется корректировка рисунка', $participantId);
      allowApplicationEdit($application_id);
-     $pdo->prepare("UPDATE applications SET status = 'revision', updated_at = NOW() WHERE id = ?")->execute([$application_id]);
+     $pdo->prepare("UPDATE applications SET status = 'submitted', updated_at = NOW() WHERE id = ?")->execute([$application_id]);
      $subject = getSystemSetting('application_revision_subject', 'Заявка отправлена на корректировку');
      $messageText = getSystemSetting('application_revision_message', 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.');
      $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())")
@@ -273,9 +273,7 @@ require_once __DIR__ . '/includes/header.php';
 <option value="draft" <?= $application['status'] === 'draft' ? 'selected' : '' ?>>Черновик</option>
 <option value="submitted" <?= $application['status'] === 'submitted' ? 'selected' : '' ?>>Отправлена</option>
 <option value="approved" <?= $application['status'] === 'approved' ? 'selected' : '' ?>>Принята</option>
-<option value="revision" <?= $application['status'] === 'revision' ? 'selected' : '' ?>>На корректировке</option>
-<option value="declined" <?= $application['status'] === 'declined' ? 'selected' : '' ?>>Отклонена</option>
-<option value="cancelled" <?= $application['status'] === 'cancelled' ? 'selected' : '' ?>>Отменена</option>
+<option value="rejected" <?= $application['status'] === 'rejected' ? 'selected' : '' ?>>Отклонена/отменена</option>
 </select>
 <button type="submit" class="btn btn--primary" style="padding:10px20px;">
 <i class="fas fa-save"></i> Сохранить заявку
