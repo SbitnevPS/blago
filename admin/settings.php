@@ -148,7 +148,6 @@ require_once __DIR__ . '/includes/header.php';
                     required
                 ><?= htmlspecialchars($settings['application_revision_message'] ?? '') ?></textarea>
             </div>
-
             <button type="submit" class="btn btn--primary">
                 <i class="fas fa-save"></i> Сохранить настройки
             </button>

@@ -162,6 +162,7 @@ require_once __DIR__ . '/includes/header.php';
                         'revision' => 'На корректировке',
                         'declined' => 'Заявка отклонена',
                         'cancelled' => 'Отменена',
+                        'rejected' => 'Отменена',
                     ];
                     $statusClasses = [
                         'draft' => 'badge--warning',
@@ -179,6 +180,9 @@ require_once __DIR__ . '/includes/header.php';
                     } elseif ($app['status'] === 'cancelled' || $app['status'] === 'declined') {
                         $rowStyle = 'background:#FEE2E2;';
                     }
+                        'rejected' => 'badge--warning',
+                    ];
+                    $rowStyle = $app['status'] === 'approved' ? 'background:#ECFDF5;' : '';
                 ?>
                 <tr style="<?= $rowStyle ?>">
                     <td>#<?= $app['id'] ?></td>

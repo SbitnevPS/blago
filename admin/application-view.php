@@ -83,7 +83,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt = $pdo->prepare("UPDATE applications SET status = 'cancelled', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
         $application['status'] = 'cancelled';
-
+        $stmt = $pdo->prepare("UPDATE applications SET status = 'rejected', updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$application_id]);
+        $application['status'] = 'rejected';
         $subject = getSystemSetting('application_cancelled_subject', 'Ваша заявка отменена');
         $message = getSystemSetting('application_cancelled_message', 'Ваша заявка отменена администратором.');
         $stmt = $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'normal', NOW())");
