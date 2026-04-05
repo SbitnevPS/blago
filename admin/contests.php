@@ -97,37 +97,40 @@ require_once __DIR__ . '/includes/header.php';
 <?php else: ?>
     <div class="cards-grid">
         <?php foreach ($contests as $contest): ?>
-        <div class="card">
-            <div class="card__header">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <h3><?= htmlspecialchars($contest['title']) ?></h3>
-                        <span class="badge <?= $contest['is_published'] ? 'badge--success' : 'badge--secondary' ?>">
-                            <?= $contest['is_published'] ? 'Опубликован' : 'Не опубликован' ?>
-                        </span>
-                    </div>
-                    <div class="flex gap-sm">
+        <div class="card contest-card">
+            <div class="card__header contest-card__header">
+                <div class="contest-card__title-row">
+                    <h3><?= htmlspecialchars($contest['title']) ?></h3>
+                    <div class="contest-card__actions">
 
                         <form method="POST" class="inline-form">
                             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">
                             <input type="hidden" name="action" value="toggle_publish">
-                            <button type="submit" class="btn btn--ghost btn--sm" title="Переключить публикацию">
+                            <button type="submit" class="btn btn--ghost contest-action-btn" title="Переключить публикацию">
                                 <i class="fas fa-<?= $contest['is_published'] ? 'eye-slash' : 'eye' ?>"></i>
                             </button>
                         </form>
-                        <a href="/admin/contest/<?= $contest['id'] ?>" class="btn btn--ghost btn--sm" title="Редактировать">
+                        <a href="/admin/contest/<?= $contest['id'] ?>" class="btn btn--ghost contest-action-btn" title="Редактировать">
                             <i class="fas fa-edit"></i>
                         </a>
                         <form method="POST" class="inline-form" onsubmit="return confirm('Вы уверены? Все заявки этого конкурса будут удалены.');">
                             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                             <input type="hidden" name="contest_id" value="<?= $contest['id'] ?>">
                             <input type="hidden" name="action" value="delete">
-                            <button type="submit" class="btn btn--ghost btn--sm btn-delete-contest" title="Удалить">
+                            <button type="submit" class="btn btn--ghost contest-action-btn btn-delete-contest" title="Удалить">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </form>
                     </div>
+                </div>
+                <div class="contest-card__status-row">
+                    <span class="badge <?= $contest['is_published'] ? 'badge--success' : 'badge--secondary' ?>">
+                        <?= $contest['is_published'] ? 'Опубликован' : 'Не опубликован' ?>
+                    </span>
+                    <a class="contest-card__applications-link" href="/admin/applications.php?contest_id=<?= (int) $contest['id'] ?>">
+                        <i class="fas fa-file-alt"></i> <?= (int) $contest['applications_count'] ?> заявок
+                    </a>
                 </div>
             </div>
             <div class="card__body">

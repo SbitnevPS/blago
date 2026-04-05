@@ -173,6 +173,13 @@ LIMIT $perPage OFFSET $offset
 ");
 $stmt->execute($params);
 $messages = $stmt->fetchAll();
+
+foreach ($messages as &$messageItem) {
+    if (mb_stripos((string) ($messageItem['subject'] ?? ''), 'Ваша заявка отклонена') !== false) {
+        $messageItem['priority'] = 'critical';
+    }
+}
+unset($messageItem);
 // --- СТАТИСТИКА ---
 $priorityStats = $pdo->query("
 SELECT priority, COUNT(*) as count 
@@ -365,8 +372,8 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <!-- Статистика -->
-<div class="stats-grid mb-lg">
-<div class="stat-card" style="cursor:pointer;" onclick="filterByPriority('')">
+<div class="stats-grid stats-grid--messages mb-lg">
+<div class="stat-card stat-card--compact" style="cursor:pointer;" onclick="filterByPriority('')">
 <div class="stat-card__icon" style="background: #EEF2FF; color: #6366F1;">
 <i class="fas fa-envelope"></i>
 </div>
@@ -376,7 +383,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 </div>
 
-<div class="stat-card" style="cursor:pointer;" onclick="filterByPriority('normal')">
+<div class="stat-card stat-card--compact" style="cursor:pointer;" onclick="filterByPriority('normal')">
 <div class="stat-card__icon" style="background: #F3F4F6; color: #6B7280;">
 <i class="fas fa-circle"></i>
 </div>
@@ -386,7 +393,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 </div>
 
-<div class="stat-card" style="cursor:pointer;" onclick="filterByPriority('important')">
+<div class="stat-card stat-card--compact" style="cursor:pointer;" onclick="filterByPriority('important')">
 <div class="stat-card__icon" style="background: #FEF3C7; color: #F59E0B;">
 <i class="fas fa-exclamation-circle"></i>
 </div>
@@ -396,7 +403,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 </div>
 
-<div class="stat-card" style="cursor:pointer;" onclick="filterByPriority('critical')">
+<div class="stat-card stat-card--compact" style="cursor:pointer;" onclick="filterByPriority('critical')">
 <div class="stat-card__icon" style="background: #FEE2E2; color: #EF4444;">
 <i class="fas fa-exclamation-triangle"></i>
 </div>
@@ -440,7 +447,7 @@ require_once __DIR__ . '/includes/header.php';
 <!-- Список сообщений -->
 <div class="card">
 <div class="card__header">
-<div class="flex justify-between items-center w-100">
+<div class="flex justify-between items-center w-100 messages-toolbar">
 <h3>Сообщения (<?= e($totalMessages) ?>)</h3>
 <button type="button" class="btn btn--primary" onclick="openSendModal()">
 <i class="fas fa-pen"></i> Написать сообщение
@@ -471,7 +478,7 @@ foreach ($messages as $msg) {
  $shownBroadcast[$broadcastKey] = true;
  }
 ?>
-<tr>
+<tr class="message-row" onclick="viewMessage(<?= (int) $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)">
 <td data-label="ID">#<?= $msg['id'] ?></td>
 <td data-label="Получатель">
 <div class="flex items-center gap-sm">
@@ -504,10 +511,10 @@ foreach ($messages as $msg) {
 <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($msg['created_at'])) ?></td>
 <td data-label="Действия">
 <div class="flex gap-sm">
-<button type="button" class="btn btn--ghost btn--sm" onclick="viewMessage(<?= $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)" title="Просмотреть">
+<button type="button" class="btn btn--ghost btn--sm" onclick="event.stopPropagation(); viewMessage(<?= (int) $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)" title="Просмотреть">
 <i class="fas fa-eye"></i>
 </button>
-<button type="button" class="btn btn--ghost btn--sm" onclick="deleteMessage(<?= (int) $msg['id'] ?>, <?= !empty($msg['is_broadcast']) ? 'true' : 'false' ?>, <?= json_encode($msg['subject'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)" title="Удалить" style="color:#EF4444;">
+<button type="button" class="btn btn--ghost btn--sm" onclick="event.stopPropagation(); deleteMessage(<?= (int) $msg['id'] ?>, <?= !empty($msg['is_broadcast']) ? 'true' : 'false' ?>, <?= json_encode($msg['subject'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)" title="Удалить" style="color:#EF4444;">
 <i class="fas fa-trash"></i>
 </button>
 </div>

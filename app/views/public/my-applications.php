@@ -27,7 +27,7 @@ $currentPage = 'applications';
 <div class="page-header">
 <h1>Мои заявки</h1>
 <a href="/contests" class="btn btn--primary">
-<i class="fas fa-plus"></i> Новый конкурс
+<i class="fas fa-list"></i> Список конкурсов
 </a>
 </div>
         
@@ -52,9 +52,21 @@ $currentPage = 'applications';
         'revision' => 'На корректировке',
         'approved' => 'Заявка принята',
         'declined' => 'Заявка отклонена',
+        'rejected' => 'Заявка отклонена',
         'cancelled' => 'Отменена',
+        'pending' => 'На рассмотрении',
     ];
-    $statusClass = in_array($app['status'], ['submitted', 'approved'], true) ? 'badge--success' : 'badge--warning';
+    $statusClassMap = [
+        'approved' => 'badge--success',
+        'submitted' => 'badge--success',
+        'pending' => 'badge--warning',
+        'revision' => 'badge--warning',
+        'draft' => 'badge--secondary',
+        'declined' => 'badge--error',
+        'rejected' => 'badge--error',
+        'cancelled' => 'badge--error',
+    ];
+    $statusClass = $statusClassMap[$app['status']] ?? 'badge--warning';
     $cardStyle = '';
     if ($app['status'] === 'approved') {
         $cardStyle = 'background:#ECFDF5;';
@@ -70,7 +82,7 @@ $currentPage = 'applications';
 <h3 class="application-card__title">Заявка #<?= (int) $app['id'] ?></h3>
 <div class="application-card__contest"><?= htmlspecialchars($app['contest_title']) ?></div>
 </div>
-<span class="badge <?= $statusClass ?>">
+<span class="badge application-card__status <?= $statusClass ?>">
 <?= htmlspecialchars($statusLabels[$app['status']] ?? ucfirst((string) $app['status'])) ?>
 </span>
 </div>
@@ -78,7 +90,7 @@ $currentPage = 'applications';
 <div class="application-card__info">
 <div class="application-card__info-item">
 <span class="application-card__info-label">Участников</span>
-<span class="application-card__info-value"><?= (int) $app['participants_count'] ?></span>
+<span class="application-card__info-value application-card__participants-value"><?= (int) $app['participants_count'] ?></span>
 </div>
 <div class="application-card__info-item">
 <span class="application-card__info-label">Дата</span>
