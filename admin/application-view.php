@@ -403,22 +403,38 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 <div class="card__body">
-<div class="form-row">
-<div class="form-group">
-<label class="form-label">ФИО участника</label>
-<p class="font-semibold"><?= htmlspecialchars($p['fio']) ?></p>
-</div>
-<div class="form-group">
-<label class="form-label">Возраст</label>
-<p><?= $p['age'] ?> лет</p>
-</div>
-</div>
-        
+<div style="display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap;">
+    <div style="flex:1; min-width:300px;">
+        <div class="form-row" style="gap:20px;">
+            <div class="form-group">
+                <label class="form-label">ФИО участника</label>
+                <p class="font-semibold"><?= htmlspecialchars($p['fio']) ?></p>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Возраст</label>
+                <p><?= $p['age'] ?> лет</p>
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Регион</label>
+            <p><?= htmlspecialchars($p['region'] ?? '—') ?></p>
+        </div>
+        <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Организация</label>
+            <p><?= htmlspecialchars($p['organization_name'] ?? '—') ?></p>
+        </div>
+        <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Адрес организации</label>
+            <p><?= htmlspecialchars($p['organization_address'] ?? '—') ?></p>
+        </div>
+    </div>
+
  <?php if ($p['drawing_file']): ?>
-        <div class="form-group mt-lg">
+        <div class="form-group" style="width:360px; margin:0;">
             <label class="form-label">Рисунок</label>
             <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
-            <div style="max-width: 520px;">
+            <div style="max-width: 360px;">
                 <img src="<?= htmlspecialchars($drawingUrl) ?>" 
                      data-participant-id="<?= (int) $p['id'] ?>"
                      class="js-admin-drawing"
@@ -449,6 +465,7 @@ require_once __DIR__ . '/includes/header.php';
             </form>
         </div>
         <?php endif; ?>
+</div>
     </div>
 </div>
 <?php endforeach; ?>
