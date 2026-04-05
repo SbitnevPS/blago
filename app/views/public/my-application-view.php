@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
         $_SESSION['error_message'] = 'Ошибка безопасности. Обновите страницу.';
     } else {
         $reason = trim($_POST['dispute_reason'] ?? '');
-        if ($application['status'] !== 'declined') {
+        if (!in_array($application['status'], ['declined', 'rejected'], true)) {
             $_SESSION['error_message'] = 'Оспорить можно только отклонённую заявку.';
         } elseif ($reason === '') {
             $_SESSION['error_message'] = 'Укажите причину оспаривания.';
@@ -68,18 +68,18 @@ $unresolvedCorrections = array_filter($corrections, function($c) {
 
 // Проверяем, разрешено ли редактирование
 $canEdit = $application['allow_edit'] ==1 && $application['status'] !== 'approved';
-$statusLabels = [
-    'draft' => 'Черновик',
-    'submitted' => 'Отправлена',
-    'revision' => 'На корректировке',
-    'approved' => 'Заявка принята',
-    'declined' => 'Заявка отклонена',
-    'cancelled' => 'Отменена',
-];
-$statusClass = in_array($application['status'], ['submitted', 'approved'], true) ? 'success' : 'warning';
+$statusMeta = getApplicationStatusMeta($application['status']);
+$statusClass = str_replace('badge--', '', $statusMeta['badge_class']);
+$participantCorrections = [];
+foreach ($unresolvedCorrections as $correction) {
+    $participantId = (int) ($correction['participant_id'] ?? 0);
+    if ($participantId > 0) {
+        $participantCorrections[$participantId][] = $correction;
+    }
+}
 
 $disputeChatMessages = [];
-if ($application['status'] === 'declined') {
+if (in_array($application['status'], ['declined', 'rejected'], true)) {
     try {
         $stmt = $pdo->prepare("
         SELECT m.*, u.name, u.surname, u.is_admin
@@ -143,7 +143,7 @@ $currentPage = 'applications';
 <div class="alert mb-lg" style="background:#FEE2E2; border:1px solid #FCA5A5; color:#991B1B;">
 <i class="fas fa-ban"></i> Заявка отменена.
 </div>
-<?php elseif ($application['status'] === 'declined'): ?>
+<?php elseif (in_array($application['status'], ['declined', 'rejected'], true)): ?>
 <div class="alert mb-lg" style="background:#FEE2E2; border:1px solid #FCA5A5; color:#991B1B;">
 <i class="fas fa-times-circle"></i> Заявка отклонена.
 </div>
@@ -184,7 +184,7 @@ $currentPage = 'applications';
 <span><i class="fas fa-trophy"></i> <?= htmlspecialchars($application['contest_title']) ?></span>
 <span><i class="fas fa-calendar"></i> <?= date('d.m.Y H:i', strtotime($application['created_at'])) ?></span>
 <span class="badge badge--<?= $statusClass ?>">
- <?= htmlspecialchars($statusLabels[$application['status']] ?? ucfirst((string) $application['status'])) ?>
+ <?= htmlspecialchars($statusMeta['label']) ?>
 </span>
 </div>
 </div>
@@ -196,7 +196,7 @@ $currentPage = 'applications';
 </div>
 </div>
 
-<?php if ($application['status'] === 'declined'): ?>
+<?php if (in_array($application['status'], ['declined', 'rejected'], true)): ?>
 <div class="card mb-lg" id="dispute-chat">
     <div class="card__header"><h3>Оспаривание решения по заявке</h3></div>
     <div class="card__body">
@@ -250,11 +250,20 @@ $currentPage = 'applications';
 <h2 class="mb-lg">Участники (<?= count($participants) ?>)</h2>
         
  <?php foreach ($participants as $index => $participant): ?>
-<div class="participant-card">
+<?php $hasParticipantCorrection = !empty($participantCorrections[(int) $participant['id']]); ?>
+<div class="participant-card<?= $hasParticipantCorrection ? ' participant-card--needs-fix' : '' ?>">
 <div class="participant-card__title">
 <span class="participant-card__number"><?= $index +1 ?></span>
  Участник <?= $index +1 ?>
 </div>
+<?php if ($hasParticipantCorrection): ?>
+<div class="application-note" style="margin-bottom:12px;">
+    <strong><i class="fas fa-tools"></i> Требует исправлений</strong>
+    <?php foreach ($participantCorrections[(int) $participant['id']] as $participantCorrection): ?>
+        <div>• <?= htmlspecialchars($participantCorrection['field_name']) ?><?= !empty($participantCorrection['comment']) ? ': ' . htmlspecialchars($participantCorrection['comment']) : '' ?></div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <div style="display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap;">
 <div style="flex:1; min-width:280px;">

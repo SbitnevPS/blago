@@ -137,7 +137,8 @@
         font-size: 10px;
     }
 
-    .navbar__user {
+    .navbar__user,
+    .navbar__user-dropdown {
         display: none;
     }
 }
