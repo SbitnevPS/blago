@@ -99,7 +99,7 @@ if ($selectedDisputeApplicationId > 0) {
         $markReadStmt->execute([$selectedDisputeApplicationId, $threadSubject]);
 
         $selectedStmt = $pdo->prepare("
-        SELECT m.*, u.name, u.surname, u.is_admin
+        SELECT m.*, u.name, u.surname, u.patronymic, u.is_admin
     FROM messages m
     JOIN users u ON u.id = m.created_by
     WHERE m.application_id = ?
@@ -330,11 +330,13 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <?php if ($selectedDisputeApplicationId > 0): ?>
-<div class="card mb-lg">
-    <div class="card__header">
-        <h3>Чат по заявке #<?= (int) $selectedDisputeApplicationId ?></h3>
-    </div>
-    <div class="card__body">
+<div class="modal active" id="disputeChatModal">
+    <div class="modal__content message-modal" style="max-width:900px; width:95%;">
+        <div class="modal__header">
+            <h3>Чат по заявке #<?= (int) $selectedDisputeApplicationId ?></h3>
+            <button type="button" class="modal__close" onclick="closeDisputeChatModal()">&times;</button>
+        </div>
+        <div class="modal__body">
         <?php if (empty($selectedDisputeMessages)): ?>
             <p class="text-secondary">Сообщения не найдены.</p>
         <?php else: ?>
@@ -344,7 +346,14 @@ require_once __DIR__ . '/includes/header.php';
                     <div style="align-self: <?= $fromAdmin ? 'flex-end' : 'flex-start' ?>; max-width: 78%;">
                         <div style="padding:12px 14px; border-radius:12px; background: <?= $fromAdmin ? '#DCFCE7' : '#EEF2FF' ?>;">
                             <div style="font-size:12px; color:#6B7280; margin-bottom:6px;">
-                                <?= htmlspecialchars(trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''))) ?>
+                                <?php
+                                    $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''));
+                                    $chatAuthorPatronymic = trim((string) ($chatMessage['patronymic'] ?? ''));
+                                ?>
+                                <?= htmlspecialchars(trim($chatAuthorName . ' ' . $chatAuthorPatronymic)) ?>
+                                <?php if ($fromAdmin && $chatAuthorName !== '' && $chatAuthorPatronymic !== ''): ?>
+                                    <span style="font-size:11px; color:#4F46E5; margin-left:6px;">руководитель проекта</span>
+                                <?php endif; ?>
                                 • <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?>
                             </div>
                             <div style="white-space:pre-wrap; line-height:1.5;"><?= htmlspecialchars($chatMessage['content']) ?></div>
@@ -361,12 +370,13 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
             <div class="form-group">
                 <label class="form-label">Ответ в чате</label>
-                <textarea name="reply_text" class="form-textarea" rows="4" required placeholder="Введите сообщение пользователю..."></textarea>
+                <textarea name="reply_text" class="form-textarea js-chat-hotkey" rows="4" required placeholder="Введите сообщение пользователю..."></textarea>
             </div>
             <button type="submit" class="btn btn--primary">
                 <i class="fas fa-paper-plane"></i> Ответить
             </button>
         </form>
+        </div>
     </div>
 </div>
 <?php endif; ?>
@@ -855,11 +865,36 @@ document.getElementById('sendMessageModal').addEventListener('click', function(e
 });
 
 document.addEventListener('keydown', function(e) {
+ if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+ const activeTextarea = document.activeElement;
+ if (activeTextarea && activeTextarea.classList.contains('js-chat-hotkey')) {
+ e.preventDefault();
+ const form = activeTextarea.closest('form');
+ if (form) form.submit();
+ }
+ }
  if (e.key === 'Escape') {
  closeViewModal();
  closeSendModal();
+ closeDisputeChatModal();
  }
 });
+
+function closeDisputeChatModal() {
+ const chatModal = document.getElementById('disputeChatModal');
+ if (chatModal) {
+ window.location.href = '/admin/messages';
+ }
+}
+
+const disputeChatModal = document.getElementById('disputeChatModal');
+if (disputeChatModal) {
+ disputeChatModal.addEventListener('click', function(e) {
+ if (e.target === disputeChatModal) {
+ closeDisputeChatModal();
+ }
+ });
+}
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
