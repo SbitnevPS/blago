@@ -23,6 +23,15 @@
 .priority-btn--important .priority-icon { color:#F59E0B; }
 .priority-btn--critical.selected, .priority-btn--critical:has(input:checked) { background:linear-gradient(135deg,#FEE2E2,#FECACA); border-color:#EF4444; color:#991B1B; }
 .priority-btn--critical .priority-icon { color:#EF4444; }
+
+.ios-toggle-wrap { display:flex; align-items:center; gap:12px; font-weight:600; color:#0F172A; background:#ECFDF5; border-radius:12px; padding:8px 10px; }
+.ios-toggle-label { font-size:14px; }
+.ios-toggle { position:relative; display:inline-flex; width:52px; height:30px; }
+.ios-toggle input { opacity:0; width:0; height:0; }
+.ios-toggle__slider { position:absolute; inset:0; border-radius:999px; background:#CBD5E1; transition:.2s ease; cursor:pointer; }
+.ios-toggle__slider::before { content:''; position:absolute; width:24px; height:24px; border-radius:50%; background:#fff; top:3px; left:3px; box-shadow:0 1px 2px rgba(0,0,0,.2); transition:.2s ease; }
+.ios-toggle input:checked + .ios-toggle__slider { background:#10B981; }
+.ios-toggle input:checked + .ios-toggle__slider::before { transform:translateX(22px); }
 .priority-icon { font-size:20px; }
 .priority-text { font-size:12px; font-weight:600; }
 .message-item:last-child { border-bottom:none; }

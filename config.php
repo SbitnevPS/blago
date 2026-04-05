@@ -192,6 +192,69 @@ function getSystemSetting($key, $default = '') {
     return $settings[$key] ?? $default;
 }
 
+function getApplicationStatusConfig() {
+    return [
+        'draft' => [
+            'label' => 'Черновик',
+            'badge_class' => 'badge--secondary',
+            'row_style' => '',
+            'message_priority' => 'normal',
+        ],
+        'submitted' => [
+            'label' => 'Отправлена',
+            'badge_class' => 'badge--success',
+            'row_style' => '',
+            'message_priority' => 'normal',
+        ],
+        'revision' => [
+            'label' => 'Требует исправлений',
+            'badge_class' => 'badge--warning',
+            'row_style' => 'background:#FEF9C3;',
+            'message_priority' => 'important',
+        ],
+        'approved' => [
+            'label' => 'Заявка принята',
+            'badge_class' => 'badge--success',
+            'row_style' => 'background:#ECFDF5;',
+            'message_priority' => 'important',
+        ],
+        'declined' => [
+            'label' => 'Заявка отклонена',
+            'badge_class' => 'badge--error',
+            'row_style' => 'background:#FEE2E2;',
+            'message_priority' => 'critical',
+        ],
+        'rejected' => [
+            'label' => 'Заявка отклонена',
+            'badge_class' => 'badge--error',
+            'row_style' => 'background:#FEE2E2;',
+            'message_priority' => 'critical',
+        ],
+        'cancelled' => [
+            'label' => 'Отменена',
+            'badge_class' => 'badge--error',
+            'row_style' => 'background:#FEE2E2;',
+            'message_priority' => 'normal',
+        ],
+        'pending' => [
+            'label' => 'На рассмотрении',
+            'badge_class' => 'badge--warning',
+            'row_style' => '',
+            'message_priority' => 'normal',
+        ],
+    ];
+}
+
+function getApplicationStatusMeta($status) {
+    $config = getApplicationStatusConfig();
+    return $config[$status] ?? [
+        'label' => ucfirst((string) $status),
+        'badge_class' => 'badge--warning',
+        'row_style' => '',
+        'message_priority' => 'normal',
+    ];
+}
+
 function saveSystemSettings(array $newValues) {
     $settings = array_merge(getSystemSettings(), $newValues);
     $dir = dirname(SETTINGS_FILE);
