@@ -342,41 +342,40 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php if ($selectedDisputeApplicationId > 0): ?>
 <div class="modal active" id="disputeChatModal">
-    <div class="modal__content message-modal" style="max-width:900px; width:95%;">
+    <div class="modal__content message-modal dispute-chat-modal">
         <div class="modal__header">
             <h3>Чат по заявке #<?= (int) $selectedDisputeApplicationId ?></h3>
             <button type="button" class="modal__close" onclick="closeDisputeChatModal()">&times;</button>
         </div>
-        <div class="modal__body">
+        <div class="modal__body dispute-chat-modal__body">
         <?php if (empty($selectedDisputeMessages)): ?>
             <p class="text-secondary">Сообщения не найдены.</p>
         <?php else: ?>
-            <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px;">
+            <div class="dispute-chat-modal__messages" id="disputeChatMessages">
                 <?php foreach ($selectedDisputeMessages as $chatMessage): ?>
                     <?php $fromAdmin = (int) ($chatMessage['is_admin'] ?? 0) === 1; ?>
-                    <div style="align-self: <?= $fromAdmin ? 'flex-start' : 'flex-end' ?>; max-width: 78%;">
-                        <div style="padding:12px 14px; border-radius:12px; background: <?= $fromAdmin ? '#EEF2FF' : '#DCFCE7' ?>;">
-                            <div style="font-size:12px; color:#6B7280; margin-bottom:6px;">
-                                <?php if ($fromAdmin): ?>
-                                    <?php
-                                        $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''));
-                                        $chatAuthorPatronymic = trim((string) ($chatMessage['patronymic'] ?? ''));
-                                    ?>
-                                    <?= htmlspecialchars(trim($chatAuthorName . ' ' . $chatAuthorPatronymic)) ?>
-                                    <span style="font-size:11px; color:#4F46E5; margin-left:6px;">руководитель проекта</span>
-                                <?php else: ?>
-                                    <?= htmlspecialchars($disputeRecipientName !== '' ? $disputeRecipientName : 'Собеседник') ?>
-                                <?php endif; ?>
-                                • <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?>
+                    <?php
+                        $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? '') . ' ' . ($chatMessage['patronymic'] ?? ''));
+                        if ($fromAdmin) {
+                            $chatAuthorLabel = 'Руководитель проекта — ' . ($chatAuthorName !== '' ? $chatAuthorName : trim(($admin['surname'] ?? '') . ' ' . ($admin['name'] ?? '')));
+                        } else {
+                            $chatAuthorLabel = $chatAuthorName !== '' ? $chatAuthorName : ($disputeRecipientName !== '' ? $disputeRecipientName : 'Пользователь');
+                        }
+                    ?>
+                    <div class="dispute-chat-message <?= $fromAdmin ? 'dispute-chat-message--admin' : 'dispute-chat-message--user' ?>">
+                        <div class="dispute-chat-message__bubble">
+                            <div class="dispute-chat-message__meta">
+                                <?= htmlspecialchars($chatAuthorLabel) ?>
+                                <span>• <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?></span>
                             </div>
-                            <div style="white-space:pre-wrap; line-height:1.5;"><?= htmlspecialchars($chatMessage['content']) ?></div>
+                            <div class="dispute-chat-message__text"><?= htmlspecialchars($chatMessage['content']) ?></div>
                         </div>
                     </div>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
 
-        <form method="POST">
+        <form method="POST" class="dispute-chat-modal__composer">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
             <input type="hidden" name="action" value="reply_dispute">
@@ -501,7 +500,7 @@ foreach ($messages as $msg) {
  $shownBroadcast[$broadcastKey] = true;
  }
 ?>
-<tr class="message-row" onclick="viewMessage(<?= (int) $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)">
+<tr class="message-row" data-message-id="<?= (int) $msg['id'] ?>" onclick="viewMessage(<?= (int) $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)">
 <td data-label="ID">#<?= $msg['id'] ?></td>
 <td data-label="Получатель">
 <div class="flex items-center gap-sm">
@@ -682,9 +681,9 @@ const csrfTokenValue = document.querySelector('input[name="csrf_token"]')?.value
 function filterByPriority(priority) {
  const url = new URL(window.location.href);
  if (priority) {
- url.searchParams.set('priority', priority);
+  url.searchParams.set('priority', priority);
  } else {
- url.searchParams.delete('priority');
+  url.searchParams.delete('priority');
  }
  url.searchParams.delete('page');
  window.location.href = url.toString();
@@ -693,17 +692,17 @@ function filterByPriority(priority) {
 function viewMessage(id, subject, message, priority) {
  document.getElementById('viewMessageSubject').textContent = subject;
  document.getElementById('viewMessageContent').textContent = message;
- 
+
  let priorityBadge = '';
  if (priority === 'critical') {
- priorityBadge = '<span class="badge" style="background:#EF4444; color:white; padding:4px12px;">Критическое</span>';
+  priorityBadge = '<span class="badge" style="background:#EF4444; color:white; padding:4px 12px;">Критическое</span>';
  } else if (priority === 'important') {
- priorityBadge = '<span class="badge" style="background:#F59E0B; color:white; padding:4px12px;">Важное</span>';
+  priorityBadge = '<span class="badge" style="background:#F59E0B; color:white; padding:4px 12px;">Важное</span>';
  } else {
- priorityBadge = '<span class="badge" style="background:#6B7280; color:white; padding:4px12px;">Обычное</span>';
+  priorityBadge = '<span class="badge" style="background:#6B7280; color:white; padding:4px 12px;">Обычное</span>';
  }
  document.getElementById('viewMessagePriority').innerHTML = priorityBadge;
- 
+
  document.getElementById('viewMessageModal').classList.add('active');
  document.body.style.overflow = 'hidden';
 }
@@ -715,44 +714,45 @@ function closeViewModal() {
 
 function deleteMessage(id, isBroadcast, subject) {
  if (!confirm('Вы уверены, что хотите удалить это сообщение' + (isBroadcast ? ' (для всех пользователей)' : '') + '?')) {
- return;
+  return;
  }
- 
+
  const formData = new FormData();
  formData.append('action', 'delete_message');
  formData.append('message_id', id);
  formData.append('is_broadcast', isBroadcast ? '1' : '0');
  formData.append('csrf_token', csrfTokenValue);
- 
+
  fetch(window.location.href, {
- method: 'POST',
- body: formData
+  method: 'POST',
+  body: formData
  })
- .then(response => response.json())
- .then(data => {
- if (data.success) {
- showToast('Сообщение удалено', 'success');
- setTimeout(() => window.location.reload(), 450);
- } else {
- showToast('Ошибка: ' + (data.error || 'Неизвестная ошибка'), 'error');
- }
- })
- .catch(error => {
- showToast('Ошибка при удалении сообщения: ' + error.message, 'error');
- console.error(error);
- });
+  .then(response => response.json())
+  .then(data => {
+   if (data.success) {
+    const row = document.querySelector(`tr[data-message-id="${id}"]`);
+    if (row) {
+     row.remove();
+    }
+    showToast('Сообщение удалено', 'success');
+   } else {
+    showToast('Ошибка: ' + (data.error || 'Неизвестная ошибка'), 'error');
+   }
+  })
+  .catch(error => {
+   showToast('Ошибка при удалении сообщения: ' + error.message, 'error');
+   console.error(error);
+  });
 }
 
-// Модальное окно отправки
 function openSendModal() {
  document.getElementById('sendMessageModal').classList.add('active');
  document.body.style.overflow = 'hidden';
- 
- // Сброс формы
+
  const userSearch = document.getElementById('userSearch');
  const userId = document.getElementById('userId');
  const sendToAll = document.getElementById('sendToAll');
- 
+
  userSearch.value = '';
  userSearch.disabled = false;
  userSearch.style.opacity = '1';
@@ -766,24 +766,33 @@ function closeSendModal() {
  restoreBodyScrollIfNoModals();
 }
 
+function closeDisputeChatModal() {
+ const chatModal = document.getElementById('disputeChatModal');
+ if (chatModal) {
+  chatModal.classList.remove('active');
+  const url = new URL(window.location.href);
+  url.searchParams.delete('dispute_application_id');
+  window.location.href = url.toString();
+ }
+}
+
 function toggleUserSelect() {
  const checkbox = document.getElementById('sendToAll');
  const userSearch = document.getElementById('userSearch');
  const userId = document.getElementById('userId');
  if (checkbox.checked) {
- userSearch.value = '';
- userSearch.disabled = true;
- userId.value = '';
- userSearch.style.opacity = '0.5';
- userSearch.style.pointerEvents = 'none';
+  userSearch.value = '';
+  userSearch.disabled = true;
+  userId.value = '';
+  userSearch.style.opacity = '0.5';
+  userSearch.style.pointerEvents = 'none';
  } else {
- userSearch.disabled = false;
- userSearch.style.opacity = '1';
- userSearch.style.pointerEvents = 'auto';
+  userSearch.disabled = false;
+  userSearch.style.opacity = '1';
+  userSearch.style.pointerEvents = 'auto';
  }
 }
 
-// Поиск пользователей
 let searchTimeout;
 const userSearchInput = document.getElementById('userSearch');
 const userResults = document.getElementById('userResults');
@@ -791,34 +800,34 @@ const userIdInput = document.getElementById('userId');
 const messageField = document.querySelector('textarea[name="message"]');
 const messageCounter = document.getElementById('messageCounter');
 
-userSearchInput.addEventListener('input', function() {
+userSearchInput?.addEventListener('input', function() {
  clearTimeout(searchTimeout);
  const query = this.value.trim();
- 
- if (query.length<2) {
- userResults.style.display = 'none';
- userIdInput.value = '';
- return;
+
+ if (query.length < 2) {
+  userResults.style.display = 'none';
+  userIdInput.value = '';
+  return;
  }
- 
+
  searchTimeout = setTimeout(function() {
- fetch('/admin/search-users?q=' + encodeURIComponent(query))
- .then(response => response.json())
- .then(users => {
- if (users.length >0) {
- userResults.innerHTML = users.map(u => 
- '<button type="button" class="user-results__item" onclick="selectUser(' + u.id + ', \'' + escapeHtml(u.name + ' ' + u.surname + ' (' + u.email + ')') + '\')">' +
- '<div class="user-results__name">' + escapeHtml(u.name + ' ' + u.surname) + '</div>' +
- '<div class="user-results__email">' + escapeHtml(u.email) + '</div>' +
- '</button>'
- ).join('');
- userResults.style.display = 'block';
- } else {
- userResults.innerHTML = '<div class="user-results__empty">Пользователи не найдены</div>';
- userResults.style.display = 'block';
- }
- });
- },300);
+  fetch('/admin/search-users?q=' + encodeURIComponent(query))
+   .then(response => response.json())
+   .then(users => {
+   if (users.length > 0) {
+     userResults.innerHTML = users.map(u =>
+      '<button type="button" class="user-results__item" onclick="selectUser(' + u.id + ', \'' + escapeHtml((u.name + ' ' + u.surname + ' (' + u.email + ')').trim()).replace(/'/g, '&#39;') + '\')">' +
+      '<div class="user-results__name">' + escapeHtml((u.name + ' ' + u.surname).trim()) + '</div>' +
+      '<div class="user-results__email">' + escapeHtml(u.email) + '</div>' +
+      '</button>'
+     ).join('');
+     userResults.style.display = 'block';
+    } else {
+     userResults.innerHTML = '<div class="user-results__empty">Пользователи не найдены</div>';
+     userResults.style.display = 'block';
+    }
+   });
+ }, 300);
 });
 
 function updateMessageCounter() {
@@ -834,7 +843,7 @@ if (messageField) {
 
 function selectUser(id, name) {
  userIdInput.value = id;
- userSearchInput.value = name.replace(/&quot;/g, '"');
+ userSearchInput.value = name.replace(/&quot;/g, '"').trim();
  userResults.style.display = 'none';
 }
 
@@ -844,81 +853,10 @@ function escapeHtml(text) {
  return div.innerHTML;
 }
 
-// Закрытие результатов при клике вне
-document.addEventListener('click', function(e) {
- if (!userSearchInput.contains(e.target) && !userResults.contains(e.target)) {
- userResults.style.display = 'none';
- }
-});
-
-// Стили приоритета
-function updatePriorityStyle(radio) {
- document.querySelectorAll('.priority-option').forEach(el => {
- el.style.borderColor = '#E5E7EB';
- el.style.background = 'white';
- });
- const selected = document.getElementById('priority-' + radio.value);
- if (radio.value === 'normal') {
- selected.style.borderColor = '#6B7280';
- } else if (radio.value === 'important') {
- selected.style.borderColor = '#F59E0B';
- } else if (radio.value === 'critical') {
- selected.style.borderColor = '#EF4444';
- }
-}
-
-// Инициализация стилей приоритета при загрузке
-document.addEventListener('DOMContentLoaded', function() {
- updatePriorityStyle(document.querySelector('input[name="priority"]:checked'));
-});
-
-document.getElementById('sendMessageModal').addEventListener('click', function(e) {
- if (e.target === this) {
- closeSendModal();
- }
-});
-
-document.getElementById('viewMessageModal').addEventListener('click', function(e) {
- if (e.target === this) {
- closeViewModal();
- }
-});
-
-document.addEventListener('keydown', function(e) {
- if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
- const activeTextarea = document.activeElement;
- if (activeTextarea && activeTextarea.classList.contains('js-chat-hotkey')) {
- e.preventDefault();
- const form = activeTextarea.closest('form');
- if (form) form.submit();
- }
- }
- if (e.key === 'Escape') {
- closeViewModal();
- closeSendModal();
- closeDisputeChatModal();
- }
-});
-
-function closeDisputeChatModal() {
- const chatModal = document.getElementById('disputeChatModal');
- if (chatModal) {
-  chatModal.classList.remove('active');
-  const url = new URL(window.location.href);
-  url.searchParams.delete('dispute_application_id');
-  history.replaceState({}, '', url.toString());
-  restoreBodyScrollIfNoModals();
- }
-}
-
-const disputeChatModal = document.getElementById('disputeChatModal');
-if (disputeChatModal) {
- disputeChatModal.addEventListener('click', function(e) {
- if (e.target === disputeChatModal) {
- closeDisputeChatModal();
- }
- });
- document.body.style.overflow = 'hidden';
+function scrollDisputeChatToBottom() {
+ const messagesContainer = document.getElementById('disputeChatMessages');
+ if (!messagesContainer) return;
+ messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
 function restoreBodyScrollIfNoModals() {
@@ -943,78 +881,89 @@ function showToast(message, type = 'success') {
  }, 2600);
 }
 
-document.querySelectorAll('.alert').forEach((alertEl) => {
- const type = alertEl.classList.contains('alert--error') ? 'error' : 'success';
- showToast(alertEl.textContent.trim(), type);
- alertEl.remove();
+document.addEventListener('click', function(e) {
+ if (userSearchInput && userResults && !userSearchInput.contains(e.target) && !userResults.contains(e.target)) {
+  userResults.style.display = 'none';
+ }
 });
 
-document.querySelectorAll('.js-chat-hotkey, textarea[name="message"]').forEach((textarea) => {
- textarea.addEventListener('keydown', (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-   event.preventDefault();
-   const form = textarea.closest('form');
-   if (form && form.reportValidity()) {
-    form.requestSubmit();
-   }
+function updatePriorityStyle(radio) {
+ if (!radio) return;
+ document.querySelectorAll('.priority-option').forEach(el => {
+  el.style.borderColor = '#E5E7EB';
+  el.style.background = 'white';
+ });
+ const selected = document.getElementById('priority-' + radio.value);
+ if (!selected) return;
+ if (radio.value === 'normal') {
+  selected.style.borderColor = '#6B7280';
+ } else if (radio.value === 'important') {
+  selected.style.borderColor = '#F59E0B';
+ } else if (radio.value === 'critical') {
+  selected.style.borderColor = '#EF4444';
+ }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+ updatePriorityStyle(document.querySelector('input[name="priority"]:checked'));
+
+ document.getElementById('sendMessageModal')?.addEventListener('click', function(e) {
+  if (e.target === this) {
+   closeSendModal();
   }
  });
+
+ document.getElementById('viewMessageModal')?.addEventListener('click', function(e) {
+  if (e.target === this) {
+   closeViewModal();
+  }
+ });
+
+ const disputeChatModal = document.getElementById('disputeChatModal');
+ if (disputeChatModal) {
+  disputeChatModal.addEventListener('click', function(e) {
+   if (e.target === disputeChatModal) {
+    closeDisputeChatModal();
+   }
+  });
+  document.body.style.overflow = 'hidden';
+  scrollDisputeChatToBottom();
+ }
+
+ document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
+  const type = alertEl.classList.contains('alert--error') ? 'error' : 'success';
+  showToast(alertEl.textContent.trim(), type);
+  alertEl.remove();
+ });
+
+ document.querySelectorAll('.js-chat-hotkey, textarea[name="message"]').forEach((textarea) => {
+  textarea.addEventListener('keydown', (event) => {
+   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault();
+    const form = textarea.closest('form');
+    if (form && form.reportValidity()) {
+     form.requestSubmit();
+    }
+   }
+  });
+ });
 });
 
-function closeDisputeChatModal() {
- const chatModal = document.getElementById('disputeChatModal');
- if (chatModal) {
- window.location.href = '/admin/messages';
+document.addEventListener('keydown', function(e) {
+ if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+  const activeTextarea = document.activeElement;
+  if (activeTextarea && activeTextarea.classList.contains('js-chat-hotkey')) {
+   e.preventDefault();
+   const form = activeTextarea.closest('form');
+   if (form && form.reportValidity()) form.requestSubmit();
+  }
  }
-}
-
-const disputeChatModal = document.getElementById('disputeChatModal');
-if (disputeChatModal) {
- disputeChatModal.addEventListener('click', function(e) {
- if (e.target === disputeChatModal) {
- closeDisputeChatModal();
+ if (e.key === 'Escape') {
+  closeViewModal();
+  closeSendModal();
+  closeDisputeChatModal();
  }
- });
-}
-
-function showToast(message, type = 'success') {
- const toast = document.createElement('div');
- toast.className = 'alert ' + (type === 'success' ? 'alert--success' : 'alert--error');
- toast.style.cssText = 'position:fixed; top:20px; right:20px; z-index:3000; min-width:260px; max-width:420px; box-shadow:0 12px 30px rgba(0,0,0,.12); opacity:0; transform:translateY(-8px); transition:opacity .25s ease, transform .25s ease;';
- toast.textContent = message;
- document.body.appendChild(toast);
- requestAnimationFrame(() => {
-  toast.style.opacity = '1';
-  toast.style.transform = 'translateY(0)';
- });
- setTimeout(() => {
-  toast.style.opacity = '0';
-  toast.style.transform = 'translateY(-8px)';
-  setTimeout(() => toast.remove(), 260);
- }, 2600);
-}
-
-document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
- const type = alertEl.classList.contains('alert--error') ? 'error' : 'success';
- showToast(alertEl.textContent.trim(), type);
- alertEl.remove();
 });
-
-function closeDisputeChatModal() {
- const chatModal = document.getElementById('disputeChatModal');
- if (chatModal) {
- window.location.href = '/admin/messages';
- }
-}
-
-const disputeChatModal = document.getElementById('disputeChatModal');
-if (disputeChatModal) {
- disputeChatModal.addEventListener('click', function(e) {
- if (e.target === disputeChatModal) {
- closeDisputeChatModal();
- }
- });
-}
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
