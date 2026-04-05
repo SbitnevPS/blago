@@ -6,6 +6,10 @@
  * It forces Valet to use /index.php as the front controller
  * and properly resolves static files from the project root.
  */
+if (!class_exists('ValetDriver') && class_exists(\Valet\Drivers\ValetDriver::class)) {
+    class_alias(\Valet\Drivers\ValetDriver::class, 'ValetDriver');
+}
+
 class LocalValetDriver extends ValetDriver
 {
     /**
