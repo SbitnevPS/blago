@@ -16,13 +16,13 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
             <div class="navbar__menu">
                 <?php if (isAuthenticated()): ?>
                     <a href="/contests" class="navbar__link <?= $currentPage === 'contests' ? 'navbar__link--active' : '' ?>">
-                        <i class="fas fa-trophy"></i> Конкурсы
+                        <i class="fas fa-trophy"></i><span class="navbar__link-text">Конкурсы</span>
                     </a>
                     <a href="/my-applications" class="navbar__link <?= $currentPage === 'applications' ? 'navbar__link--active' : '' ?>">
-                        <i class="fas fa-file-alt"></i> Мои заявки
+                        <i class="fas fa-file-alt"></i><span class="navbar__link-text">Мои заявки</span>
                     </a>
                     <a href="/messages" class="navbar__link messages-link <?= $currentPage === 'messages' ? 'navbar__link--active' : '' ?>">
-                        <i class="fas fa-envelope"></i> Сообщения
+                        <i class="fas fa-envelope"></i><span class="navbar__link-text">Сообщения</span>
                         <?php if ($unreadMessages >0): ?>
                             <span class="messages-badge"><?= (int) $unreadMessages ?></span>
                         <?php endif; ?>

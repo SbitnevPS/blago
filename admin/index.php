@@ -27,8 +27,8 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <!-- Статистические карточки -->
-<div class="stats-grid">
-<div class="stat-card">
+<div class="stats-grid stats-grid--dashboard">
+<div class="stat-card stat-card--compact">
 <div class="stat-card__icon" style="background: #EEF2FF; color: #6366F1;">
 <i class="fas fa-users"></i>
 </div>
@@ -38,7 +38,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 </div>
 
-<div class="stat-card">
+<div class="stat-card stat-card--compact">
 <div class="stat-card__icon" style="background: #FEF3C7; color: #F59E0B;">
 <i class="fas fa-trophy"></i>
 </div>
@@ -48,27 +48,17 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 </div>
 
-<div class="stat-card">
-<div class="stat-card__icon" style="background: #D1FAE5; color: #10B981;">
+<div class="stat-card stat-card--compact stat-card--applications">
+<div class="stat-card__icon" style="background: #E2E8F0; color: #475569;">
 <i class="fas fa-file-alt"></i>
 </div>
 <div class="stat-card__content">
-<div class="stat-card__value"><?= $stats['applications'] ?></div>
-<div class="stat-card__label">Всего заявок</div>
+<a href="/admin/applications.php" class="stat-card__link-row">Всего заявок <span><?= (int) $stats['applications'] ?></span></a>
+<a href="/admin/applications.php?status=submitted" class="stat-card__link-row">Из них новых <span><?= (int) $stats['pending_applications'] ?></span></a>
 </div>
 </div>
 
-<div class="stat-card">
-<div class="stat-card__icon" style="background: #FEE2E2; color: #EF4444;">
-<i class="fas fa-clock"></i>
-</div>
-<div class="stat-card__content">
-<div class="stat-card__value"><?= $stats['pending_applications'] ?></div>
-<div class="stat-card__label">Новых заявок</div>
-</div>
-</div>
-
-<div class="stat-card" onclick="window.location.href='/admin/messages.php'" style="cursor:pointer;">
+<div class="stat-card stat-card--compact" onclick="window.location.href='/admin/messages.php'" style="cursor:pointer;">
 <div class="stat-card__icon" style="background: #E0E7FF; color: #4F46E5;">
 <i class="fas fa-envelope"></i>
 </div>

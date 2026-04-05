@@ -69,11 +69,11 @@ $unreadCount = $unreadCount->fetchColumn();
 <i class="fas fa-paint-brush navbar__logo-icon"></i> ДетскиеКонкурсы.рф
 </a>
 <div class="navbar__menu">
-<a href="/contests" class="navbar__link">Конкурсы</a>
-<a href="/my-applications" class="navbar__link">Мои заявки</a>
-<a href="/profile" class="navbar__link">Мой профиль</a>
+<a href="/contests" class="navbar__link"><i class="fas fa-trophy"></i><span class="navbar__link-text">Конкурсы</span></a>
+<a href="/my-applications" class="navbar__link"><i class="fas fa-file-alt"></i><span class="navbar__link-text">Мои заявки</span></a>
+<a href="/profile" class="navbar__link"><i class="fas fa-user"></i><span class="navbar__link-text">Профиль</span></a>
 <a href="/messages" class="navbar__link navbar__link--active messages-link">
-<i class="fas fa-envelope"></i> Сообщения
+<i class="fas fa-envelope"></i><span class="navbar__link-text">Сообщения</span>
  <?php if ($unreadCount >0): ?>
 <span class="messages-badge messages-badge--pulse"><?= $unreadCount ?></span>
  <?php endif; ?>
@@ -178,9 +178,9 @@ $unreadCount = $unreadCount->fetchColumn();
 <i class="fas fa-arrow-left"></i> Назад к списку
 </button>
 <div class="message-detail__content">
+<div class="mb-lg" id="detailPriority"></div>
 <h2 id="detailTitle"></h2>
 <div class="message-detail__date" id="detailDate"></div>
-<div class="mb-lg" id="detailPriority"></div>
 <div class="message-detail__text" id="detailContent"></div>
 </div>
 </div>
@@ -208,9 +208,9 @@ function showMessage(id, title, content, date, priority) {
     // Priority badge
     let priorityHtml = '';
     if (priority === 'critical') {
-        priorityHtml = '<span class="badge message-detail-priority message-detail-priority--critical"><i class="fas fa-exclamation-triangle"></i> КРИТИЧЕСКОЕ СООБЩЕНИЕ</span>';
+        priorityHtml = '<span class="badge message-detail-priority message-detail-priority--critical"><i class="fas fa-exclamation-triangle"></i><span>КРИТИЧЕСКОЕ СООБЩЕНИЕ</span></span>';
     } else if (priority === 'important') {
-        priorityHtml = '<span class="badge message-detail-priority message-detail-priority--important"><i class="fas fa-exclamation-circle"></i> ВАЖНОЕ СООБЩЕНИЕ</span>';
+        priorityHtml = '<span class="badge message-detail-priority message-detail-priority--important"><i class="fas fa-exclamation-circle"></i><span>ВАЖНОЕ СООБЩЕНИЕ</span></span>';
     }
     
     document.getElementById('detailPriority').innerHTML = priorityHtml;

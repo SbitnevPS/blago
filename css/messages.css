@@ -33,7 +33,7 @@
 
 .message-detail__date {
     color: var(--color-text-tertiary);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
     margin-bottom: var(--space-lg);
 }
 
@@ -66,8 +66,13 @@
 
 .message-detail-priority {
     color: #fff;
-    font-size: 12px;
-    padding: 6px 14px;
+    font-size: 13px;
+    padding: 10px 14px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: flex-start;
 }
 
 .message-detail-priority--critical {
@@ -91,6 +96,50 @@
 
 .navbar__avatar-icon {
     color: var(--color-primary);
+}
+
+@media (max-width: 980px) {
+    body {
+        padding-bottom: 74px;
+    }
+
+    .navbar {
+        position: fixed;
+        bottom: 0;
+        top: auto;
+        width: 100%;
+        border-top: 1px solid var(--color-border);
+    }
+
+    .navbar__logo {
+        display: none;
+    }
+
+    .navbar__inner {
+        height: auto;
+        padding: 6px 0;
+    }
+
+    .navbar__menu {
+        width: 100%;
+        justify-content: space-around;
+        gap: 0;
+    }
+
+    .navbar__link {
+        flex-direction: column;
+        gap: 2px;
+        padding: 8px 4px;
+        font-size: 11px;
+    }
+
+    .navbar__link-text {
+        font-size: 10px;
+    }
+
+    .navbar__user {
+        display: none;
+    }
 }
 
 @media (max-width: 768px) {

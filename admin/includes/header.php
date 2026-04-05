@@ -60,6 +60,7 @@ $adminUnreadDisputes = function_exists('getAdminUnreadDisputeCount') ? getAdminU
 </a>
 </div>
 </aside>
+<div class="admin-sidebar-overlay" id="adminSidebarOverlay" onclick="toggleSidebar(false)"></div>
 
  <!-- Main Content -->
 <main class="admin-content">
@@ -91,7 +92,30 @@ $adminUnreadDisputes = function_exists('getAdminUnreadDisputeCount') ? getAdminU
 </div>
         
 <script>
- function toggleSidebar() {
- document.getElementById('adminSidebar').classList.toggle('open');
+ function toggleSidebar(forceState) {
+ const sidebar = document.getElementById('adminSidebar');
+ const overlay = document.getElementById('adminSidebarOverlay');
+ const shouldOpen = typeof forceState === 'boolean' ? forceState : !sidebar.classList.contains('open');
+ sidebar.classList.toggle('open', shouldOpen);
+ if (overlay) {
+ overlay.classList.toggle('active', shouldOpen);
  }
+ }
+
+ document.addEventListener('click', function(event) {
+ const sidebar = document.getElementById('adminSidebar');
+ const overlay = document.getElementById('adminSidebarOverlay');
+ const toggleButton = document.querySelector('.admin-toggle');
+ const isCompact = window.innerWidth <= 1130;
+ if (!isCompact || !sidebar || !sidebar.classList.contains('open')) {
+ return;
+ }
+ if ((toggleButton && toggleButton.contains(event.target)) || sidebar.contains(event.target)) {
+ return;
+ }
+ sidebar.classList.remove('open');
+ if (overlay) {
+ overlay.classList.remove('active');
+ }
+ });
 </script>

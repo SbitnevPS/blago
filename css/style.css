@@ -1456,3 +1456,81 @@ h4 {
 		padding: var(--space-lg) var(--space-md);
 	}
 }
+
+.application-card__status {
+	font-size: var(--font-size-sm);
+	padding: 8px 12px;
+}
+
+.application-card__info-item {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+}
+
+.application-card__participants-value {
+	font-size: 1.25rem;
+	font-weight: var(--font-weight-bold);
+	color: var(--color-text);
+}
+
+@media (max-width: 980px) {
+	body {
+		padding-bottom: 76px;
+	}
+
+	.navbar {
+		position: fixed;
+		bottom: 0;
+		top: auto;
+		width: 100%;
+		border-top: 1px solid var(--color-border);
+		border-bottom: none;
+		backdrop-filter: blur(10px);
+		z-index: 150;
+	}
+
+	.navbar__inner {
+		height: auto;
+		padding: 6px 0;
+	}
+
+	.navbar__logo {
+		display: none;
+	}
+
+	.navbar__menu {
+		width: 100%;
+		justify-content: space-around;
+		gap: 0;
+	}
+
+	.navbar__link {
+		flex-direction: column;
+		justify-content: center;
+		gap: 2px;
+		padding: 8px 2px;
+		font-size: 11px;
+		min-width: 64px;
+	}
+
+	.navbar__link i {
+		font-size: 16px;
+	}
+
+	.navbar__link-text {
+		font-size: 10px;
+		line-height: 1.2;
+	}
+
+	.navbar__user-trigger {
+		padding: 6px 2px;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.navbar__user-name,
+	.navbar__chevron {
+		font-size: 10px;
+	}
+}
