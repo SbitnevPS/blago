@@ -101,6 +101,7 @@ $routes = [
  '/admin/application/{id}' => ['file' => 'admin/application-view.php', 'name' => 'admin-application-view'],
  '/admin/users' => ['file' => 'admin/users.php', 'name' => 'admin-users'],
  '/admin/messages' => ['file' => 'admin/messages.php', 'name' => 'admin-messages'],
+ '/admin/settings' => ['file' => 'admin/settings.php', 'name' => 'admin-settings'],
  '/admin/search-users' => ['file' => 'admin/search-users.php', 'name' => 'admin-search-users'],
  '/admin/login' => ['file' => 'admin/login.php', 'name' => 'admin-login'],
 ];

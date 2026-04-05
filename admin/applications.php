@@ -150,7 +150,22 @@ require_once __DIR__ . '/includes/header.php';
             </thead>
             <tbody>
                 <?php foreach ($applications as $app): ?>
-                <tr>
+                <?php
+                    $statusLabels = [
+                        'draft' => 'Черновик',
+                        'submitted' => 'Отправлена',
+                        'approved' => 'Заявка принята',
+                        'rejected' => 'Отменена',
+                    ];
+                    $statusClasses = [
+                        'draft' => 'badge--warning',
+                        'submitted' => 'badge--success',
+                        'approved' => 'badge--success',
+                        'rejected' => 'badge--warning',
+                    ];
+                    $rowStyle = $app['status'] === 'approved' ? 'background:#ECFDF5;' : '';
+                ?>
+                <tr style="<?= $rowStyle ?>">
                     <td>#<?= $app['id'] ?></td>
                     <td>
                         <div class="flex items-center gap-md">
@@ -168,8 +183,8 @@ require_once __DIR__ . '/includes/header.php';
                     <td><?= htmlspecialchars($app['contest_title'] ?? '—') ?></td>
                     <td><?= $app['participants_count'] ?></td>
                     <td>
-                        <span class="badge <?= $app['status'] === 'submitted' ? 'badge--success' : 'badge--warning' ?>">
-                            <?= $app['status'] === 'submitted' ? 'Отправлена' : 'Черновик' ?>
+                        <span class="badge <?= $statusClasses[$app['status']] ?? 'badge--warning' ?>">
+                            <?= htmlspecialchars($statusLabels[$app['status']] ?? ucfirst((string) $app['status'])) ?>
                         </span>
                     </td>
                     <td><?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></td>

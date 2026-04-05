@@ -66,6 +66,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt->execute([$newStatus, $application_id]);
         $application['status'] = $newStatus;
         $_SESSION['success_message'] = 'Статус обновлён';
+        redirect('/admin/applications');
+    } elseif ($_POST['action'] === 'approve_application') {
+        $stmt = $pdo->prepare("UPDATE applications SET status = 'approved', updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$application_id]);
+        $application['status'] = 'approved';
+
+        $subject = getSystemSetting('application_approved_subject', 'Ваша заявка принята');
+        $message = getSystemSetting('application_approved_message', 'Ваша заявка принята, ожидайте результаты конкурса.');
+        $stmt = $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())");
+        $stmt->execute([$application['user_id'], $admin['id'], $subject, $message]);
+
+        $_SESSION['success_message'] = 'Заявка принята';
+        redirect('/admin/applications');
+    } elseif ($_POST['action'] === 'cancel_application') {
+        $stmt = $pdo->prepare("UPDATE applications SET status = 'rejected', updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$application_id]);
+        $application['status'] = 'rejected';
+
+        $subject = getSystemSetting('application_cancelled_subject', 'Ваша заявка отменена');
+        $message = getSystemSetting('application_cancelled_message', 'Ваша заявка отменена администратором.');
+        $stmt = $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'normal', NOW())");
+        $stmt->execute([$application['user_id'], $admin['id'], $subject, $message]);
+
+        $_SESSION['success_message'] = 'Заявка отменена';
+        redirect('/admin/applications');
 } elseif ($_POST['action'] === 'delete') {
  // Удаляем участников и заявку
  $pdo->prepare("DELETE FROM participants WHERE application_id = ?")->execute([$application_id]);
@@ -234,7 +259,23 @@ require_once __DIR__ . '/includes/header.php';
 <option value="rejected" <?= $application['status'] === 'rejected' ? 'selected' : '' ?>>Отклонена</option>
 </select>
 <button type="submit" class="btn btn--primary" style="padding:10px20px;">
-<i class="fas fa-save"></i> Сохранить
+<i class="fas fa-save"></i> Сохранить заявку
+</button>
+</form>
+<form method="POST">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+<input type="hidden" name="action" value="approve_application">
+<button type="submit" class="btn" style="background:#D1FAE5; color:#065F46; padding:10px16px; border-radius:8px; border:none; cursor:pointer;">
+<i class="fas fa-check"></i> Заявка принята
+</button>
+</form>
+<form method="POST">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+<input type="hidden" name="action" value="cancel_application">
+<button type="submit" class="btn" style="background:#FEE2E2; color:#B91C1C; padding:10px16px; border-radius:8px; border:none; cursor:pointer;">
+<i class="fas fa-ban"></i> Отмена
 </button>
 </form>
 <form method="POST" onsubmit="return confirm('Удалить заявку?');">
