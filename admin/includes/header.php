@@ -40,6 +40,11 @@ $safeBreadcrumb = isset($breadcrumb) ? htmlspecialchars($breadcrumb, ENT_QUOTES,
 <a href="/admin/applications.php" class="admin-sidebar__link <?= $currentPage === 'applications' ? 'admin-sidebar__link--active' : '' ?>">
 <i class="fas fa-file-alt"></i> Заявки
 </a>
+
+<div class="admin-sidebar__section">Система</div>
+<a href="/admin/settings" class="admin-sidebar__link <?= $currentPage === 'settings' ? 'admin-sidebar__link--active' : '' ?>">
+<i class="fas fa-cog"></i> Настройки
+</a>
 </nav>
         
 <div class="admin-sidebar__bottom-links">
