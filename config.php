@@ -375,21 +375,30 @@ function processAndSaveImage($sourcePath, $outputDir, $filename) {
  return $outputPath;
 }
 
+function normalizeDrawingOwner($userEmail) {
+ $email = trim((string) ($userEmail ?? ''));
+ return str_replace(['/', '\\', "\0"], '', $email);
+}
+
+function normalizeDrawingFilename($drawingFile) {
+ return basename(str_replace("\0", '', (string) ($drawingFile ?? '')));
+}
+
 // Получить web-путь рисунка участника с учетом старого и нового формата хранения
 function getParticipantDrawingWebPath($userEmail, $drawingFile) {
- if (empty($drawingFile)) {
+ $safeFile = normalizeDrawingFilename($drawingFile);
+ if ($safeFile === '') {
  return null;
  }
 
- $safeEmail = rawurlencode($userEmail ?? '');
- $safeFile = rawurlencode($drawingFile);
+ $safeEmail = normalizeDrawingOwner($userEmail);
  $userScopedPath = '/uploads/drawings/' . $safeEmail . '/' . $safeFile;
  $legacyPath = '/uploads/drawings/' . $safeFile;
 
- $userScopedFs = DRAWINGS_PATH . '/' . ($userEmail ?? '') . '/' . $drawingFile;
- $legacyFs = DRAWINGS_PATH . '/' . $drawingFile;
+ $userScopedFs = DRAWINGS_PATH . '/' . $safeEmail . '/' . $safeFile;
+ $legacyFs = DRAWINGS_PATH . '/' . $safeFile;
 
- if (!empty($userEmail) && file_exists($userScopedFs)) {
+ if ($safeEmail !== '' && file_exists($userScopedFs)) {
  return $userScopedPath;
  }
 
@@ -402,16 +411,18 @@ function getParticipantDrawingWebPath($userEmail, $drawingFile) {
 
 // Получить абсолютный путь к файлу рисунка участника на диске
 function getParticipantDrawingFsPath($userEmail, $drawingFile) {
- if (empty($drawingFile)) {
+ $safeFile = normalizeDrawingFilename($drawingFile);
+ if ($safeFile === '') {
  return null;
  }
 
- $userScopedFs = DRAWINGS_PATH . '/' . ($userEmail ?? '') . '/' . $drawingFile;
- if (!empty($userEmail) && file_exists($userScopedFs)) {
+ $safeEmail = normalizeDrawingOwner($userEmail);
+ $userScopedFs = DRAWINGS_PATH . '/' . $safeEmail . '/' . $safeFile;
+ if ($safeEmail !== '' && file_exists($userScopedFs)) {
  return $userScopedFs;
  }
 
- $legacyFs = DRAWINGS_PATH . '/' . $drawingFile;
+ $legacyFs = DRAWINGS_PATH . '/' . $safeFile;
  if (file_exists($legacyFs)) {
  return $legacyFs;
  }
