@@ -10,6 +10,37 @@ $admin = getCurrentUser();
 $currentPage = 'messages';
 $pageTitle = 'Сообщения';
 $breadcrumb = 'Все отправленные сообщения';
+
+// Отмечаем пользовательские обращения как просмотренные в админке
+try {
+    $pdo->exec("
+    UPDATE messages m
+    JOIN users u ON u.id = m.created_by
+    SET m.is_read = 1
+    WHERE m.is_read = 0
+      AND u.is_admin = 0
+      AND m.title LIKE 'Оспаривание отклонения заявки%'
+    ");
+} catch (Exception $e) {
+    // Таблица messages может отсутствовать в старых инсталляциях
+}
+
+$userDisputes = [];
+try {
+    $disputeStmt = $pdo->query("
+    SELECT m.*, u.name, u.surname, a.id as application_id
+    FROM messages m
+    JOIN users u ON u.id = m.created_by
+    LEFT JOIN applications a ON a.id = m.application_id
+    WHERE u.is_admin = 0
+      AND m.title LIKE 'Оспаривание отклонения заявки%'
+    ORDER BY m.created_at DESC
+    LIMIT 50
+    ");
+    $userDisputes = $disputeStmt->fetchAll();
+} catch (Exception $e) {
+    $userDisputes = [];
+}
 // --- Фильтры ---
 $search = $_GET['search'] ?? '';
 $priority = $_GET['priority'] ?? '';
@@ -167,6 +198,42 @@ require_once __DIR__ . '/includes/header.php';
 <?php if (isset($success)): ?>
 <div class="alert alert--success mb-lg">
 <i class="fas fa-check-circle"></i> <?= htmlspecialchars($success) ?>
+</div>
+<?php endif; ?>
+
+<?php if (!empty($userDisputes)): ?>
+<div class="card mb-lg">
+    <div class="card__header">
+        <h3>Оспаривания отклонения заявок (<?= count($userDisputes) ?>)</h3>
+    </div>
+    <div class="card__body" style="padding:0;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Дата</th>
+                    <th>Пользователь</th>
+                    <th>Заявка</th>
+                    <th>Сообщение</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($userDisputes as $dispute): ?>
+                <tr>
+                    <td><?= date('d.m.Y H:i', strtotime($dispute['created_at'])) ?></td>
+                    <td><?= htmlspecialchars(trim(($dispute['surname'] ?? '') . ' ' . ($dispute['name'] ?? ''))) ?></td>
+                    <td>
+                        <?php if (!empty($dispute['application_id'])): ?>
+                            <a href="/admin/application/<?= (int) $dispute['application_id'] ?>">#<?= (int) $dispute['application_id'] ?></a>
+                        <?php else: ?>
+                            —
+                        <?php endif; ?>
+                    </td>
+                    <td><?= nl2br(htmlspecialchars($dispute['content'])) ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
 </div>
 <?php endif; ?>
 

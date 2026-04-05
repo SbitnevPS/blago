@@ -6,6 +6,7 @@ require_once dirname(__DIR__, 3) . '/config.php';
 if (!isAuthenticated()) {
  redirect('/login');
 }
+check_csrf();
 
 $applicationId = intval($_GET['id'] ??0);
 $userId = getCurrentUserId();
@@ -25,6 +26,33 @@ if (!$application) {
  redirect('/my-applications');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispute_decline') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $_SESSION['error_message'] = 'Ошибка безопасности. Обновите страницу.';
+    } else {
+        $reason = trim($_POST['dispute_reason'] ?? '');
+        if ($application['status'] !== 'declined') {
+            $_SESSION['error_message'] = 'Оспорить можно только отклонённую заявку.';
+        } elseif ($reason === '') {
+            $_SESSION['error_message'] = 'Укажите причину оспаривания.';
+        } else {
+            $stmt = $pdo->prepare("
+            INSERT INTO messages (user_id, application_id, title, content, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, NOW())
+            ");
+            $stmt->execute([
+                $user['id'],
+                $applicationId,
+                'Оспаривание отклонения заявки #' . $applicationId,
+                $reason,
+                $user['id'],
+            ]);
+            $_SESSION['success_message'] = 'Сообщение отправлено администратору.';
+        }
+    }
+    redirect('/application/' . $applicationId);
+}
+
 // Получаем участников
 $stmt = $pdo->prepare("SELECT * FROM participants WHERE application_id = ?");
 $stmt->execute([$applicationId]);
@@ -38,6 +66,15 @@ $unresolvedCorrections = array_filter($corrections, function($c) {
 
 // Проверяем, разрешено ли редактирование
 $canEdit = $application['allow_edit'] ==1 && $application['status'] !== 'approved';
+$statusLabels = [
+    'draft' => 'Черновик',
+    'submitted' => 'Отправлена',
+    'revision' => 'На корректировке',
+    'approved' => 'Заявка принята',
+    'declined' => 'Заявка отклонена',
+    'cancelled' => 'Отменена',
+];
+$statusClass = in_array($application['status'], ['submitted', 'approved'], true) ? 'success' : 'warning';
 
 $currentPage = 'applications';
 ?>
@@ -54,6 +91,32 @@ $currentPage = 'applications';
 
 <main class="container" style="padding: var(--space-xl) var(--space-lg);">
 <div class="application-detail">
+<?php if (!empty($_SESSION['success_message'])): ?>
+<div class="alert alert--success mb-lg">
+<i class="fas fa-check-circle"></i> <?= htmlspecialchars($_SESSION['success_message']) ?>
+</div>
+<?php unset($_SESSION['success_message']); endif; ?>
+
+<?php if (!empty($_SESSION['error_message'])): ?>
+<div class="alert alert--error mb-lg">
+<i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($_SESSION['error_message']) ?>
+</div>
+<?php unset($_SESSION['error_message']); endif; ?>
+
+<?php if ($application['status'] === 'revision'): ?>
+<div class="alert mb-lg" style="background:#FEF9C3; border:1px solid #FDE68A; color:#92400E;">
+<i class="fas fa-tools"></i> Заявка отправлена на корректировку. Исправьте замечания и отправьте повторно.
+</div>
+<?php elseif ($application['status'] === 'cancelled'): ?>
+<div class="alert mb-lg" style="background:#FEE2E2; border:1px solid #FCA5A5; color:#991B1B;">
+<i class="fas fa-ban"></i> Заявка отменена.
+</div>
+<?php elseif ($application['status'] === 'declined'): ?>
+<div class="alert mb-lg" style="background:#FEE2E2; border:1px solid #FCA5A5; color:#991B1B;">
+<i class="fas fa-times-circle"></i> Заявка отклонена.
+</div>
+<?php endif; ?>
+
  <!-- Корректировки -->
  <?php if (!empty($unresolvedCorrections)): ?>
 <div class="corrections-alert">
@@ -88,8 +151,8 @@ $currentPage = 'applications';
 <div class="application-detail__meta">
 <span><i class="fas fa-trophy"></i> <?= htmlspecialchars($application['contest_title']) ?></span>
 <span><i class="fas fa-calendar"></i> <?= date('d.m.Y H:i', strtotime($application['created_at'])) ?></span>
-<span class="badge badge--<?= $application['status'] === 'submitted' ? 'success' : ($application['status'] === 'approved' ? 'success' : 'warning') ?>">
- <?= $application['status'] === 'submitted' ? 'Отправлена' : ($application['status'] === 'approved' ? 'Одобрена' : 'Черновик') ?>
+<span class="badge badge--<?= $statusClass ?>">
+ <?= htmlspecialchars($statusLabels[$application['status']] ?? ucfirst((string) $application['status'])) ?>
 </span>
 </div>
 </div>
@@ -100,6 +163,26 @@ $currentPage = 'applications';
 <?php endif; ?>
 </div>
 </div>
+
+<?php if ($application['status'] === 'declined'): ?>
+<div class="card mb-lg">
+    <div class="card__header"><h3>Оспорить отклонение заявки</h3></div>
+    <div class="card__body">
+        <form method="POST">
+            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+            <input type="hidden" name="action" value="dispute_decline">
+            <div class="form-group">
+                <label class="form-label">Почему вы считаете отклонение неверным?</label>
+                <textarea name="dispute_reason" class="form-input" rows="4" required placeholder="Опишите причину..."></textarea>
+            </div>
+            <button type="submit" class="btn btn--primary">
+                <i class="fas fa-paper-plane"></i> Оспорить отклонение заявки
+            </button>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
         
  <!-- Данные родителя -->
 <div class="card mb-lg">

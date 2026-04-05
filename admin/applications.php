@@ -82,6 +82,10 @@ require_once __DIR__ . '/includes/header.php';
                     <option value="">Все статусы</option>
                     <option value="draft" <?= $status === 'draft' ? 'selected' : '' ?>>Черновики</option>
                     <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>Отправленные</option>
+                    <option value="revision" <?= $status === 'revision' ? 'selected' : '' ?>>На корректировке</option>
+                    <option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Принятые</option>
+                    <option value="declined" <?= $status === 'declined' ? 'selected' : '' ?>>Отклонённые</option>
+                    <option value="cancelled" <?= $status === 'cancelled' ? 'selected' : '' ?>>Отменённые</option>
                 </select>
             </div>
             <div style="min-width: 200px;">
@@ -150,7 +154,33 @@ require_once __DIR__ . '/includes/header.php';
             </thead>
             <tbody>
                 <?php foreach ($applications as $app): ?>
-                <tr>
+                <?php
+                    $statusLabels = [
+                        'draft' => 'Черновик',
+                        'submitted' => 'Отправлена',
+                        'approved' => 'Заявка принята',
+                        'revision' => 'На корректировке',
+                        'declined' => 'Заявка отклонена',
+                        'cancelled' => 'Отменена',
+                    ];
+                    $statusClasses = [
+                        'draft' => 'badge--warning',
+                        'submitted' => 'badge--success',
+                        'approved' => 'badge--success',
+                        'revision' => 'badge--warning',
+                        'declined' => 'badge--warning',
+                        'cancelled' => 'badge--warning',
+                    ];
+                    $rowStyle = '';
+                    if ($app['status'] === 'approved') {
+                        $rowStyle = 'background:#ECFDF5;';
+                    } elseif ($app['status'] === 'revision') {
+                        $rowStyle = 'background:#FEF9C3;';
+                    } elseif ($app['status'] === 'cancelled' || $app['status'] === 'declined') {
+                        $rowStyle = 'background:#FEE2E2;';
+                    }
+                ?>
+                <tr style="<?= $rowStyle ?>">
                     <td>#<?= $app['id'] ?></td>
                     <td>
                         <div class="flex items-center gap-md">
@@ -168,8 +198,8 @@ require_once __DIR__ . '/includes/header.php';
                     <td><?= htmlspecialchars($app['contest_title'] ?? '—') ?></td>
                     <td><?= $app['participants_count'] ?></td>
                     <td>
-                        <span class="badge <?= $app['status'] === 'submitted' ? 'badge--success' : 'badge--warning' ?>">
-                            <?= $app['status'] === 'submitted' ? 'Отправлена' : 'Черновик' ?>
+                        <span class="badge <?= $statusClasses[$app['status']] ?? 'badge--warning' ?>">
+                            <?= htmlspecialchars($statusLabels[$app['status']] ?? ucfirst((string) $app['status'])) ?>
                         </span>
                     </td>
                     <td><?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></td>

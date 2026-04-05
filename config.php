@@ -21,6 +21,7 @@ define('DOCUMENTS_PATH', UPLOAD_PATH . '/documents');
 
 // URL
 define('SITE_URL', 'https://kids-contests.ru');
+define('SETTINGS_FILE', ROOT_PATH . '/storage/settings.json');
 
 // Подключение к базе данных
 try {
@@ -146,6 +147,69 @@ function jsonResponse($payload, $statusCode = 200) {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode($payload);
     exit;
+}
+
+function getSystemSettings() {
+    if (isset($GLOBALS['__system_settings_cache']) && is_array($GLOBALS['__system_settings_cache'])) {
+        return $GLOBALS['__system_settings_cache'];
+    }
+
+    $defaults = [
+        'application_approved_subject' => 'Ваша заявка принята',
+        'application_approved_message' => 'Ваша заявка принята, ожидайте результаты конкурса.',
+        'application_cancelled_subject' => 'Ваша заявка отменена',
+        'application_cancelled_message' => 'Ваша заявка отменена администратором.',
+        'application_declined_subject' => 'Ваша заявка отклонена',
+        'application_declined_message' => 'Ваша заявка отклонена администратором.',
+        'application_revision_subject' => 'Заявка отправлена на корректировку',
+        'application_revision_message' => 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.',
+    ];
+
+    if (!is_file(SETTINGS_FILE)) {
+        $GLOBALS['__system_settings_cache'] = $defaults;
+        return $GLOBALS['__system_settings_cache'];
+    }
+
+    $raw = @file_get_contents(SETTINGS_FILE);
+    if ($raw === false) {
+        $GLOBALS['__system_settings_cache'] = $defaults;
+        return $GLOBALS['__system_settings_cache'];
+    }
+
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        $GLOBALS['__system_settings_cache'] = $defaults;
+        return $GLOBALS['__system_settings_cache'];
+    }
+
+    $GLOBALS['__system_settings_cache'] = array_merge($defaults, $decoded);
+    return $GLOBALS['__system_settings_cache'];
+}
+
+function getSystemSetting($key, $default = '') {
+    $settings = getSystemSettings();
+    return $settings[$key] ?? $default;
+}
+
+function saveSystemSettings(array $newValues) {
+    $settings = array_merge(getSystemSettings(), $newValues);
+    $dir = dirname(SETTINGS_FILE);
+    if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+        return false;
+    }
+
+    $saved = file_put_contents(
+        SETTINGS_FILE,
+        json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
+    );
+
+    if ($saved === false) {
+        return false;
+    }
+
+    // Сбрасываем кэш настроек
+    unset($GLOBALS['__system_settings_cache']);
+    return true;
 }
 
 // Функции для работы с загрузками
@@ -528,6 +592,23 @@ function markAllMessagesAsRead($userId) {
  global $pdo;
  $stmt = $pdo->prepare("UPDATE messages SET is_read =1 WHERE user_id = ? AND is_read =0");
  $stmt->execute([$userId]);
+}
+
+function getAdminUnreadDisputeCount() {
+ global $pdo;
+ try {
+     $stmt = $pdo->query("
+     SELECT COUNT(*)
+     FROM messages m
+     JOIN users u ON u.id = m.created_by
+     WHERE m.is_read = 0
+       AND u.is_admin = 0
+       AND m.title LIKE 'Оспаривание отклонения заявки%'
+     ");
+     return (int) $stmt->fetchColumn();
+ } catch (Exception $e) {
+     return 0;
+ }
 }
 
 // Функция для поиска пользователей (для автодополнения)

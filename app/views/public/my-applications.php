@@ -45,14 +45,33 @@ $currentPage = 'applications';
 <?php else: ?>
 <div class="cards-grid">
 <?php foreach ($applications as $app): ?>
-<a href="/application/<?= $app['id'] ?>" class="application-card application-card--link">
+<?php
+    $statusLabels = [
+        'draft' => 'Черновик',
+        'submitted' => 'Отправлена',
+        'revision' => 'На корректировке',
+        'approved' => 'Заявка принята',
+        'declined' => 'Заявка отклонена',
+        'cancelled' => 'Отменена',
+    ];
+    $statusClass = in_array($app['status'], ['submitted', 'approved'], true) ? 'badge--success' : 'badge--warning';
+    $cardStyle = '';
+    if ($app['status'] === 'approved') {
+        $cardStyle = 'background:#ECFDF5;';
+    } elseif ($app['status'] === 'revision') {
+        $cardStyle = 'background:#FEF9C3;';
+    } elseif (in_array($app['status'], ['cancelled', 'declined'], true)) {
+        $cardStyle = 'background:#FEE2E2;';
+    }
+?>
+<a href="/application/<?= $app['id'] ?>" class="application-card application-card--link" style="<?= $cardStyle ?>">
 <div class="application-card__header">
 <div>
 <h3 class="application-card__title">Заявка #<?= (int) $app['id'] ?></h3>
 <div class="application-card__contest"><?= htmlspecialchars($app['contest_title']) ?></div>
 </div>
-<span class="badge <?= $app['status'] === 'submitted' ? 'badge--success' : 'badge--warning' ?>">
-<?= $app['status'] === 'submitted' ? 'Отправлена' : 'Черновик' ?>
+<span class="badge <?= $statusClass ?>">
+<?= htmlspecialchars($statusLabels[$app['status']] ?? ucfirst((string) $app['status'])) ?>
 </span>
 </div>
 <div class="application-card__body">
