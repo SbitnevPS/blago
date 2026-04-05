@@ -116,17 +116,17 @@ require_once __DIR__ . '/includes/header.php';
                 
                 foreach ($recentApps as $app): ?>
                 <tr>
-                    <td>#<?= $app['id'] ?></td>
-                    <td><?= htmlspecialchars($app['contest_title']) ?></td>
-                    <td><?= htmlspecialchars(($app['name'] ?? '') . ' ' . ($app['surname'] ?? '')) ?></td>
-                    <td><?= $app['participants_count'] ?></td>
-                    <td>
+                    <td data-label="ID">#<?= $app['id'] ?></td>
+                    <td data-label="Конкурс"><?= htmlspecialchars($app['contest_title']) ?></td>
+                    <td data-label="Пользователь"><?= htmlspecialchars(($app['name'] ?? '') . ' ' . ($app['surname'] ?? '')) ?></td>
+                    <td data-label="Участников"><?= $app['participants_count'] ?></td>
+                    <td data-label="Статус">
                         <span class="badge <?= $app['status'] === 'submitted' ? 'badge--success' : 'badge--warning' ?>">
                             <?= $app['status'] === 'submitted' ? 'Отправлена' : 'Черновик' ?>
                         </span>
                     </td>
-                    <td><?= date('d.m.Y', strtotime($app['created_at'])) ?></td>
-                    <td>
+                    <td data-label="Дата"><?= date('d.m.Y', strtotime($app['created_at'])) ?></td>
+                    <td data-label="Действия">
                         <a href="/admin/application/<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
                             <i class="fas fa-eye"></i>
                         </a>
@@ -218,8 +218,8 @@ foreach ($recentMessages as $msg) {
 
 foreach ($filteredMessages as $msg): ?>
 <tr>
-<td>#<?= $msg['id'] ?></td>
-<td>
+<td data-label="ID">#<?= $msg['id'] ?></td>
+<td data-label="Получатель">
 <?php if (!empty($msg['is_broadcast'])): ?>
 <span style="color:#6366F1; font-weight:500;"><i class="fas fa-bullhorn"></i> Отправлено для всех</span>
 <?php elseif (!empty($msg['user_name'])): ?>
@@ -228,8 +228,8 @@ foreach ($filteredMessages as $msg): ?>
 <span class="text-secondary">Пользователь удален</span>
 <?php endif; ?>
 </td>
-<td><?= htmlspecialchars($msg['subject']) ?></td>
-<td>
+<td data-label="Тема"><?= htmlspecialchars($msg['subject']) ?></td>
+<td data-label="Приоритет">
 <?php if ($msg['priority'] === 'critical'): ?>
 <span class="badge" style="background:#EF4444; color:white;">Критическое</span>
 <?php elseif ($msg['priority'] === 'important'): ?>
@@ -238,7 +238,7 @@ foreach ($filteredMessages as $msg): ?>
 <span class="badge" style="background:#6B7280; color:white;">Обычное</span>
 <?php endif; ?>
 </td>
-<td><?= date('d.m.Y H:i', strtotime($msg['created_at'])) ?></td>
+<td data-label="Дата"><?= date('d.m.Y H:i', strtotime($msg['created_at'])) ?></td>
 </tr>
 <?php endforeach; ?>
 

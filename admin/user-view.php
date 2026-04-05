@@ -189,16 +189,16 @@ require_once __DIR__ . '/includes/header.php';
 <tbody>
  <?php foreach ($applications as $app): ?>
 <tr>
-<td>#<?= $app['id'] ?></td>
-<td><?= htmlspecialchars($app['contest_title']) ?></td>
-<td><?= $app['participants_count'] ?></td>
-<td>
+<td data-label="ID">#<?= $app['id'] ?></td>
+<td data-label="Конкурс"><?= htmlspecialchars($app['contest_title']) ?></td>
+<td data-label="Участников"><?= $app['participants_count'] ?></td>
+<td data-label="Статус">
 <span class="badge <?= $app['status'] === 'submitted' ? 'badge--success' : 'badge--warning' ?>">
  <?= $app['status'] === 'submitted' ? 'Отправлена' : 'Черновик' ?>
 </span>
 </td>
-<td><?= date('d.m.Y', strtotime($app['created_at'])) ?></td>
-<td>
+<td data-label="Дата"><?= date('d.m.Y', strtotime($app['created_at'])) ?></td>
+<td data-label="Действия">
 <a href="/admin/application/<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
 <i class="fas fa-eye"></i>
 </a>

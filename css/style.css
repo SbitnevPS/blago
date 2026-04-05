@@ -818,6 +818,51 @@ h4 {
 		flex-direction: column;
 		text-align: center;
 	}
+
+	.table {
+		border: 0;
+	}
+
+	.table thead {
+		display: none;
+	}
+
+	.table tr {
+		display: block;
+		margin-bottom: var(--space-md);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-surface);
+	}
+
+	.table td {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: var(--space-sm);
+		padding: var(--space-sm) var(--space-md);
+		text-align: right;
+		border-bottom: 1px solid var(--color-border-light);
+	}
+
+	.table td::before {
+		content: attr(data-label);
+		font-size: var(--font-size-xs);
+		font-weight: var(--font-weight-semibold);
+		color: var(--color-text-secondary);
+		text-transform: uppercase;
+		letter-spacing: .04em;
+		text-align: left;
+	}
+
+	.table td[colspan] {
+		display: block;
+		text-align: center;
+	}
+
+	.table td[colspan]::before {
+		content: none;
+	}
 }
 
 /* Admin specific */

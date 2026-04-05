@@ -543,6 +543,51 @@ grid-template-columns:1fr;
 .card__body {
 overflow-x: auto;
 }
+
+.table {
+	border: 0;
+}
+
+.table thead {
+	display: none;
+}
+
+.table tr {
+	display: block;
+	margin-bottom: 12px;
+	border: 1px solid #E5E7EB;
+	border-radius: 10px;
+	background: #fff;
+}
+
+.table td {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	align-items: flex-start;
+	border-bottom: 1px solid #F3F4F6;
+	padding: 10px 14px;
+	text-align: right;
+}
+
+.table td::before {
+	content: attr(data-label);
+	font-weight: 600;
+	color: #6B7280;
+	text-transform: uppercase;
+	letter-spacing: .04em;
+	font-size: 11px;
+	text-align: left;
+}
+
+.table td[colspan] {
+	display: block;
+	text-align: center;
+}
+
+.table td[colspan]::before {
+	content: none;
+}
 }
         
  .admin-toggle {
