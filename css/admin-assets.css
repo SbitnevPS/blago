@@ -180,3 +180,64 @@
 }
 
 .message-form__counter { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
+
+.dispute-chat-modal {
+  max-width: 900px;
+  width: min(95vw, 900px);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.dispute-chat-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
+}
+.dispute-chat-modal__messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  min-height: 220px;
+  max-height: calc(90vh - 260px);
+  padding-right: 4px;
+}
+.dispute-chat-modal__composer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+}
+.dispute-chat-message {
+  max-width: 78%;
+}
+.dispute-chat-message--admin {
+  align-self: flex-end;
+}
+.dispute-chat-message--user {
+  align-self: flex-start;
+}
+.dispute-chat-message__bubble {
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+.dispute-chat-message--admin .dispute-chat-message__bubble {
+  background: #dcfce7;
+}
+.dispute-chat-message--user .dispute-chat-message__bubble {
+  background: #eef2ff;
+}
+.dispute-chat-message__meta {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dispute-chat-message__text {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
