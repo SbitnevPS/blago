@@ -677,7 +677,7 @@ foreach ($messages as $msg) {
 </div>
 
 <script>
-const csrfTokenValue = <?= json_encode(csrf_token(), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+const csrfTokenValue = document.querySelector('input[name="csrf_token"]')?.value || '';
 
 function filterByPriority(priority) {
  const url = new URL(window.location.href);
@@ -710,7 +710,7 @@ function viewMessage(id, subject, message, priority) {
 
 function closeViewModal() {
  document.getElementById('viewMessageModal').classList.remove('active');
- document.body.style.overflow = '';
+ restoreBodyScrollIfNoModals();
 }
 
 function deleteMessage(id, isBroadcast, subject) {
@@ -763,7 +763,7 @@ function openSendModal() {
 
 function closeSendModal() {
  document.getElementById('sendMessageModal').classList.remove('active');
- document.body.style.overflow = '';
+ restoreBodyScrollIfNoModals();
 }
 
 function toggleUserSelect() {
@@ -878,6 +878,12 @@ document.getElementById('sendMessageModal').addEventListener('click', function(e
  }
 });
 
+document.getElementById('viewMessageModal').addEventListener('click', function(e) {
+ if (e.target === this) {
+ closeViewModal();
+ }
+});
+
 document.addEventListener('keydown', function(e) {
  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
  const activeTextarea = document.activeElement;
@@ -892,6 +898,67 @@ document.addEventListener('keydown', function(e) {
  closeSendModal();
  closeDisputeChatModal();
  }
+});
+
+function closeDisputeChatModal() {
+ const chatModal = document.getElementById('disputeChatModal');
+ if (chatModal) {
+  chatModal.classList.remove('active');
+  const url = new URL(window.location.href);
+  url.searchParams.delete('dispute_application_id');
+  history.replaceState({}, '', url.toString());
+  restoreBodyScrollIfNoModals();
+ }
+}
+
+const disputeChatModal = document.getElementById('disputeChatModal');
+if (disputeChatModal) {
+ disputeChatModal.addEventListener('click', function(e) {
+ if (e.target === disputeChatModal) {
+ closeDisputeChatModal();
+ }
+ });
+ document.body.style.overflow = 'hidden';
+}
+
+function restoreBodyScrollIfNoModals() {
+ const activeModal = document.querySelector('.modal.active');
+ document.body.style.overflow = activeModal ? 'hidden' : '';
+}
+
+function showToast(message, type = 'success') {
+ const toast = document.createElement('div');
+ toast.className = 'alert ' + (type === 'success' ? 'alert--success' : 'alert--error');
+ toast.style.cssText = 'position:fixed; top:20px; right:20px; z-index:3000; min-width:260px; max-width:420px; box-shadow:0 12px 30px rgba(0,0,0,.12); opacity:0; transform:translateY(-8px); transition:opacity .25s ease, transform .25s ease;';
+ toast.textContent = message;
+ document.body.appendChild(toast);
+ requestAnimationFrame(() => {
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+ });
+ setTimeout(() => {
+  toast.style.opacity = '0';
+  toast.style.transform = 'translateY(-8px)';
+  setTimeout(() => toast.remove(), 260);
+ }, 2600);
+}
+
+document.querySelectorAll('.alert').forEach((alertEl) => {
+ const type = alertEl.classList.contains('alert--error') ? 'error' : 'success';
+ showToast(alertEl.textContent.trim(), type);
+ alertEl.remove();
+});
+
+document.querySelectorAll('.js-chat-hotkey, textarea[name="message"]').forEach((textarea) => {
+ textarea.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+   event.preventDefault();
+   const form = textarea.closest('form');
+   if (form && form.reportValidity()) {
+    form.requestSubmit();
+   }
+  }
+ });
 });
 
 function closeDisputeChatModal() {

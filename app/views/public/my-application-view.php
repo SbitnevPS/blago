@@ -441,7 +441,7 @@ document.querySelectorAll('.js-chat-hotkey').forEach((textarea) => {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
    event.preventDefault();
    const form = textarea.closest('form');
-   if (form) form.submit();
+   if (form && form.reportValidity()) form.requestSubmit();
   }
  });
 });
@@ -463,7 +463,7 @@ function showToast(message, type = 'success') {
  }, 2600);
 }
 
-document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
+document.querySelectorAll('.alert').forEach((alertEl) => {
  const type = alertEl.classList.contains('alert--error') ? 'error' : 'success';
  showToast(alertEl.textContent.trim(), type);
  alertEl.remove();
