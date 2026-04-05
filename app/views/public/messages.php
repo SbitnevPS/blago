@@ -21,6 +21,32 @@ $stmt = $pdo->prepare("
 $stmt->execute([$userId]);
 $messages = $stmt->fetchAll();
 
+$disputeChats = [];
+try {
+    $chatStmt = $pdo->prepare("
+    SELECT
+        m.application_id,
+        m.title,
+        MAX(m.created_at) AS last_message_at,
+        SUBSTRING_INDEX(
+            GROUP_CONCAT(m.content ORDER BY m.created_at DESC SEPARATOR '||__||'),
+            '||__||',
+            1
+        ) AS last_message,
+        SUM(CASE WHEN m.is_read = 0 AND u.is_admin = 1 THEN 1 ELSE 0 END) AS unread_count
+    FROM messages m
+    JOIN users u ON u.id = m.created_by
+    WHERE m.user_id = ?
+      AND m.title LIKE 'Оспаривание решения по заявке%'
+    GROUP BY m.application_id, m.title
+    ORDER BY last_message_at DESC
+    ");
+    $chatStmt->execute([$userId]);
+    $disputeChats = $chatStmt->fetchAll();
+} catch (Exception $e) {
+    $disputeChats = [];
+}
+
 // Подсчет непрочитанных
 $unreadCount = $pdo->prepare("SELECT COUNT(*) FROM admin_messages WHERE user_id = ? AND is_read =0");
 $unreadCount->execute([$userId]);
@@ -73,6 +99,45 @@ $unreadCount = $unreadCount->fetchColumn();
 <h1>Сообщения</h1>
 <p class="text-secondary">Все уведомления и комментарии к вашим заявкам</p>
 </div>
+
+<?php if (!empty($disputeChats)): ?>
+<div class="card mb-lg">
+    <div class="card__header">
+        <h3>Чаты по оспариванию решений</h3>
+    </div>
+    <div class="card__body" style="padding:0;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Тема</th>
+                    <th>Последнее сообщение</th>
+                    <th>Дата</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($disputeChats as $chat): ?>
+                <tr>
+                    <td>
+                        <div class="font-semibold"><?= htmlspecialchars($chat['title']) ?></div>
+                        <?php if ((int) $chat['unread_count'] > 0): ?>
+                            <span class="badge" style="background:#F59E0B; color:white; margin-top:4px;">Новое: <?= (int) $chat['unread_count'] ?></span>
+                        <?php endif; ?>
+                    </td>
+                    <td><?= htmlspecialchars(mb_substr((string) ($chat['last_message'] ?? ''), 0, 120)) ?></td>
+                    <td><?= date('d.m.Y H:i', strtotime($chat['last_message_at'])) ?></td>
+                    <td>
+                        <a class="btn btn--ghost btn--sm" href="/application/<?= (int) $chat['application_id'] ?>#dispute-chat">
+                            <i class="fas fa-comments"></i> Открыть чат
+                        </a>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+<?php endif; ?>
         
  <?php if (empty($messages)): ?>
 <div class="empty-state">

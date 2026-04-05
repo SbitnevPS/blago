@@ -563,9 +563,29 @@ function getUserMessages($userId, $limit =20) {
 // Функция для получения непрочитанных сообщений
 function getUnreadMessageCount($userId) {
  global $pdo;
+ $count = 0;
+
  $stmt = $pdo->prepare("SELECT COUNT(*) FROM admin_messages WHERE user_id = ? AND is_read =0");
  $stmt->execute([$userId]);
- return $stmt->fetchColumn();
+ $count += (int) $stmt->fetchColumn();
+
+ try {
+     $stmt = $pdo->prepare("
+     SELECT COUNT(*)
+     FROM messages m
+     JOIN users u ON u.id = m.created_by
+     WHERE m.user_id = ?
+       AND m.is_read = 0
+       AND u.is_admin = 1
+       AND m.title LIKE 'Оспаривание решения по заявке%'
+     ");
+     $stmt->execute([$userId]);
+     $count += (int) $stmt->fetchColumn();
+ } catch (Exception $e) {
+     // Таблица messages может отсутствовать на старых инсталляциях
+ }
+
+ return $count;
 }
 
 // Функция для создания сообщения
@@ -603,7 +623,7 @@ function getAdminUnreadDisputeCount() {
      JOIN users u ON u.id = m.created_by
      WHERE m.is_read = 0
        AND u.is_admin = 0
-       AND m.title LIKE 'Оспаривание отклонения заявки%'
+       AND m.title LIKE 'Оспаривание решения по заявке%'
      ");
      return (int) $stmt->fetchColumn();
  } catch (Exception $e) {

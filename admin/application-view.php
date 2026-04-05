@@ -94,9 +94,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $_SESSION['success_message'] = 'Заявка отменена';
         redirect('/admin/applications');
     } elseif ($_POST['action'] === 'decline_application') {
-        $stmt = $pdo->prepare("UPDATE applications SET status = 'declined', updated_at = NOW() WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE applications SET status = 'rejected', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
-        $application['status'] = 'declined';
+        $application['status'] = 'rejected';
 
         $subject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
         $message = getSystemSetting('application_declined_message', 'Ваша заявка отклонена администратором.');
@@ -154,7 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if (!$isCompliant) {
      addCorrection($application_id, 'Рисунок не соответствует условиям конкурса', $comment ?: 'Требуется корректировка рисунка', $participantId);
      allowApplicationEdit($application_id);
-     $pdo->prepare("UPDATE applications SET status = 'revision', updated_at = NOW() WHERE id = ?")->execute([$application_id]);
+     $pdo->prepare("UPDATE applications SET status = 'submitted', updated_at = NOW() WHERE id = ?")->execute([$application_id]);
      $subject = getSystemSetting('application_revision_subject', 'Заявка отправлена на корректировку');
      $messageText = getSystemSetting('application_revision_message', 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.');
      $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())")
@@ -275,9 +275,7 @@ require_once __DIR__ . '/includes/header.php';
 <option value="draft" <?= $application['status'] === 'draft' ? 'selected' : '' ?>>Черновик</option>
 <option value="submitted" <?= $application['status'] === 'submitted' ? 'selected' : '' ?>>Отправлена</option>
 <option value="approved" <?= $application['status'] === 'approved' ? 'selected' : '' ?>>Принята</option>
-<option value="revision" <?= $application['status'] === 'revision' ? 'selected' : '' ?>>На корректировке</option>
-<option value="declined" <?= $application['status'] === 'declined' ? 'selected' : '' ?>>Отклонена</option>
-<option value="cancelled" <?= $application['status'] === 'cancelled' ? 'selected' : '' ?>>Отменена</option>
+<option value="rejected" <?= $application['status'] === 'rejected' ? 'selected' : '' ?>>Отклонена/отменена</option>
 </select>
 <button type="submit" class="btn btn--primary" style="padding:10px20px;">
 <i class="fas fa-save"></i> Сохранить заявку
@@ -405,22 +403,38 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 <div class="card__body">
-<div class="form-row">
-<div class="form-group">
-<label class="form-label">ФИО участника</label>
-<p class="font-semibold"><?= htmlspecialchars($p['fio']) ?></p>
-</div>
-<div class="form-group">
-<label class="form-label">Возраст</label>
-<p><?= $p['age'] ?> лет</p>
-</div>
-</div>
-        
+<div style="display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap;">
+    <div style="flex:1; min-width:300px;">
+        <div class="form-row" style="gap:20px;">
+            <div class="form-group">
+                <label class="form-label">ФИО участника</label>
+                <p class="font-semibold"><?= htmlspecialchars($p['fio']) ?></p>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Возраст</label>
+                <p><?= $p['age'] ?> лет</p>
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Регион</label>
+            <p><?= htmlspecialchars($p['region'] ?? '—') ?></p>
+        </div>
+        <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Организация</label>
+            <p><?= htmlspecialchars($p['organization_name'] ?? '—') ?></p>
+        </div>
+        <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Адрес организации</label>
+            <p><?= htmlspecialchars($p['organization_address'] ?? '—') ?></p>
+        </div>
+    </div>
+
  <?php if ($p['drawing_file']): ?>
-        <div class="form-group mt-lg">
+        <div class="form-group" style="width:360px; margin:0;">
             <label class="form-label">Рисунок</label>
             <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
-            <div style="max-width: 520px;">
+            <div style="max-width: 360px;">
                 <img src="<?= htmlspecialchars($drawingUrl) ?>" 
                      data-participant-id="<?= (int) $p['id'] ?>"
                      class="js-admin-drawing"
@@ -451,6 +465,7 @@ require_once __DIR__ . '/includes/header.php';
             </form>
         </div>
         <?php endif; ?>
+</div>
     </div>
 </div>
 <?php endforeach; ?>

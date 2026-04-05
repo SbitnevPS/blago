@@ -26,7 +26,9 @@ if (!$application) {
  redirect('/my-applications');
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispute_decline') {
+$disputeChatSubject = 'Оспаривание решения по заявке #' . $applicationId;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispute_reply') {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $_SESSION['error_message'] = 'Ошибка безопасности. Обновите страницу.';
     } else {
@@ -43,14 +45,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
             $stmt->execute([
                 $user['id'],
                 $applicationId,
-                'Оспаривание отклонения заявки #' . $applicationId,
+                $disputeChatSubject,
                 $reason,
                 $user['id'],
             ]);
             $_SESSION['success_message'] = 'Сообщение отправлено администратору.';
         }
     }
-    redirect('/application/' . $applicationId);
+    redirect('/application/' . $applicationId . '#dispute-chat');
 }
 
 // Получаем участников
@@ -75,6 +77,36 @@ $statusLabels = [
     'cancelled' => 'Отменена',
 ];
 $statusClass = in_array($application['status'], ['submitted', 'approved'], true) ? 'success' : 'warning';
+
+$disputeChatMessages = [];
+if ($application['status'] === 'declined') {
+    try {
+        $stmt = $pdo->prepare("
+        SELECT m.*, u.name, u.surname, u.is_admin
+        FROM messages m
+        JOIN users u ON u.id = m.created_by
+        WHERE m.user_id = ? AND m.application_id = ? AND m.title = ?
+        ORDER BY m.created_at ASC
+        ");
+        $stmt->execute([$user['id'], $applicationId, $disputeChatSubject]);
+        $disputeChatMessages = $stmt->fetchAll();
+
+        // Помечаем ответы администратора прочитанными
+        $stmt = $pdo->prepare("
+        UPDATE messages m
+        JOIN users u ON u.id = m.created_by
+        SET m.is_read = 1
+        WHERE m.user_id = ?
+          AND m.application_id = ?
+          AND m.title = ?
+          AND m.is_read = 0
+          AND u.is_admin = 1
+        ");
+        $stmt->execute([$user['id'], $applicationId, $disputeChatSubject]);
+    } catch (Exception $e) {
+        $disputeChatMessages = [];
+    }
+}
 
 $currentPage = 'applications';
 ?>
@@ -165,19 +197,36 @@ $currentPage = 'applications';
 </div>
 
 <?php if ($application['status'] === 'declined'): ?>
-<div class="card mb-lg">
-    <div class="card__header"><h3>Оспорить отклонение заявки</h3></div>
+<div class="card mb-lg" id="dispute-chat">
+    <div class="card__header"><h3>Оспаривание решения по заявке</h3></div>
     <div class="card__body">
+        <?php if (!empty($disputeChatMessages)): ?>
+            <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px;">
+                <?php foreach ($disputeChatMessages as $chatMessage): ?>
+                    <?php $isAdminMessage = (int) ($chatMessage['is_admin'] ?? 0) === 1; ?>
+                    <div style="align-self: <?= $isAdminMessage ? 'flex-start' : 'flex-end' ?>; max-width: 80%;">
+                        <div style="padding:12px 14px; border-radius:12px; background: <?= $isAdminMessage ? '#EEF2FF' : '#DCFCE7' ?>;">
+                            <div style="font-size:12px; color:#6B7280; margin-bottom:6px;">
+                                <?= htmlspecialchars(trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''))) ?>
+                                • <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?>
+                            </div>
+                            <div style="white-space:pre-wrap; line-height:1.5;"><?= htmlspecialchars($chatMessage['content']) ?></div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
         <form method="POST">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-            <input type="hidden" name="action" value="dispute_decline">
+            <input type="hidden" name="action" value="dispute_reply">
             <div class="form-group">
-                <label class="form-label">Почему вы считаете отклонение неверным?</label>
-                <textarea name="dispute_reason" class="form-input" rows="4" required placeholder="Опишите причину..."></textarea>
+                <label class="form-label">Ваш ответ в чате</label>
+                <textarea name="dispute_reason" class="form-input" rows="4" required placeholder="Напишите сообщение администратору..."></textarea>
             </div>
             <button type="submit" class="btn btn--primary">
-                <i class="fas fa-paper-plane"></i> Оспорить отклонение заявки
+                <i class="fas fa-paper-plane"></i> Оспорить решение
             </button>
         </form>
     </div>
@@ -206,8 +255,10 @@ $currentPage = 'applications';
 <span class="participant-card__number"><?= $index +1 ?></span>
  Участник <?= $index +1 ?>
 </div>
-            
-<div class="form-row">
+
+<div style="display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap;">
+<div style="flex:1; min-width:280px;">
+<div class="form-row" style="gap:20px;">
 <div class="participant-card__field">
 <div class="participant-card__label">ФИО</div>
 <div class="participant-card__value"><?= htmlspecialchars($participant['fio'] ?? '—') ?></div>
@@ -217,13 +268,11 @@ $currentPage = 'applications';
 <div class="participant-card__value"><?= htmlspecialchars($participant['age'] ?? '—') ?></div>
 </div>
 </div>
-            
-<div class="participant-card__field">
+<div class="participant-card__field" style="margin-top:16px;">
 <div class="participant-card__label">Регион</div>
 <div class="participant-card__value"><?= htmlspecialchars($participant['region'] ?? '—') ?></div>
 </div>
-            
-<div class="participant-card__field">
+<div class="participant-card__field" style="margin-top:16px;">
 <div class="participant-card__label">Организация</div>
 <div class="participant-card__value"><?= htmlspecialchars($participant['organization_name'] ?? '—') ?></div>
 </div>
@@ -241,9 +290,10 @@ $currentPage = 'applications';
 <div class="participant-card__value"><?= htmlspecialchars($participant['organization_email']) ?></div>
 </div>
  <?php endif; ?>
-            
+
+ </div>
  <?php if (!empty($participant['drawing_file'])): ?>
-<div class="drawing-preview">
+<div class="drawing-preview" style="width:320px; margin-top:0;">
 <div class="participant-card__label">Рисунок</div>
 <?php $drawingSrc = getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']); ?>
 <img src="<?= htmlspecialchars($drawingSrc) ?>" 
@@ -251,6 +301,7 @@ $currentPage = 'applications';
  data-gallery-index="<?= $index ?>">
 </div>
  <?php endif; ?>
+</div>
 </div>
  <?php endforeach; ?>
         
