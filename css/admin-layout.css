@@ -96,13 +96,18 @@ margin-left:260px;
 padding: 24px;
 background: transparent;
 min-height:100vh;
-width: calc(100% -260px);
+width: auto;
+max-width: calc(100% - 260px);
+min-width: 0;
+overflow-x: hidden;
 }
         
  .admin-header {
  display: flex;
  justify-content: space-between;
- align-items: center;
+ align-items: flex-start;
+ gap:16px;
+ flex-wrap: wrap;
  margin-bottom:24px;
  }
         
@@ -122,6 +127,8 @@ width: calc(100% -260px);
  display: flex;
  align-items: center;
  gap:12px;
+ flex-shrink: 0;
+ min-width: 0;
  }
         
  .admin-user {
@@ -132,6 +139,8 @@ width: calc(100% -260px);
  background: white;
  border-radius:10px;
  box-shadow:0 1px 3px rgba(0,0,0,0.05);
+ max-width: 100%;
+ min-width: 0;
  }
         
  .admin-user__avatar {
@@ -147,6 +156,10 @@ width: calc(100% -260px);
  .admin-user__name {
  font-size:14px;
  font-weight:500;
+ overflow: hidden;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+ max-width: 220px;
  }
         
  .admin-user__logout {
@@ -253,9 +266,10 @@ overflow: hidden;
  color: #1F2937;
  }
         
- .card__body {
+.card__body {
  padding: 20px;
- }
+ overflow-x: auto;
+}
         
  .card__body--no-padding {
  padding:0;
@@ -266,6 +280,14 @@ overflow: hidden;
 width:100%;
 border-collapse: collapse;
 font-size: 14px;
+min-width: 720px;
+}
+
+.table-container {
+ width: 100%;
+ max-width: 100%;
+ overflow-x: auto;
+ overflow-y: hidden;
 }
         
  .table th,
@@ -529,6 +551,7 @@ box-shadow: 0 25px 60px rgba(15, 23, 42, 0.35);
 .admin-content {
 margin-left:0;
 width:100%;
+max-width: 100%;
 padding: 16px;
 }
             
@@ -697,6 +720,7 @@ overflow-x: auto;
  .admin-content {
  margin-left:0;
  width:100%;
+ max-width: 100%;
  }
 
  .admin-toggle {
