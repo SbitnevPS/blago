@@ -375,6 +375,50 @@ function processAndSaveImage($sourcePath, $outputDir, $filename) {
  return $outputPath;
 }
 
+// Получить web-путь рисунка участника с учетом старого и нового формата хранения
+function getParticipantDrawingWebPath($userEmail, $drawingFile) {
+ if (empty($drawingFile)) {
+ return null;
+ }
+
+ $safeEmail = rawurlencode($userEmail ?? '');
+ $safeFile = rawurlencode($drawingFile);
+ $userScopedPath = '/uploads/drawings/' . $safeEmail . '/' . $safeFile;
+ $legacyPath = '/uploads/drawings/' . $safeFile;
+
+ $userScopedFs = DRAWINGS_PATH . '/' . ($userEmail ?? '') . '/' . $drawingFile;
+ $legacyFs = DRAWINGS_PATH . '/' . $drawingFile;
+
+ if (!empty($userEmail) && file_exists($userScopedFs)) {
+ return $userScopedPath;
+ }
+
+ if (file_exists($legacyFs)) {
+ return $legacyPath;
+ }
+
+ return $userScopedPath;
+}
+
+// Получить абсолютный путь к файлу рисунка участника на диске
+function getParticipantDrawingFsPath($userEmail, $drawingFile) {
+ if (empty($drawingFile)) {
+ return null;
+ }
+
+ $userScopedFs = DRAWINGS_PATH . '/' . ($userEmail ?? '') . '/' . $drawingFile;
+ if (!empty($userEmail) && file_exists($userScopedFs)) {
+ return $userScopedFs;
+ }
+
+ $legacyFs = DRAWINGS_PATH . '/' . $drawingFile;
+ if (file_exists($legacyFs)) {
+ return $legacyFs;
+ }
+
+ return null;
+}
+
 // Функция для получения корректировок заявки
 function getApplicationCorrections($applicationId) {
  global $pdo;

@@ -35,6 +35,24 @@ $stmt = $pdo->prepare("SELECT * FROM participants WHERE application_id = ?");
 $stmt->execute([$application_id]);
 $participants = $stmt->fetchAll();
 
+function scaleToMinSide($image, $minSide = 1500) {
+    $srcW = imagesx($image);
+    $srcH = imagesy($image);
+    if ($srcW >= $minSide && $srcH >= $minSide) {
+        return $image;
+    }
+
+    $ratio = max($minSide / max(1, $srcW), $minSide / max(1, $srcH));
+    $dstW = (int) round($srcW * $ratio);
+    $dstH = (int) round($srcH * $ratio);
+    $scaled = imagecreatetruecolor($dstW, $dstH);
+    $white = imagecolorallocate($scaled, 255, 255, 255);
+    imagefill($scaled, 0, 0, $white);
+    imagecopyresampled($scaled, $image, 0, 0, 0, 0, $dstW, $dstH, $srcW, $srcH);
+    imagedestroy($image);
+    return $scaled;
+}
+
 // Обработка изменения статуса
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -63,6 +81,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $stmt->execute([$application['user_id'], $admin['id'], $subject, $message, $priority]);
  $_SESSION['success_message'] = 'Сообщение отправлено';
  }
+ } elseif ($_POST['action'] === 'toggle_drawing_compliance') {
+ $participantId = intval($_POST['participant_id'] ?? 0);
+ $isCompliant = isset($_POST['drawing_compliant']) ? 1 : 0;
+ $comment = trim($_POST['comment'] ?? '');
+
+ $stmt = $pdo->prepare("
+ UPDATE participants 
+ SET drawing_compliant = ?, drawing_comment = ?
+ WHERE id = ? AND application_id = ?
+ ");
+ $stmt->execute([$isCompliant, $isCompliant ? null : $comment, $participantId, $application_id]);
+
+ if (!$isCompliant) {
+     addCorrection($application_id, 'Рисунок не соответствует условиям конкурса', $comment ?: 'Требуется корректировка рисунка', $participantId);
+     allowApplicationEdit($application_id);
+ }
+
+ $_SESSION['success_message'] = 'Проверка рисунка обновлена';
+ redirect('application-view.php?id=' . $application_id);
+ } elseif ($_POST['action'] === 'save_drawing_edit') {
+     header('Content-Type: application/json');
+     $participantId = intval($_POST['participant_id'] ?? 0);
+     $rotation = floatval($_POST['rotation'] ?? 0);
+     $cropX = max(0, floatval($_POST['crop_x'] ?? 0));
+     $cropY = max(0, floatval($_POST['crop_y'] ?? 0));
+     $cropW = max(1, floatval($_POST['crop_w'] ?? 1));
+     $cropH = max(1, floatval($_POST['crop_h'] ?? 1));
+
+     $pStmt = $pdo->prepare("SELECT drawing_file FROM participants WHERE id = ? AND application_id = ?");
+     $pStmt->execute([$participantId, $application_id]);
+     $participant = $pStmt->fetch();
+
+     if (!$participant || empty($participant['drawing_file'])) {
+         echo json_encode(['success' => false, 'message' => 'Рисунок не найден']);
+         exit;
+     }
+
+     $sourcePath = getParticipantDrawingFsPath($application['email'] ?? '', $participant['drawing_file']);
+     if (!$sourcePath || !file_exists($sourcePath)) {
+         echo json_encode(['success' => false, 'message' => 'Файл на диске не найден']);
+         exit;
+     }
+
+     $source = imagecreatefromstring(file_get_contents($sourcePath));
+     if (!$source) {
+         echo json_encode(['success' => false, 'message' => 'Не удалось открыть рисунок']);
+         exit;
+     }
+
+     if (abs($rotation) > 0.01) {
+         $bg = imagecolorallocate($source, 255, 255, 255);
+         $rotated = imagerotate($source, -$rotation, $bg);
+         imagedestroy($source);
+         $source = $rotated;
+     }
+
+     $srcW = imagesx($source);
+     $srcH = imagesy($source);
+     $cropX = min($cropX, $srcW - 1);
+     $cropY = min($cropY, $srcH - 1);
+     $cropW = min($cropW, $srcW - $cropX);
+     $cropH = min($cropH, $srcH - $cropY);
+
+     $cropped = imagecreatetruecolor((int) $cropW, (int) $cropH);
+     $white = imagecolorallocate($cropped, 255, 255, 255);
+     imagefill($cropped, 0, 0, $white);
+     imagecopy($cropped, $source, 0, 0, (int) $cropX, (int) $cropY, (int) $cropW, (int) $cropH);
+     imagedestroy($source);
+
+     $final = scaleToMinSide($cropped, 1500);
+     imagejpeg($final, $sourcePath, 92);
+     imagedestroy($final);
+
+     echo json_encode([
+         'success' => true,
+         'updated_url' => getParticipantDrawingWebPath($application['email'] ?? '', $participant['drawing_file']) . '?v=' . time(),
+     ]);
+     exit;
  }
 }
 
@@ -230,11 +326,36 @@ require_once __DIR__ . '/includes/header.php';
  <?php if ($p['drawing_file']): ?>
         <div class="form-group mt-lg">
             <label class="form-label">Рисунок</label>
-            <div style="max-width: 400px;">
-                <img src="/uploads/drawings/<?= htmlspecialchars($p['drawing_file']) ?>" 
+            <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
+            <div style="max-width: 520px;">
+                <img src="<?= htmlspecialchars($drawingUrl) ?>" 
+                     data-participant-id="<?= (int) $p['id'] ?>"
+                     class="js-admin-drawing"
                      alt="Рисунок участника" 
                      style="width: 100%; border-radius: var(--radius-lg); border: 2px solid var(--color-border);">
             </div>
+            <div class="flex gap-sm mt-md" style="flex-wrap: wrap;">
+                <button type="button" class="btn btn--secondary js-open-editor" data-participant-id="<?= (int) $p['id'] ?>" data-image-src="<?= htmlspecialchars($drawingUrl) ?>">
+                    <i class="fas fa-crop-alt"></i> Редактировать рисунок
+                </button>
+            </div>
+            <form method="POST" class="mt-md" style="border:1px solid #E5E7EB; padding:16px; border-radius:12px; background:#F8FAFC;">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="toggle_drawing_compliance">
+                <input type="hidden" name="participant_id" value="<?= (int) $p['id'] ?>">
+                <div class="flex gap-md items-center" style="flex-wrap:wrap;">
+                    <label style="display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700;padding:10px 14px;background:#ECFDF5;border-radius:10px;">
+                        <input type="checkbox" name="drawing_compliant" value="1" <?= isset($p['drawing_compliant']) && (int)$p['drawing_compliant'] === 1 ? 'checked' : '' ?>>
+                        Соответствует условиям конкурса
+                    </label>
+                    <button type="submit" class="btn btn--primary">Сохранить проверку</button>
+                </div>
+                <div class="mt-sm">
+                    <label class="form-label">Что исправить (если не соответствует)</label>
+                    <textarea class="form-textarea" name="comment" rows="2" placeholder="Укажите, что нужно исправить"><?= htmlspecialchars($p['drawing_comment'] ?? '') ?></textarea>
+                </div>
+            </form>
         </div>
         <?php endif; ?>
     </div>
@@ -302,7 +423,140 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 </div>
 
+<div class="modal" id="drawingEditorModal">
+<div class="modal__content" style="max-width: 1100px; width: 96%;">
+<div class="modal__header">
+<h3>Редактирование рисунка</h3>
+<button type="button" class="modal__close" onclick="closeDrawingEditor()">&times;</button>
+</div>
+<div class="modal__body">
+<input type="hidden" id="editorParticipantId">
+<div class="flex gap-md mb-md" style="flex-wrap:wrap;">
+<button type="button" class="btn btn--secondary" onclick="rotateBy(-45)">-45°</button>
+<button type="button" class="btn btn--secondary" onclick="rotateBy(45)">+45°</button>
+<button type="button" class="btn btn--secondary" onclick="rotateBy(-90)">-90°</button>
+<button type="button" class="btn btn--secondary" onclick="rotateBy(90)">+90°</button>
+<label style="display:flex;align-items:center;gap:8px;">Угол:
+<input type="number" id="rotationInput" value="0" step="1" style="width:90px;" class="form-input">
+</label>
+</div>
+<div style="max-height:70vh;overflow:auto;">
+<img id="editorImage" src="" alt="Рисунок" style="max-width:100%; display:block;">
+</div>
+<div class="flex gap-md mt-lg">
+<button type="button" id="saveDrawingChanges" class="btn btn--primary" style="display:none;">Сохранить изменения</button>
+<button type="button" id="cancelDrawingChanges" class="btn btn--ghost" style="display:none;" onclick="resetDrawingEditor()">Отменить изменения</button>
+</div>
+</div>
+</div>
+</div>
+
 <script>
+let cropper = null;
+let currentRotation = 0;
+let editorDirty = false;
+
+function markEditorDirty(dirty) {
+ editorDirty = dirty;
+ document.getElementById('saveDrawingChanges').style.display = dirty ? 'inline-flex' : 'none';
+ document.getElementById('cancelDrawingChanges').style.display = dirty ? 'inline-flex' : 'none';
+}
+
+function openDrawingEditor(participantId, imageSrc) {
+ const modal = document.getElementById('drawingEditorModal');
+ const image = document.getElementById('editorImage');
+ document.getElementById('editorParticipantId').value = participantId;
+ image.src = imageSrc;
+ modal.classList.add('active');
+ document.body.style.overflow = 'hidden';
+ currentRotation = 0;
+ document.getElementById('rotationInput').value = '0';
+ markEditorDirty(false);
+
+ if (cropper) {
+  cropper.destroy();
+ }
+
+ setTimeout(() => {
+  cropper = new Cropper(image, {
+   viewMode: 1,
+   autoCropArea: 0.9,
+   responsive: true,
+   background: false,
+   ready: () => markEditorDirty(false),
+   crop: () => markEditorDirty(true),
+  });
+ }, 50);
+}
+
+function closeDrawingEditor() {
+ const modal = document.getElementById('drawingEditorModal');
+ modal.classList.remove('active');
+ document.body.style.overflow = '';
+ if (cropper) {
+  cropper.destroy();
+  cropper = null;
+ }
+}
+
+function rotateBy(deg) {
+ if (!cropper) return;
+ currentRotation += deg;
+ cropper.rotate(deg);
+ document.getElementById('rotationInput').value = String(Math.round(currentRotation));
+ markEditorDirty(true);
+}
+
+function resetDrawingEditor() {
+ if (!cropper) return;
+ cropper.reset();
+ currentRotation = 0;
+ document.getElementById('rotationInput').value = '0';
+ markEditorDirty(false);
+}
+
+document.getElementById('rotationInput').addEventListener('change', function() {
+ if (!cropper) return;
+ const target = parseFloat(this.value || '0');
+ const diff = target - currentRotation;
+ cropper.rotate(diff);
+ currentRotation = target;
+ markEditorDirty(true);
+});
+
+document.querySelectorAll('.js-open-editor').forEach((btn) => {
+ btn.addEventListener('click', () => openDrawingEditor(btn.dataset.participantId, btn.dataset.imageSrc));
+});
+
+document.getElementById('saveDrawingChanges').addEventListener('click', function() {
+ if (!cropper) return;
+ const cropData = cropper.getData(true);
+ const participantId = document.getElementById('editorParticipantId').value;
+ const formData = new FormData();
+ formData.append('action', 'save_drawing_edit');
+ formData.append('participant_id', participantId);
+ formData.append('csrf_token', '<?= generateCSRFToken() ?>');
+ formData.append('rotation', String(currentRotation));
+ formData.append('crop_x', String(cropData.x));
+ formData.append('crop_y', String(cropData.y));
+ formData.append('crop_w', String(cropData.width));
+ formData.append('crop_h', String(cropData.height));
+
+ fetch('application-view.php?id=<?= e($application_id) ?>', { method: 'POST', body: formData })
+  .then(r => r.json())
+  .then(data => {
+   if (!data.success) {
+    alert(data.message || 'Ошибка сохранения');
+    return;
+   }
+   document.querySelectorAll(`.js-admin-drawing[data-participant-id="${participantId}"]`).forEach((img) => {
+    img.src = data.updated_url;
+   });
+   closeDrawingEditor();
+  })
+  .catch(() => alert('Не удалось сохранить изменения'));
+});
+
 function openMessageModal() { document.getElementById('messageModal').classList.add('active'); document.body.style.overflow = 'hidden'; }
 function closeMessageModal() { document.getElementById('messageModal').classList.remove('active'); document.body.style.overflow = ''; }
 function selectPriority(value) {
@@ -313,5 +567,7 @@ function selectPriority(value) {
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeMessageModal(); });
 document.getElementById('messageModal').addEventListener('click', function(e) { if (e.target === this) closeMessageModal(); });
 </script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
