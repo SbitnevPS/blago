@@ -100,23 +100,45 @@ if ($selectedDisputeApplicationId > 0) {
         $markReadStmt->execute([$selectedDisputeApplicationId, $threadSubject]);
 
         $selectedStmt = $pdo->prepare("
-        SELECT m.*, u.name, u.surname, u.patronymic, u.is_admin
-    FROM messages m
-    JOIN users u ON u.id = m.created_by
-    WHERE m.application_id = ?
-      AND m.title = ?
-    ORDER BY m.created_at ASC
+        SELECT
+            m.id,
+            m.user_id,
+            m.created_by,
+            m.application_id,
+            m.title,
+            m.content,
+            m.is_read,
+            m.created_at,
+            author.id AS author_id,
+            author.name AS author_name,
+            author.surname AS author_surname,
+            author.patronymic AS author_patronymic,
+            author.is_admin AS author_is_admin,
+            recipient.id AS recipient_id,
+            recipient.name AS recipient_name,
+            recipient.surname AS recipient_surname,
+            recipient.patronymic AS recipient_patronymic
+        FROM messages m
+        JOIN users author ON author.id = m.created_by
+        LEFT JOIN users recipient ON recipient.id = m.user_id
+        WHERE m.application_id = ?
+          AND m.title = ?
+        ORDER BY m.created_at ASC
     ");
         $selectedStmt->execute([$selectedDisputeApplicationId, $threadSubject]);
         $selectedDisputeMessages = $selectedStmt->fetchAll();
 
-        $recipientId = (int) ($selectedDisputeMessages[0]['user_id'] ?? 0);
-        if ($recipientId > 0) {
-            $recipientStmt = $pdo->prepare("SELECT surname, name FROM users WHERE id = ? LIMIT 1");
-            $recipientStmt->execute([$recipientId]);
-            $recipient = $recipientStmt->fetch();
-            if (!empty($recipient)) {
-                $disputeRecipientName = trim(($recipient['surname'] ?? '') . ' ' . ($recipient['name'] ?? ''));
+        if (!empty($selectedDisputeMessages)) {
+            $firstMessage = $selectedDisputeMessages[0];
+            $disputeRecipientName = trim(
+                ($firstMessage['recipient_surname'] ?? '')
+                . ' '
+                . ($firstMessage['recipient_name'] ?? '')
+                . ' '
+                . ($firstMessage['recipient_patronymic'] ?? '')
+            );
+            if ($disputeRecipientName === '') {
+                $disputeRecipientName = 'Пользователь';
             }
         }
     } catch (Exception $e) {
@@ -353,9 +375,15 @@ require_once __DIR__ . '/includes/header.php';
         <?php else: ?>
             <div class="dispute-chat-modal__messages" id="disputeChatMessages">
                 <?php foreach ($selectedDisputeMessages as $chatMessage): ?>
-                    <?php $fromAdmin = (int) ($chatMessage['is_admin'] ?? 0) === 1; ?>
+                    <?php $fromAdmin = (int) ($chatMessage['author_is_admin'] ?? 0) === 1; ?>
                     <?php
-                        $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? '') . ' ' . ($chatMessage['patronymic'] ?? ''));
+                        $chatAuthorName = trim(
+                            ($chatMessage['author_surname'] ?? '')
+                            . ' '
+                            . ($chatMessage['author_name'] ?? '')
+                            . ' '
+                            . ($chatMessage['author_patronymic'] ?? '')
+                        );
                         if ($fromAdmin) {
                             $chatAuthorLabel = 'Руководитель проекта — ' . ($chatAuthorName !== '' ? $chatAuthorName : trim(($admin['surname'] ?? '') . ' ' . ($admin['name'] ?? '')));
                         } else {
@@ -500,7 +528,12 @@ foreach ($messages as $msg) {
  $shownBroadcast[$broadcastKey] = true;
  }
 ?>
-<tr class="message-row" data-message-id="<?= (int) $msg['id'] ?>" onclick="viewMessage(<?= (int) $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)">
+<tr class="message-row"
+    data-message-id="<?= (int) $msg['id'] ?>"
+    data-message-subject="<?= e($msg['subject']) ?>"
+    data-message-content="<?= e($msg['message']) ?>"
+    data-message-priority="<?= e($msg['priority']) ?>"
+    data-message-broadcast="<?= !empty($msg['is_broadcast']) ? '1' : '0' ?>">
 <td data-label="ID">#<?= $msg['id'] ?></td>
 <td data-label="Получатель">
 <div class="flex items-center gap-sm">
@@ -533,10 +566,10 @@ foreach ($messages as $msg) {
 <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($msg['created_at'])) ?></td>
 <td data-label="Действия">
 <div class="flex gap-sm">
-<button type="button" class="btn btn--ghost btn--sm" onclick="event.stopPropagation(); viewMessage(<?= (int) $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)" title="Просмотр">
+<button type="button" class="btn btn--ghost btn--sm js-view-message" title="Просмотр">
 <i class="fas fa-eye"></i> Просмотр
 </button>
-<button type="button" class="btn btn--ghost btn--sm" onclick="event.stopPropagation(); deleteMessage(<?= (int) $msg['id'] ?>, <?= !empty($msg['is_broadcast']) ? 'true' : 'false' ?>, <?= json_encode($msg['subject'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)" title="Удалить" style="color:#EF4444;">
+<button type="button" class="btn btn--ghost btn--sm js-delete-message" title="Удалить" style="color:#EF4444;">
 <i class="fas fa-trash"></i>
 </button>
 </div>
@@ -689,7 +722,7 @@ function filterByPriority(priority) {
  window.location.href = url.toString();
 }
 
-function viewMessage(id, subject, message, priority) {
+function viewMessage(subject, message, priority) {
  document.getElementById('viewMessageSubject').textContent = subject;
  document.getElementById('viewMessageContent').textContent = message;
 
@@ -712,7 +745,7 @@ function closeViewModal() {
  restoreBodyScrollIfNoModals();
 }
 
-function deleteMessage(id, isBroadcast, subject) {
+function deleteMessage(id, isBroadcast) {
  if (!confirm('Вы уверены, что хотите удалить это сообщение' + (isBroadcast ? ' (для всех пользователей)' : '') + '?')) {
   return;
  }
@@ -945,6 +978,41 @@ document.addEventListener('DOMContentLoaded', function() {
      form.requestSubmit();
     }
    }
+  });
+ });
+
+ document.querySelectorAll('tr.message-row').forEach((row) => {
+  row.addEventListener('click', () => {
+   viewMessage(
+    row.dataset.messageSubject || '',
+    row.dataset.messageContent || '',
+    row.dataset.messagePriority || 'normal'
+   );
+  });
+ });
+
+ document.querySelectorAll('.js-view-message').forEach((button) => {
+  button.addEventListener('click', (event) => {
+   event.stopPropagation();
+   const row = button.closest('tr.message-row');
+   if (!row) return;
+   viewMessage(
+    row.dataset.messageSubject || '',
+    row.dataset.messageContent || '',
+    row.dataset.messagePriority || 'normal'
+   );
+  });
+ });
+
+ document.querySelectorAll('.js-delete-message').forEach((button) => {
+  button.addEventListener('click', (event) => {
+   event.stopPropagation();
+   const row = button.closest('tr.message-row');
+   if (!row) return;
+   const messageId = Number(row.dataset.messageId || 0);
+   const isBroadcast = row.dataset.messageBroadcast === '1';
+   if (!messageId) return;
+   deleteMessage(messageId, isBroadcast);
   });
  });
 });
