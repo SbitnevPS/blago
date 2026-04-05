@@ -40,9 +40,30 @@ if (!$contest) {
 
 $user = getCurrentUser();
 $error = '';
+$editingApplicationId = intval($_GET['edit'] ?? 0);
+$editingApplication = null;
+$editingParticipants = [];
+$initialFormData = [];
 
 check_csrf();
 $success = '';
+
+if ($editingApplicationId > 0) {
+    $stmt = $pdo->prepare("
+        SELECT * FROM applications
+        WHERE id = ? AND user_id = ?
+    ");
+    $stmt->execute([$editingApplicationId, $user['id']]);
+    $editingApplication = $stmt->fetch();
+
+    if (!$editingApplication || intval($editingApplication['contest_id']) !== intval($contest_id)) {
+        redirect('/my-applications');
+    }
+
+    $stmt = $pdo->prepare("SELECT * FROM participants WHERE application_id = ? ORDER BY id ASC");
+    $stmt->execute([$editingApplicationId]);
+    $editingParticipants = $stmt->fetchAll();
+}
 
 // Директория пользователя для рисунков
 $userUploadPath = DRAWINGS_PATH . '/' . $user['email'];
@@ -187,6 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  // Обработка временного файла рисунка
  $drawing_file = null;
  $tempFile = $participant['temp_file'] ?? '';
+ $existingDrawing = trim($participant['existing_drawing_file'] ?? '');
                     
  if (!empty($tempFile)) {
  $tempFilePath = $tempPath . '/' . $tempFile;
@@ -217,6 +239,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $thumbFile = str_replace(basename($tempFile), 'thumb_' . basename($tempFile), $tempFilePath);
  @unlink($thumbFile);
  }
+ }
+                    
+ if (empty($drawing_file) && !empty($existingDrawing)) {
+ $drawing_file = $existingDrawing;
  }
                     
  $stmt = $pdo->prepare("
@@ -258,6 +284,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  }
 }
 
+if ($editingApplication) {
+    $parentParts = preg_split('/\s+/', trim($editingApplication['parent_fio'] ?? ''));
+    $initialFormData = [
+        'parent_surname' => $parentParts[0] ?? ($user['surname'] ?? ''),
+        'parent_name' => $parentParts[1] ?? ($user['name'] ?? ''),
+        'parent_patronymic' => $parentParts[2] ?? ($user['patronymic'] ?? ''),
+        'organization_region' => $editingParticipants[0]['region'] ?? ($user['organization_region'] ?? ''),
+        'organization_name' => $editingParticipants[0]['organization_name'] ?? ($user['organization_name'] ?? ''),
+        'organization_address' => $editingParticipants[0]['organization_address'] ?? ($user['organization_address'] ?? ''),
+        'organization_email' => $editingParticipants[0]['organization_email'] ?? ($user['email'] ?? ''),
+        'source_info' => $editingApplication['source_info'] ?? '',
+        'colleagues_info' => $editingApplication['colleagues_info'] ?? '',
+    ];
+} else {
+    $initialFormData = [
+        'parent_surname' => $user['surname'] ?? '',
+        'parent_name' => $user['name'] ?? '',
+        'parent_patronymic' => $user['patronymic'] ?? '',
+        'organization_region' => $user['organization_region'] ?? '',
+        'organization_name' => $user['organization_name'] ?? '',
+        'organization_address' => $user['organization_address'] ?? '',
+        'organization_email' => $user['email'] ?? '',
+        'source_info' => '',
+        'colleagues_info' => '',
+    ];
+}
+
 generateCSRFToken();
 ?>
 <!DOCTYPE html>
@@ -276,7 +329,7 @@ generateCSRFToken();
 <a href="/contest/<?= e($contest_id) ?>" class="btn btn--ghost"><i class="fas fa-arrow-left"></i> Назад</a>
 </div>
         
-<h1 class="mb-lg">Заявка на участие в конкурсе</h1>
+<h1 class="mb-lg"><?= $editingApplication ? 'Редактирование заявки' : 'Заявка на участие в конкурсе' ?></h1>
         
 <div class="card mb-lg"><div class="card__body"><h3><?= htmlspecialchars($contest['title']) ?></h3></div></div>
         
@@ -296,7 +349,7 @@ generateCSRFToken();
 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
 <input type="hidden" name="action" value="submit" id="formAction">
-<input type="hidden" name="application_id" value="">
+<input type="hidden" name="application_id" value="<?= $editingApplication ? intval($editingApplication['id']) : '' ?>">
             
  <!-- Данные родителя -->
 <div class="card mb-lg">
@@ -305,15 +358,15 @@ generateCSRFToken();
 <div class="form-row">
 <div class="form-group">
 <label class="form-label form-label--required">Имя</label>
-<input type="text" name="parent_name" class="form-input" required placeholder="Иван" value="<?= htmlspecialchars($user['name'] ?? '') ?>">
+<input type="text" name="parent_name" class="form-input" required placeholder="Иван" value="<?= htmlspecialchars($initialFormData['parent_name']) ?>">
 </div>
 <div class="form-group">
 <label class="form-label form-label--required">Отчество</label>
-<input type="text" name="parent_patronymic" class="form-input" required placeholder="Иванович" value="<?= htmlspecialchars($user['patronymic'] ?? '') ?>">
+<input type="text" name="parent_patronymic" class="form-input" required placeholder="Иванович" value="<?= htmlspecialchars($initialFormData['parent_patronymic']) ?>">
 </div>
 <div class="form-group">
 <label class="form-label form-label--required">Фамилия</label>
-<input type="text" name="parent_surname" class="form-input" required placeholder="Петров" value="<?= htmlspecialchars($user['surname'] ?? '') ?>">
+<input type="text" name="parent_surname" class="form-input" required placeholder="Петров" value="<?= htmlspecialchars($initialFormData['parent_surname']) ?>">
 </div>
 </div>
 </div>
@@ -329,22 +382,22 @@ generateCSRFToken();
 <select name="organization_region" class="form-select" id="orgRegion">
 <option value="">Выберите регион</option>
 <?php foreach ($regions as $r): ?>
-<option value="<?= e($r) ?>" <?= ($user['organization_region'] ?? '') === $r ? 'selected' : '' ?>><?= e($r) ?></option>
+<option value="<?= e($r) ?>" <?= ($initialFormData['organization_region'] ?? '') === $r ? 'selected' : '' ?>><?= e($r) ?></option>
 <?php endforeach; ?>
 </select>
 </div>
 <div class="form-group">
 <label class="form-label">Название организации</label>
-<input type="text" name="organization_name" class="form-input" id="orgName" placeholder="Детская художественная школа №1" value="<?= htmlspecialchars($user['organization_name'] ?? '') ?>">
+<input type="text" name="organization_name" class="form-input" id="orgName" placeholder="Детская художественная школа №1" value="<?= htmlspecialchars($initialFormData['organization_name']) ?>">
 </div>
 </div>
 <div class="form-group mt-md">
 <label class="form-label">Фактический адрес организации</label>
-<textarea name="organization_address" class="form-textarea" rows="2" id="orgAddress"><?= htmlspecialchars($user['organization_address'] ?? '') ?></textarea>
+<textarea name="organization_address" class="form-textarea" rows="2" id="orgAddress"><?= htmlspecialchars($initialFormData['organization_address']) ?></textarea>
 </div>
 <div class="form-group mt-md">
 <label class="form-label">Email организации</label>
-<input type="email" name="organization_email" class="form-input" id="orgEmail" value="<?= htmlspecialchars($user['email'] ?? '') ?>">
+<input type="email" name="organization_email" class="form-input" id="orgEmail" value="<?= htmlspecialchars($initialFormData['organization_email']) ?>">
 </div>
 </div>
 </div>
@@ -362,11 +415,11 @@ generateCSRFToken();
 <div class="card__body">
 <div class="form-group">
 <label class="form-label">Откуда Вы узнали о Конкурсе?</label>
-<input type="text" name="source_info" class="form-input" placeholder="Например: от друзей, из социальных сетей...">
+<input type="text" name="source_info" class="form-input" placeholder="Например: от друзей, из социальных сетей..." value="<?= htmlspecialchars($initialFormData['source_info']) ?>">
 </div>
 <div class="form-group">
 <label class="form-label">Проинформировали ли Вы коллег о Конкурсе?</label>
-<input type="text" name="colleagues_info" class="form-input" placeholder="Например: да, около5 человек">
+<input type="text" name="colleagues_info" class="form-input" placeholder="Например: да, около5 человек" value="<?= htmlspecialchars($initialFormData['colleagues_info']) ?>">
 </div>
 </div>
 </div>
@@ -406,6 +459,16 @@ generateCSRFToken();
 </footer>
     
 <script>
+ const initialParticipants = <?= json_encode(array_map(function($p) use ($user) {
+     return [
+         'fio' => $p['fio'] ?? '',
+         'age' => $p['age'] ?? '',
+         'temp_file' => '',
+         'existing_drawing_file' => $p['drawing_file'] ?? '',
+         'preview' => !empty($p['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $p['drawing_file']) : null,
+     ];
+ }, $editingParticipants), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+
  let participantCount =0;
  const csrfToken = '<?= generateCSRFToken() ?>';
         
@@ -414,9 +477,9 @@ generateCSRFToken();
  container.className = 'participant-form';
  container.dataset.index = index;
             
- const previewHtml = data && data.temp_file ? `
+ const previewHtml = data && data.preview ? `
 <div class="drawing-preview visible" id="preview_${index}">
-<img src="${data.preview}" alt="Рисунок" class="drawing-preview__image" id="preview_img_${index}">
+<img src="${data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large" id="preview_img_${index}">
 <div class="drawing-preview__info" id="preview_info_${index}">Файл загружен</div>
 <button type="button" class="drawing-preview__remove" onclick="removeDrawing(${index})">Удалить</button>
 </div>` : '';
@@ -430,7 +493,7 @@ generateCSRFToken();
  ${index >0 ? `<button type="button" class="participant-form__remove" onclick="removeParticipant(${index})"><i class="fas fa-trash"></i></button>` : ''}
 </div>
                 
-<div class="form-section">
+<div class="form-section form-section--boxed">
 <div class="form-section__title">Данные участника</div>
 <div class="form-row">
 <div class="form-group">
@@ -444,17 +507,18 @@ generateCSRFToken();
 </div>
 </div>
                 
-<div class="form-section">
+<div class="form-section form-section--boxed form-section--drawing">
 <div class="form-section__title">Рисунок участника</div>
 <input type="hidden" name="participants[${index}][temp_file]" id="temp_file_${index}" value="${data?.temp_file || ''}">
-<div class="form-group">
+<input type="hidden" name="participants[${index}][existing_drawing_file]" id="existing_file_${index}" value="${data?.existing_drawing_file || ''}">
+<div class="form-group drawing-layout">
 <div class="upload-area" id="drawingUpload_${index}">
 <input type="file" name="participants[${index}][drawing_file]" accept="image/*" class="file-upload__input" data-index="${index}">
 <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
 <div class="upload-area__title" id="upload_title_${index}">Нажмите или перетащите рисунок</div>
 <div class="upload-area__hint" id="upload_hint_${index}">JPG, PNG, GIF, WebP, TIF, PDF</div>
 </div>
- ${previewHtml}
+ <div class="drawing-preview-wrap">${previewHtml}</div>
 </div>
 </div>
  `;
@@ -536,11 +600,12 @@ function handleFileSelect(file, index) {
  previewContainer.className = 'drawing-preview visible';
  previewContainer.id = `preview_${index}`;
  previewContainer.innerHTML = `
-<img src="${data.preview}" alt="Рисунок" class="drawing-preview__image" id="preview_img_${index}">
+<img src="${data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large" id="preview_img_${index}">
 <div class="drawing-preview__info" id="preview_info_${index}">Загружено</div>
 <button type="button" class="drawing-preview__remove" onclick="removeDrawing(${index})">Удалить</button>
  `;
- area.parentElement.appendChild(previewContainer);
+ const previewWrap = area.parentElement.querySelector('.drawing-preview-wrap') || area.parentElement;
+ previewWrap.appendChild(previewContainer);
  } else {
  previewContainer.classList.add('visible');
  document.getElementById(`preview_img_${index}`).src = data.preview;
@@ -568,8 +633,10 @@ function handleFileSelect(file, index) {
  const hint = document.getElementById(`upload_hint_${index}`);
  const preview = document.getElementById(`preview_${index}`);
  const tempFile = document.getElementById(`temp_file_${index}`);
+ const existingFile = document.getElementById(`existing_file_${index}`);
             
  if (tempFile) tempFile.value = '';
+ if (existingFile) existingFile.value = '';
  if (preview) preview.classList.remove('visible');
  area.classList.remove('has-file');
  title.textContent = 'Нажмите или перетащите рисунок';
@@ -596,7 +663,11 @@ function goToMyApplications() {
 }
         
  document.addEventListener('DOMContentLoaded', function() {
+ if (Array.isArray(initialParticipants) && initialParticipants.length >0) {
+ initialParticipants.forEach((participant) => addParticipant(participant));
+ } else {
  addParticipant();
+ }
  document.getElementById('addParticipantBtn').addEventListener('click', function() { addParticipant(); });
             
  <?php if (isset($show_success_modal) && $show_success_modal): ?>

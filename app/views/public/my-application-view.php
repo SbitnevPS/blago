@@ -9,6 +9,7 @@ if (!isAuthenticated()) {
 
 $applicationId = intval($_GET['id'] ??0);
 $userId = getCurrentUserId();
+$user = getCurrentUser();
 
 // Получаем заявку
 $stmt = $pdo->prepare("
@@ -71,6 +72,13 @@ $currentPage = 'applications';
  <?php endforeach; ?>
 </ul>
 </div>
+<?php if ($canEdit): ?>
+<div class="mt-md">
+<a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary">
+<i class="fas fa-wrench"></i> Исправить замечания
+</a>
+</div>
+<?php endif; ?>
  <?php endif; ?>
         
 <div class="application-detail__header">
@@ -154,8 +162,10 @@ $currentPage = 'applications';
  <?php if (!empty($participant['drawing_file'])): ?>
 <div class="drawing-preview">
 <div class="participant-card__label">Рисунок</div>
-<img src="/uploads/drawings/<?= urlencode($user['email']) ?>/<?= htmlspecialchars($participant['drawing_file']) ?>" 
- alt="Рисунок" class="drawing-preview__image">
+<?php $drawingSrc = getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']); ?>
+<img src="<?= htmlspecialchars($drawingSrc) ?>" 
+ alt="Рисунок" class="drawing-preview__image drawing-preview__image--large js-gallery-image"
+ data-gallery-index="<?= $index ?>">
 </div>
  <?php endif; ?>
 </div>
@@ -198,5 +208,74 @@ $currentPage = 'applications';
 </div>
 </div>
 </footer>
+<?php
+$galleryImages = [];
+foreach ($participants as $participant) {
+    if (!empty($participant['drawing_file'])) {
+        $galleryImages[] = [
+            'src' => getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']),
+            'title' => $participant['fio'] ?? 'Рисунок',
+        ];
+    }
+}
+?>
+<?php if (!empty($galleryImages)): ?>
+<div class="modal" id="galleryModal">
+<div class="modal__content" style="max-width: 1100px; width: 96%;">
+<div class="modal__header">
+<h3 id="galleryTitle">Просмотр рисунка</h3>
+<button type="button" class="modal__close" onclick="closeGallery()">&times;</button>
+</div>
+<div class="modal__body">
+<img id="galleryImage" src="" alt="Рисунок" style="width:100%; max-height:70vh; object-fit:contain; border-radius:12px; background:#111;">
+<div class="flex gap-sm mt-md" id="galleryThumbs" style="overflow:auto;"></div>
+</div>
+</div>
+</div>
+<script>
+const galleryItems = <?= json_encode($galleryImages, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+let galleryCurrent = 0;
+
+function renderGalleryThumbs() {
+ const container = document.getElementById('galleryThumbs');
+ container.innerHTML = '';
+ galleryItems.forEach((item, i) => {
+  const thumb = document.createElement('img');
+  thumb.src = item.src;
+  thumb.alt = item.title;
+  thumb.style.cssText = `width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:${i === galleryCurrent ? '3px solid #6366F1' : '2px solid #E5E7EB'}`;
+  thumb.addEventListener('click', () => openGallery(i));
+  container.appendChild(thumb);
+ });
+}
+
+function openGallery(index) {
+ galleryCurrent = index;
+ const item = galleryItems[index];
+ document.getElementById('galleryImage').src = item.src;
+ document.getElementById('galleryTitle').textContent = item.title;
+ document.getElementById('galleryModal').classList.add('active');
+ document.body.style.overflow = 'hidden';
+ renderGalleryThumbs();
+}
+
+function closeGallery() {
+ document.getElementById('galleryModal').classList.remove('active');
+ document.body.style.overflow = '';
+}
+
+document.querySelectorAll('.js-gallery-image').forEach((img, idx) => {
+ img.style.cursor = 'zoom-in';
+ img.addEventListener('click', () => openGallery(idx));
+});
+
+document.addEventListener('keydown', (e) => {
+ if (!document.getElementById('galleryModal').classList.contains('active')) return;
+ if (e.key === 'Escape') closeGallery();
+ if (e.key === 'ArrowRight') openGallery((galleryCurrent + 1) % galleryItems.length);
+ if (e.key === 'ArrowLeft') openGallery((galleryCurrent - 1 + galleryItems.length) % galleryItems.length);
+});
+</script>
+<?php endif; ?>
 </body>
 </html>
