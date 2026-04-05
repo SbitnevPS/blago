@@ -199,7 +199,7 @@ require_once __DIR__ . '/includes/header.php';
 </td>
 <td><?= date('d.m.Y', strtotime($app['created_at'])) ?></td>
 <td>
-<a href="application-view.php?id=<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
+<a href="/admin/application/<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
 <i class="fas fa-eye"></i>
 </a>
 </td>
