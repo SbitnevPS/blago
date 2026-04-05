@@ -932,6 +932,22 @@ document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
  showToast(alertEl.textContent.trim(), type);
  alertEl.remove();
 });
+
+function closeDisputeChatModal() {
+ const chatModal = document.getElementById('disputeChatModal');
+ if (chatModal) {
+ window.location.href = '/admin/messages';
+ }
+}
+
+const disputeChatModal = document.getElementById('disputeChatModal');
+if (disputeChatModal) {
+ disputeChatModal.addEventListener('click', function(e) {
+ if (e.target === disputeChatModal) {
+ closeDisputeChatModal();
+ }
+ });
+}
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
