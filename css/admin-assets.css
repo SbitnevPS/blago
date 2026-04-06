@@ -339,6 +339,7 @@
 .settings-message-card--warning h5 i { color: #d97706; }
 .settings-message-card--danger h5 i { color: #dc2626; }
 .settings-message-card--accent h5 i { color: #6366f1; }
+.settings-email-card,
 .settings-vk-card {
   margin-top: 16px;
   border: 1px solid #e5e7eb;

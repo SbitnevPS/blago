@@ -167,6 +167,10 @@ function getSystemSettings() {
         'application_declined_message' => 'Ваша заявка отклонена администратором.',
         'application_revision_subject' => 'Заявка отправлена на корректировку',
         'application_revision_message' => 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.',
+        'email_notifications_enabled' => 1,
+        'email_from_name' => 'ДетскиеКонкурсы.рф',
+        'email_from_address' => 'no-reply@kids-contests.ru',
+        'email_reply_to' => '',
 
     ];
 
