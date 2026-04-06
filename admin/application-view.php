@@ -57,6 +57,24 @@ function scaleToMinSide($image, $minSide = 1500) {
     return $scaled;
 }
 
+function findWorkParticipantId(array $works, int $workId): int {
+    foreach ($works as $workRow) {
+        if ((int) ($workRow['id'] ?? 0) === $workId) {
+            return (int) ($workRow['participant_id'] ?? 0);
+        }
+    }
+    return 0;
+}
+
+function findParticipantWorkId(array $works, int $participantId): int {
+    foreach ($works as $workRow) {
+        if ((int) ($workRow['participant_id'] ?? 0) === $participantId) {
+            return (int) ($workRow['id'] ?? 0);
+        }
+    }
+    return 0;
+}
+
 // Обработка изменения статуса
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -94,12 +112,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         redirect('/admin/application/' . $application_id);
     } elseif ($_POST['action'] === 'set_work_status') {
         $workId = (int)($_POST['work_id'] ?? 0);
+        $participantId = (int)($_POST['participant_id'] ?? findWorkParticipantId($works, $workId));
         $newStatus = (string)($_POST['work_status'] ?? 'pending');
         if ($workId <= 0 || !in_array($newStatus, ['pending', 'accepted', 'reviewed'], true)) {
             $_SESSION['success_message'] = 'Некорректный статус работы';
             redirect('/admin/application/' . $application_id);
         }
         updateWorkStatus($workId, $newStatus);
+
+        if ($participantId > 0 && $hasDrawingCompliantColumn) {
+            $isCompliant = $newStatus === 'accepted' ? 1 : 0;
+            if ($hasDrawingCommentColumn) {
+                $pdo->prepare("
+                    UPDATE participants
+                    SET drawing_compliant = ?, drawing_comment = CASE WHEN ? = 1 THEN NULL ELSE drawing_comment END
+                    WHERE id = ? AND application_id = ?
+                ")->execute([$isCompliant, $isCompliant, $participantId, $application_id]);
+            } else {
+                $pdo->prepare("
+                    UPDATE participants
+                    SET drawing_compliant = ?
+                    WHERE id = ? AND application_id = ?
+                ")->execute([$isCompliant, $participantId, $application_id]);
+            }
+        }
         $_SESSION['success_message'] = 'Статус работы обновлён';
         redirect('/admin/application/' . $application_id);
     } elseif ($_POST['action'] === 'generate_all_diplomas') {
@@ -217,6 +253,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
  $participantId = intval($_POST['participant_id'] ?? 0);
  $isCompliant = isset($_POST['drawing_compliant']) ? 1 : 0;
+ $workId = findParticipantWorkId($works, $participantId);
+ $newWorkStatus = $isCompliant ? 'accepted' : 'reviewed';
  $comment = trim($_POST['comment'] ?? '');
 
  if ($participantId <= 0) {
@@ -256,6 +294,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
      SET is_resolved = 1, resolved_at = NOW()
      WHERE application_id = ? AND participant_id = ? AND is_resolved = 0
      ")->execute([$application_id, $participantId]);
+ }
+
+ if ($workId > 0) {
+     updateWorkStatus($workId, $newWorkStatus);
  }
 
  if ($isAjaxRequest) {
@@ -579,8 +621,8 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div class="flex gap-sm mt-md" style="flex-wrap:wrap;">
-            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--primary btn--sm" type="submit">Принять к участию</button></form>
-            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="work_status" value="reviewed"><button class="btn btn--secondary btn--sm" type="submit">Отметить как рассмотренную</button></form>
+            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--primary btn--sm" type="submit">Принять к участию</button></form>
+            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="reviewed"><button class="btn btn--secondary btn--sm" type="submit">Отметить как рассмотренную</button></form>
             <?php if (mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null): ?>
             <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--primary btn--sm" type="submit">Скачать диплом</button></form>
             <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--secondary btn--sm" type="submit">Отправить по почте</button></form>
