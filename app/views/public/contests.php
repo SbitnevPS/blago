@@ -2,14 +2,11 @@
 // contests.php - Список конкурсов
 require_once dirname(__DIR__, 3) . '/config.php';
 
-if (!isAuthenticated()) {
-    redirect('/login');
-}
-
 $currentPage = 'contests';
-$userId = (int)getCurrentUserId();
+$isGuest = !isAuthenticated();
+$userId = (int) (getCurrentUserId() ?? 0);
 $contests = getActiveContests();
-$submittedContestIds = array_flip(getUserSubmittedContestIds($userId));
+$submittedContestIds = $isGuest ? [] : array_flip(getUserSubmittedContestIds($userId));
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -25,9 +22,11 @@ $submittedContestIds = array_flip(getUserSubmittedContestIds($userId));
 <main class="container" style="padding: var(--space-xl) var(--space-lg);">
 <div class="flex justify-between items-center mb-lg">
 <h1>Конкурсы</h1>
-<a href="/my-applications" class="btn btn--secondary">
-    <i class="fas fa-file-alt"></i> Мои заявки
-</a>
+<?php if (!$isGuest): ?>
+    <a href="/my-applications" class="btn btn--secondary">
+        <i class="fas fa-file-alt"></i> Мои заявки
+    </a>
+<?php endif; ?>
 </div>
 
 <?php if (empty($contests)): ?>
@@ -74,9 +73,20 @@ $submittedContestIds = array_flip(getUserSubmittedContestIds($userId));
         <a href="/contest/<?= (int)$contest['id'] ?>" class="btn btn--outline">
             <i class="fas fa-info-circle"></i> Подробнее
         </a>
-        <a href="/application-form?contest_id=<?= (int)$contest['id'] ?>" class="btn btn--primary">
-            <i class="fas fa-paper-plane"></i> Подать заявку
-        </a>
+        <?php if ($isGuest): ?>
+            <a
+                href="/application-form?contest_id=<?= (int)$contest['id'] ?>"
+                class="btn btn--primary"
+                data-auth-required="1"
+                data-target-url="/application-form?contest_id=<?= (int)$contest['id'] ?>"
+            >
+                <i class="fas fa-paper-plane"></i> Подать заявку
+            </a>
+        <?php else: ?>
+            <a href="/application-form?contest_id=<?= (int)$contest['id'] ?>" class="btn btn--primary">
+                <i class="fas fa-paper-plane"></i> Подать заявку
+            </a>
+        <?php endif; ?>
     </div>
 </div>
 <?php endforeach; ?>

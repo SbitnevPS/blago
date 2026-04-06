@@ -1,15 +1,12 @@
 <?php
 // contest-view.php - Подробнее о конкурсе
 require_once dirname(__DIR__, 3) . '/config.php';
-
-if (!isAuthenticated()) {
-    redirect('/login');
-}
+$isGuest = !isAuthenticated();
 
 $contest_id = (int)($_GET['id'] ?? 0);
 $contest = getContestById($contest_id);
 
-if (!$contest) {
+if (!$contest || (int)($contest['is_published'] ?? 0) !== 1) {
     redirect('/contests');
 }
 
@@ -37,9 +34,20 @@ $currentPage = 'contests';
     <div class="card__header">
         <div class="flex justify-between items-center" style="gap:12px; flex-wrap:wrap;">
             <h1 style="margin:0;"><?= htmlspecialchars($contest['title']) ?></h1>
-            <a href="/application-form?contest_id=<?= (int)$contest['id'] ?>" class="btn btn--primary btn--lg">
-                <i class="fas fa-paper-plane"></i> Подать заявку
-            </a>
+            <?php if ($isGuest): ?>
+                <a
+                    href="/application-form?contest_id=<?= (int)$contest['id'] ?>"
+                    class="btn btn--primary btn--lg"
+                    data-auth-required="1"
+                    data-target-url="/application-form?contest_id=<?= (int)$contest['id'] ?>"
+                >
+                    <i class="fas fa-paper-plane"></i> Подать заявку
+                </a>
+            <?php else: ?>
+                <a href="/application-form?contest_id=<?= (int)$contest['id'] ?>" class="btn btn--primary btn--lg">
+                    <i class="fas fa-paper-plane"></i> Подать заявку
+                </a>
+            <?php endif; ?>
         </div>
     </div>
     <div class="card__body">
@@ -91,9 +99,21 @@ $currentPage = 'contests';
 </div>
 
 <div class="flex gap-md mt-lg" style="flex-wrap:wrap;">
-    <a href="/application-form?contest_id=<?= (int)$contest['id'] ?>" class="btn btn--primary btn--lg" style="flex:1; min-width:240px;">
-        <i class="fas fa-paper-plane"></i> Отправить заявку на участие
-    </a>
+    <?php if ($isGuest): ?>
+        <a
+            href="/application-form?contest_id=<?= (int)$contest['id'] ?>"
+            class="btn btn--primary btn--lg"
+            style="flex:1; min-width:240px;"
+            data-auth-required="1"
+            data-target-url="/application-form?contest_id=<?= (int)$contest['id'] ?>"
+        >
+            <i class="fas fa-paper-plane"></i> Отправить заявку на участие
+        </a>
+    <?php else: ?>
+        <a href="/application-form?contest_id=<?= (int)$contest['id'] ?>" class="btn btn--primary btn--lg" style="flex:1; min-width:240px;">
+            <i class="fas fa-paper-plane"></i> Отправить заявку на участие
+        </a>
+    <?php endif; ?>
     <a href="/contests" class="btn btn--secondary btn--lg">
         К списку конкурсов
     </a>
