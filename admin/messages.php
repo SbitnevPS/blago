@@ -27,6 +27,9 @@ $selectedDisputeMessages = [];
 $disputeRecipientName = 'Пользователь';
 $isDisputeChatClosed = false;
 $selectedApplicationStatus = '';
+$messagesView = ($_GET['view'] ?? '') === 'disputes' ? 'disputes' : 'main';
+$disputeThreadsCount = 0;
+$disputeUnreadTotal = 0;
 
 if (!function_exists('adminMessagesHasDisputeChatClosedColumn')) {
     function adminMessagesHasDisputeChatClosedColumn(PDO $pdo): bool {
@@ -160,7 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
                         ]);
                     }
                     $_SESSION['success_message'] = 'Ответ отправлен в чат';
-                    redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
+                    redirect('/admin/messages?view=disputes&dispute_application_id=' . $disputeApplicationId);
                 } else {
                     $error = 'Чат не найден';
                     if ($isAjaxRequest) {
@@ -244,7 +247,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
                 $closeStmt = $pdo->prepare("UPDATE applications SET dispute_chat_closed = 1 WHERE id = ?");
                 $closeStmt->execute([$disputeApplicationId]);
                 $_SESSION['success_message'] = 'Чат завершён. Пользователь больше не сможет отправлять сообщения.';
-                redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
+                redirect('/admin/messages?view=disputes&dispute_application_id=' . $disputeApplicationId);
             } catch (Exception $e) {
                 $error = 'Не удалось завершить чат';
             }
@@ -265,7 +268,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
                 $approveStmt->execute([$disputeApplicationId]);
                 deleteDeclineNotificationsForApplication($pdo, $disputeApplicationId);
                 $_SESSION['success_message'] = 'Заявка принята';
-                redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
+                redirect('/admin/messages?view=disputes&dispute_application_id=' . $disputeApplicationId);
             } catch (Exception $e) {
                 $error = 'Не удалось одобрить заявку';
             }
@@ -292,8 +295,14 @@ try {
     ORDER BY last_message_at DESC
     ");
     $disputeThreads = $threadsStmt->fetchAll();
+    $disputeThreadsCount = count($disputeThreads);
+    foreach ($disputeThreads as $threadRow) {
+        $disputeUnreadTotal += (int) ($threadRow['unread_count'] ?? 0);
+    }
 } catch (Exception $e) {
     $disputeThreads = [];
+    $disputeThreadsCount = 0;
+    $disputeUnreadTotal = 0;
 }
 
 if ($selectedDisputeApplicationId > 0) {
@@ -609,7 +618,19 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
-<?php if (!empty($disputeThreads)): ?>
+<div class="messages-page-actions" style="margin-bottom:16px; justify-content:flex-start;">
+    <a href="/admin/messages?view=main" class="btn <?= $messagesView === 'main' ? 'btn--primary' : 'btn--ghost' ?>">
+        <i class="fas fa-envelope"></i> Сообщения
+    </a>
+    <a href="/admin/messages?view=disputes" class="btn <?= $messagesView === 'disputes' ? 'btn--primary' : 'btn--ghost' ?>" style="position:relative;">
+        <i class="fas fa-comments"></i> Чаты оспаривания заявок - <?= (int) $disputeThreadsCount ?>
+        <?php if ($disputeUnreadTotal > 0): ?>
+            <span class="badge badge--warning" style="margin-left:8px;"><?= (int) $disputeUnreadTotal ?></span>
+        <?php endif; ?>
+    </a>
+</div>
+
+<?php if ($messagesView === 'disputes' && !empty($disputeThreads)): ?>
 <div class="card mb-lg">
     <div class="card__header">
         <h3>Чаты: оспаривание решения по заявке</h3>
@@ -647,7 +668,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                     </td>
                     <td data-label="Действия">
-                        <a class="btn btn--ghost btn--sm" href="/admin/messages?dispute_application_id=<?= (int) $thread['application_id'] ?>">
+                        <a class="btn btn--ghost btn--sm" href="/admin/messages?view=disputes&dispute_application_id=<?= (int) $thread['application_id'] ?>">
                             <i class="fas fa-comments"></i> Открыть чат
                         </a>
                     </td>
@@ -659,7 +680,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
-<?php if ($selectedDisputeApplicationId > 0): ?>
+<?php if ($messagesView === 'disputes' && $selectedDisputeApplicationId > 0): ?>
 <div class="modal active" id="disputeChatModal">
     <div class="modal__content message-modal dispute-chat-modal">
         <div class="modal__header">
@@ -755,6 +776,8 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
+<?php if ($messagesView === 'main'): ?>
+
 <!-- Статистика -->
 <div class="stats-grid stats-grid--messages mb-lg">
 <div class="stat-card stat-card--compact" style="cursor:pointer;" onclick="filterByPriority('')">
@@ -799,18 +822,18 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- Поиск и фильтры -->
-<div class="card mb-lg">
+<div class="card card--allow-overflow mb-lg">
 <div class="card__body">
 <form method="GET" class="flex gap-md" style="align-items:flex-end; flex-wrap:wrap;">
 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <div style="flex:1; min-width:250px;">
-<label class="form-label">Поиск</label>
+<label class="form-label">Поиск по теме сообщения</label>
 <input type="text" name="search" class="form-input" 
  placeholder="Поиск по теме, сообщению или пользователю..." 
  value="<?= htmlspecialchars($search) ?>">
 </div>
 <div style="flex:1; min-width:250px; position:relative;">
-<label class="form-label">Пользователь</label>
+<label class="form-label">Поиск по родителю/куратору</label>
 <input
  type="text"
  name="user_query"
@@ -858,8 +881,8 @@ require_once __DIR__ . '/includes/header.php';
 </button>
 </div>
 </div>
-<div class="flex items-center justify-between gap-md" id="bulkActionsBar" style="display:none; margin-top:12px;">
-<div class="text-secondary">Выбрано: <strong id="selectedCountValue">0</strong></div>
+<div class="flex items-center gap-md" id="bulkActionsBar" style="display:none; margin-top:12px; flex-wrap:nowrap;">
+<div class="text-secondary" style="white-space:nowrap;">Выбрано: <strong id="selectedCountValue">0</strong></div>
 <div class="flex gap-sm">
 <button type="button" class="btn btn--ghost btn--sm" id="clearSelectedBtn">Сбросить</button>
 <button type="button" class="btn btn--danger btn--sm" id="bulkDeleteBtn">
@@ -1059,6 +1082,8 @@ foreach ($messages as $msg) {
 </form>
 </div>
 </div>
+
+<?php endif; ?>
 
 <!-- Модальное окно просмотра сообщения -->
 <div class="modal" id="viewMessageModal">
@@ -1495,6 +1520,7 @@ async function pollDisputeMessages() {
 
  try {
   const url = new URL(window.location.href);
+  url.searchParams.set('view', 'disputes');
   url.searchParams.set('action', 'poll_dispute_messages');
   url.searchParams.set('dispute_application_id', String(selectedDisputeApplicationId));
   url.searchParams.set('last_message_id', String(latestDisputeMessageId));

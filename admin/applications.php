@@ -19,6 +19,8 @@ $breadcrumb = 'Управление заявками';
 $status = $_GET['status'] ?? '';
 $contest_id = $_GET['contest_id'] ?? '';
 $search = $_GET['search'] ?? '';
+$participantId = max(0, (int) ($_GET['participant_id'] ?? 0));
+$participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
 
 $where = [];
 $params = [];
@@ -36,6 +38,24 @@ if ($contest_id) {
 if ($search) {
     $where[] = '(u.name LIKE ? OR u.surname LIKE ? OR u.email LIKE ? OR a.id LIKE ?)';
     $params = array_merge($params, ["%$search%", "%$search%", "%$search%", "%$search%"]);
+}
+
+if ($participantId > 0) {
+    $where[] = 'a.id IN (SELECT p.application_id FROM participants p WHERE p.id = ?)';
+    $params[] = $participantId;
+} elseif ($participantQuery !== '') {
+    $where[] = 'EXISTS (
+        SELECT 1
+        FROM participants p
+        JOIN applications a2 ON a2.id = p.application_id
+        JOIN users pu ON pu.id = a2.user_id
+        WHERE p.application_id = a.id
+          AND (p.fio LIKE ? OR p.region LIKE ? OR pu.email LIKE ?)
+    )';
+    $participantTerm = '%' . $participantQuery . '%';
+    $params[] = $participantTerm;
+    $params[] = $participantTerm;
+    $params[] = $participantTerm;
 }
 
 $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
@@ -72,7 +92,7 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <!-- Фильтры -->
-<div class="card mb-lg">
+<div class="card card--allow-overflow mb-lg">
     <div class="card__body">
         <form method="GET" class="flex gap-md" style="flex-wrap: wrap; align-items: flex-end;">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -104,10 +124,23 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="text" name="search" class="form-input" 
                        placeholder="ID, имя, email..." value="<?= htmlspecialchars($search) ?>">
             </div>
+            <div style="flex:1; min-width: 260px; max-width: 380px; position:relative;">
+                <label class="form-label">Поиск по участнику</label>
+                <input
+                    type="text"
+                    name="participant_query"
+                    id="participantSearchInput"
+                    class="form-input"
+                    placeholder="ФИО участника, регион или email заявителя"
+                    value="<?= htmlspecialchars($participantQuery) ?>"
+                    autocomplete="off">
+                <input type="hidden" name="participant_id" id="participantId" value="<?= (int) $participantId ?>">
+                <div id="participantSearchResults" class="user-results"></div>
+            </div>
             <button type="submit" class="btn btn--primary">
                 <i class="fas fa-filter"></i> Фильтр
             </button>
-            <?php if ($status || $contest_id || $search): ?>
+            <?php if ($status || $contest_id || $search || $participantId > 0 || $participantQuery !== ''): ?>
                 <a href="applications.php" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
@@ -211,12 +244,12 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="flex gap-sm">
                 <?php if ($page > 1): ?>
-                    <a href="?page=<?= $page - 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>" class="btn btn--ghost btn--sm">
+                    <a href="?page=<?= $page - 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-left"></i>
                     </a>
                 <?php endif; ?>
                 <?php if ($page < $totalPages): ?>
-                    <a href="?page=<?= $page + 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>" class="btn btn--ghost btn--sm">
+                    <a href="?page=<?= $page + 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-right"></i>
                     </a>
                 <?php endif; ?>
@@ -225,5 +258,86 @@ require_once __DIR__ . '/includes/header.php';
         <?php endif; ?>
     </div>
 </div>
+
+<script>
+(() => {
+    const input = document.getElementById('participantSearchInput');
+    const hiddenInput = document.getElementById('participantId');
+    const results = document.getElementById('participantSearchResults');
+    if (!input || !hiddenInput || !results) return;
+
+    let timer = null;
+
+    const hideResults = () => {
+        results.style.display = 'none';
+        results.innerHTML = '';
+    };
+
+    const renderItems = (items) => {
+        if (!Array.isArray(items) || items.length === 0) {
+            results.innerHTML = '<div class="user-results__empty">Ничего не найдено</div>';
+            results.style.display = 'block';
+            return;
+        }
+
+        const escapeHtml = (value) => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+
+        results.innerHTML = items.map((item) => {
+            const fullName = `${item.fio || ''}`.trim() || 'Без имени';
+            const region = item.region ? `Регион: ${item.region}` : 'Регион: —';
+            const email = item.email || 'Email не указан';
+            const safeName = escapeHtml(fullName);
+            const safeRegion = escapeHtml(region);
+            const safeEmail = escapeHtml(email);
+            return `
+                <button type="button" class="user-results__item" data-id="${item.id}" data-name="${safeName}">
+                    <div class="user-results__name">${safeName}</div>
+                    <div class="user-results__email">${safeRegion} · ${safeEmail}</div>
+                </button>
+            `;
+        }).join('');
+        results.style.display = 'block';
+    };
+
+    input.addEventListener('input', () => {
+        hiddenInput.value = '';
+        const query = input.value.trim();
+        if (timer) clearTimeout(timer);
+        if (query.length < 2) {
+            hideResults();
+            return;
+        }
+
+        timer = setTimeout(async () => {
+            try {
+                const response = await fetch(`/admin/search-participants.php?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                renderItems(data);
+            } catch (error) {
+                hideResults();
+            }
+        }, 220);
+    });
+
+    results.addEventListener('click', (event) => {
+        const item = event.target.closest('.user-results__item');
+        if (!item) return;
+        hiddenInput.value = item.dataset.id || '';
+        input.value = item.dataset.name || '';
+        hideResults();
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!results.contains(event.target) && event.target !== input) {
+            hideResults();
+        }
+    });
+})();
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
