@@ -235,7 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $newFilename = sanitizeFilename($fileSurname) . '_' . 
  sanitizeFilename($fileName) . '_' . 
  sanitizeFilename($filePatronymic) . '_' . 
- intval($age) . '.jpg';
+ intval($age) . '_' . bin2hex(random_bytes(4)) . '.jpg';
 
  // Обработка изображения (resize + конвертация в JPG)
  $finalPath = processAndSaveImage($tempFilePath, $userUploadPath, $newFilename);
