@@ -6,7 +6,16 @@ redirect('/admin/login');
 }
 
 check_csrf();
-$admin = getCurrentUser();
+$adminId = (int) (getCurrentAdminId() ?? 0);
+$admin = null;
+if ($adminId > 0) {
+    $adminStmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
+    $adminStmt->execute([$adminId]);
+    $admin = $adminStmt->fetch();
+}
+if (empty($admin)) {
+    redirect('/admin/login');
+}
 $currentPage = 'messages';
 $pageTitle = 'Сообщения';
 $breadcrumb = 'Все отправленные сообщения';
@@ -16,17 +25,40 @@ $selectedDisputeApplicationId = intval($_GET['dispute_application_id'] ?? 0);
 $disputeThreads = [];
 $selectedDisputeMessages = [];
 $disputeRecipientName = 'Пользователь';
+$isDisputeChatClosed = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply_dispute') {
+    $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $error = 'Ошибка безопасности';
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => $error], 403);
+        }
     } else {
         $disputeApplicationId = intval($_POST['dispute_application_id'] ?? 0);
         $replyText = trim($_POST['reply_text'] ?? '');
         if ($disputeApplicationId <= 0 || $replyText === '') {
             $error = 'Заполните текст ответа';
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => $error], 422);
+            }
         } else {
             try {
+                $isClosedForReply = false;
+                try {
+                    $closedCheckStmt = $pdo->prepare("SELECT dispute_chat_closed FROM applications WHERE id = ? LIMIT 1");
+                    $closedCheckStmt->execute([$disputeApplicationId]);
+                    $isClosedForReply = (int) $closedCheckStmt->fetchColumn() === 1;
+                } catch (Exception $e) {
+                    $isClosedForReply = false;
+                }
+
+                if ($isClosedForReply) {
+                    $error = 'Чат завершён. Отправка сообщений отключена.';
+                    if ($isAjaxRequest) {
+                        jsonResponse(['success' => false, 'error' => $error], 423);
+                    }
+                } else {
                 $threadSubject = $disputeThreadSubjectPrefix . $disputeApplicationId;
                 $userStmt = $pdo->prepare("
                 SELECT m.user_id
@@ -50,13 +82,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
                         $replyText,
                         $admin['id'],
                     ]);
+                    if ($isAjaxRequest) {
+                        $adminName = trim(($admin['surname'] ?? '') . ' ' . ($admin['name'] ?? '') . ' ' . ($admin['patronymic'] ?? ''));
+                        if ($adminName === '') {
+                            $adminName = 'Администратор';
+                        }
+                        jsonResponse([
+                            'success' => true,
+                            'message' => [
+                                'content' => $replyText,
+                                'created_at' => date('d.m.Y H:i'),
+                                'author_label' => 'Руководитель проекта — ' . $adminName,
+                                'from_admin' => true,
+                            ],
+                        ]);
+                    }
                     $_SESSION['success_message'] = 'Ответ отправлен в чат';
                     redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
                 } else {
                     $error = 'Чат не найден';
+                    if ($isAjaxRequest) {
+                        jsonResponse(['success' => false, 'error' => $error], 404);
+                    }
+                }
                 }
             } catch (Exception $e) {
                 $error = 'Не удалось отправить ответ';
+                if ($isAjaxRequest) {
+                    jsonResponse(['success' => false, 'error' => $error], 500);
+                }
+            }
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close_dispute_chat') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Ошибка безопасности';
+    } else {
+        $disputeApplicationId = intval($_POST['dispute_application_id'] ?? 0);
+        if ($disputeApplicationId <= 0) {
+            $error = 'Чат не найден';
+        } else {
+            try {
+                $closeStmt = $pdo->prepare("UPDATE applications SET dispute_chat_closed = 1 WHERE id = ?");
+                $closeStmt->execute([$disputeApplicationId]);
+                $_SESSION['success_message'] = 'Чат завершён. Пользователь больше не сможет отправлять сообщения.';
+                redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
+            } catch (Exception $e) {
+                $error = 'Не удалось завершить чат';
             }
         }
     }
@@ -87,6 +161,14 @@ try {
 
 if ($selectedDisputeApplicationId > 0) {
     try {
+        try {
+            $closedStmt = $pdo->prepare("SELECT dispute_chat_closed FROM applications WHERE id = ? LIMIT 1");
+            $closedStmt->execute([$selectedDisputeApplicationId]);
+            $isDisputeChatClosed = (int) $closedStmt->fetchColumn() === 1;
+        } catch (Exception $e) {
+            $isDisputeChatClosed = false;
+        }
+
         $threadSubject = $disputeThreadSubjectPrefix . $selectedDisputeApplicationId;
         $markReadStmt = $pdo->prepare("
         UPDATE messages m
@@ -100,23 +182,45 @@ if ($selectedDisputeApplicationId > 0) {
         $markReadStmt->execute([$selectedDisputeApplicationId, $threadSubject]);
 
         $selectedStmt = $pdo->prepare("
-        SELECT m.*, u.name, u.surname, u.patronymic, u.is_admin
-    FROM messages m
-    JOIN users u ON u.id = m.created_by
-    WHERE m.application_id = ?
-      AND m.title = ?
-    ORDER BY m.created_at ASC
+        SELECT
+            m.id,
+            m.user_id,
+            m.created_by,
+            m.application_id,
+            m.title,
+            m.content,
+            m.is_read,
+            m.created_at,
+            author.id AS author_id,
+            author.name AS author_name,
+            author.surname AS author_surname,
+            author.patronymic AS author_patronymic,
+            author.is_admin AS author_is_admin,
+            recipient.id AS recipient_id,
+            recipient.name AS recipient_name,
+            recipient.surname AS recipient_surname,
+            recipient.patronymic AS recipient_patronymic
+        FROM messages m
+        JOIN users author ON author.id = m.created_by
+        LEFT JOIN users recipient ON recipient.id = m.user_id
+        WHERE m.application_id = ?
+          AND m.title = ?
+        ORDER BY m.created_at ASC
     ");
         $selectedStmt->execute([$selectedDisputeApplicationId, $threadSubject]);
         $selectedDisputeMessages = $selectedStmt->fetchAll();
 
-        $recipientId = (int) ($selectedDisputeMessages[0]['user_id'] ?? 0);
-        if ($recipientId > 0) {
-            $recipientStmt = $pdo->prepare("SELECT surname, name FROM users WHERE id = ? LIMIT 1");
-            $recipientStmt->execute([$recipientId]);
-            $recipient = $recipientStmt->fetch();
-            if (!empty($recipient)) {
-                $disputeRecipientName = trim(($recipient['surname'] ?? '') . ' ' . ($recipient['name'] ?? ''));
+        if (!empty($selectedDisputeMessages)) {
+            $firstMessage = $selectedDisputeMessages[0];
+            $disputeRecipientName = trim(
+                ($firstMessage['recipient_surname'] ?? '')
+                . ' '
+                . ($firstMessage['recipient_name'] ?? '')
+                . ' '
+                . ($firstMessage['recipient_patronymic'] ?? '')
+            );
+            if ($disputeRecipientName === '') {
+                $disputeRecipientName = 'Пользователь';
             }
         }
     } catch (Exception $e) {
@@ -345,7 +449,12 @@ require_once __DIR__ . '/includes/header.php';
     <div class="modal__content message-modal dispute-chat-modal">
         <div class="modal__header">
             <h3>Чат по заявке #<?= (int) $selectedDisputeApplicationId ?></h3>
-            <button type="button" class="modal__close" onclick="closeDisputeChatModal()">&times;</button>
+            <div class="flex items-center gap-sm">
+                <a href="/admin/application/<?= (int) $selectedDisputeApplicationId ?>" class="btn btn--ghost btn--sm">
+                    <i class="fas fa-external-link-alt"></i> Открыть заявку
+                </a>
+                <button type="button" class="modal__close" onclick="closeDisputeChatModal()">&times;</button>
+            </div>
         </div>
         <div class="modal__body dispute-chat-modal__body">
         <?php if (empty($selectedDisputeMessages)): ?>
@@ -353,9 +462,15 @@ require_once __DIR__ . '/includes/header.php';
         <?php else: ?>
             <div class="dispute-chat-modal__messages" id="disputeChatMessages">
                 <?php foreach ($selectedDisputeMessages as $chatMessage): ?>
-                    <?php $fromAdmin = (int) ($chatMessage['is_admin'] ?? 0) === 1; ?>
+                    <?php $fromAdmin = (int) ($chatMessage['author_is_admin'] ?? 0) === 1; ?>
                     <?php
-                        $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? '') . ' ' . ($chatMessage['patronymic'] ?? ''));
+                        $chatAuthorName = trim(
+                            ($chatMessage['author_surname'] ?? '')
+                            . ' '
+                            . ($chatMessage['author_name'] ?? '')
+                            . ' '
+                            . ($chatMessage['author_patronymic'] ?? '')
+                        );
                         if ($fromAdmin) {
                             $chatAuthorLabel = 'Руководитель проекта — ' . ($chatAuthorName !== '' ? $chatAuthorName : trim(($admin['surname'] ?? '') . ' ' . ($admin['name'] ?? '')));
                         } else {
@@ -375,19 +490,38 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         <?php endif; ?>
 
-        <form method="POST" class="dispute-chat-modal__composer">
-            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-            <input type="hidden" name="action" value="reply_dispute">
-            <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
-            <div class="form-group">
-                <label class="form-label">Ответ в чате</label>
-                <textarea name="reply_text" class="form-textarea js-chat-hotkey" rows="4" required placeholder="Введите сообщение пользователю..."></textarea>
-            </div>
-            <button type="submit" class="btn btn--primary">
-                <i class="fas fa-paper-plane"></i> Ответить
-            </button>
-        </form>
+        <div class="flex items-center justify-between gap-sm" style="margin-top:16px;">
+            <?php if ($isDisputeChatClosed): ?>
+                <span class="badge" style="background:#6B7280; color:white;">Чат завершён</span>
+            <?php else: ?>
+                <span class="text-secondary" style="font-size:13px;">Чат активен</span>
+                <form method="POST" onsubmit="return confirm('Завершить чат? Пользователь больше не сможет писать.');">
+                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                    <input type="hidden" name="action" value="close_dispute_chat">
+                    <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
+                    <button type="submit" class="btn btn--ghost btn--sm" style="color:#EF4444;">
+                        <i class="fas fa-lock"></i> Завершить чат
+                    </button>
+                </form>
+            <?php endif; ?>
+        </div>
+
+        <?php if (!$isDisputeChatClosed): ?>
+            <form method="POST" class="dispute-chat-modal__composer">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="reply_dispute">
+                <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
+                <div class="form-group">
+                    <label class="form-label">Ответ в чате</label>
+                    <textarea name="reply_text" class="form-textarea js-chat-hotkey" rows="4" required placeholder="Введите сообщение пользователю..."></textarea>
+                </div>
+                <button type="submit" class="btn btn--primary">
+                    <i class="fas fa-paper-plane"></i> Ответить
+                </button>
+            </form>
+        <?php endif; ?>
         </div>
     </div>
 </div>
@@ -500,7 +634,12 @@ foreach ($messages as $msg) {
  $shownBroadcast[$broadcastKey] = true;
  }
 ?>
-<tr class="message-row" data-message-id="<?= (int) $msg['id'] ?>" onclick="viewMessage(<?= (int) $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)">
+<tr class="message-row"
+    data-message-id="<?= (int) $msg['id'] ?>"
+    data-message-subject="<?= e($msg['subject']) ?>"
+    data-message-content="<?= e($msg['message']) ?>"
+    data-message-priority="<?= e($msg['priority']) ?>"
+    data-message-broadcast="<?= !empty($msg['is_broadcast']) ? '1' : '0' ?>">
 <td data-label="ID">#<?= $msg['id'] ?></td>
 <td data-label="Получатель">
 <div class="flex items-center gap-sm">
@@ -533,10 +672,10 @@ foreach ($messages as $msg) {
 <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($msg['created_at'])) ?></td>
 <td data-label="Действия">
 <div class="flex gap-sm">
-<button type="button" class="btn btn--ghost btn--sm" onclick="event.stopPropagation(); viewMessage(<?= (int) $msg['id'] ?>, <?= json_encode($msg['subject']) ?>, <?= json_encode($msg['message']) ?>, <?= json_encode($msg['priority']) ?>)" title="Просмотр">
+<button type="button" class="btn btn--ghost btn--sm js-view-message" title="Просмотр">
 <i class="fas fa-eye"></i> Просмотр
 </button>
-<button type="button" class="btn btn--ghost btn--sm" onclick="event.stopPropagation(); deleteMessage(<?= (int) $msg['id'] ?>, <?= !empty($msg['is_broadcast']) ? 'true' : 'false' ?>, <?= json_encode($msg['subject'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)" title="Удалить" style="color:#EF4444;">
+<button type="button" class="btn btn--ghost btn--sm js-delete-message" title="Удалить" style="color:#EF4444;">
 <i class="fas fa-trash"></i>
 </button>
 </div>
@@ -689,7 +828,7 @@ function filterByPriority(priority) {
  window.location.href = url.toString();
 }
 
-function viewMessage(id, subject, message, priority) {
+function viewMessage(subject, message, priority) {
  document.getElementById('viewMessageSubject').textContent = subject;
  document.getElementById('viewMessageContent').textContent = message;
 
@@ -712,7 +851,7 @@ function closeViewModal() {
  restoreBodyScrollIfNoModals();
 }
 
-function deleteMessage(id, isBroadcast, subject) {
+function deleteMessage(id, isBroadcast) {
  if (!confirm('Вы уверены, что хотите удалить это сообщение' + (isBroadcast ? ' (для всех пользователей)' : '') + '?')) {
   return;
  }
@@ -881,6 +1020,29 @@ function showToast(message, type = 'success') {
  }, 2600);
 }
 
+function appendDisputeMessage(container, messageData) {
+ if (!container || !messageData) return;
+ const messageWrap = document.createElement('div');
+ messageWrap.className = 'dispute-chat-message ' + (messageData.from_admin ? 'dispute-chat-message--admin' : 'dispute-chat-message--user');
+
+ const bubble = document.createElement('div');
+ bubble.className = 'dispute-chat-message__bubble';
+
+ const meta = document.createElement('div');
+ meta.className = 'dispute-chat-message__meta';
+ meta.textContent = (messageData.author_label || 'Пользователь') + ' • ' + (messageData.created_at || '');
+
+ const text = document.createElement('div');
+ text.className = 'dispute-chat-message__text';
+ text.textContent = messageData.content || '';
+
+ bubble.appendChild(meta);
+ bubble.appendChild(text);
+ messageWrap.appendChild(bubble);
+ container.appendChild(messageWrap);
+ container.scrollTop = container.scrollHeight;
+}
+
 document.addEventListener('click', function(e) {
  if (userSearchInput && userResults && !userSearchInput.contains(e.target) && !userResults.contains(e.target)) {
   userResults.style.display = 'none';
@@ -947,6 +1109,83 @@ document.addEventListener('DOMContentLoaded', function() {
    }
   });
  });
+
+ document.querySelectorAll('tr.message-row').forEach((row) => {
+  row.addEventListener('click', () => {
+   viewMessage(
+    row.dataset.messageSubject || '',
+    row.dataset.messageContent || '',
+    row.dataset.messagePriority || 'normal'
+   );
+  });
+ });
+
+ document.querySelectorAll('.js-view-message').forEach((button) => {
+  button.addEventListener('click', (event) => {
+   event.stopPropagation();
+   const row = button.closest('tr.message-row');
+   if (!row) return;
+   viewMessage(
+    row.dataset.messageSubject || '',
+    row.dataset.messageContent || '',
+    row.dataset.messagePriority || 'normal'
+   );
+  });
+ });
+
+ document.querySelectorAll('.js-delete-message').forEach((button) => {
+  button.addEventListener('click', (event) => {
+   event.stopPropagation();
+   const row = button.closest('tr.message-row');
+   if (!row) return;
+   const messageId = Number(row.dataset.messageId || 0);
+   const isBroadcast = row.dataset.messageBroadcast === '1';
+   if (!messageId) return;
+   deleteMessage(messageId, isBroadcast);
+  });
+ });
+
+ const disputeReplyForm = document.querySelector('#disputeChatModal form.dispute-chat-modal__composer');
+ if (disputeReplyForm) {
+  disputeReplyForm.addEventListener('submit', async (event) => {
+   event.preventDefault();
+   const textarea = disputeReplyForm.querySelector('textarea[name="reply_text"]');
+   if (!textarea || !disputeReplyForm.reportValidity()) return;
+
+   const submitButton = disputeReplyForm.querySelector('button[type="submit"]');
+   const originalButtonHtml = submitButton ? submitButton.innerHTML : '';
+   if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...';
+   }
+
+   const formData = new FormData(disputeReplyForm);
+   formData.append('ajax', '1');
+
+   try {
+    const response = await fetch(window.location.href, {
+     method: 'POST',
+     headers: { 'X-Requested-With': 'XMLHttpRequest' },
+     body: formData
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+     throw new Error(data.error || 'Не удалось отправить сообщение');
+    }
+
+    appendDisputeMessage(document.getElementById('disputeChatMessages'), data.message);
+    textarea.value = '';
+    showToast('Сообщение отправлено', 'success');
+   } catch (error) {
+    showToast(error.message || 'Ошибка отправки сообщения', 'error');
+   } finally {
+    if (submitButton) {
+     submitButton.disabled = false;
+     submitButton.innerHTML = originalButtonHtml;
+    }
+   }
+  });
+ }
 });
 
 document.addEventListener('keydown', function(e) {
