@@ -45,11 +45,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
         } else {
             try {
                 $isClosedForReply = false;
-                $columnCheckStmt = $pdo->query("SHOW COLUMNS FROM applications LIKE 'dispute_chat_closed'");
-                if ($columnCheckStmt && $columnCheckStmt->fetch()) {
+                try {
                     $closedCheckStmt = $pdo->prepare("SELECT dispute_chat_closed FROM applications WHERE id = ? LIMIT 1");
                     $closedCheckStmt->execute([$disputeApplicationId]);
                     $isClosedForReply = (int) $closedCheckStmt->fetchColumn() === 1;
+                } catch (Exception $e) {
+                    $isClosedForReply = false;
                 }
 
                 if ($isClosedForReply) {
@@ -105,11 +106,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
                     }
                 }
                 }
+                }
             } catch (Exception $e) {
                 $error = 'Не удалось отправить ответ';
                 if ($isAjaxRequest) {
                     jsonResponse(['success' => false, 'error' => $error], 500);
                 }
+            }
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close_dispute_chat') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Ошибка безопасности';
+    } else {
+        $disputeApplicationId = intval($_POST['dispute_application_id'] ?? 0);
+        if ($disputeApplicationId <= 0) {
+            $error = 'Чат не найден';
+        } else {
+            try {
+                $closeStmt = $pdo->prepare("UPDATE applications SET dispute_chat_closed = 1 WHERE id = ?");
+                $closeStmt->execute([$disputeApplicationId]);
+                $_SESSION['success_message'] = 'Чат завершён. Пользователь больше не сможет отправлять сообщения.';
+                redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
+            } catch (Exception $e) {
+                $error = 'Не удалось завершить чат';
             }
         }
     }
@@ -160,11 +182,12 @@ try {
 
 if ($selectedDisputeApplicationId > 0) {
     try {
-        $columnCheckStmt = $pdo->query("SHOW COLUMNS FROM applications LIKE 'dispute_chat_closed'");
-        if ($columnCheckStmt && $columnCheckStmt->fetch()) {
+        try {
             $closedStmt = $pdo->prepare("SELECT dispute_chat_closed FROM applications WHERE id = ? LIMIT 1");
             $closedStmt->execute([$selectedDisputeApplicationId]);
             $isDisputeChatClosed = (int) $closedStmt->fetchColumn() === 1;
+        } catch (Exception $e) {
+            $isDisputeChatClosed = false;
         }
 
         $threadSubject = $disputeThreadSubjectPrefix . $selectedDisputeApplicationId;
