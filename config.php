@@ -23,6 +23,10 @@ define('DOCUMENTS_PATH', UPLOAD_PATH . '/documents');
 define('SITE_URL', 'https://kids-contests.ru');
 define('SETTINGS_FILE', ROOT_PATH . '/storage/settings.json');
 
+if (is_file(__DIR__ . '/vendor/autoload.php')) {
+    require_once __DIR__ . '/vendor/autoload.php';
+}
+
 // Подключение к базе данных
 try {
     $pdo = new PDO(
@@ -712,3 +716,6 @@ function disallowApplicationEdit($applicationId) {
  $stmt = $pdo->prepare("UPDATE applications SET allow_edit =0 WHERE id = ?");
  $stmt->execute([$applicationId]);
 }
+
+
+require_once __DIR__ . '/includes/diplomas.php';
