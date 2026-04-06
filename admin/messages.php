@@ -6,7 +6,16 @@ redirect('/admin/login');
 }
 
 check_csrf();
-$admin = getCurrentUser();
+$adminId = (int) (getCurrentAdminId() ?? 0);
+$admin = null;
+if ($adminId > 0) {
+    $adminStmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
+    $adminStmt->execute([$adminId]);
+    $admin = $adminStmt->fetch();
+}
+if (empty($admin)) {
+    redirect('/admin/login');
+}
 $currentPage = 'messages';
 $pageTitle = 'Сообщения';
 $breadcrumb = 'Все отправленные сообщения';
