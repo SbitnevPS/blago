@@ -105,6 +105,12 @@
 .application-card__info-label { font-size:var(--font-size-xs); color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.5px; }
 .application-card__info-value { font-size:var(--font-size-base); font-weight:var(--font-weight-medium); }
 .application-card__footer { display:flex; justify-content:space-between; align-items:center; padding:var(--space-md) var(--space-lg); background:var(--color-bg); border-top:1px solid var(--color-border); }
+.application-card--dashboard { border:1px solid var(--color-border); }
+.application-card__badges-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+.application-card__metrics { display:flex; flex-wrap:wrap; gap:8px; }
+.application-card__footer--actions { gap:8px; flex-wrap:wrap; }
+.application-card__footer--actions form { margin:0; }
+.application-card__info-item--compact { text-align:right; }
 
 .error-page { text-align:center; }
 .error-page-body { font-family: Inter, sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; background:#F9FAFB; }
@@ -165,5 +171,14 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-sm);
+ }
+
+ .application-card__info-item--compact {
+  text-align:left;
+ }
+
+ .application-card__footer--actions .btn {
+  width:100%;
+  justify-content:center;
  }
 }

@@ -27,6 +27,7 @@ try {
     SELECT
         m.application_id,
         m.title,
+        c.title AS contest_title,
         MAX(m.created_at) AS last_message_at,
         SUBSTRING_INDEX(
             GROUP_CONCAT(m.content ORDER BY m.created_at DESC SEPARATOR '||__||'),
@@ -36,9 +37,11 @@ try {
         SUM(CASE WHEN m.is_read = 0 AND u.is_admin = 1 THEN 1 ELSE 0 END) AS unread_count
     FROM messages m
     JOIN users u ON u.id = m.created_by
+    LEFT JOIN applications a ON a.id = m.application_id
+    LEFT JOIN contests c ON c.id = a.contest_id
     WHERE m.user_id = ?
       AND m.title LIKE 'Оспаривание решения по заявке%'
-    GROUP BY m.application_id, m.title
+    GROUP BY m.application_id, m.title, c.title
     ORDER BY last_message_at DESC
     ");
     $chatStmt->execute([$userId]);
@@ -70,13 +73,13 @@ $currentPage = 'messages';
 <div class="messages-page">
 <div class="messages-page__header">
 <h1>Сообщения</h1>
-<p class="text-secondary">Все уведомления и комментарии к вашим заявкам</p>
+<p class="text-secondary">Уведомления от администрации и переписки по вашим заявкам.</p>
 </div>
 
 <?php if (!empty($disputeChats)): ?>
 <div class="card mb-lg">
     <div class="card__header">
-        <h3>Чаты по оспариванию решений</h3>
+        <h3>Чаты по заявкам</h3>
     </div>
     <div class="card__body" style="padding:0;">
         <table class="table">
@@ -93,8 +96,11 @@ $currentPage = 'messages';
                 <tr>
                     <td data-label="Тема">
                         <div class="font-semibold"><?= htmlspecialchars($chat['title']) ?></div>
+                        <?php if (!empty($chat['contest_title'])): ?>
+                            <div class="text-secondary" style="margin-top:4px; font-size:13px;">Конкурс: <?= htmlspecialchars($chat['contest_title']) ?></div>
+                        <?php endif; ?>
                         <?php if ((int) $chat['unread_count'] > 0): ?>
-                            <span class="badge" style="background:#F59E0B; color:white; margin-top:4px;">Новое: <?= (int) $chat['unread_count'] ?></span>
+                            <span class="badge" style="background:#F59E0B; color:white; margin-top:4px;">Ответ администратора: <?= (int) $chat['unread_count'] ?></span>
                         <?php endif; ?>
                     </td>
                     <td data-label="Последнее сообщение"><?= htmlspecialchars(mb_substr((string) ($chat['last_message'] ?? ''), 0, 120)) ?></td>
@@ -116,7 +122,7 @@ $currentPage = 'messages';
 <div class="empty-state">
 <div class="empty-state__icon"><i class="fas fa-envelope-open"></i></div>
 <h3 class="empty-state__title">Нет сообщений</h3>
-<p class="empty-state__text">У вас пока нет уведомлений</p>
+<p class="empty-state__text">Когда появятся ответы по заявкам, они будут отображаться здесь.</p>
 </div>
  <?php else: ?>
 <div id="messagesList">

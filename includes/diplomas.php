@@ -259,6 +259,16 @@ function getWorkStatusLabel(string $status): string {
     return $map[$status] ?? ucfirst($status);
 }
 
+function getWorkStatusHint(string $status): string {
+    $map = [
+        'pending' => 'Работа ожидает проверки жюри. Диплом станет доступен после рассмотрения.',
+        'accepted' => 'Работа принята к участию. Диплом уже доступен.',
+        'reviewed' => 'Работа рассмотрена. Для вас доступен благодарственный диплом.',
+        'reviewed_non_competitive' => 'Работа рассмотрена. Для вас доступен благодарственный диплом.',
+    ];
+    return $map[$status] ?? 'Статус работы обновляется после проверки.';
+}
+
 function getWorkStatusBadgeClass(string $status): string {
     $map = [
         'pending' => 'badge--warning',
@@ -267,6 +277,62 @@ function getWorkStatusBadgeClass(string $status): string {
         'reviewed_non_competitive' => 'badge--reviewed',
     ];
     return $map[$status] ?? 'badge--secondary';
+}
+
+function buildApplicationWorkSummary(array $works): array {
+    $summary = [
+        'total' => count($works),
+        'accepted' => 0,
+        'reviewed' => 0,
+        'pending' => 0,
+        'diplomas' => 0,
+        'vk_published' => 0,
+    ];
+
+    foreach ($works as $work) {
+        $status = (string)($work['status'] ?? 'pending');
+        if ($status === 'accepted') {
+            $summary['accepted']++;
+        } elseif (in_array($status, ['reviewed', 'reviewed_non_competitive'], true)) {
+            $summary['reviewed']++;
+        } else {
+            $summary['pending']++;
+        }
+
+        if (mapWorkStatusToDiplomaType($status) !== null) {
+            $summary['diplomas']++;
+        }
+        if (!empty($work['vk_post_url']) || !empty($work['vk_post_id']) || !empty($work['vk_published_at'])) {
+            $summary['vk_published']++;
+        }
+    }
+
+    return $summary;
+}
+
+function getApplicationUiStatusMeta(array $summary): array {
+    $total = (int)($summary['total'] ?? 0);
+    $pending = (int)($summary['pending'] ?? 0);
+    $accepted = (int)($summary['accepted'] ?? 0);
+    $diplomas = (int)($summary['diplomas'] ?? 0);
+    $vkPublished = (int)($summary['vk_published'] ?? 0);
+
+    if ($total === 0) {
+        return ['label' => 'Нет работ', 'badge_class' => 'badge--secondary'];
+    }
+    if ($vkPublished > 0) {
+        return ['label' => 'Часть работ опубликована', 'badge_class' => 'badge--primary'];
+    }
+    if ($diplomas > 0) {
+        return ['label' => 'Дипломы доступны', 'badge_class' => 'badge--info'];
+    }
+    if ($accepted === $total) {
+        return ['label' => 'Все работы приняты к участию', 'badge_class' => 'badge--success'];
+    }
+    if ($pending > 0 && $pending < $total) {
+        return ['label' => 'Частично рассмотрена', 'badge_class' => 'badge--warning'];
+    }
+    return ['label' => 'На рассмотрении', 'badge_class' => 'badge--warning'];
 }
 
 function mapWorkStatusToDiplomaType(string $status): ?string {

@@ -275,25 +275,18 @@ foreach ($unresolvedCorrections as $correction) {
     }
 }
 
-$workSummary = ['total' => count($participants), 'accepted' => 0, 'reviewed' => 0, 'pending' => 0];
-$allPending = $workSummary['total'] > 0;
-$hasDiplomas = false;
+$workSummary = buildApplicationWorkSummary($participants);
+$allPending = $workSummary['total'] > 0 && $workSummary['pending'] === $workSummary['total'];
+$hasDiplomas = $workSummary['diplomas'] > 0;
+$hasVkPublished = $workSummary['vk_published'] > 0;
+$uiStatusMeta = getApplicationUiStatusMeta($workSummary);
+$vkPublicationLinks = [];
 foreach ($participants as $participantRow) {
-    $status = (string)($participantRow['status'] ?? 'pending');
-    if ($status === 'accepted') {
-        $workSummary['accepted']++;
-        $allPending = false;
-    } elseif (in_array($status, ['reviewed', 'reviewed_non_competitive'], true)) {
-        $workSummary['reviewed']++;
-        $allPending = false;
-    } else {
-        $workSummary['pending']++;
-    }
-
-    if (mapWorkStatusToDiplomaType($status) !== null) {
-        $hasDiplomas = true;
+    if (!empty($participantRow['vk_post_url'])) {
+        $vkPublicationLinks[] = (string)$participantRow['vk_post_url'];
     }
 }
+$vkPublicationLinks = array_values(array_unique($vkPublicationLinks));
 
 $disputeChatMessages = [];
 if (in_array($application['status'], ['declined', 'rejected'], true)) {
@@ -416,13 +409,17 @@ $currentPage = 'applications';
 <span class="badge badge--<?= $statusClass ?>">
  <?= htmlspecialchars($statusMeta['label']) ?>
 </span>
+<span class="badge <?= e($uiStatusMeta['badge_class']) ?>"><?= e($uiStatusMeta['label']) ?></span>
 </div>
 </div>
-<?php if ($canEdit): ?>
-<a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary">
-<i class="fas fa-edit"></i> Редактировать заявку
-</a>
-<?php endif; ?>
+<div class="participant-work-card__actions">
+    <?php if ($canEdit): ?>
+        <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary btn--sm">
+            <i class="fas fa-edit"></i> Редактировать
+        </a>
+    <?php endif; ?>
+    <a href="/messages" class="btn btn--ghost btn--sm"><i class="fas fa-envelope"></i> Сообщения</a>
+</div>
 </div>
 </div>
 
@@ -530,6 +527,14 @@ $currentPage = 'applications';
                 <span class="application-works-summary__dot application-works-summary__dot--pending"></span>
                 <span>На рассмотрении: <strong><?= (int) $workSummary['pending'] ?></strong></span>
             </div>
+            <div class="application-works-summary__item">
+                <span class="application-works-summary__dot application-works-summary__dot--accepted"></span>
+                <span>Дипломов доступно: <strong><?= (int) $workSummary['diplomas'] ?></strong></span>
+            </div>
+            <div class="application-works-summary__item">
+                <span class="application-works-summary__dot application-works-summary__dot--reviewed"></span>
+                <span>Опубликовано в VK: <strong><?= (int) $workSummary['vk_published'] ?></strong></span>
+            </div>
         </div>
     </div>
 </div>
@@ -560,6 +565,7 @@ $currentPage = 'applications';
     $workStatus = (string)($participant['status'] ?? 'pending');
     $isDiplomaAvailable = mapWorkStatusToDiplomaType($workStatus) !== null;
     $workTitle = trim((string) ($participant['work_title'] ?? ''));
+    $participantVkUrl = trim((string)($participant['vk_post_url'] ?? ''));
 ?>
 <div class="participant-card participant-work-card<?= $hasParticipantCorrection ? ' participant-card--needs-fix' : '' ?>">
     <div class="participant-work-card__media">
@@ -593,24 +599,24 @@ $currentPage = 'applications';
             </div>
         <?php endif; ?>
 
-        <p class="participant-work-card__hint">
-            <?php if ($workStatus === 'accepted'): ?>
-                Диплом доступен для скачивания и отправки на почту.
-            <?php elseif (in_array($workStatus, ['reviewed', 'reviewed_non_competitive'], true)): ?>
-                Работа рассмотрена. Спасибо за участие!
-            <?php else: ?>
-                Работа находится на рассмотрении.
-            <?php endif; ?>
-        </p>
+        <p class="participant-work-card__hint"><?= e(getWorkStatusHint($workStatus)) ?></p>
 
         <div class="participant-work-card__meta">
             <span><strong>Возраст:</strong> <?= htmlspecialchars($participant['age'] ?? '—') ?></span>
             <span><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?? '—') ?></span>
             <span><strong>Организация:</strong> <?= htmlspecialchars($participant['organization_name'] ?? '—') ?></span>
+            <?php if ($participantVkUrl !== ''): ?>
+                <span><strong>VK:</strong> Работа опубликована</span>
+            <?php endif; ?>
         </div>
 
-        <?php if ($isDiplomaAvailable): ?>
         <div class="participant-work-card__actions">
+            <?php if (!empty($participant['drawing_file'])): ?>
+                <a class="btn btn--ghost btn--sm participant-work-card__action-btn" href="<?= htmlspecialchars($drawingSrc) ?>" target="_blank" rel="noopener">
+                    <i class="fas fa-image"></i> Посмотреть рисунок
+                </a>
+            <?php endif; ?>
+            <?php if ($isDiplomaAvailable): ?>
             <a class="btn btn--ghost btn--sm participant-work-card__action-btn" href="/application/<?= $applicationId ?>?action=diploma_preview_one&work_id=<?= (int)$participant['id'] ?>" target="_blank" rel="noopener">
                 <i class="fas fa-eye"></i> Посмотреть диплом
             </a>
@@ -635,10 +641,17 @@ $currentPage = 'applications';
                 <input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>">
                 <button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-paper-plane"></i> Отправить на почту</button>
             </form>
+            <?php else: ?>
+                <button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="button" disabled title="Диплом станет доступен после рассмотрения.">
+                    <i class="fas fa-award"></i> Диплом пока недоступен
+                </button>
+            <?php endif; ?>
+            <?php if ($participantVkUrl !== ''): ?>
+                <a class="btn btn--secondary btn--sm participant-work-card__action-btn" href="<?= e($participantVkUrl) ?>" target="_blank" rel="noopener">
+                    <i class="fab fa-vk"></i> Открыть публикацию
+                </a>
+            <?php endif; ?>
         </div>
-        <?php else: ?>
-            <p class="text-secondary" style="margin:0;">Дипломы появятся после рассмотрения.</p>
-        <?php endif; ?>
     </div>
 </div>
 <?php endforeach; ?>
@@ -676,6 +689,11 @@ $currentPage = 'applications';
                 <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-file-archive"></i> Скачать все дипломы</button></form>
                 <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_links_all"><button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-link"></i> Получить все ссылки</button></form>
                 <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_email_all"><button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-paper-plane"></i> Отправить все дипломы</button></form>
+                <?php if (!empty($vkPublicationLinks)): ?>
+                    <a class="btn btn--secondary btn--sm participant-work-card__action-btn" href="<?= e($vkPublicationLinks[0]) ?>" target="_blank" rel="noopener">
+                        <i class="fab fa-vk"></i> Открыть публикации
+                    </a>
+                <?php endif; ?>
             </div>
         <?php else: ?>
             <div class="empty-state" style="padding:20px;">
