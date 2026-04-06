@@ -37,29 +37,64 @@ try {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispute_reply') {
+    $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $_SESSION['error_message'] = 'Ошибка безопасности. Обновите страницу.';
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => $_SESSION['error_message']], 403);
+        }
     } else {
         $reason = trim($_POST['dispute_reason'] ?? '');
         if (!in_array($application['status'], ['declined', 'rejected'], true)) {
             $_SESSION['error_message'] = 'Оспорить можно только отклонённую заявку.';
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => $_SESSION['error_message']], 422);
+            }
         } elseif ($isDisputeChatClosed) {
             $_SESSION['error_message'] = 'Чат завершён. Отправка новых сообщений недоступна.';
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => $_SESSION['error_message']], 423);
+            }
         } elseif ($reason === '') {
             $_SESSION['error_message'] = 'Укажите причину оспаривания.';
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => $_SESSION['error_message']], 422);
+            }
         } else {
-            $stmt = $pdo->prepare("
-            INSERT INTO messages (user_id, application_id, title, content, created_by, created_at)
-            VALUES (?, ?, ?, ?, ?, NOW())
-            ");
-            $stmt->execute([
-                $user['id'],
-                $applicationId,
-                $disputeChatSubject,
-                $reason,
-                $user['id'],
-            ]);
-            $_SESSION['success_message'] = 'Сообщение отправлено администратору.';
+            try {
+                $stmt = $pdo->prepare("
+                INSERT INTO messages (user_id, application_id, title, content, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, NOW())
+                ");
+                $stmt->execute([
+                    $user['id'],
+                    $applicationId,
+                    $disputeChatSubject,
+                    $reason,
+                    $user['id'],
+                ]);
+                $_SESSION['success_message'] = 'Сообщение отправлено администратору.';
+                if ($isAjaxRequest) {
+                    $userLabel = trim(($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? ''));
+                    if ($userLabel === '') {
+                        $userLabel = 'Пользователь';
+                    }
+                    jsonResponse([
+                        'success' => true,
+                        'message' => [
+                            'content' => $reason,
+                            'created_at' => date('d.m.Y H:i'),
+                            'author_label' => $userLabel,
+                            'from_admin' => false,
+                        ],
+                    ]);
+                }
+            } catch (Exception $e) {
+                $_SESSION['error_message'] = 'Не удалось отправить сообщение.';
+                if ($isAjaxRequest) {
+                    jsonResponse(['success' => false, 'error' => $_SESSION['error_message']], 500);
+                }
+            }
         }
     }
     redirect('/application/' . $applicationId . '#dispute-chat');
@@ -506,6 +541,29 @@ function closeDisputeChatModal() {
  }
 }
 
+function appendDisputeMessage(container, messageData) {
+ if (!container || !messageData) return;
+ const messageWrap = document.createElement('div');
+ messageWrap.className = 'dispute-chat-message ' + (messageData.from_admin ? 'dispute-chat-message--user' : 'dispute-chat-message--admin');
+
+ const bubble = document.createElement('div');
+ bubble.className = 'dispute-chat-message__bubble';
+
+ const meta = document.createElement('div');
+ meta.className = 'dispute-chat-message__meta';
+ meta.textContent = (messageData.author_label || 'Пользователь') + ' • ' + (messageData.created_at || '');
+
+ const text = document.createElement('div');
+ text.className = 'dispute-chat-message__text';
+ text.textContent = messageData.content || '';
+
+ bubble.appendChild(meta);
+ bubble.appendChild(text);
+ messageWrap.appendChild(bubble);
+ container.appendChild(messageWrap);
+ container.scrollTop = container.scrollHeight;
+}
+
 document.getElementById('disputeChatModal')?.addEventListener('click', (event) => {
  if (event.target === event.currentTarget) {
   closeDisputeChatModal();
@@ -514,6 +572,48 @@ document.getElementById('disputeChatModal')?.addEventListener('click', (event) =
 
 if (window.location.hash === '#dispute-chat') {
  openDisputeChatModal();
+}
+
+const disputeReplyForm = document.querySelector('#disputeChatModal form.dispute-chat-modal__composer');
+if (disputeReplyForm) {
+ disputeReplyForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const textarea = disputeReplyForm.querySelector('textarea[name="dispute_reason"]');
+  if (!textarea || !disputeReplyForm.reportValidity()) return;
+
+  const submitButton = disputeReplyForm.querySelector('button[type="submit"]');
+  const originalButtonHtml = submitButton ? submitButton.innerHTML : '';
+  if (submitButton) {
+   submitButton.disabled = true;
+   submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...';
+  }
+
+  const formData = new FormData(disputeReplyForm);
+  formData.append('ajax', '1');
+
+  try {
+   const response = await fetch(window.location.href, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    body: formData
+   });
+   const data = await response.json();
+   if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Не удалось отправить сообщение');
+   }
+
+   appendDisputeMessage(document.getElementById('disputeChatMessages'), data.message);
+   textarea.value = '';
+   showToast('Сообщение отправлено', 'success');
+  } catch (error) {
+   showToast(error.message || 'Ошибка отправки сообщения', 'error');
+  } finally {
+   if (submitButton) {
+    submitButton.disabled = false;
+    submitButton.innerHTML = originalButtonHtml;
+   }
+  }
+ });
 }
 
 document.querySelectorAll('.js-chat-hotkey').forEach((textarea) => {

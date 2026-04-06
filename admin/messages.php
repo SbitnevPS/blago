@@ -28,13 +28,20 @@ $disputeRecipientName = 'Пользователь';
 $isDisputeChatClosed = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply_dispute') {
+    $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $error = 'Ошибка безопасности';
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => $error], 403);
+        }
     } else {
         $disputeApplicationId = intval($_POST['dispute_application_id'] ?? 0);
         $replyText = trim($_POST['reply_text'] ?? '');
         if ($disputeApplicationId <= 0 || $replyText === '') {
             $error = 'Заполните текст ответа';
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => $error], 422);
+            }
         } else {
             try {
                 $isClosedForReply = false;
@@ -48,6 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
 
                 if ($isClosedForReply) {
                     $error = 'Чат завершён. Отправка сообщений отключена.';
+                    if ($isAjaxRequest) {
+                        jsonResponse(['success' => false, 'error' => $error], 423);
+                    }
                 } else {
                 $threadSubject = $disputeThreadSubjectPrefix . $disputeApplicationId;
                 $userStmt = $pdo->prepare("
@@ -72,14 +82,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
                         $replyText,
                         $admin['id'],
                     ]);
+                    if ($isAjaxRequest) {
+                        $adminName = trim(($admin['surname'] ?? '') . ' ' . ($admin['name'] ?? '') . ' ' . ($admin['patronymic'] ?? ''));
+                        if ($adminName === '') {
+                            $adminName = 'Администратор';
+                        }
+                        jsonResponse([
+                            'success' => true,
+                            'message' => [
+                                'content' => $replyText,
+                                'created_at' => date('d.m.Y H:i'),
+                                'author_label' => 'Руководитель проекта — ' . $adminName,
+                                'from_admin' => true,
+                            ],
+                        ]);
+                    }
                     $_SESSION['success_message'] = 'Ответ отправлен в чат';
                     redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
                 } else {
                     $error = 'Чат не найден';
+                    if ($isAjaxRequest) {
+                        jsonResponse(['success' => false, 'error' => $error], 404);
+                    }
+                }
                 }
                 }
             } catch (Exception $e) {
                 $error = 'Не удалось отправить ответ';
+                if ($isAjaxRequest) {
+                    jsonResponse(['success' => false, 'error' => $error], 500);
+                }
+            }
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close_dispute_chat') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Ошибка безопасности';
+    } else {
+        $disputeApplicationId = intval($_POST['dispute_application_id'] ?? 0);
+        if ($disputeApplicationId <= 0) {
+            $error = 'Чат не найден';
+        } else {
+            try {
+                $closeStmt = $pdo->prepare("UPDATE applications SET dispute_chat_closed = 1 WHERE id = ?");
+                $closeStmt->execute([$disputeApplicationId]);
+                $_SESSION['success_message'] = 'Чат завершён. Пользователь больше не сможет отправлять сообщения.';
+                redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
+            } catch (Exception $e) {
+                $error = 'Не удалось завершить чат';
             }
         }
     }
@@ -989,6 +1041,29 @@ function showToast(message, type = 'success') {
  }, 2600);
 }
 
+function appendDisputeMessage(container, messageData) {
+ if (!container || !messageData) return;
+ const messageWrap = document.createElement('div');
+ messageWrap.className = 'dispute-chat-message ' + (messageData.from_admin ? 'dispute-chat-message--admin' : 'dispute-chat-message--user');
+
+ const bubble = document.createElement('div');
+ bubble.className = 'dispute-chat-message__bubble';
+
+ const meta = document.createElement('div');
+ meta.className = 'dispute-chat-message__meta';
+ meta.textContent = (messageData.author_label || 'Пользователь') + ' • ' + (messageData.created_at || '');
+
+ const text = document.createElement('div');
+ text.className = 'dispute-chat-message__text';
+ text.textContent = messageData.content || '';
+
+ bubble.appendChild(meta);
+ bubble.appendChild(text);
+ messageWrap.appendChild(bubble);
+ container.appendChild(messageWrap);
+ container.scrollTop = container.scrollHeight;
+}
+
 document.addEventListener('click', function(e) {
  if (userSearchInput && userResults && !userSearchInput.contains(e.target) && !userResults.contains(e.target)) {
   userResults.style.display = 'none';
@@ -1090,6 +1165,48 @@ document.addEventListener('DOMContentLoaded', function() {
    deleteMessage(messageId, isBroadcast);
   });
  });
+
+ const disputeReplyForm = document.querySelector('#disputeChatModal form.dispute-chat-modal__composer');
+ if (disputeReplyForm) {
+  disputeReplyForm.addEventListener('submit', async (event) => {
+   event.preventDefault();
+   const textarea = disputeReplyForm.querySelector('textarea[name="reply_text"]');
+   if (!textarea || !disputeReplyForm.reportValidity()) return;
+
+   const submitButton = disputeReplyForm.querySelector('button[type="submit"]');
+   const originalButtonHtml = submitButton ? submitButton.innerHTML : '';
+   if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...';
+   }
+
+   const formData = new FormData(disputeReplyForm);
+   formData.append('ajax', '1');
+
+   try {
+    const response = await fetch(window.location.href, {
+     method: 'POST',
+     headers: { 'X-Requested-With': 'XMLHttpRequest' },
+     body: formData
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+     throw new Error(data.error || 'Не удалось отправить сообщение');
+    }
+
+    appendDisputeMessage(document.getElementById('disputeChatMessages'), data.message);
+    textarea.value = '';
+    showToast('Сообщение отправлено', 'success');
+   } catch (error) {
+    showToast(error.message || 'Ошибка отправки сообщения', 'error');
+   } finally {
+    if (submitButton) {
+     submitButton.disabled = false;
+     submitButton.innerHTML = originalButtonHtml;
+    }
+   }
+  });
+ }
 });
 
 document.addEventListener('keydown', function(e) {
