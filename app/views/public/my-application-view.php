@@ -277,7 +277,7 @@ $currentPage = 'applications';
 <div class="modal" id="disputeChatModal">
     <div class="modal__content message-modal dispute-chat-modal">
         <div class="modal__header">
-            <h3>Чат по заявке #<?= (int) $applicationId ?></h3>
+            <h3>Оспаривание заявки #<?= (int) $applicationId ?></h3>
             <button type="button" class="modal__close" onclick="closeDisputeChatModal()">&times;</button>
         </div>
         <div class="modal__body dispute-chat-modal__body">
@@ -317,7 +317,7 @@ $currentPage = 'applications';
                         <textarea name="dispute_reason" class="form-textarea js-chat-hotkey" rows="4" required placeholder="Напишите сообщение администратору..."></textarea>
                     </div>
                     <button type="submit" class="btn btn--primary">
-                        <i class="fas fa-paper-plane"></i> Оспорить решение
+                        <i class="fas fa-paper-plane"></i> Отправить
                     </button>
                 </form>
             <?php endif; ?>
