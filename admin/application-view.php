@@ -77,7 +77,11 @@ function findParticipantWorkId(array $works, int $participantId): int {
 
 // Обработка изменения статуса
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => 'Ошибка безопасности'], 422);
+        }
         $error = 'Ошибка безопасности';
     } elseif ($_POST['action'] === 'update_status') {
         $newStatus = $_POST['status'] ?? $application['status'];
@@ -90,9 +94,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     } elseif ($_POST['action'] === 'download_participant_diploma') {
         $workId = (int)($_POST['work_id'] ?? 0);
         if ($workId <= 0) {
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => 'Работа не найдена'], 422);
+            }
             throw new RuntimeException('Работа не найдена');
         }
         $diploma = generateWorkDiploma($workId, false);
+        if ($isAjaxRequest) {
+            jsonResponse([
+                'success' => true,
+                'message' => 'Диплом сформирован и скачивается',
+                'download_url' => '/' . ltrim((string) ($diploma['file_path'] ?? ''), '/'),
+            ]);
+        }
         $file = ROOT_PATH . '/' . $diploma['file_path'];
         header('Content-Type: application/pdf');
         header('Content-Disposition: attachment; filename="diploma_work_' . $workId . '.pdf"');
@@ -103,6 +117,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $ctx = getWorkDiplomaContext($workId);
         $diploma = generateWorkDiploma($workId, false);
         sendDiplomaByEmail($ctx ?? [], $diploma);
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => true, 'message' => 'Диплом участника отправлен']);
+        }
         $_SESSION['success_message'] = 'Диплом участника отправлен';
         redirect('/admin/application/' . $application_id);
     } elseif ($_POST['action'] === 'link_participant_diploma') {
@@ -115,6 +132,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $participantId = (int)($_POST['participant_id'] ?? findWorkParticipantId($works, $workId));
         $newStatus = (string)($_POST['work_status'] ?? 'pending');
         if ($workId <= 0 || !in_array($newStatus, ['pending', 'accepted', 'reviewed'], true)) {
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => 'Некорректный статус работы'], 422);
+            }
             $_SESSION['success_message'] = 'Некорректный статус работы';
             redirect('/admin/application/' . $application_id);
         }
@@ -135,6 +155,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     WHERE id = ? AND application_id = ?
                 ")->execute([$isCompliant, $participantId, $application_id]);
             }
+        }
+        if ($isAjaxRequest) {
+            jsonResponse([
+                'success' => true,
+                'message' => 'Статус работы обновлён',
+                'work_status' => $newStatus,
+                'status_label' => getWorkStatusLabel($newStatus),
+                'status_class' => getWorkStatusBadgeClass($newStatus),
+                'diploma_available' => mapWorkStatusToDiplomaType($newStatus) !== null,
+            ]);
         }
         $_SESSION['success_message'] = 'Статус работы обновлён';
         redirect('/admin/application/' . $application_id);
@@ -250,7 +280,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $_SESSION['success_message'] = 'Сообщение отправлено';
  }
  } elseif ($_POST['action'] === 'toggle_drawing_compliance') {
- $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
  $participantId = intval($_POST['participant_id'] ?? 0);
  $isCompliant = isset($_POST['drawing_compliant']) ? 1 : 0;
  $workId = findParticipantWorkId($works, $participantId);
@@ -458,7 +487,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- Сообщения -->
 <?php if (isset($_SESSION['success_message'])): ?>
-<div class="alert alert--success alert--permanent mb-lg">
+<div class="alert alert--success alert--permanent mb-lg js-toast-alert">
     <i class="fas fa-check-circle alert__icon"></i>
     <div class="alert__content">
         <div class="alert__message"><?= htmlspecialchars($_SESSION['success_message']) ?></div>
@@ -563,7 +592,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="flex items-center w-100" style="justify-content: space-between; gap: 16px; flex-wrap: wrap;">
             <h3>Работа #<?= $i + 1 ?></h3>
             <div class="flex items-center" style="gap: 12px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end;">
-                <span class="badge <?= getWorkStatusBadgeClass((string)($p['status'] ?? 'pending')) ?>">
+                <span class="badge <?= getWorkStatusBadgeClass((string)($p['status'] ?? 'pending')) ?>" data-work-status-badge>
                     <?= e(getWorkStatusLabel((string)($p['status'] ?? 'pending'))) ?>
                 </span>
                 <?php if ($p['drawing_file']): ?>
@@ -620,14 +649,14 @@ require_once __DIR__ . '/includes/header.php';
             <p><?= htmlspecialchars($p['organization_address'] ?? '—') ?></p>
         </div>
 
-        <div class="flex gap-sm mt-md" style="flex-wrap:wrap;">
-            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--primary btn--sm" type="submit">Принять к участию</button></form>
-            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="reviewed"><button class="btn btn--secondary btn--sm" type="submit">Отметить как рассмотренную</button></form>
-            <?php if (mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null): ?>
-            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--primary btn--sm" type="submit">Скачать диплом</button></form>
-            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--secondary btn--sm" type="submit">Отправить по почте</button></form>
-            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="link_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--ghost btn--sm" type="submit">Получить ссылку</button></form>
-            <?php endif; ?>
+        <div class="flex gap-sm mt-md" style="flex-wrap:wrap;" data-work-controls data-work-id="<?= (int) $p['id'] ?>">
+            <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--primary btn--sm" type="submit">Принять к участию</button></form>
+            <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="reviewed"><button class="btn btn--secondary btn--sm" type="submit">Отметить как рассмотренную</button></form>
+            <div class="flex gap-sm" style="flex-wrap:wrap; display:<?= mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null ? 'flex' : 'none' ?>;" data-diploma-actions>
+                <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--primary btn--sm" type="submit">Скачать диплом</button></form>
+                <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--secondary btn--sm" type="submit">Отправить по почте</button></form>
+                <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="link_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--ghost btn--sm" type="submit">Получить ссылку</button></form>
+            </div>
         </div>
 
         <form method="POST" class="mt-md js-drawing-compliance-form" style="border:1px solid #E5E7EB; padding:16px; border-radius:12px; background:#F8FAFC;">
@@ -910,6 +939,88 @@ document.getElementById('saveDrawingChanges').addEventListener('click', function
 
 function openMessageModal() { document.getElementById('messageModal').classList.add('active'); document.body.style.overflow = 'hidden'; }
 function closeMessageModal() { document.getElementById('messageModal').classList.remove('active'); document.body.style.overflow = ''; }
+function showToast(message, type = 'success') {
+ const toast = document.createElement('div');
+ toast.className = 'alert ' + (type === 'success' ? 'alert--success' : 'alert--error');
+ toast.style.cssText = 'position:fixed; top:20px; right:20px; z-index:3000; min-width:260px; max-width:420px; box-shadow:0 12px 30px rgba(0,0,0,.12); opacity:0; transform:translateY(-8px); transition:opacity .25s ease, transform .25s ease;';
+ toast.textContent = message;
+ document.body.appendChild(toast);
+ requestAnimationFrame(() => {
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+ });
+ setTimeout(() => {
+  toast.style.opacity = '0';
+  toast.style.transform = 'translateY(-8px)';
+  setTimeout(() => toast.remove(), 260);
+ }, 2600);
+}
+
+document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
+ const type = alertEl.classList.contains('alert--error') ? 'error' : 'success';
+ showToast(alertEl.textContent.trim(), type);
+ alertEl.remove();
+});
+
+document.querySelectorAll('.js-work-async-form').forEach((form) => {
+ form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = form.querySelector('button[type="submit"]');
+  const defaultHtml = button ? button.innerHTML : '';
+  if (button) {
+   button.disabled = true;
+   button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+  }
+
+  const formData = new FormData(form);
+  formData.append('ajax', '1');
+  const action = formData.get('action');
+
+  try {
+   const response = await fetch('/admin/application/<?= e($application_id) ?>', {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    body: formData,
+   });
+   const data = await response.json();
+   if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Операция не выполнена');
+   }
+
+   const controls = form.closest('[data-work-controls]');
+   if (action === 'set_work_status' && controls) {
+    const badge = controls.closest('.card')?.querySelector('[data-work-status-badge]');
+    if (badge) {
+     badge.className = 'badge ' + (data.status_class || '');
+     badge.textContent = data.status_label || badge.textContent;
+    }
+    const diplomaActions = controls.querySelector('[data-diploma-actions]');
+    if (diplomaActions) {
+      diplomaActions.style.display = data.diploma_available ? 'flex' : 'none';
+    }
+   }
+
+   if (action === 'download_participant_diploma' && data.download_url) {
+    const link = document.createElement('a');
+    link.href = data.download_url;
+    link.download = '';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+   }
+
+   showToast(data.message || 'Готово', 'success');
+  } catch (error) {
+   showToast(error.message || 'Не удалось выполнить действие', 'error');
+  } finally {
+   if (button) {
+    button.disabled = false;
+    button.innerHTML = defaultHtml;
+   }
+  }
+ });
+});
+
 function selectPriority(value) {
  document.querySelectorAll('.priority-btn').forEach(btn => btn.style.borderColor = '#E5E7EB');
  document.querySelector(`.priority-btn--${value}`).style.borderColor = value === 'normal' ? '#6B7280' : value === 'important' ? '#F59E0B' : '#EF4444';
