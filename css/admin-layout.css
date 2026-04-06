@@ -668,6 +668,13 @@ overflow-x: auto;
  gap: 14px;
 }
 
+
+.messages-page-actions {
+ display: flex;
+ justify-content: flex-end;
+ margin-bottom: 12px;
+}
+
 .message-row {
  cursor: pointer;
 }

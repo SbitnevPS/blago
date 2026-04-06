@@ -842,6 +842,12 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- Список сообщений -->
+<div class="messages-page-actions">
+<button type="button" class="btn btn--primary" onclick="openSendModal()">
+<i class="fas fa-pen"></i> Написать сообщение
+</button>
+</div>
+
 <div class="card">
 <div class="card__header">
 <div class="flex justify-between items-center w-100 messages-toolbar">
@@ -849,9 +855,6 @@ require_once __DIR__ . '/includes/header.php';
 <div class="flex gap-sm">
 <button type="button" class="btn btn--ghost" id="toggleSelectModeBtn">
 <i class="fas fa-check-square"></i> Выбрать
-</button>
-<button type="button" class="btn btn--primary" onclick="openSendModal()">
-<i class="fas fa-pen"></i> Написать сообщение
 </button>
 </div>
 </div>
@@ -1621,7 +1624,20 @@ document.addEventListener('DOMContentLoaded', function() {
  });
 
  document.querySelectorAll('tr.message-row').forEach((row) => {
-  row.addEventListener('click', () => {
+  row.addEventListener('click', (event) => {
+   if (selectionModeEnabled) {
+    const checkbox = row.querySelector('.message-select-checkbox');
+    if (checkbox) {
+     checkbox.checked = !checkbox.checked;
+     updateBulkSelectionState();
+    }
+    return;
+   }
+
+   if (event.target.closest('.message-select-checkbox, .js-view-message, .js-delete-message, a, button, input, label')) {
+    return;
+   }
+
    viewMessage(
     row.dataset.messageSubject || '',
     row.dataset.messageContent || '',
