@@ -72,10 +72,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt->execute([$application_id]);
         $application['status'] = 'approved';
 
-        $pdo->prepare("DELETE FROM admin_messages WHERE user_id = ? AND message LIKE ?")
-            ->execute([$application['user_id'], '%#' . $application_id . '%']);
-        $pdo->prepare("DELETE FROM messages WHERE user_id = ? AND application_id = ?")
-            ->execute([$application['user_id'], $application_id]);
+        $declinedSubject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
+        $pdo->prepare("
+            DELETE FROM admin_messages
+            WHERE subject = ? AND message LIKE ?
+        ")->execute([$declinedSubject, '%#' . $application_id . '%']);
+        $pdo->prepare("
+            DELETE FROM messages
+            WHERE application_id = ? AND title = ?
+        ")->execute([$application_id, 'Оспаривание решения по заявке #' . $application_id]);
         $pdo->prepare("UPDATE application_corrections SET is_resolved = 1, resolved_at = NOW() WHERE application_id = ?")
             ->execute([$application_id]);
         disallowApplicationEdit($application_id);

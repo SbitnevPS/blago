@@ -46,6 +46,32 @@ if (!function_exists('adminMessagesHasDisputeChatClosedColumn')) {
     }
 }
 
+if (!function_exists('deleteDeclineNotificationsForApplication')) {
+    function deleteDeclineNotificationsForApplication(PDO $pdo, int $applicationId): void {
+        if ($applicationId <= 0) {
+            return;
+        }
+
+        $declinedSubject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
+        $declineLike = '%' . '#' . $applicationId . '%';
+        $disputeTitle = 'Оспаривание решения по заявке #' . $applicationId;
+
+        $deleteAdminStmt = $pdo->prepare("
+            DELETE FROM admin_messages
+            WHERE subject = ?
+              AND message LIKE ?
+        ");
+        $deleteAdminStmt->execute([$declinedSubject, $declineLike]);
+
+        $deleteDisputeStmt = $pdo->prepare("
+            DELETE FROM messages
+            WHERE application_id = ?
+              AND title = ?
+        ");
+        $deleteDisputeStmt->execute([$applicationId, $disputeTitle]);
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply_dispute') {
     $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -237,6 +263,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
             try {
                 $approveStmt = $pdo->prepare("UPDATE applications SET status = 'approved', allow_edit = 0 WHERE id = ?");
                 $approveStmt->execute([$disputeApplicationId]);
+                deleteDeclineNotificationsForApplication($pdo, $disputeApplicationId);
                 $_SESSION['success_message'] = 'Заявка принята';
                 redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
             } catch (Exception $e) {
@@ -343,6 +370,8 @@ if ($selectedDisputeApplicationId > 0) {
 $search = $_GET['search'] ?? '';
 $priority = $_GET['priority'] ?? '';
 $sort = $_GET['sort'] ?? 'id_desc';
+$filterUserId = max(0, (int) ($_GET['user_id'] ?? 0));
+$filterUserQuery = trim((string) ($_GET['user_query'] ?? ''));
 $allowedPriorities = ['normal', 'important', 'critical'];
 if ($priority && !in_array($priority, $allowedPriorities)) {
 $priority = '';
@@ -366,6 +395,16 @@ if ($search) {
 $where .= " AND (am.subject LIKE ? OR am.message LIKE ? OR u.name LIKE ? OR u.surname LIKE ?)";
 $searchTerm = "%$search%";
 $params = array_fill(0,4, $searchTerm);
+}
+if ($filterUserId > 0) {
+    $where .= " AND am.user_id = ?";
+    $params[] = $filterUserId;
+} elseif ($filterUserQuery !== '') {
+    $where .= " AND (u.name LIKE ? OR u.surname LIKE ? OR u.email LIKE ?)";
+    $userSearchTerm = '%' . $filterUserQuery . '%';
+    $params[] = $userSearchTerm;
+    $params[] = $userSearchTerm;
+    $params[] = $userSearchTerm;
 }
 if ($priority) {
 $where .= " AND am.priority = ?";
@@ -458,6 +497,70 @@ $error = 'Выберите пользователя';
 }
 }
 // --- УДАЛЕНИЕ ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_selected_messages') {
+    header('Content-Type: application/json');
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        echo json_encode(['success' => false, 'error' => 'Неверный CSRF токен']);
+        exit;
+    }
+
+    $selectedRaw = $_POST['selected'] ?? [];
+    if (!is_array($selectedRaw) || empty($selectedRaw)) {
+        echo json_encode(['success' => false, 'error' => 'Сообщения не выбраны']);
+        exit;
+    }
+
+    $idsToDelete = [];
+    $broadcastPairs = [];
+    foreach ($selectedRaw as $item) {
+        $item = trim((string) $item);
+        if ($item === '') {
+            continue;
+        }
+        if (strpos($item, 'b:') === 0) {
+            $parts = explode(':', substr($item, 2), 2);
+            if (count($parts) === 2) {
+                $broadcastPairs[] = [(int) $parts[0], $parts[1]];
+            }
+            continue;
+        }
+        $id = (int) $item;
+        if ($id > 0) {
+            $idsToDelete[] = $id;
+        }
+    }
+
+    $deletedCount = 0;
+    try {
+        $pdo->beginTransaction();
+        if (!empty($idsToDelete)) {
+            $placeholders = implode(',', array_fill(0, count($idsToDelete), '?'));
+            $deleteByIds = $pdo->prepare("DELETE FROM admin_messages WHERE id IN ($placeholders)");
+            $deleteByIds->execute($idsToDelete);
+            $deletedCount += $deleteByIds->rowCount();
+        }
+
+        if (!empty($broadcastPairs)) {
+            $deleteBroadcastStmt = $pdo->prepare("
+                DELETE FROM admin_messages
+                WHERE is_broadcast = 1 AND admin_id = ? AND subject = ?
+            ");
+            foreach ($broadcastPairs as [$adminIdValue, $subjectValue]) {
+                $deleteBroadcastStmt->execute([$adminIdValue, $subjectValue]);
+                $deletedCount += $deleteBroadcastStmt->rowCount();
+            }
+        }
+        $pdo->commit();
+        echo json_encode(['success' => true, 'deleted' => $deletedCount]);
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        echo json_encode(['success' => false, 'error' => 'Ошибка удаления']);
+    }
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_message') {
 header('Content-Type: application/json');
 if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -706,6 +809,19 @@ require_once __DIR__ . '/includes/header.php';
  placeholder="Поиск по теме, сообщению или пользователю..." 
  value="<?= htmlspecialchars($search) ?>">
 </div>
+<div style="flex:1; min-width:250px; position:relative;">
+<label class="form-label">Пользователь</label>
+<input
+ type="text"
+ name="user_query"
+ id="filterUserSearch"
+ class="form-input"
+ placeholder="Фильтр по пользователю"
+ value="<?= htmlspecialchars($filterUserQuery) ?>"
+ autocomplete="off">
+<input type="hidden" name="user_id" id="filterUserId" value="<?= (int) $filterUserId ?>">
+<div id="filterUserResults" class="user-results"></div>
+</div>
 <div style="width:180px;">
 <label class="form-label">Приоритет</label>
 <select name="priority" class="form-input">
@@ -718,7 +834,7 @@ require_once __DIR__ . '/includes/header.php';
 <button type="submit" class="btn btn--primary">
 <i class="fas fa-search"></i> Найти
 </button>
-<?php if ($search || $priority): ?>
+<?php if ($search || $priority || $filterUserId > 0 || $filterUserQuery !== ''): ?>
 <a href="messages.php" class="btn btn--ghost">Сбросить</a>
 <?php endif; ?>
 </form>
@@ -730,21 +846,36 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card__header">
 <div class="flex justify-between items-center w-100 messages-toolbar">
 <h3>Сообщения (<?= e($totalMessages) ?>)</h3>
+<div class="flex gap-sm">
+<button type="button" class="btn btn--ghost" id="toggleSelectModeBtn">
+<i class="fas fa-check-square"></i> Выбрать
+</button>
 <button type="button" class="btn btn--primary" onclick="openSendModal()">
 <i class="fas fa-pen"></i> Написать сообщение
 </button>
+</div>
+</div>
+<div class="flex items-center justify-between gap-md" id="bulkActionsBar" style="display:none; margin-top:12px;">
+<div class="text-secondary">Выбрано: <strong id="selectedCountValue">0</strong></div>
+<div class="flex gap-sm">
+<button type="button" class="btn btn--ghost btn--sm" id="clearSelectedBtn">Сбросить</button>
+<button type="button" class="btn btn--danger btn--sm" id="bulkDeleteBtn">
+<i class="fas fa-trash"></i> Удалить
+</button>
+</div>
 </div>
 </div>
 <div class="card__body" style="padding:0;">
 <table class="table">
 <thead>
 <tr>
-<th><a href="?sort=<?= $sort === 'id_desc' ? 'id_asc' : 'id_desc' ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>" style="color:inherit; text-decoration:none;">ID <?= $sort === 'id_desc' ? '↓' : ($sort === 'id_asc' ? '↑' : '') ?></a></th>
+<th class="select-col" style="display:none; width:54px;"></th>
+<th><a href="?sort=<?= $sort === 'id_desc' ? 'id_asc' : 'id_desc' ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>&user_id=<?= (int) $filterUserId ?>&user_query=<?= urlencode($filterUserQuery) ?>" style="color:inherit; text-decoration:none;">ID <?= $sort === 'id_desc' ? '↓' : ($sort === 'id_asc' ? '↑' : '') ?></a></th>
 <th>Получатель</th>
 <th>Тема</th>
 <th>Приоритет</th>
 <th>Отправил</th>
-<th><a href="?sort=<?= $sort === 'date_desc' ? 'date_asc' : 'date_desc' ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>" style="color:inherit; text-decoration:none;">Дата <?= $sort === 'date_desc' ? '↓' : ($sort === 'date_asc' ? '↑' : '') ?></a></th>
+<th><a href="?sort=<?= $sort === 'date_desc' ? 'date_asc' : 'date_desc' ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>&user_id=<?= (int) $filterUserId ?>&user_query=<?= urlencode($filterUserQuery) ?>" style="color:inherit; text-decoration:none;">Дата <?= $sort === 'date_desc' ? '↓' : ($sort === 'date_asc' ? '↑' : '') ?></a></th>
 <th style="width:140px;">Действия</th>
 </tr>
 </thead>
@@ -761,10 +892,14 @@ foreach ($messages as $msg) {
 ?>
 <tr class="message-row"
     data-message-id="<?= (int) $msg['id'] ?>"
+    data-admin-id="<?= (int) ($msg['admin_id'] ?? 0) ?>"
     data-message-subject="<?= e($msg['subject']) ?>"
     data-message-content="<?= e($msg['message']) ?>"
     data-message-priority="<?= e($msg['priority']) ?>"
     data-message-broadcast="<?= !empty($msg['is_broadcast']) ? '1' : '0' ?>">
+<td class="select-col" style="display:none;" data-label="Выбор">
+<input type="checkbox" class="message-select-checkbox" value="<?= (int) $msg['id'] ?>">
+</td>
 <td data-label="ID">#<?= $msg['id'] ?></td>
 <td data-label="Получатель">
 <div class="flex items-center gap-sm">
@@ -810,7 +945,7 @@ foreach ($messages as $msg) {
 
 <?php if (empty($messages)): ?>
 <tr>
-<td colspan="7" class="text-center text-secondary" style="padding:40px;">
+<td colspan="8" class="text-center text-secondary" style="padding:40px;">
  Сообщений не найдено
 </td>
 </tr>
@@ -826,12 +961,12 @@ foreach ($messages as $msg) {
 </div>
 <div class="flex gap-sm">
 <?php if ($page >1): ?>
-<a href="?page=<?= $page -1 ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>&sort=<?= e($sort) ?>" class="btn btn--ghost btn--sm">
+<a href="?page=<?= $page -1 ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>&sort=<?= e($sort) ?>&user_id=<?= (int) $filterUserId ?>&user_query=<?= urlencode($filterUserQuery) ?>" class="btn btn--ghost btn--sm">
 <i class="fas fa-chevron-left"></i>
 </a>
 <?php endif; ?>
 <?php if ($page< $totalPages): ?>
-<a href="?page=<?= $page +1 ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>&sort=<?= e($sort) ?>" class="btn btn--ghost btn--sm">
+<a href="?page=<?= $page +1 ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>&sort=<?= e($sort) ?>&user_id=<?= (int) $filterUserId ?>&user_query=<?= urlencode($filterUserQuery) ?>" class="btn btn--ghost btn--sm">
 <i class="fas fa-chevron-right"></i>
 </a>
 <?php endif; ?>
@@ -1018,6 +1153,100 @@ function deleteMessage(id, isBroadcast) {
   });
 }
 
+let selectionModeEnabled = false;
+
+function getSelectionValue(row) {
+ const messageId = Number(row.dataset.messageId || 0);
+ const isBroadcast = row.dataset.messageBroadcast === '1';
+ if (isBroadcast) {
+  const adminId = Number(row.dataset.adminId || 0);
+  const subject = row.dataset.messageSubject || '';
+  return `b:${adminId}:${subject}`;
+ }
+ return String(messageId);
+}
+
+function updateBulkSelectionState() {
+ const selected = Array.from(document.querySelectorAll('.message-select-checkbox:checked'));
+ const selectedCount = selected.length;
+ const selectedCounter = document.getElementById('selectedCountValue');
+ const deleteButton = document.getElementById('bulkDeleteBtn');
+ if (selectedCounter) {
+  selectedCounter.textContent = String(selectedCount);
+ }
+ if (deleteButton) {
+  deleteButton.disabled = selectedCount === 0;
+ }
+}
+
+function clearSelectedMessages() {
+ document.querySelectorAll('.message-select-checkbox').forEach((checkbox) => {
+  checkbox.checked = false;
+ });
+ updateBulkSelectionState();
+}
+
+function toggleSelectionMode(forceState = null) {
+ selectionModeEnabled = forceState === null ? !selectionModeEnabled : Boolean(forceState);
+ const selectCols = document.querySelectorAll('.select-col');
+ const bulkBar = document.getElementById('bulkActionsBar');
+ const toggleBtn = document.getElementById('toggleSelectModeBtn');
+
+ selectCols.forEach((col) => {
+  col.style.display = selectionModeEnabled ? '' : 'none';
+ });
+ if (bulkBar) {
+  bulkBar.style.display = selectionModeEnabled ? 'flex' : 'none';
+ }
+ if (toggleBtn) {
+  toggleBtn.innerHTML = selectionModeEnabled
+   ? '<i class="fas fa-times"></i> Отменить выбор'
+   : '<i class="fas fa-check-square"></i> Выбрать';
+ }
+
+ if (!selectionModeEnabled) {
+  clearSelectedMessages();
+ }
+ updateBulkSelectionState();
+}
+
+async function deleteSelectedMessages() {
+ const checkedRows = Array.from(document.querySelectorAll('.message-row'))
+  .filter((row) => row.querySelector('.message-select-checkbox')?.checked);
+ if (!checkedRows.length) {
+  showToast('Выберите хотя бы одно сообщение', 'error');
+  return;
+ }
+
+ if (!confirm('Удалить выбранные сообщения?')) {
+  return;
+ }
+
+ const selectedValues = checkedRows.map((row) => getSelectionValue(row));
+ const formData = new FormData();
+ formData.append('action', 'delete_selected_messages');
+ formData.append('csrf_token', csrfTokenValue);
+ selectedValues.forEach((value) => formData.append('selected[]', value));
+
+ try {
+  const response = await fetch(window.location.href, {
+   method: 'POST',
+   body: formData
+  });
+  const data = await response.json();
+  if (!data.success) {
+   showToast(data.error || 'Не удалось удалить сообщения', 'error');
+   return;
+  }
+
+  checkedRows.forEach((row) => row.remove());
+  showToast('Выбранные сообщения удалены', 'success');
+  updateBulkSelectionState();
+ } catch (error) {
+  showToast('Ошибка удаления: ' + error.message, 'error');
+ }
+}
+
 function openSendModal() {
  document.getElementById('sendMessageModal').classList.add('active');
  document.body.style.overflow = 'hidden';
@@ -1081,12 +1310,16 @@ let searchTimeout;
 const userSearchInput = document.getElementById('userSearch');
 const userResults = document.getElementById('userResults');
 const userIdInput = document.getElementById('userId');
+const filterUserSearchInput = document.getElementById('filterUserSearch');
+const filterUserResults = document.getElementById('filterUserResults');
+const filterUserIdInput = document.getElementById('filterUserId');
 const messageField = document.querySelector('textarea[name="message"]');
 const messageCounter = document.getElementById('messageCounter');
 
 userSearchInput?.addEventListener('input', function() {
  clearTimeout(searchTimeout);
  const query = this.value.trim();
+ userIdInput.value = '';
 
  if (query.length < 2) {
   userResults.style.display = 'none';
@@ -1095,7 +1328,7 @@ userSearchInput?.addEventListener('input', function() {
  }
 
  searchTimeout = setTimeout(function() {
-  fetch('/admin/search-users?q=' + encodeURIComponent(query))
+  fetch('/admin/search-users?q=' + encodeURIComponent(query) + '&limit=7')
    .then(response => response.json())
    .then(users => {
    if (users.length > 0) {
@@ -1111,7 +1344,39 @@ userSearchInput?.addEventListener('input', function() {
      userResults.style.display = 'block';
     }
    });
- }, 300);
+}, 300);
+});
+
+let filterSearchTimeout;
+filterUserSearchInput?.addEventListener('input', function() {
+ clearTimeout(filterSearchTimeout);
+ const query = this.value.trim();
+ filterUserIdInput.value = '';
+
+ if (query.length < 2) {
+  filterUserResults.style.display = 'none';
+  filterUserIdInput.value = '';
+  return;
+ }
+
+ filterSearchTimeout = setTimeout(function() {
+  fetch('/admin/search-users?q=' + encodeURIComponent(query) + '&limit=7')
+   .then(response => response.json())
+   .then(users => {
+    if (users.length > 0) {
+     filterUserResults.innerHTML = users.map(u =>
+      '<button type="button" class="user-results__item" onclick="selectFilterUser(' + u.id + ', \'' + escapeHtml((u.name + ' ' + u.surname + ' (' + u.email + ')').trim()).replace(/'/g, '&#39;') + '\')">' +
+      '<div class="user-results__name">' + escapeHtml((u.name + ' ' + u.surname).trim()) + '</div>' +
+      '<div class="user-results__email">' + escapeHtml(u.email) + '</div>' +
+      '</button>'
+     ).join('');
+     filterUserResults.style.display = 'block';
+    } else {
+     filterUserResults.innerHTML = '<div class="user-results__empty">Пользователи не найдены</div>';
+     filterUserResults.style.display = 'block';
+    }
+   });
+ }, 250);
 });
 
 function updateMessageCounter() {
@@ -1129,6 +1394,12 @@ function selectUser(id, name) {
  userIdInput.value = id;
  userSearchInput.value = name.replace(/&quot;/g, '"').trim();
  userResults.style.display = 'none';
+}
+
+function selectFilterUser(id, name) {
+ filterUserIdInput.value = id;
+ filterUserSearchInput.value = name.replace(/&quot;/g, '"').trim();
+ filterUserResults.style.display = 'none';
 }
 
 function escapeHtml(text) {
@@ -1260,6 +1531,9 @@ document.addEventListener('click', function(e) {
  if (userSearchInput && userResults && !userSearchInput.contains(e.target) && !userResults.contains(e.target)) {
   userResults.style.display = 'none';
  }
+ if (filterUserSearchInput && filterUserResults && !filterUserSearchInput.contains(e.target) && !filterUserResults.contains(e.target)) {
+  filterUserResults.style.display = 'none';
+ }
 });
 
 function updatePriorityStyle(radio) {
@@ -1281,6 +1555,26 @@ function updatePriorityStyle(radio) {
 
 document.addEventListener('DOMContentLoaded', function() {
  updatePriorityStyle(document.querySelector('input[name="priority"]:checked'));
+ toggleSelectionMode(false);
+
+ document.getElementById('toggleSelectModeBtn')?.addEventListener('click', function() {
+  toggleSelectionMode();
+ });
+ document.getElementById('clearSelectedBtn')?.addEventListener('click', function() {
+  clearSelectedMessages();
+ });
+ document.getElementById('bulkDeleteBtn')?.addEventListener('click', function() {
+  deleteSelectedMessages();
+ });
+ document.querySelectorAll('.message-select-checkbox').forEach((checkbox) => {
+  checkbox.addEventListener('change', updateBulkSelectionState);
+ });
+
+ filterUserSearchInput?.addEventListener('keydown', function(event) {
+  if (event.key === 'Backspace' && !filterUserSearchInput.value.trim()) {
+   filterUserIdInput.value = '';
+  }
+ });
 
  document.getElementById('sendMessageModal')?.addEventListener('click', function(e) {
   if (e.target === this) {
