@@ -518,16 +518,18 @@ require_once __DIR__ . '/includes/header.php';
 <?php foreach ($works as $i => $p): ?>
 <div class="card mb-lg">
     <div class="card__header">
-        <div class="flex justify-between items-center w-100">
+        <div class="flex items-center w-100" style="justify-content: space-between; gap: 16px; flex-wrap: wrap;">
             <h3>Работа #<?= $i + 1 ?></h3>
-            <span class="badge <?= getWorkStatusBadgeClass((string)($p['status'] ?? 'pending')) ?>">
-                <?= e(getWorkStatusLabel((string)($p['status'] ?? 'pending'))) ?>
-            </span>
-            <?php if ($p['drawing_file']): ?>
-            <span class="badge badge--success">
-                <i class="fas fa-image"></i> Рисунок загружен
-            </span>
-            <?php endif; ?>
+            <div class="flex items-center" style="gap: 12px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end;">
+                <span class="badge <?= getWorkStatusBadgeClass((string)($p['status'] ?? 'pending')) ?>">
+                    <?= e(getWorkStatusLabel((string)($p['status'] ?? 'pending'))) ?>
+                </span>
+                <?php if ($p['drawing_file']): ?>
+                <span class="badge badge--success">
+                    <i class="fas fa-image"></i> Рисунок загружен
+                </span>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 <div class="card__body">
