@@ -27,6 +27,24 @@ $selectedDisputeMessages = [];
 $disputeRecipientName = 'Пользователь';
 $isDisputeChatClosed = false;
 
+if (!function_exists('adminMessagesHasDisputeChatClosedColumn')) {
+    function adminMessagesHasDisputeChatClosedColumn(PDO $pdo): bool {
+        static $hasColumn = null;
+        if ($hasColumn !== null) {
+            return $hasColumn;
+        }
+
+        try {
+            $stmt = $pdo->query("SHOW COLUMNS FROM applications LIKE 'dispute_chat_closed'");
+            $hasColumn = (bool) ($stmt && $stmt->fetch());
+        } catch (Exception $e) {
+            $hasColumn = false;
+        }
+
+        return $hasColumn;
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply_dispute') {
     $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -44,8 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
             }
         } else {
             $isClosedForReply = false;
-            $columnCheckStmt = $pdo->query("SHOW COLUMNS FROM applications LIKE 'dispute_chat_closed'");
-            if ($columnCheckStmt && $columnCheckStmt->fetch()) {
+            if (adminMessagesHasDisputeChatClosedColumn($pdo)) {
                 $closedCheckStmt = $pdo->prepare("SELECT dispute_chat_closed FROM applications WHERE id = ? LIMIT 1");
                 $closedCheckStmt->execute([$disputeApplicationId]);
                 $isClosedForReply = (int) $closedCheckStmt->fetchColumn() === 1;
@@ -153,8 +170,7 @@ try {
 
 if ($selectedDisputeApplicationId > 0) {
     try {
-        $columnCheckStmt = $pdo->query("SHOW COLUMNS FROM applications LIKE 'dispute_chat_closed'");
-        if ($columnCheckStmt && $columnCheckStmt->fetch()) {
+        if (adminMessagesHasDisputeChatClosedColumn($pdo)) {
             $closedStmt = $pdo->prepare("SELECT dispute_chat_closed FROM applications WHERE id = ? LIMIT 1");
             $closedStmt->execute([$selectedDisputeApplicationId]);
             $isDisputeChatClosed = (int) $closedStmt->fetchColumn() === 1;
