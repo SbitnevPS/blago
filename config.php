@@ -655,7 +655,7 @@ function getUnreadMessageCount($userId) {
 // Функция для создания сообщения
 function createMessage($userId, $applicationId, $title, $content) {
  global $pdo;
- $createdBy = getCurrentUserId();
+ $createdBy = getCurrentAdminId() ?? getCurrentUserId();
  $stmt = $pdo->prepare("
  INSERT INTO messages (user_id, application_id, title, content, created_by)
  VALUES (?, ?, ?, ?, ?)
