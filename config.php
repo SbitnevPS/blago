@@ -649,6 +649,43 @@ function getUnreadMessageCount($userId) {
  return (int) $stmt->fetchColumn();
 }
 
+function getUserUnreadCountsByApplication(int $userId): array {
+    global $pdo;
+    $result = [];
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT application_id, COUNT(*) AS unread_count
+            FROM messages m
+            INNER JOIN users u ON u.id = m.created_by
+            WHERE m.user_id = ?
+              AND m.application_id IS NOT NULL
+              AND m.is_read = 0
+              AND u.is_admin = 1
+            GROUP BY application_id
+        ");
+        $stmt->execute([$userId]);
+        foreach ($stmt->fetchAll() as $row) {
+            $result[(int)$row['application_id']] = (int)$row['unread_count'];
+        }
+    } catch (Throwable $e) {
+        return [];
+    }
+
+    return $result;
+}
+
+function getUserSubmittedContestIds(int $userId): array {
+    global $pdo;
+    $ids = [];
+    $stmt = $pdo->prepare("SELECT DISTINCT contest_id FROM applications WHERE user_id = ?");
+    $stmt->execute([$userId]);
+    foreach ($stmt->fetchAll() as $row) {
+        $ids[] = (int)$row['contest_id'];
+    }
+    return $ids;
+}
+
 // Функция для создания сообщения
 function createMessage($userId, $applicationId, $title, $content) {
  global $pdo;

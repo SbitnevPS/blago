@@ -344,6 +344,11 @@ generateCSRFToken();
 <h1 class="mb-lg"><?= $editingApplication ? 'Редактирование заявки' : 'Заявка на участие в конкурсе' ?></h1>
         
 <div class="card mb-lg"><div class="card__body"><h3><?= htmlspecialchars($contest['title']) ?></h3></div></div>
+
+<div class="application-note">
+    <strong>Как заполнить заявку</strong>
+    <span>Шаг 1 — данные родителя. Шаг 2 — общие данные организации. Шаг 3 — добавьте участников: 1 участник = 1 работа.</span>
+</div>
         
  <?php if ($error): ?>
 <div class="alert alert--error mb-lg">
@@ -420,6 +425,8 @@ generateCSRFToken();
 <button type="button" class="btn btn--secondary btn--lg btn--block mb-lg" id="addParticipantBtn">
 <i class="fas fa-plus"></i> Добавить ещё одного участника
 </button>
+
+<p class="text-secondary mb-lg" style="margin-top:-8px;">Каждая карточка участника — отдельная работа с отдельным рисунком.</p>
             
  <!-- Дополнительная информация -->
 <div class="card mb-lg">
@@ -542,7 +549,7 @@ generateCSRFToken();
 <input type="file" name="participants[${index}][drawing_file]" accept="image/*" class="file-upload__input" data-index="${index}">
 <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
 <div class="upload-area__title" id="upload_title_${index}">Нажмите или перетащите рисунок</div>
-<div class="upload-area__hint" id="upload_hint_${index}">JPG, PNG, GIF, WebP, TIF, PDF</div>
+<div class="upload-area__hint" id="upload_hint_${index}">JPG, PNG, GIF, WebP, TIF. Можно заменить позже.</div>
 </div>
  <div class="drawing-preview-wrap">${previewHtml}</div>
 </div>
@@ -667,7 +674,7 @@ function handleFileSelect(file, index) {
  area.classList.remove('has-file');
  title.textContent = 'Нажмите или перетащите рисунок';
  title.style.color = '';
- hint.textContent = 'JPG, PNG, GIF, WebP, TIF, PDF';
+ hint.textContent = 'JPG, PNG, GIF, WebP, TIF. Можно заменить позже.';
             
  const input = area.querySelector('input[type="file"]');
  if (input) input.value = '';

@@ -99,6 +99,11 @@ generateCSRFToken();
 
 <main class="container" style="padding: var(--space-xl) var(--space-lg);">
 <h1 class="mb-lg text-center">Мой профиль</h1>
+
+<div class="application-note" style="max-width:600px; margin:0 auto var(--space-lg);">
+    <strong>Профиль ускоряет подачу заявок</strong>
+    <span>Регион и учреждение подставляются в новые заявки автоматически и могут использоваться в дипломах и публикациях.</span>
+</div>
         
  <?php if ($error): ?>
 <div class="alert alert--error mb-lg" style="max-width:600px; margin:0 auto var(--space-lg);">
@@ -163,6 +168,7 @@ generateCSRFToken();
  <!-- Место обучения -->
 <div class="profile-section">
 <div class="profile-section__title">Место обучения (по умолчанию для заявок)</div>
+<p class="text-secondary" style="margin-top:-4px; margin-bottom:12px;">Эти данные будут подставляться в форму заявки и помогут заполнить её быстрее.</p>
  
  <?php
  $regions = [
@@ -200,6 +206,7 @@ generateCSRFToken();
 <div class="form-group">
 <label class="form-label">Название образовательного учреждения</label>
 <input type="text" name="organization_name" class="form-input" value="<?= htmlspecialchars($user['organization_name'] ?? '') ?>" placeholder="Детская художественная школа №1">
+<div class="form-hint">Название может отображаться в дипломах и карточках работ.</div>
 </div>
                     
 <div class="form-group">
