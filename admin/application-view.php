@@ -133,69 +133,107 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $_SESSION['success_message'] = 'Сообщение отправлено';
  }
  } elseif ($_POST['action'] === 'toggle_drawing_compliance') {
+ $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
  $participantId = intval($_POST['participant_id'] ?? 0);
  $isCompliant = isset($_POST['drawing_compliant']) ? 1 : 0;
  $comment = trim($_POST['comment'] ?? '');
 
+ if ($participantId <= 0) {
+     if ($isAjaxRequest) {
+         jsonResponse(['success' => false, 'error' => 'Некорректный участник'], 422);
+     }
+     $_SESSION['success_message'] = 'Не удалось сохранить проверку';
+     redirect('/admin/application/' . $application_id);
+ }
+
  if ($hasDrawingCompliantColumn && $hasDrawingCommentColumn) {
      $stmt = $pdo->prepare("
-     UPDATE participants 
+     UPDATE participants
      SET drawing_compliant = ?, drawing_comment = ?
      WHERE id = ? AND application_id = ?
      ");
      $stmt->execute([$isCompliant, $isCompliant ? null : $comment, $participantId, $application_id]);
  } elseif ($hasDrawingCompliantColumn) {
      $stmt = $pdo->prepare("
-     UPDATE participants 
+     UPDATE participants
      SET drawing_compliant = ?
      WHERE id = ? AND application_id = ?
      ");
      $stmt->execute([$isCompliant, $participantId, $application_id]);
  } elseif ($hasDrawingCommentColumn) {
      $stmt = $pdo->prepare("
-     UPDATE participants 
+     UPDATE participants
      SET drawing_comment = ?
      WHERE id = ? AND application_id = ?
      ");
      $stmt->execute([$isCompliant ? null : $comment, $participantId, $application_id]);
  }
 
- if (!$isCompliant) {
-     addCorrection($application_id, 'Рисунок не соответствует условиям конкурса', $comment ?: 'Требуется корректировка рисунка', $participantId);
-     allowApplicationEdit($application_id);
-     $pdo->prepare("UPDATE applications SET status = 'revision', updated_at = NOW() WHERE id = ?")->execute([$application_id]);
-     $subject = getSystemSetting('application_revision_subject', 'Заявка отправлена на корректировку');
-     $messageText = getSystemSetting('application_revision_message', 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.') . "\n\nНомер заявки: #" . $application_id;
-     $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())")
-         ->execute([$application['user_id'], $admin['id'], $subject, $messageText]);
- } else {
+ if ($isCompliant) {
      $pdo->prepare("
      UPDATE application_corrections
      SET is_resolved = 1, resolved_at = NOW()
      WHERE application_id = ? AND participant_id = ? AND is_resolved = 0
      ")->execute([$application_id, $participantId]);
-
-     $revisionSubject = getSystemSetting('application_revision_subject', 'Заявка отправлена на корректировку');
-     $pdo->prepare("
-     DELETE FROM admin_messages
-     WHERE user_id = ? AND subject = ? AND message LIKE ?
-     ")->execute([$application['user_id'], $revisionSubject, '%#' . $application_id . '%']);
-
-     $openCorrectionsStmt = $pdo->prepare("SELECT COUNT(*) FROM application_corrections WHERE application_id = ? AND is_resolved = 0");
-     $openCorrectionsStmt->execute([$application_id]);
-     $openCorrectionsCount = (int) $openCorrectionsStmt->fetchColumn();
-     if ($openCorrectionsCount === 0 && $application['status'] === 'revision') {
-         $pdo->prepare("UPDATE applications SET status = 'submitted', updated_at = NOW() WHERE id = ?")->execute([$application_id]);
-         disallowApplicationEdit($application_id);
-     }
  }
 
- if (!$hasDrawingCompliantColumn || !$hasDrawingCommentColumn) {
-     $_SESSION['success_message'] = 'Проверка сохранена (рекомендуется применить миграцию add_drawing_review_and_editing.sql)';
- } else {
-     $_SESSION['success_message'] = 'Проверка рисунка обновлена';
+ if ($isAjaxRequest) {
+     jsonResponse(['success' => true]);
  }
+ $_SESSION['success_message'] = 'Проверка рисунка обновлена';
  redirect('/admin/application/' . $application_id);
+ } elseif ($_POST['action'] === 'send_to_revision') {
+     $participantsForRevisionStmt = $pdo->prepare("
+         SELECT id, drawing_compliant, drawing_comment
+         FROM participants
+         WHERE application_id = ?
+     ");
+     $participantsForRevisionStmt->execute([$application_id]);
+     $participantsForRevision = $participantsForRevisionStmt->fetchAll();
+
+     $needRevision = array_filter($participantsForRevision, function ($row) use ($hasDrawingCompliantColumn) {
+         if (!$hasDrawingCompliantColumn) {
+             return false;
+         }
+         return (int) ($row['drawing_compliant'] ?? 1) === 0;
+     });
+
+     if (empty($needRevision)) {
+         $_SESSION['success_message'] = 'Нет участников, отмеченных как несоответствующие условиям конкурса.';
+         redirect('/admin/application/' . $application_id);
+     }
+
+     foreach ($needRevision as $participantRow) {
+         $participantId = (int) ($participantRow['id'] ?? 0);
+         if ($participantId <= 0) {
+             continue;
+         }
+         $existsStmt = $pdo->prepare("
+             SELECT COUNT(*)
+             FROM application_corrections
+             WHERE application_id = ? AND participant_id = ? AND field_name = ? AND is_resolved = 0
+         ");
+         $existsStmt->execute([$application_id, $participantId, 'Рисунок не соответствует условиям конкурса']);
+         if ((int) $existsStmt->fetchColumn() === 0) {
+             addCorrection(
+                 $application_id,
+                 'Рисунок не соответствует условиям конкурса',
+                 trim((string) ($participantRow['drawing_comment'] ?? '')) ?: 'Требуется корректировка рисунка',
+                 $participantId
+             );
+         }
+     }
+
+     allowApplicationEdit($application_id);
+     $pdo->prepare("UPDATE applications SET updated_at = NOW() WHERE id = ?")->execute([$application_id]);
+
+     $subject = getSystemSetting('application_revision_subject', 'Заявка отправлена на корректировку');
+     $messageText = getSystemSetting('application_revision_message', 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.') . "\n\nНомер заявки: #" . $application_id;
+     $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())")
+         ->execute([$application['user_id'], $admin['id'], $subject, $messageText]);
+
+     $_SESSION['success_message'] = 'Заявка отправлена на корректировку';
+     redirect('/admin/application/' . $application_id);
  } elseif ($_POST['action'] === 'save_drawing_edit') {
      header('Content-Type: application/json');
      $participantId = intval($_POST['participant_id'] ?? 0);
@@ -453,24 +491,24 @@ require_once __DIR__ . '/includes/header.php';
             <label class="form-label">Адрес организации</label>
             <p><?= htmlspecialchars($p['organization_address'] ?? '—') ?></p>
         </div>
-        <form method="POST" class="mt-md" style="border:1px solid #E5E7EB; padding:16px; border-radius:12px; background:#F8FAFC;">
+        <form method="POST" class="mt-md js-drawing-compliance-form" style="border:1px solid #E5E7EB; padding:16px; border-radius:12px; background:#F8FAFC;">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
             <input type="hidden" name="action" value="toggle_drawing_compliance">
             <input type="hidden" name="participant_id" value="<?= (int) $p['id'] ?>">
+            <input type="hidden" name="ajax" value="1">
             <div class="flex gap-md items-center" style="flex-wrap:wrap;">
                 <label class="ios-toggle-wrap">
                     <span class="ios-toggle-label">Соответствует условиям конкурса</span>
                     <span class="ios-toggle">
-                        <input type="checkbox" name="drawing_compliant" value="1" <?= isset($p['drawing_compliant']) && (int)$p['drawing_compliant'] === 1 ? 'checked' : '' ?>>
+                        <input type="checkbox" name="drawing_compliant" value="1" class="js-drawing-compliant-toggle" <?= isset($p['drawing_compliant']) && (int)$p['drawing_compliant'] === 1 ? 'checked' : '' ?>>
                         <span class="ios-toggle__slider"></span>
                     </span>
                 </label>
-                <button type="submit" class="btn btn--primary">Сохранить проверку</button>
             </div>
             <div class="mt-sm">
                 <label class="form-label">Что исправить (если не соответствует)</label>
-                <textarea class="form-textarea" name="comment" rows="2" placeholder="Укажите, что нужно исправить"><?= htmlspecialchars($p['drawing_comment'] ?? '') ?></textarea>
+                <textarea class="form-textarea js-drawing-comment" name="comment" rows="2" placeholder="Укажите, что нужно исправить"><?= htmlspecialchars($p['drawing_comment'] ?? '') ?></textarea>
             </div>
         </form>
     </div>
@@ -490,6 +528,14 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card mb-lg">
     <div class="card__body">
         <div class="flex gap-md" style="flex-wrap:wrap; justify-content:flex-end;">
+            <form method="POST" onsubmit="return confirm('Отправить заявку на корректировку?');">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="send_to_revision">
+                <button type="submit" class="btn" style="background:#FEF3C7; color:#92400E;">
+                    <i class="fas fa-edit"></i> Отправить на корректировку
+                </button>
+            </form>
             <form method="POST">
                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -706,6 +752,44 @@ function selectPriority(value) {
 }
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeMessageModal(); });
 document.getElementById('messageModal').addEventListener('click', function(e) { if (e.target === this) closeMessageModal(); });
+
+async function saveDrawingCompliance(form) {
+ const toggle = form.querySelector('.js-drawing-compliant-toggle');
+ if (!toggle) return;
+ const formData = new FormData(form);
+ if (!toggle.checked) {
+  formData.delete('drawing_compliant');
+ }
+ try {
+  const response = await fetch('/admin/application/<?= e($application_id) ?>', {
+   method: 'POST',
+   headers: { 'X-Requested-With': 'XMLHttpRequest' },
+   body: formData,
+  });
+  const data = await response.json();
+  if (!data.success) {
+   alert(data.error || 'Не удалось сохранить проверку');
+  }
+ } catch (error) {
+  alert('Не удалось сохранить проверку');
+ }
+}
+
+document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
+ const toggle = form.querySelector('.js-drawing-compliant-toggle');
+ const comment = form.querySelector('.js-drawing-comment');
+ if (toggle) {
+  toggle.addEventListener('change', () => saveDrawingCompliance(form));
+ }
+ if (comment) {
+  let commentTimer = null;
+  comment.addEventListener('input', () => {
+   if (commentTimer) clearTimeout(commentTimer);
+   commentTimer = setTimeout(() => saveDrawingCompliance(form), 500);
+  });
+ }
+ form.addEventListener('submit', (event) => event.preventDefault());
+});
 </script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
