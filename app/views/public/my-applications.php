@@ -102,7 +102,7 @@ $currentPage = 'applications';
     </div>
 
     <div class="application-card__footer application-card__footer--actions">
-        <a href="<?= $actionBase ?>" class="btn btn--primary btn--sm">
+        <a href="<?= $actionBase ?>" class="btn btn--primary btn--sm btn--open-application">
             <i class="fas fa-eye"></i> Открыть заявку
         </a>
 

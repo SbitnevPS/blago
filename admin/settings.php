@@ -53,6 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'vk_publication_api_version' => trim($_POST['vk_publication_api_version'] ?? '5.131'),
             'vk_publication_from_group' => isset($_POST['vk_publication_from_group']) ? 1 : 0,
             'vk_publication_post_template' => trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate()),
+            'email_notifications_enabled' => isset($_POST['email_notifications_enabled']) ? 1 : 0,
+            'email_from_name' => trim($_POST['email_from_name'] ?? ''),
+            'email_from_address' => trim($_POST['email_from_address'] ?? ''),
+            'email_reply_to' => trim($_POST['email_reply_to'] ?? ''),
         ];
 
         if (saveSystemSettings($payload)) {
@@ -93,6 +97,13 @@ require_once __DIR__ . '/includes/header.php';
                 <span>
                     <strong>Уведомления</strong>
                     <small>Шаблоны автоматических сообщений</small>
+                </span>
+            </a>
+            <a href="#email-delivery" class="settings-nav__link">
+                <i class="fas fa-envelope"></i>
+                <span>
+                    <strong>Email-отправка</strong>
+                    <small>Параметры исходящих писем</small>
                 </span>
             </a>
             <a href="#vk-integration" class="settings-nav__link">
@@ -150,6 +161,58 @@ require_once __DIR__ . '/includes/header.php';
                                 </div>
                             </article>
                         <?php endforeach; ?>
+                    </div>
+                </section>
+
+                <section id="email-delivery" class="settings-section">
+                    <div class="settings-section__header">
+                        <h4><i class="fas fa-envelope"></i> Настройки отправки писем</h4>
+                        <p>Эти параметры используются для отправки дипломов пользователям на электронную почту.</p>
+                    </div>
+
+                    <div class="settings-email-card">
+                        <div class="form-group">
+                            <label class="form-checkbox">
+                                <input type="checkbox" name="email_notifications_enabled" value="1" <?= (int) ($settings['email_notifications_enabled'] ?? 1) === 1 ? 'checked' : '' ?>>
+                                <span class="form-checkbox__mark"></span>
+                                <span>Разрешить отправку писем с дипломами</span>
+                            </label>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Имя отправителя</label>
+                                <input
+                                    type="text"
+                                    name="email_from_name"
+                                    class="form-input"
+                                    value="<?= htmlspecialchars($settings['email_from_name'] ?? 'ДетскиеКонкурсы.рф') ?>"
+                                    placeholder="ДетскиеКонкурсы.рф"
+                                >
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Email отправителя (From)</label>
+                                <input
+                                    type="email"
+                                    name="email_from_address"
+                                    class="form-input"
+                                    value="<?= htmlspecialchars($settings['email_from_address'] ?? 'no-reply@kids-contests.ru') ?>"
+                                    placeholder="no-reply@example.com"
+                                >
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Email для ответа (Reply-To)</label>
+                            <input
+                                type="email"
+                                name="email_reply_to"
+                                class="form-input"
+                                value="<?= htmlspecialchars($settings['email_reply_to'] ?? '') ?>"
+                                placeholder="support@example.com"
+                            >
+                            <div class="form-hint">Если поле пустое, адрес Reply-To не добавляется.</div>
+                        </div>
                     </div>
                 </section>
 

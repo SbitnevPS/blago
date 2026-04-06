@@ -870,13 +870,34 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
         return false;
     }
 
+    $settings = getSystemSettings();
+    if ((int)($settings['email_notifications_enabled'] ?? 1) !== 1) {
+        return false;
+    }
+
+    $fromName = trim((string)($settings['email_from_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $fromAddress = trim((string)($settings['email_from_address'] ?? 'no-reply@kids-contests.ru'));
+    $replyTo = trim((string)($settings['email_reply_to'] ?? ''));
+
+    if (!filter_var($fromAddress, FILTER_VALIDATE_EMAIL)) {
+        $fromAddress = 'no-reply@kids-contests.ru';
+    }
+
+    if ($replyTo !== '' && !filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
+        $replyTo = '';
+    }
+
     $diplomaType = (string)($diploma['diploma_type'] ?? 'contest_participant');
     $subject = $diplomaType === 'encouragement'
         ? 'Ваш благодарственный диплом'
         : 'Ваш диплом участника конкурса';
 
     $boundary = '==Multipart_Boundary_x' . md5((string)microtime()) . 'x';
-    $headers = "From: no-reply@kids-contests.ru\r\n";
+    $encodedFromName = '=?UTF-8?B?' . base64_encode($fromName) . '?=';
+    $headers = "From: {$encodedFromName} <{$fromAddress}>\r\n";
+    if ($replyTo !== '') {
+        $headers .= "Reply-To: {$replyTo}\r\n";
+    }
     $headers .= "MIME-Version: 1.0\r\n";
     $headers .= "Content-Type: multipart/mixed; boundary=\"{$boundary}\"\r\n";
 

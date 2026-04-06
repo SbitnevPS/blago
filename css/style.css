@@ -350,6 +350,12 @@ h4 {
 	font-size: var(--font-size-xs);
 }
 
+.btn--open-application {
+	padding: var(--space-sm) var(--space-md);
+	font-size: var(--font-size-sm);
+}
+
+
 .btn--lg {
 	padding: var(--space-md) var(--space-xl);
 	font-size: var(--font-size-base);
