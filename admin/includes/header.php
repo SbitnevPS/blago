@@ -50,6 +50,9 @@ $adminUnreadDisputes = function_exists('getAdminUnreadDisputeCount') ? getAdminU
 <a href="/admin/diplomas" class="admin-sidebar__link <?= $currentPage === 'diplomas' ? 'admin-sidebar__link--active' : '' ?>">
 <i class="fas fa-award"></i> Дипломы
 </a>
+<a href="/admin/vk-publications" class="admin-sidebar__link <?= $currentPage === 'vk-publications' ? 'admin-sidebar__link--active' : '' ?>">
+<i class="fab fa-vk"></i> Публикации в ВК
+</a>
 
 <div class="admin-sidebar__section">Система</div>
 <a href="/admin/settings" class="admin-sidebar__link <?= $currentPage === 'settings' ? 'admin-sidebar__link--active' : '' ?>">
