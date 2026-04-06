@@ -62,48 +62,55 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
                     </div>
 
                 <?php else: ?>
-                    <div class="navbar__user-dropdown" id="guestDropdown">
-                        <div class="navbar__user-trigger navbar__user-trigger--guest" onclick="toggleGuestMenu()">
-                            <div class="navbar__avatar navbar__avatar--placeholder">
-                                <i class="fas fa-user navbar__avatar-icon"></i>
-                            </div>
-                            <span class="navbar__user-name">Профиль</span>
-                        </div>
-                        <div class="navbar__user-menu">
-                            <a href="/login" class="navbar__user-menu__item">
-                                <i class="fas fa-sign-in-alt"></i> Войти
-                            </a>
-                            <a href="/register" class="navbar__user-menu__item">
-                                <i class="fas fa-user-plus"></i> Регистрация
-                            </a>
-                        </div>
-                    </div>
+                    <a href="/contests" class="navbar__link <?= $currentPage === 'contests' ? 'navbar__link--active' : '' ?>">
+                        <i class="fas fa-trophy"></i><span class="navbar__link-text">Конкурсы</span>
+                    </a>
+                    <a href="/login" class="navbar__link <?= $currentPage === 'login' ? 'navbar__link--active' : '' ?>">
+                        <i class="fas fa-sign-in-alt"></i><span class="navbar__link-text">Войти</span>
+                    </a>
+                    <a href="/register" class="navbar__link <?= $currentPage === 'register' ? 'navbar__link--active' : '' ?>">
+                        <i class="fas fa-user-plus"></i><span class="navbar__link-text">Регистрация</span>
+                    </a>
                 <?php endif; ?>
             </div>
         </div>
     </div>
 </nav>
 
+<?php if (!isAuthenticated()): ?>
+<div class="modal" id="authRequiredModal" aria-hidden="true">
+    <div class="modal__content" role="dialog" aria-modal="true" aria-labelledby="authRequiredModalTitle">
+        <div class="modal__header">
+            <h3 id="authRequiredModalTitle">Чтобы подать заявку, нужно войти в аккаунт</h3>
+            <button type="button" class="modal__close" aria-label="Закрыть" onclick="closeAuthRequiredModal()">&times;</button>
+        </div>
+        <div class="modal__body">
+            <p style="margin-bottom:12px;">Чтобы отправить работу на конкурс, войдите в аккаунт или зарегистрируйтесь.</p>
+            <ul style="margin:0; padding-left:20px; color:var(--color-text-secondary);">
+                <li>сохранение и редактирование заявок;</li>
+                <li>отслеживание статусов работ;</li>
+                <li>получение дипломов;</li>
+                <li>сообщения от организаторов.</li>
+            </ul>
+            <div class="flex gap-sm mt-lg" style="justify-content:flex-end; flex-wrap:wrap;">
+                <a href="/login" id="authRequiredLoginLink" class="btn btn--primary">
+                    <i class="fas fa-sign-in-alt"></i> Войти
+                </a>
+                <a href="/register" id="authRequiredRegisterLink" class="btn btn--secondary">
+                    <i class="fas fa-user-plus"></i> Зарегистрироваться
+                </a>
+                <button type="button" class="btn btn--ghost" onclick="closeAuthRequiredModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
 function toggleUserMenu() {
 const dropdown = document.getElementById('userDropdown');
 if (dropdown) {
     dropdown.classList.toggle('active');
-}
-const guestDropdown = document.getElementById('guestDropdown');
-if (guestDropdown) {
-    guestDropdown.classList.remove('active');
-}
-}
-
-function toggleGuestMenu() {
-const dropdown = document.getElementById('guestDropdown');
-if (dropdown) {
-    dropdown.classList.toggle('active');
-}
-const userDropdown = document.getElementById('userDropdown');
-if (userDropdown) {
-    userDropdown.classList.remove('active');
 }
 }
 
@@ -113,9 +120,53 @@ const dropdown = document.getElementById('userDropdown');
 if (dropdown && !dropdown.contains(e.target)) {
 dropdown.classList.remove('active');
 }
-const guestDropdown = document.getElementById('guestDropdown');
-if (guestDropdown && !guestDropdown.contains(e.target)) {
-guestDropdown.classList.remove('active');
-}
 });
+
+<?php if (!isAuthenticated()): ?>
+function openAuthRequiredModal(targetUrl) {
+    const modal = document.getElementById('authRequiredModal');
+    if (!modal) return;
+    const safeTarget = typeof targetUrl === 'string' && targetUrl.startsWith('/') ? targetUrl : '/contests';
+    const encodedTarget = encodeURIComponent(safeTarget);
+
+    const loginLink = document.getElementById('authRequiredLoginLink');
+    const registerLink = document.getElementById('authRequiredRegisterLink');
+    if (loginLink) {
+        loginLink.href = '/login?redirect=' + encodedTarget;
+    }
+    if (registerLink) {
+        registerLink.href = '/register?redirect=' + encodedTarget;
+    }
+
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeAuthRequiredModal() {
+    const modal = document.getElementById('authRequiredModal');
+    if (!modal) return;
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+}
+
+document.addEventListener('click', function (e) {
+    const trigger = e.target.closest('[data-auth-required]');
+    if (trigger) {
+        e.preventDefault();
+        openAuthRequiredModal(trigger.getAttribute('data-target-url') || '/contests');
+        return;
+    }
+
+    const modal = document.getElementById('authRequiredModal');
+    if (modal && e.target === modal) {
+        closeAuthRequiredModal();
+    }
+});
+
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+        closeAuthRequiredModal();
+    }
+});
+<?php endif; ?>
 </script>

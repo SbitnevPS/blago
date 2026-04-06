@@ -5,10 +5,15 @@ require_once dirname(__DIR__, 3) . '/includes/init.php';
 
 // Если уже авторизован - редирект на главную
 if (isAuthenticated()) {
- redirect('/');
+ redirect('/contests');
 }
 
 $error = '';
+$rawRedirect = trim((string)($_GET['redirect'] ?? ($_POST['redirect'] ?? '')));
+$redirectAfterAuth = '/contests';
+if ($rawRedirect !== '' && strpos($rawRedirect, '/') === 0 && strpos($rawRedirect, '//') !== 0) {
+ $redirectAfterAuth = $rawRedirect;
+}
 
 check_csrf();
 $success = '';
@@ -56,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  $_SESSION['user_id'] = $pdo->lastInsertId();
  $success = 'Регистрация успешна!';
  
- redirect('/');
+ redirect($redirectAfterAuth);
  }
  }
  }
@@ -92,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <form method="POST">
 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+<input type="hidden" name="redirect" value="<?= htmlspecialchars($redirectAfterAuth) ?>">
  
 <div class="form-row">
 <div class="form-group">
@@ -131,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </form>
  
 <div class="register-card__footer">
- Уже есть аккаунт?<a href="login.php">Войти</a>
+ Уже есть аккаунт?<a href="/login<?= $redirectAfterAuth !== '/contests' ? '?redirect=' . urlencode($redirectAfterAuth) : '' ?>">Войти</a>
 </div>
  
 <div class="back-link">

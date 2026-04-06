@@ -5,10 +5,15 @@ require_once dirname(__DIR__, 3) . '/includes/init.php';
 
 // Если уже авторизован - редирект на главную
 if (isAuthenticated()) {
-    redirect('/');
+    redirect('/contests');
 }
 
 $error = '';
+$rawRedirect = trim((string)($_GET['redirect'] ?? ($_POST['redirect'] ?? '')));
+$redirectAfterAuth = '/contests';
+if ($rawRedirect !== '' && strpos($rawRedirect, '/') === 0 && strpos($rawRedirect, '//') !== 0) {
+    $redirectAfterAuth = $rawRedirect;
+}
 
 check_csrf();
 
@@ -29,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  if ($user && password_verify($password, $user['password'])) {
  // Успешный вход
             $_SESSION['user_id'] = $user['id'];
-            redirect('/');
+            redirect($redirectAfterAuth);
  } else {
  $error = 'Неверный email или пароль';
  }
@@ -70,6 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  <!-- Форма входа по email -->
 <form method="POST" class="login-form active" id="form-email">
 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+<input type="hidden" name="redirect" value="<?= htmlspecialchars($redirectAfterAuth) ?>">
 <div class="form-group">
 <label class="form-label">Email</label>
 <input type="email" name="email" class="form-input" required placeholder="example@mail.ru">
@@ -105,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
  
 <div class="login-card__footer">
- Нет аккаунта?<a href="register.php">Зарегистрироваться</a>
+ Нет аккаунта?<a href="/register<?= $redirectAfterAuth !== '/contests' ? '?redirect=' . urlencode($redirectAfterAuth) : '' ?>">Зарегистрироваться</a>
 </div>
  
 <div class="back-link">

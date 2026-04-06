@@ -28,7 +28,7 @@ $regions = [
 
 // Проверка авторизации
 if (!isAuthenticated()) {
- redirect('/login');
+ redirect('/login?redirect=' . urlencode('/application-form?contest_id=' . intval($_GET['contest_id'] ?? 0)));
 }
 
 $contest_id = $_GET['contest_id'] ??0;
