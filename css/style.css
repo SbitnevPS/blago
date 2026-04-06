@@ -973,6 +973,12 @@ h4 {
 	color: #1E40AF;
 }
 
+.badge--reviewed,
+.badge--secondary {
+	background: #EEF2FF;
+	color: #475569;
+}
+
 /* Page specific styles for contests */
 .contest-detail {
 	max-width: 900px;

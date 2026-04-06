@@ -254,6 +254,7 @@ function getWorkStatusLabel(string $status): string {
         'pending' => 'На рассмотрении',
         'accepted' => 'Принята к участию',
         'reviewed' => 'Работа рассмотрена',
+        'reviewed_non_competitive' => 'Работа рассмотрена',
     ];
     return $map[$status] ?? ucfirst($status);
 }
@@ -262,7 +263,8 @@ function getWorkStatusBadgeClass(string $status): string {
     $map = [
         'pending' => 'badge--warning',
         'accepted' => 'badge--success',
-        'reviewed' => 'badge--secondary',
+        'reviewed' => 'badge--reviewed',
+        'reviewed_non_competitive' => 'badge--reviewed',
     ];
     return $map[$status] ?? 'badge--secondary';
 }
@@ -271,7 +273,7 @@ function mapWorkStatusToDiplomaType(string $status): ?string {
     if ($status === 'accepted') {
         return 'contest_participant';
     }
-    if ($status === 'reviewed') {
+    if (in_array($status, ['reviewed', 'reviewed_non_competitive'], true)) {
         return 'encouragement';
     }
     return null;
@@ -279,7 +281,7 @@ function mapWorkStatusToDiplomaType(string $status): ?string {
 
 function updateWorkStatus(int $workId, string $status): bool {
     global $pdo;
-    if (!in_array($status, ['pending', 'accepted', 'reviewed'], true)) {
+    if (!in_array($status, ['pending', 'accepted', 'reviewed', 'reviewed_non_competitive'], true)) {
         return false;
     }
     $stmt = $pdo->prepare("UPDATE works SET status = ?, reviewed_at = CASE WHEN ? = 'pending' THEN NULL ELSE NOW() END, updated_at = NOW() WHERE id = ?");
