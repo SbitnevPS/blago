@@ -119,10 +119,10 @@ require_once __DIR__ . '/includes/header.php';
                                 <?= htmlspecialchars($isRevisionState ? 'Требует исправлений' : $statusMeta['label']) ?>
                             </span>
                         </td>
-                        <td data-label="Действия">
-                            <a href="/admin/participant/<?= (int) $participant['id'] ?>" class="btn btn--ghost btn--sm" title="Открыть участника">
-                                <i class="fas fa-eye"></i>
-                            </a>
+                        <td data-label="Действия" style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <a href="/admin/participant/<?= (int) $participant['id'] ?>" class="btn btn--ghost btn--sm" title="Открыть участника"><i class="fas fa-eye"></i></a>
+                            <a href="/admin/participant/<?= (int) $participant['id'] ?>#diploma-actions" class="btn btn--primary btn--sm" title="Скачать диплом"><i class="fas fa-download"></i></a>
+                            <a href="/admin/participant/<?= (int) $participant['id'] ?>#diploma-actions" class="btn btn--secondary btn--sm" title="Отправить диплом"><i class="fas fa-envelope"></i></a>
                         </td>
                     </tr>
                 <?php endforeach; ?>

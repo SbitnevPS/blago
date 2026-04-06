@@ -92,6 +92,9 @@ $routes = [
  '/messages' => ['file' => 'app/views/public/messages.php', 'name' => 'messages'],
  '/mark-message-read' => ['file' => 'mark-message-read.php', 'name' => 'mark-message-read'],
  
+
+ '/diploma/{token}' => ['file' => 'app/views/public/diploma-public.php', 'name' => 'diploma-public'],
+
  // Админка
  '/admin' => ['file' => 'admin/index.php', 'name' => 'admin'],
  '/admin/contests' => ['file' => 'admin/contests.php', 'name' => 'admin-contests'],
@@ -104,6 +107,8 @@ $routes = [
  '/admin/users' => ['file' => 'admin/users.php', 'name' => 'admin-users'],
  '/admin/messages' => ['file' => 'admin/messages.php', 'name' => 'admin-messages'],
  '/admin/settings' => ['file' => 'admin/settings.php', 'name' => 'admin-settings'],
+ '/admin/diplomas' => ['file' => 'admin/diplomas.php', 'name' => 'admin-diplomas'],
+ '/admin/diploma-template/{id}' => ['file' => 'admin/diploma-template.php', 'name' => 'admin-diploma-template'],
  '/admin/search-users' => ['file' => 'admin/search-users.php', 'name' => 'admin-search-users'],
  '/admin/login' => ['file' => 'admin/login.php', 'name' => 'admin-login'],
 ];

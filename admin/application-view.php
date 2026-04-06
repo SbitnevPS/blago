@@ -67,6 +67,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $application['status'] = $newStatus;
         $_SESSION['success_message'] = 'Статус обновлён';
         redirect('/admin/applications');
+
+    } elseif ($_POST['action'] === 'download_participant_diploma') {
+        $participantId = (int)($_POST['participant_id'] ?? 0);
+        $diploma = generateParticipantDiploma($participantId, false);
+        $file = ROOT_PATH . '/' . $diploma['file_path'];
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="diploma_participant_' . $participantId . '.pdf"');
+        readfile($file);
+        exit;
+    } elseif ($_POST['action'] === 'send_participant_diploma') {
+        $participantId = (int)($_POST['participant_id'] ?? 0);
+        $ctx = getParticipantDiplomaContext($participantId);
+        $diploma = generateParticipantDiploma($participantId, false);
+        sendDiplomaByEmail($ctx ?? [], $diploma);
+        $_SESSION['success_message'] = 'Диплом участника отправлен';
+        redirect('/admin/application/' . $application_id);
+    } elseif ($_POST['action'] === 'link_participant_diploma') {
+        $participantId = (int)($_POST['participant_id'] ?? 0);
+        $diploma = generateParticipantDiploma($participantId, false);
+        $_SESSION['success_message'] = 'Ссылка участника: ' . getPublicDiplomaUrl($diploma['public_token']);
+        redirect('/admin/application/' . $application_id);
+    } elseif ($_POST['action'] === 'generate_all_diplomas') {
+        foreach ($participants as $participantRow) {
+            generateParticipantDiploma((int)$participantRow['id'], false);
+        }
+        $_SESSION['success_message'] = 'Дипломы сформированы';
+        redirect('/admin/application/' . $application_id);
+    } elseif ($_POST['action'] === 'generate_and_send_all_diplomas') {
+        foreach ($participants as $participantRow) {
+            $ctx = getParticipantDiplomaContext((int)$participantRow['id']);
+            $diploma = generateParticipantDiploma((int)$participantRow['id'], false);
+            sendDiplomaByEmail($ctx ?? [], $diploma);
+        }
+        $_SESSION['success_message'] = 'Дипломы сформированы и отправлены';
+        redirect('/admin/application/' . $application_id);
+    } elseif ($_POST['action'] === 'collect_all_diploma_links') {
+        foreach ($participants as $participantRow) {
+            generateParticipantDiploma((int)$participantRow['id'], false);
+        }
+        $links = collectApplicationDiplomaLinks((int)$application_id);
+        $lines = array_map(static fn($it) => $it['participant'] . ': ' . $it['url'], $links);
+        $_SESSION['success_message'] = "Ссылки:
+" . implode("
+", $lines);
+        redirect('/admin/application/' . $application_id);
+    } elseif ($_POST['action'] === 'download_zip_diplomas') {
+        foreach ($participants as $participantRow) {
+            generateParticipantDiploma((int)$participantRow['id'], false);
+        }
+        $zipRelative = buildApplicationDiplomaZip((int)$application_id);
+        $zipFile = ROOT_PATH . '/' . $zipRelative;
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="' . basename($zipFile) . '"');
+        readfile($zipFile);
+        exit;
     } elseif ($_POST['action'] === 'approve_application') {
         $stmt = $pdo->prepare("UPDATE applications SET status = 'approved', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
@@ -491,6 +546,13 @@ require_once __DIR__ . '/includes/header.php';
             <label class="form-label">Адрес организации</label>
             <p><?= htmlspecialchars($p['organization_address'] ?? '—') ?></p>
         </div>
+
+        <div class="flex gap-sm mt-md" style="flex-wrap:wrap;">
+            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_participant_diploma"><input type="hidden" name="participant_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--primary btn--sm" type="submit">Скачать диплом</button></form>
+            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_participant_diploma"><input type="hidden" name="participant_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--secondary btn--sm" type="submit">Отправить по почте</button></form>
+            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="link_participant_diploma"><input type="hidden" name="participant_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--ghost btn--sm" type="submit">Получить ссылку</button></form>
+        </div>
+
         <form method="POST" class="mt-md js-drawing-compliance-form" style="border:1px solid #E5E7EB; padding:16px; border-radius:12px; background:#F8FAFC;">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -528,6 +590,32 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card mb-lg">
     <div class="card__body">
         <div class="flex gap-md" style="flex-wrap:wrap; justify-content:flex-end;">
+
+            <form method="POST">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="generate_all_diplomas">
+                <button type="submit" class="btn" style="background:#DBEAFE;color:#1E3A8A;">Сформировать дипломы</button>
+            </form>
+            <form method="POST">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="generate_and_send_all_diplomas">
+                <button type="submit" class="btn" style="background:#DCFCE7;color:#14532D;">Сформировать и отправить</button>
+            </form>
+            <form method="POST">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="collect_all_diploma_links">
+                <button type="submit" class="btn" style="background:#F5F3FF;color:#5B21B6;">Получить ссылки</button>
+            </form>
+            <form method="POST">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="download_zip_diplomas">
+                <button type="submit" class="btn" style="background:#FEF3C7;color:#92400E;">Скачать все дипломы (ZIP)</button>
+            </form>
+
             <form method="POST" onsubmit="return confirm('Отправить заявку на корректировку?');">
                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">

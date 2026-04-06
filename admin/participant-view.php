@@ -37,52 +37,38 @@ function splitFioString(?string $fio): array {
 $participantFio = splitFioString($participant['fio'] ?? '');
 $parentFio = splitFioString($participant['parent_fio'] ?? '');
 
-if (isset($_GET['action']) && $_GET['action'] === 'generate_diploma') {
-    $contestTitle = (string) ($participant['contest_title'] ?? 'Конкурс');
-    $fioForDiploma = trim(($participantFio['surname'] !== '—' ? $participantFio['surname'] : '') . ' ' . ($participantFio['name'] !== '—' ? $participantFio['name'] : '') . ' ' . ($participantFio['patronymic'] !== '—' ? $participantFio['patronymic'] : ''));
-    $fioForDiploma = trim($fioForDiploma) ?: 'Участник';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $_SESSION['error_message'] = 'Ошибка безопасности';
+        redirect('/admin/participant/' . $participantId);
+    }
 
-    header('Content-Type: text/html; charset=utf-8');
-    ?>
-    <!DOCTYPE html>
-    <html lang="ru">
-    <head>
-        <meta charset="UTF-8">
-        <title>Диплом участника</title>
-        <style>
-            body { font-family: Georgia, serif; background:#f5f5f5; margin:0; padding:30px; }
-            .diploma { max-width:1000px; margin:0 auto; background:#fff; border:14px solid #d6b46a; padding:52px 64px; box-sizing:border-box; }
-            .diploma h1 { text-align:center; font-size:54px; margin:0 0 16px; color:#7c4a00; }
-            .diploma h2 { text-align:center; font-size:24px; letter-spacing:1px; margin:0 0 30px; color:#8f6a24; text-transform:uppercase; }
-            .diploma .participant { text-align:center; font-size:44px; margin:36px 0 20px; color:#222; }
-            .diploma .text { text-align:center; font-size:22px; line-height:1.45; color:#444; }
-            .diploma .contest { text-align:center; font-size:28px; margin-top:24px; color:#111; font-weight:700; }
-            .diploma .footer { display:flex; justify-content:space-between; margin-top:56px; color:#555; font-size:18px; }
-            .actions { max-width:1000px; margin:16px auto 0; display:flex; gap:10px; }
-            @media print { .actions { display:none; } body { padding:0; background:#fff; } .diploma { border-width:12px; } }
-        </style>
-    </head>
-    <body>
-        <div class="diploma">
-            <h1>ДИПЛОМ</h1>
-            <h2>Участника конкурса</h2>
-            <p class="text">Награждается</p>
-            <div class="participant"><?= htmlspecialchars($fioForDiploma) ?></div>
-            <p class="text">за участие в конкурсе детского творчества</p>
-            <div class="contest"><?= htmlspecialchars($contestTitle) ?></div>
-            <div class="footer">
-                <span>Дата: <?= date('d.m.Y') ?></span>
-                <span>Оргкомитет</span>
-            </div>
-        </div>
-        <div class="actions">
-            <button onclick="window.print()">Печать / Сохранить PDF</button>
-            <a href="/admin/participant/<?= (int) $participantId ?>">Назад к карточке участника</a>
-        </div>
-    </body>
-    </html>
-    <?php
-    exit;
+    try {
+        if ($_POST['action'] === 'download_diploma') {
+            $diploma = generateParticipantDiploma($participantId, false);
+            $file = ROOT_PATH . '/' . $diploma['file_path'];
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="diploma_participant_' . $participantId . '.pdf"');
+            readfile($file);
+            exit;
+        }
+
+        if ($_POST['action'] === 'send_diploma_email') {
+            $diploma = generateParticipantDiploma($participantId, false);
+            $ok = sendDiplomaByEmail($participant, $diploma);
+            $_SESSION['success_message'] = $ok ? 'Диплом отправлен по почте' : 'Не удалось отправить диплом';
+            redirect('/admin/participant/' . $participantId);
+        }
+
+        if ($_POST['action'] === 'get_diploma_link') {
+            $diploma = generateParticipantDiploma($participantId, false);
+            $_SESSION['success_message'] = 'Публичная ссылка: ' . getPublicDiplomaUrl($diploma['public_token']);
+            redirect('/admin/participant/' . $participantId);
+        }
+    } catch (Throwable $e) {
+        $_SESSION['error_message'] = $e->getMessage();
+        redirect('/admin/participant/' . $participantId);
+    }
 }
 
 $currentPage = 'participants';
@@ -144,10 +130,13 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
-<div class="mb-lg">
-    <a href="/admin/participant/<?= (int) $participantId ?>?action=generate_diploma" class="btn btn--primary" target="_blank" rel="noopener">
-        <i class="fas fa-award"></i> Сформировать диплом участника
-    </a>
+<?php if (!empty($_SESSION['success_message'])): ?><div class="alert alert--success mb-lg"><?= e($_SESSION['success_message']) ?></div><?php unset($_SESSION['success_message']); endif; ?>
+<?php if (!empty($_SESSION['error_message'])): ?><div class="alert alert--error mb-lg"><?= e($_SESSION['error_message']) ?></div><?php unset($_SESSION['error_message']); endif; ?>
+
+<div id="diploma-actions" class="mb-lg" style="display:flex; gap:10px; flex-wrap:wrap;">
+    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_diploma"><button class="btn btn--primary" type="submit"><i class="fas fa-download"></i> Скачать диплом</button></form>
+    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_diploma_email"><button class="btn btn--secondary" type="submit"><i class="fas fa-envelope"></i> Отправить по почте</button></form>
+    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="get_diploma_link"><button class="btn btn--ghost" type="submit"><i class="fas fa-link"></i> Получить ссылку</button></form>
 </div>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
