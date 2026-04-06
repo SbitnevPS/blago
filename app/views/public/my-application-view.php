@@ -27,6 +27,14 @@ if (!$application) {
 }
 
 $disputeChatSubject = 'Оспаривание решения по заявке #' . $applicationId;
+$isDisputeChatClosed = false;
+try {
+    $closedStmt = $pdo->prepare("SELECT dispute_chat_closed FROM applications WHERE id = ? LIMIT 1");
+    $closedStmt->execute([$applicationId]);
+    $isDisputeChatClosed = (int) $closedStmt->fetchColumn() === 1;
+} catch (Exception $e) {
+    $isDisputeChatClosed = false;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispute_reply') {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -35,6 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
         $reason = trim($_POST['dispute_reason'] ?? '');
         if (!in_array($application['status'], ['declined', 'rejected'], true)) {
             $_SESSION['error_message'] = 'Оспорить можно только отклонённую заявку.';
+        } elseif ($isDisputeChatClosed) {
+            $_SESSION['error_message'] = 'Чат завершён. Отправка новых сообщений недоступна.';
         } elseif ($reason === '') {
             $_SESSION['error_message'] = 'Укажите причину оспаривания.';
         } else {
@@ -117,6 +127,19 @@ $currentPage = 'applications';
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Заявка #<?= $applicationId ?> - ДетскиеКонкурсы.рф</title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
+<style>
+.dispute-chat-modal {max-width: 760px; width: calc(100% - 32px);}
+.dispute-chat-modal__body {display:flex; flex-direction:column; gap:16px;}
+.dispute-chat-modal__messages {max-height:420px; overflow:auto; display:flex; flex-direction:column; gap:12px;}
+.dispute-chat-message {display:flex;}
+.dispute-chat-message--admin {justify-content:flex-end;}
+.dispute-chat-message--user {justify-content:flex-start;}
+.dispute-chat-message__bubble {max-width:80%; padding:12px 14px; border-radius:12px;}
+.dispute-chat-message--admin .dispute-chat-message__bubble {background:#DCFCE7;}
+.dispute-chat-message--user .dispute-chat-message__bubble {background:#EEF2FF;}
+.dispute-chat-message__meta {font-size:12px; color:#6B7280; margin-bottom:6px; display:flex; gap:8px; flex-wrap:wrap;}
+.dispute-chat-message__text {white-space:pre-wrap; line-height:1.5;}
+</style>
 </head>
 <body>
 <?php include dirname(__DIR__) . '/partials/header.php'; ?>
@@ -198,46 +221,72 @@ $currentPage = 'applications';
 
 <?php if (in_array($application['status'], ['declined', 'rejected'], true)): ?>
 <div class="card mb-lg" id="dispute-chat">
-    <div class="card__header"><h3>Оспаривание решения по заявке</h3></div>
+    <div class="card__header flex justify-between items-center">
+        <h3>Оспаривание решения по заявке</h3>
+        <button type="button" class="btn btn--ghost btn--sm" onclick="openDisputeChatModal()">
+            <i class="fas fa-comments"></i> Открыть чат
+        </button>
+    </div>
     <div class="card__body">
-        <?php if (!empty($disputeChatMessages)): ?>
-            <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px;">
-                <?php foreach ($disputeChatMessages as $chatMessage): ?>
-                    <?php $isAdminMessage = (int) ($chatMessage['is_admin'] ?? 0) === 1; ?>
-                    <div style="align-self: <?= $isAdminMessage ? 'flex-start' : 'flex-end' ?>; max-width: 80%;">
-                        <div style="padding:12px 14px; border-radius:12px; background: <?= $isAdminMessage ? '#EEF2FF' : '#DCFCE7' ?>;">
-                            <div style="font-size:12px; color:#6B7280; margin-bottom:6px;">
-                                <?php if ($isAdminMessage): ?>
-                                    <?php
-                                        $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? ''));
-                                        $chatAuthorPatronymic = trim((string) ($chatMessage['patronymic'] ?? ''));
-                                    ?>
-                                    <?= htmlspecialchars(trim($chatAuthorName . ' ' . $chatAuthorPatronymic)) ?>
-                                    <span style="font-size:11px; color:#4F46E5; margin-left:6px;">руководитель проекта</span>
-                                <?php else: ?>
-                                    <?= htmlspecialchars(trim(($user['surname'] ?? '') . ' ' . ($user['name'] ?? ''))) ?>
-                                <?php endif; ?>
-                                • <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?>
-                            </div>
-                            <div style="white-space:pre-wrap; line-height:1.5;"><?= htmlspecialchars($chatMessage['content']) ?></div>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
+        <p class="text-secondary" style="margin:0;">
+            Просматривайте переписку с администратором и отправляйте ответы во всплывающем окне чата.
+        </p>
+        <?php if ($isDisputeChatClosed): ?>
+            <div class="alert alert--warning" style="margin-top:12px;">
+                <i class="fas fa-lock"></i> Чат завершён администратором. Доступен только просмотр сообщений.
             </div>
         <?php endif; ?>
+    </div>
+</div>
 
-        <form method="POST">
-            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-            <input type="hidden" name="action" value="dispute_reply">
-            <div class="form-group">
-                <label class="form-label">Ваш ответ в чате</label>
-                <textarea name="dispute_reason" class="form-input js-chat-hotkey" rows="4" required placeholder="Напишите сообщение администратору..."></textarea>
+<div class="modal" id="disputeChatModal">
+    <div class="modal__content message-modal dispute-chat-modal">
+        <div class="modal__header">
+            <h3>Чат по заявке #<?= (int) $applicationId ?></h3>
+            <button type="button" class="modal__close" onclick="closeDisputeChatModal()">&times;</button>
+        </div>
+        <div class="modal__body dispute-chat-modal__body">
+            <div class="dispute-chat-modal__messages" id="disputeChatMessages">
+                <?php if (!empty($disputeChatMessages)): ?>
+                    <?php foreach ($disputeChatMessages as $chatMessage): ?>
+                        <?php $isAdminMessage = (int) ($chatMessage['is_admin'] ?? 0) === 1; ?>
+                        <div class="dispute-chat-message <?= $isAdminMessage ? 'dispute-chat-message--user' : 'dispute-chat-message--admin' ?>">
+                            <div class="dispute-chat-message__bubble">
+                                <div class="dispute-chat-message__meta">
+                                    <?php if ($isAdminMessage): ?>
+                                        <?php
+                                            $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? '') . ' ' . ($chatMessage['patronymic'] ?? ''));
+                                        ?>
+                                        <?= htmlspecialchars('Руководитель проекта — ' . trim($chatAuthorName)) ?>
+                                    <?php else: ?>
+                                        <?= htmlspecialchars(trim(($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? ''))) ?>
+                                    <?php endif; ?>
+                                    <span>• <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?></span>
+                                </div>
+                                <div class="dispute-chat-message__text"><?= htmlspecialchars($chatMessage['content']) ?></div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <p class="text-secondary">Сообщений пока нет.</p>
+                <?php endif; ?>
             </div>
-            <button type="submit" class="btn btn--primary">
-                <i class="fas fa-paper-plane"></i> Оспорить решение
-            </button>
-        </form>
+
+            <?php if (!$isDisputeChatClosed): ?>
+                <form method="POST" class="dispute-chat-modal__composer">
+                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                    <input type="hidden" name="action" value="dispute_reply">
+                    <div class="form-group">
+                        <label class="form-label">Ваш ответ в чате</label>
+                        <textarea name="dispute_reason" class="form-textarea js-chat-hotkey" rows="4" required placeholder="Напишите сообщение администратору..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn--primary">
+                        <i class="fas fa-paper-plane"></i> Оспорить решение
+                    </button>
+                </form>
+            <?php endif; ?>
+        </div>
     </div>
 </div>
 <?php endif; ?>
@@ -436,6 +485,37 @@ document.getElementById('galleryModal').addEventListener('click', (event) => {
 </script>
 <?php endif; ?>
 <script>
+function openDisputeChatModal() {
+ const modal = document.getElementById('disputeChatModal');
+ if (!modal) return;
+ modal.classList.add('active');
+ document.body.style.overflow = 'hidden';
+ const messagesContainer = document.getElementById('disputeChatMessages');
+ if (messagesContainer) {
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+ }
+}
+
+function closeDisputeChatModal() {
+ const modal = document.getElementById('disputeChatModal');
+ if (!modal) return;
+ modal.classList.remove('active');
+ document.body.style.overflow = '';
+ if (window.location.hash === '#dispute-chat') {
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+ }
+}
+
+document.getElementById('disputeChatModal')?.addEventListener('click', (event) => {
+ if (event.target === event.currentTarget) {
+  closeDisputeChatModal();
+ }
+});
+
+if (window.location.hash === '#dispute-chat') {
+ openDisputeChatModal();
+}
+
 document.querySelectorAll('.js-chat-hotkey').forEach((textarea) => {
  textarea.addEventListener('keydown', (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
@@ -467,6 +547,12 @@ document.querySelectorAll('.alert').forEach((alertEl) => {
  const type = alertEl.classList.contains('alert--error') ? 'error' : 'success';
  showToast(alertEl.textContent.trim(), type);
  alertEl.remove();
+});
+
+document.addEventListener('keydown', (event) => {
+ if (event.key === 'Escape') {
+  closeDisputeChatModal();
+ }
 });
 </script>
 </body>
