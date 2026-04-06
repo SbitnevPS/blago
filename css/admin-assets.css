@@ -246,3 +246,123 @@
 .card--allow-overflow {
   overflow: visible;
 }
+
+/* admin/settings.php */
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.settings-nav {
+  position: sticky;
+  top: 18px;
+}
+.settings-nav .card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-nav__link {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--color-text-primary);
+  transition: all .2s ease;
+  background: #fff;
+}
+.settings-nav__link i {
+  font-size: 16px;
+  color: var(--color-primary);
+  margin-top: 2px;
+}
+.settings-nav__link span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-nav__link small {
+  color: var(--color-text-secondary);
+}
+.settings-nav__link:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+.settings-content__subtitle {
+  margin-top: 6px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+.settings-section {
+  scroll-margin-top: 14px;
+}
+.settings-section__header h4 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-section__header p {
+  margin: 8px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+.settings-messages-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+.settings-message-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 16px;
+  background: #fff;
+}
+.settings-message-card h5 {
+  margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+.settings-message-card--success h5 i { color: #16a34a; }
+.settings-message-card--warning h5 i { color: #d97706; }
+.settings-message-card--danger h5 i { color: #dc2626; }
+.settings-message-card--accent h5 i { color: #6366f1; }
+.settings-vk-card {
+  margin-top: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 16px;
+  background: #fff;
+}
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+@media (max-width: 1024px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-nav {
+    position: static;
+  }
+
+  .settings-messages-grid {
+    grid-template-columns: 1fr;
+  }
+}
