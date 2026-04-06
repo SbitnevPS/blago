@@ -18,7 +18,11 @@ if (!$diploma) {
 }
 
 if (empty($diploma['file_path']) || !is_file(ROOT_PATH . '/' . $diploma['file_path'])) {
-    $diploma = generateParticipantDiploma((int)$diploma['participant_id'], true);
+    if (!empty($diploma['work_id'])) {
+        $diploma = generateWorkDiploma((int)$diploma['work_id'], true);
+    } else {
+        $diploma = generateParticipantDiploma((int)$diploma['participant_id'], true);
+    }
 }
 
 $file = ROOT_PATH . '/' . $diploma['file_path'];

@@ -246,6 +246,18 @@ function getApplicationStatusConfig() {
             'row_style' => '',
             'message_priority' => 'normal',
         ],
+        'partial_reviewed' => [
+            'label' => 'Частично рассмотрена',
+            'badge_class' => 'badge--warning',
+            'row_style' => '',
+            'message_priority' => 'normal',
+        ],
+        'reviewed' => [
+            'label' => 'Рассмотрена',
+            'badge_class' => 'badge--secondary',
+            'row_style' => '',
+            'message_priority' => 'normal',
+        ],
     ];
 }
 
