@@ -99,6 +99,8 @@ $routes = [
  '/admin/contest/{id}' => ['file' => 'admin/contest-edit.php', 'name' => 'admin-contest-edit'],
  '/admin/applications' => ['file' => 'admin/applications.php', 'name' => 'admin-applications'],
  '/admin/application/{id}' => ['file' => 'admin/application-view.php', 'name' => 'admin-application-view'],
+ '/admin/participants' => ['file' => 'admin/participants.php', 'name' => 'admin-participants'],
+ '/admin/participant/{id}' => ['file' => 'admin/participant-view.php', 'name' => 'admin-participant-view'],
  '/admin/users' => ['file' => 'admin/users.php', 'name' => 'admin-users'],
  '/admin/messages' => ['file' => 'admin/messages.php', 'name' => 'admin-messages'],
  '/admin/settings' => ['file' => 'admin/settings.php', 'name' => 'admin-settings'],
