@@ -128,7 +128,7 @@ require_once __DIR__ . '/includes/header.php';
                     <span class="badge <?= $contest['is_published'] ? 'badge--success' : 'badge--secondary' ?>">
                         <?= $contest['is_published'] ? 'Опубликован' : 'Не опубликован' ?>
                     </span>
-                    <a class="contest-card__applications-link" href="/admin/applications.php?contest_id=<?= (int) $contest['id'] ?>">
+                    <a class="contest-card__applications-link" href="/admin/applications?contest_id=<?= (int) $contest['id'] ?>">
                         <i class="fas fa-file-alt"></i> <?= (int) $contest['applications_count'] ?> заявок
                     </a>
                 </div>
@@ -149,7 +149,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
             <div class="card__footer">
-                <a href="application-list.php?contest_id=<?= $contest['id'] ?>" class="btn btn--secondary btn--sm">
+                <a href="/admin/applications?contest_id=<?= (int) $contest['id'] ?>" class="btn btn--secondary btn--sm">
                     <i class="fas fa-file-alt"></i> Заявки (<?= $contest['applications_count'] ?>)
                 </a>
             </div>

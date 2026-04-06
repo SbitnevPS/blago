@@ -21,7 +21,7 @@ if ($isEdit) {
     $contest = $stmt->fetch();
     
     if (!$contest) {
-        redirect('contests.php');
+        redirect('/admin/contests');
     }
 } else {
     $contest = [
@@ -102,7 +102,7 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <div class="flex items-center gap-md mb-lg">
-    <a href="contests.php" class="btn btn--ghost">
+    <a href="/admin/contests" class="btn btn--ghost">
         <i class="fas fa-arrow-left"></i> К списку
     </a>
 </div>
@@ -203,7 +203,7 @@ require_once __DIR__ . '/includes/header.php';
         <button type="submit" class="btn btn--primary btn--lg">
             <i class="fas fa-save"></i> Сохранить
         </button>
-        <a href="contests.php" class="btn btn--secondary btn--lg">
+        <a href="/admin/contests" class="btn btn--secondary btn--lg">
             Отмена
         </a>
     </div>

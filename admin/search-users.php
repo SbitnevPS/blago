@@ -4,6 +4,7 @@ error_reporting(0);
 ini_set('display_errors',0);
 
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../includes/init.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-cache');
@@ -16,18 +17,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
  exit;
 }
 
+if (!isAdmin()) {
+ echo json_encode([]);
+ exit;
+}
+
 try {
- // Получаем поисковый запрос
- $query = $_GET['q'] ?? '';
+ $query = trim((string) ($_GET['q'] ?? ''));
+ if (mb_strlen($query) < 2) {
+     echo json_encode([]);
+     exit;
+ }
+ $limit = (int) ($_GET['limit'] ?? 7);
+ $limit = max(1, min(7, $limit));
  $searchTerm = "%$query%";
- 
+
  $stmt = $pdo->prepare("
  SELECT id, name, surname, email 
  FROM users 
  WHERE is_admin =0
  AND (name LIKE ? OR surname LIKE ? OR email LIKE ?)
- ORDER BY name, surname
- LIMIT 10
+ ORDER BY surname ASC, name ASC
+ LIMIT $limit
  ");
 
  $stmt->execute([$searchTerm, $searchTerm, $searchTerm]);

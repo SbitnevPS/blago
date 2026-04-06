@@ -128,6 +128,7 @@ $currentPage = 'messages';
     }
 ?>
 <div class="message-card <?= $msg['is_read'] ? '' : 'message-card--unread' ?>" 
+ data-message-id="<?= (int) $msg['id'] ?>"
  onclick='showMessage(
  <?= (int) $msg['id'] ?>,
  <?= json_encode($msg['subject'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
@@ -232,6 +233,12 @@ function markAsRead(messageId) {
             if (data.success && currentUnreadCount > 0) {
                 currentUnreadCount--;
                 updateUnreadBadge();
+            }
+            if (data.success) {
+                const card = document.querySelector('.message-card[data-message-id="' + messageId + '"]');
+                if (card) {
+                    card.classList.remove('message-card--unread');
+                }
             }
         });
 }
