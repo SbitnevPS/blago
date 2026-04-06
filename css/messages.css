@@ -98,6 +98,71 @@
     color: var(--color-primary);
 }
 
+.dispute-chat-modal {
+    max-width: 760px;
+    width: calc(100% - 32px);
+}
+
+.dispute-chat-modal__body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.dispute-chat-modal__messages {
+    max-height: 420px;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.dispute-chat-message {
+    display: flex;
+}
+
+.dispute-chat-message--admin {
+    justify-content: flex-end;
+}
+
+.dispute-chat-message--user {
+    justify-content: flex-start;
+}
+
+.dispute-chat-message__bubble {
+    max-width: 80%;
+    padding: 12px 14px;
+    border-radius: 12px;
+}
+
+.dispute-chat-message--admin .dispute-chat-message__bubble {
+    background: #DCFCE7;
+}
+
+.dispute-chat-message--user .dispute-chat-message__bubble {
+    background: #EEF2FF;
+}
+
+.dispute-chat-message__meta {
+    font-size: 12px;
+    color: #6B7280;
+    margin-bottom: 6px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.dispute-chat-message__text {
+    white-space: pre-wrap;
+    line-height: 1.5;
+}
+
+.dispute-chat-modal__composer {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
 @media (max-width: 980px) {
     body {
         padding-bottom: 74px;
