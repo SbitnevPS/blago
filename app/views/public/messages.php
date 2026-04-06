@@ -22,6 +22,10 @@ $stmt->execute([$userId]);
 $messages = $stmt->fetchAll();
 
 $disputeChats = [];
+$selectedDisputeApplicationId = max(0, intval($_GET['dispute_application_id'] ?? 0));
+$selectedDisputeMessages = [];
+$selectedDisputeChatTitle = '';
+$selectedDisputeChatClosed = false;
 try {
     $chatStmt = $pdo->prepare("
     SELECT
@@ -50,11 +54,96 @@ try {
     $disputeChats = [];
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispute_reply') {
+    $selectedDisputeApplicationId = max(0, intval($_POST['dispute_application_id'] ?? 0));
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $_SESSION['error_message'] = 'Ошибка безопасности. Обновите страницу.';
+    } elseif ($selectedDisputeApplicationId <= 0) {
+        $_SESSION['error_message'] = 'Чат по заявке не найден.';
+    } else {
+        $chatSubject = 'Оспаривание решения по заявке #' . $selectedDisputeApplicationId;
+        $chatMessage = trim((string) ($_POST['dispute_reason'] ?? ''));
+        try {
+            $applicationStmt = $pdo->prepare("
+                SELECT id, status, dispute_chat_closed
+                FROM applications
+                WHERE id = ? AND user_id = ?
+                LIMIT 1
+            ");
+            $applicationStmt->execute([$selectedDisputeApplicationId, $userId]);
+            $applicationRow = $applicationStmt->fetch();
+
+            if (!$applicationRow) {
+                $_SESSION['error_message'] = 'Заявка не найдена.';
+            } elseif (!in_array((string) $applicationRow['status'], ['declined', 'rejected'], true)) {
+                $_SESSION['error_message'] = 'Отправка сообщений доступна только для отклонённых заявок.';
+            } elseif ((int) ($applicationRow['dispute_chat_closed'] ?? 0) === 1) {
+                $_SESSION['error_message'] = 'Чат завершён администратором.';
+            } elseif ($chatMessage === '') {
+                $_SESSION['error_message'] = 'Введите сообщение для администратора.';
+            } else {
+                $insertStmt = $pdo->prepare("
+                    INSERT INTO messages (user_id, application_id, title, content, created_by, created_at)
+                    VALUES (?, ?, ?, ?, ?, NOW())
+                ");
+                $insertStmt->execute([
+                    $userId,
+                    $selectedDisputeApplicationId,
+                    $chatSubject,
+                    $chatMessage,
+                    $userId,
+                ]);
+                $_SESSION['success_message'] = 'Сообщение отправлено.';
+            }
+        } catch (Exception $e) {
+            $_SESSION['error_message'] = 'Не удалось отправить сообщение.';
+        }
+    }
+
+    redirect('/messages?dispute_application_id=' . $selectedDisputeApplicationId);
+}
+
+if ($selectedDisputeApplicationId > 0) {
+    try {
+        $selectedMetaStmt = $pdo->prepare("
+            SELECT id, status, dispute_chat_closed
+            FROM applications
+            WHERE id = ? AND user_id = ?
+            LIMIT 1
+        ");
+        $selectedMetaStmt->execute([$selectedDisputeApplicationId, $userId]);
+        $selectedApplication = $selectedMetaStmt->fetch();
+
+        if ($selectedApplication && in_array((string) $selectedApplication['status'], ['declined', 'rejected'], true)) {
+            $selectedDisputeChatTitle = 'Оспаривание решения по заявке #' . $selectedDisputeApplicationId;
+            $selectedDisputeChatClosed = (int) ($selectedApplication['dispute_chat_closed'] ?? 0) === 1;
+
+            $selectedMessagesStmt = $pdo->prepare("
+                SELECT m.id, m.content, m.created_at, u.name, u.surname, u.patronymic, u.is_admin
+                FROM messages m
+                JOIN users u ON u.id = m.created_by
+                WHERE m.user_id = ?
+                  AND m.application_id = ?
+                  AND m.title = ?
+                ORDER BY m.created_at ASC, m.id ASC
+            ");
+            $selectedMessagesStmt->execute([$userId, $selectedDisputeApplicationId, $selectedDisputeChatTitle]);
+            $selectedDisputeMessages = $selectedMessagesStmt->fetchAll();
+        } else {
+            $selectedDisputeApplicationId = 0;
+        }
+    } catch (Exception $e) {
+        $selectedDisputeApplicationId = 0;
+        $selectedDisputeMessages = [];
+    }
+}
+
 // Подсчет непрочитанных
 $unreadCount = $pdo->prepare("SELECT COUNT(*) FROM admin_messages WHERE user_id = ? AND is_read =0");
 $unreadCount->execute([$userId]);
 $unreadCount = $unreadCount->fetchColumn();
 $declinedSubject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
+$revisionSubject = getSystemSetting('application_revision_subject', 'Заявка отправлена на корректировку');
 $currentPage = 'messages';
 ?>
 <!DOCTYPE html>
@@ -95,7 +184,9 @@ $currentPage = 'messages';
             <?php foreach ($disputeChats as $chat): ?>
                 <tr>
                     <td data-label="Тема">
-                        <div class="font-semibold"><?= htmlspecialchars($chat['title']) ?></div>
+                        <a class="font-semibold" href="/application/<?= (int) $chat['application_id'] ?>">
+                            <?= htmlspecialchars($chat['title']) ?>
+                        </a>
                         <?php if (!empty($chat['contest_title'])): ?>
                             <div class="text-secondary" style="margin-top:4px; font-size:13px;">Конкурс: <?= htmlspecialchars($chat['contest_title']) ?></div>
                         <?php endif; ?>
@@ -106,7 +197,7 @@ $currentPage = 'messages';
                     <td data-label="Последнее сообщение"><?= htmlspecialchars(mb_substr((string) ($chat['last_message'] ?? ''), 0, 120)) ?></td>
                     <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($chat['last_message_at'])) ?></td>
                     <td data-label="Действия">
-                        <a class="btn btn--ghost btn--sm" href="/application/<?= (int) $chat['application_id'] ?>#dispute-chat">
+                        <a class="btn btn--ghost btn--sm" href="/messages?dispute_application_id=<?= (int) $chat['application_id'] ?>">
                             <i class="fas fa-comments"></i> Открыть чат
                         </a>
                     </td>
@@ -142,7 +233,8 @@ $currentPage = 'messages';
  <?= json_encode(date('d.m.Y H:i', strtotime($msg['created_at'])), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
  <?= json_encode($messagePriority, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
  <?= (int) preg_match('/#(\\d+)/u', (string) $msg['message'], $idMatches) ? (int) $idMatches[1] : 0 ?>,
- <?= json_encode(((string) $msg['subject'] === $declinedSubject), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>
+ <?= json_encode(((string) $msg['subject'] === $declinedSubject), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+ <?= json_encode(((string) $msg['subject'] === $revisionSubject), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>
  )'>
 <div class="message-card__header">
 <div class="message-card__title">
@@ -177,7 +269,62 @@ $currentPage = 'messages';
 </div>
 </div>
 </div>
- <?php endif; ?>
+<?php endif; ?>
+
+<?php if ($selectedDisputeApplicationId > 0): ?>
+<div class="modal active" id="disputeChatModal">
+    <div class="modal__content message-modal dispute-chat-modal">
+        <div class="modal__header">
+            <h3><?= htmlspecialchars($selectedDisputeChatTitle) ?></h3>
+            <div class="flex items-center gap-sm">
+                <a href="/application/<?= (int) $selectedDisputeApplicationId ?>" class="btn btn--ghost btn--sm">
+                    <i class="fas fa-external-link-alt"></i> Открыть заявку
+                </a>
+                <button type="button" class="modal__close" onclick="closeDisputeChatModal()">&times;</button>
+            </div>
+        </div>
+        <div class="modal__body dispute-chat-modal__body">
+            <div class="dispute-chat-modal__messages" id="disputeChatMessages">
+                <?php if (!empty($selectedDisputeMessages)): ?>
+                    <?php foreach ($selectedDisputeMessages as $chatMessage): ?>
+                        <?php $fromAdmin = (int) ($chatMessage['is_admin'] ?? 0) === 1; ?>
+                        <?php $authorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? '') . ' ' . ($chatMessage['patronymic'] ?? '')); ?>
+                        <div class="dispute-chat-message <?= $fromAdmin ? 'dispute-chat-message--user' : 'dispute-chat-message--admin' ?>">
+                            <div class="dispute-chat-message__bubble">
+                                <div class="dispute-chat-message__meta">
+                                    <?= htmlspecialchars($fromAdmin ? 'Руководитель проекта — ' . ($authorName !== '' ? $authorName : 'Администратор') : ($authorName !== '' ? $authorName : 'Пользователь')) ?>
+                                    <span>• <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?></span>
+                                </div>
+                                <div class="dispute-chat-message__text"><?= htmlspecialchars($chatMessage['content']) ?></div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <p class="text-secondary">Сообщений пока нет.</p>
+                <?php endif; ?>
+            </div>
+            <?php if ($selectedDisputeChatClosed): ?>
+                <div class="alert alert--warning" style="margin-top:12px;">
+                    <i class="fas fa-lock"></i> Чат завершён администратором. Доступен только просмотр.
+                </div>
+            <?php else: ?>
+                <form method="POST" class="dispute-chat-modal__composer">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                    <input type="hidden" name="action" value="dispute_reply">
+                    <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
+                    <div class="form-group">
+                        <label class="form-label">Сообщение администратору</label>
+                        <textarea name="dispute_reason" class="form-textarea" rows="4" required placeholder="Напишите сообщение..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn--primary">
+                        <i class="fas fa-paper-plane"></i> Отправить
+                    </button>
+                </form>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 </div>
 </main>
 
@@ -192,7 +339,7 @@ $currentPage = 'messages';
 <script>
 let currentUnreadCount = <?= (int) $unreadCount ?>;
 
-function showMessage(id, title, content, date, priority, applicationId, isDeclinedNotice) {
+function showMessage(id, title, content, date, priority, applicationId, isDeclinedNotice, isRevisionNotice) {
     document.getElementById('messagesList').style.display = 'none';
     document.getElementById('messageDetail').classList.add('active');
     document.getElementById('detailTitle').textContent = title;
@@ -210,7 +357,7 @@ function showMessage(id, title, content, date, priority, applicationId, isDeclin
     document.getElementById('detailContent').textContent = content;
     const actionWrap = document.getElementById('detailActionWrap');
     const actionLink = document.getElementById('detailActionLink');
-    if (isDeclinedNotice && applicationId > 0) {
+    if ((isDeclinedNotice || isRevisionNotice) && applicationId > 0) {
         actionLink.href = '/application/' + applicationId;
         actionWrap.style.display = 'block';
     } else {
@@ -269,6 +416,10 @@ function updateUnreadBadge() {
 function hideMessage() {
     document.getElementById('messageDetail').classList.remove('active');
     document.getElementById('messagesList').style.display = 'block';
+}
+
+function closeDisputeChatModal() {
+    window.location.href = '/messages';
 }
 </script>
 </body>
