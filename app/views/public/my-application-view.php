@@ -82,10 +82,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
                     jsonResponse([
                         'success' => true,
                         'message' => [
+                            'id' => (int) $pdo->lastInsertId(),
                             'content' => $reason,
                             'created_at' => date('d.m.Y H:i'),
                             'author_label' => $userLabel,
                             'from_admin' => false,
+                            'author_name' => $userLabel,
+                            'author_email' => (string) ($user['email'] ?? ''),
                         ],
                     ]);
                 }
@@ -98,6 +101,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
         }
     }
     redirect('/application/' . $applicationId . '#dispute-chat');
+}
+
+if (($_GET['action'] ?? '') === 'poll_dispute_messages') {
+    $pollApplicationId = intval($_GET['application_id'] ?? 0);
+    $lastMessageId = max(0, intval($_GET['last_message_id'] ?? 0));
+    if ($pollApplicationId <= 0 || $pollApplicationId !== $applicationId) {
+        jsonResponse(['success' => false, 'error' => 'Некорректная заявка'], 422);
+    }
+
+    $pollStmt = $pdo->prepare("
+        SELECT
+            m.id,
+            m.content,
+            m.created_at,
+            u.name,
+            u.surname,
+            u.patronymic,
+            u.email,
+            u.is_admin
+        FROM messages m
+        JOIN users u ON u.id = m.created_by
+        WHERE m.user_id = ?
+          AND m.application_id = ?
+          AND m.title = ?
+          AND m.id > ?
+        ORDER BY m.id ASC
+    ");
+    $pollStmt->execute([$user['id'], $applicationId, $disputeChatSubject, $lastMessageId]);
+    $rows = $pollStmt->fetchAll();
+
+    $messages = [];
+    foreach ($rows as $row) {
+        $authorName = trim(($row['surname'] ?? '') . ' ' . ($row['name'] ?? '') . ' ' . ($row['patronymic'] ?? ''));
+        $fromAdmin = (int) ($row['is_admin'] ?? 0) === 1;
+        $messages[] = [
+            'id' => (int) $row['id'],
+            'content' => (string) ($row['content'] ?? ''),
+            'created_at' => date('d.m.Y H:i', strtotime((string) $row['created_at'])),
+            'author_label' => $fromAdmin ? 'Руководитель проекта — ' . ($authorName !== '' ? $authorName : 'Администратор') : ($authorName !== '' ? $authorName : 'Пользователь'),
+            'from_admin' => $fromAdmin,
+            'author_name' => $authorName,
+            'author_email' => (string) ($row['email'] ?? ''),
+        ];
+    }
+
+    jsonResponse(['success' => true, 'messages' => $messages]);
 }
 
 // Получаем участников
@@ -285,7 +334,7 @@ $currentPage = 'applications';
                 <?php if (!empty($disputeChatMessages)): ?>
                     <?php foreach ($disputeChatMessages as $chatMessage): ?>
                         <?php $isAdminMessage = (int) ($chatMessage['is_admin'] ?? 0) === 1; ?>
-                        <div class="dispute-chat-message <?= $isAdminMessage ? 'dispute-chat-message--user' : 'dispute-chat-message--admin' ?>">
+                        <div class="dispute-chat-message <?= $isAdminMessage ? 'dispute-chat-message--user' : 'dispute-chat-message--admin' ?>" data-message-id="<?= (int) $chatMessage['id'] ?>">
                             <div class="dispute-chat-message__bubble">
                                 <div class="dispute-chat-message__meta">
                                     <?php if ($isAdminMessage): ?>
@@ -520,31 +569,51 @@ document.getElementById('galleryModal').addEventListener('click', (event) => {
 </script>
 <?php endif; ?>
 <script>
+const currentApplicationId = Number(<?= (int) $applicationId ?>);
+const currentApplicationStatus = <?= json_encode((string) ($application['status'] ?? '')) ?>;
+let isDisputeChatOpen = false;
+let userPollTimerId = null;
+let latestUserDisputeMessageId = Math.max(
+ 0,
+ ...Array.from(document.querySelectorAll('#disputeChatMessages .dispute-chat-message'))
+  .map((node) => Number(node.dataset.messageId || 0))
+  .filter((value) => Number.isFinite(value))
+);
+
 function openDisputeChatModal() {
  const modal = document.getElementById('disputeChatModal');
  if (!modal) return;
  modal.classList.add('active');
+ isDisputeChatOpen = true;
  document.body.style.overflow = 'hidden';
  const messagesContainer = document.getElementById('disputeChatMessages');
  if (messagesContainer) {
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
  }
+ scheduleUserDisputePolling();
 }
 
 function closeDisputeChatModal() {
  const modal = document.getElementById('disputeChatModal');
  if (!modal) return;
  modal.classList.remove('active');
+ isDisputeChatOpen = false;
  document.body.style.overflow = '';
  if (window.location.hash === '#dispute-chat') {
   history.replaceState(null, '', window.location.pathname + window.location.search);
  }
+ scheduleUserDisputePolling();
 }
 
 function appendDisputeMessage(container, messageData) {
  if (!container || !messageData) return;
+ const numericId = Number(messageData.id || 0);
+ if (numericId > 0 && container.querySelector(`.dispute-chat-message[data-message-id="${numericId}"]`)) {
+  return;
+ }
  const messageWrap = document.createElement('div');
  messageWrap.className = 'dispute-chat-message ' + (messageData.from_admin ? 'dispute-chat-message--user' : 'dispute-chat-message--admin');
+ messageWrap.dataset.messageId = String(numericId || 0);
 
  const bubble = document.createElement('div');
  bubble.className = 'dispute-chat-message__bubble';
@@ -562,6 +631,68 @@ function appendDisputeMessage(container, messageData) {
  messageWrap.appendChild(bubble);
  container.appendChild(messageWrap);
  container.scrollTop = container.scrollHeight;
+ if (numericId > latestUserDisputeMessageId) {
+  latestUserDisputeMessageId = numericId;
+ }
+}
+
+function showUserNewMessageAlert(messageData) {
+ if (!messageData || !messageData.content) return;
+ const toast = document.createElement('div');
+ toast.className = 'alert alert--success';
+ toast.style.cssText = 'position:fixed; top:20px; right:20px; z-index:3200; min-width:280px; max-width:420px; box-shadow:0 12px 30px rgba(0,0,0,.12); cursor:pointer;';
+ const preview = messageData.content.slice(0, 50);
+ const authorName = (messageData.author_name || 'Пользователь').trim();
+ toast.innerHTML =
+  '<div style="font-size:11px; opacity:.8; margin-bottom:4px;">новое сообщение</div>' +
+  '<div style="font-weight:600;">' + escapeHtml(authorName) + '</div>' +
+  '<div style="margin-top:4px; opacity:.9;">' + escapeHtml(preview) + (messageData.content.length > 50 ? '...' : '') + '</div>';
+ toast.addEventListener('click', () => {
+  openDisputeChatModal();
+  toast.remove();
+ });
+ document.body.appendChild(toast);
+ setTimeout(() => toast.remove(), 6000);
+}
+
+async function pollUserDisputeMessages() {
+ if (!currentApplicationId) return;
+
+ try {
+  const url = new URL(window.location.href);
+  url.searchParams.set('action', 'poll_dispute_messages');
+  url.searchParams.set('application_id', String(currentApplicationId));
+  url.searchParams.set('last_message_id', String(latestUserDisputeMessageId));
+  const response = await fetch(url.toString(), {
+   headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success || !Array.isArray(data.messages)) return;
+
+  data.messages.forEach((messageData) => {
+   appendDisputeMessage(document.getElementById('disputeChatMessages'), messageData);
+   if (!isDisputeChatOpen) {
+    showUserNewMessageAlert(messageData);
+   }
+  });
+ } catch (error) {
+  console.error('Ошибка polling пользовательского чата:', error);
+ }
+}
+
+function scheduleUserDisputePolling() {
+ if (userPollTimerId) {
+  clearTimeout(userPollTimerId);
+  userPollTimerId = null;
+ }
+
+ if (!currentApplicationId || !document.getElementById('disputeChatModal')) return;
+
+ const delay = isDisputeChatOpen ? 5000 : 30000;
+ userPollTimerId = setTimeout(async () => {
+  await pollUserDisputeMessages();
+  scheduleUserDisputePolling();
+ }, delay);
 }
 
 document.getElementById('disputeChatModal')?.addEventListener('click', (event) => {
@@ -573,6 +704,7 @@ document.getElementById('disputeChatModal')?.addEventListener('click', (event) =
 if (window.location.hash === '#dispute-chat') {
  openDisputeChatModal();
 }
+scheduleUserDisputePolling();
 
 const disputeReplyForm = document.querySelector('#disputeChatModal form.dispute-chat-modal__composer');
 if (disputeReplyForm) {
@@ -643,11 +775,19 @@ function showToast(message, type = 'success') {
  }, 2600);
 }
 
-document.querySelectorAll('.alert').forEach((alertEl) => {
+document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
  const type = alertEl.classList.contains('alert--error') ? 'error' : 'success';
  showToast(alertEl.textContent.trim(), type);
  alertEl.remove();
 });
+
+if (['declined', 'rejected'].includes(currentApplicationStatus)) {
+ const declineToastStorageKey = 'decline_toast_seen_' + currentApplicationId;
+ if (!localStorage.getItem(declineToastStorageKey)) {
+  showToast('Заявка отклонена.', 'error');
+  localStorage.setItem(declineToastStorageKey, '1');
+ }
+}
 
 document.addEventListener('keydown', (event) => {
  if (event.key === 'Escape') {

@@ -26,6 +26,7 @@ $disputeThreads = [];
 $selectedDisputeMessages = [];
 $disputeRecipientName = 'Пользователь';
 $isDisputeChatClosed = false;
+$selectedApplicationStatus = '';
 
 if (!function_exists('adminMessagesHasDisputeChatClosedColumn')) {
     function adminMessagesHasDisputeChatClosedColumn(PDO $pdo): bool {
@@ -122,10 +123,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
                         jsonResponse([
                             'success' => true,
                             'message' => [
+                                'id' => (int) $pdo->lastInsertId(),
                                 'content' => $replyText,
                                 'created_at' => date('d.m.Y H:i'),
                                 'author_label' => 'Руководитель проекта — ' . $adminName,
                                 'from_admin' => true,
+                                'author_name' => $adminName,
+                                'author_email' => (string) ($admin['email'] ?? ''),
                             ],
                         ]);
                     }
@@ -158,7 +162,8 @@ if (($_GET['action'] ?? '') === 'poll_dispute_messages') {
             author.name AS author_name,
             author.surname AS author_surname,
             author.patronymic AS author_patronymic,
-            author.is_admin AS author_is_admin
+            author.is_admin AS author_is_admin,
+            author.email AS author_email
         FROM messages m
         JOIN users author ON author.id = m.created_by
         WHERE m.application_id = ?
@@ -187,6 +192,8 @@ if (($_GET['action'] ?? '') === 'poll_dispute_messages') {
                 ? 'Руководитель проекта — ' . ($authorName !== '' ? $authorName : 'Администратор')
                 : ($authorName !== '' ? $authorName : 'Пользователь'),
             'from_admin' => $fromAdmin,
+            'author_name' => $authorName,
+            'author_email' => (string) ($messageRow['author_email'] ?? ''),
         ];
     }
 
@@ -205,12 +212,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
             $error = 'Чат не найден';
         } else {
             try {
+                if (!adminMessagesHasDisputeChatClosedColumn($pdo)) {
+                    $pdo->exec("ALTER TABLE applications ADD COLUMN dispute_chat_closed TINYINT(1) NOT NULL DEFAULT 0");
+                }
                 $closeStmt = $pdo->prepare("UPDATE applications SET dispute_chat_closed = 1 WHERE id = ?");
                 $closeStmt->execute([$disputeApplicationId]);
                 $_SESSION['success_message'] = 'Чат завершён. Пользователь больше не сможет отправлять сообщения.';
                 redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
             } catch (Exception $e) {
                 $error = 'Не удалось завершить чат';
+            }
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'approve_dispute_application') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Ошибка безопасности';
+    } else {
+        $disputeApplicationId = intval($_POST['dispute_application_id'] ?? 0);
+        if ($disputeApplicationId <= 0) {
+            $error = 'Заявка не найдена';
+        } else {
+            try {
+                $approveStmt = $pdo->prepare("UPDATE applications SET status = 'approved', allow_edit = 0 WHERE id = ?");
+                $approveStmt->execute([$disputeApplicationId]);
+                $_SESSION['success_message'] = 'Заявка принята';
+                redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
+            } catch (Exception $e) {
+                $error = 'Не удалось одобрить заявку';
             }
         }
     }
@@ -241,6 +271,10 @@ try {
 
 if ($selectedDisputeApplicationId > 0) {
     try {
+        $applicationStatusStmt = $pdo->prepare("SELECT status FROM applications WHERE id = ? LIMIT 1");
+        $applicationStatusStmt->execute([$selectedDisputeApplicationId]);
+        $selectedApplicationStatus = (string) ($applicationStatusStmt->fetchColumn() ?: '');
+
         if (adminMessagesHasDisputeChatClosedColumn($pdo)) {
             $closedStmt = $pdo->prepare("SELECT dispute_chat_closed FROM applications WHERE id = ? LIMIT 1");
             $closedStmt->execute([$selectedDisputeApplicationId]);
@@ -569,20 +603,32 @@ require_once __DIR__ . '/includes/header.php';
         <?php endif; ?>
 
         <div class="flex items-center justify-between gap-sm" style="margin-top:16px;">
-            <?php if ($isDisputeChatClosed): ?>
-                <span class="badge" style="background:#6B7280; color:white;">Чат завершён</span>
-            <?php else: ?>
-                <span class="text-secondary" style="font-size:13px;">Чат активен</span>
-                <form method="POST" onsubmit="return confirm('Завершить чат? Пользователь больше не сможет писать.');">
-                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                    <input type="hidden" name="action" value="close_dispute_chat">
-                    <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
-                    <button type="submit" class="btn btn--ghost btn--sm" style="color:#EF4444;">
-                        <i class="fas fa-lock"></i> Завершить чат
-                    </button>
-                </form>
-            <?php endif; ?>
+            <div class="flex items-center gap-sm">
+                <?php if ($isDisputeChatClosed): ?>
+                    <span class="badge" style="background:#6B7280; color:white;">Чат завершён</span>
+                <?php else: ?>
+                    <span class="text-secondary" style="font-size:13px;">Чат активен</span>
+                    <form method="POST" onsubmit="return confirm('Завершить чат? Пользователь больше не сможет писать.');">
+                        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                        <input type="hidden" name="action" value="close_dispute_chat">
+                        <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
+                        <button type="submit" class="btn btn--ghost btn--sm" style="color:#EF4444;">
+                            <i class="fas fa-lock"></i> Завершить чат
+                        </button>
+                    </form>
+                <?php endif; ?>
+            </div>
+
+            <form method="POST" onsubmit="return confirm('Одобрить заявку и изменить статус на \"Заявка принята\"?');">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="approve_dispute_application">
+                <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
+                <button type="submit" class="btn btn--primary btn--sm" <?= $selectedApplicationStatus === 'approved' ? 'disabled' : '' ?>>
+                    <i class="fas fa-check-circle"></i> Одобрить заявку!
+                </button>
+            </form>
         </div>
 
         <?php if (!$isDisputeChatClosed): ?>
@@ -1121,9 +1167,13 @@ function showToast(message, type = 'success') {
 
 function appendDisputeMessage(container, messageData) {
  if (!container || !messageData) return;
+ const numericId = Number(messageData.id || 0);
+ if (numericId > 0 && container.querySelector(`.dispute-chat-message[data-message-id="${numericId}"]`)) {
+  return;
+ }
  const messageWrap = document.createElement('div');
  messageWrap.className = 'dispute-chat-message ' + (messageData.from_admin ? 'dispute-chat-message--admin' : 'dispute-chat-message--user');
- messageWrap.dataset.messageId = String(messageData.id || 0);
+ messageWrap.dataset.messageId = String(numericId || 0);
 
  const bubble = document.createElement('div');
  bubble.className = 'dispute-chat-message__bubble';
@@ -1141,7 +1191,6 @@ function appendDisputeMessage(container, messageData) {
  messageWrap.appendChild(bubble);
  container.appendChild(messageWrap);
  container.scrollTop = container.scrollHeight;
- const numericId = Number(messageData.id || 0);
  if (numericId > latestDisputeMessageId) {
   latestDisputeMessageId = numericId;
  }
@@ -1152,7 +1201,13 @@ function showNewDisputeAlert(messageData) {
  const toast = document.createElement('div');
  toast.className = 'alert alert--success';
  toast.style.cssText = 'position:fixed; top:20px; right:20px; z-index:3200; min-width:280px; max-width:420px; box-shadow:0 12px 30px rgba(0,0,0,.12); cursor:pointer;';
- toast.innerHTML = '<strong>Новое сообщение</strong><div style="margin-top:4px; opacity:.9;">' + escapeHtml(messageData.content.slice(0, 140)) + '</div>';
+ const authorName = (messageData.author_name || 'Пользователь').trim();
+ const authorEmail = (messageData.author_email || '').trim();
+ const preview = (messageData.content || '').slice(0, 50);
+ toast.innerHTML =
+  '<div style="font-size:11px; opacity:.8; margin-bottom:4px;">новое сообщение</div>' +
+  '<div style="font-weight:600;">' + escapeHtml(authorName) + (authorEmail ? ' (' + escapeHtml(authorEmail) + ')' : '') + '</div>' +
+  '<div style="margin-top:4px; opacity:.9;">' + escapeHtml(preview) + (messageData.content.length > 50 ? '...' : '') + '</div>';
  toast.addEventListener('click', () => {
   openDisputeChatModal();
   toast.remove();
