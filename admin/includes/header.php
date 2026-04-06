@@ -44,6 +44,9 @@ $adminUnreadDisputes = function_exists('getAdminUnreadDisputeCount') ? getAdminU
 <a href="/admin/applications.php" class="admin-sidebar__link <?= $currentPage === 'applications' ? 'admin-sidebar__link--active' : '' ?>">
 <i class="fas fa-file-alt"></i> Заявки
 </a>
+<a href="/admin/participants" class="admin-sidebar__link <?= $currentPage === 'participants' ? 'admin-sidebar__link--active' : '' ?>">
+<i class="fas fa-user-friends"></i> Участники
+</a>
 
 <div class="admin-sidebar__section">Система</div>
 <a href="/admin/settings" class="admin-sidebar__link <?= $currentPage === 'settings' ? 'admin-sidebar__link--active' : '' ?>">
