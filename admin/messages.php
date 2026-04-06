@@ -25,6 +25,7 @@ $selectedDisputeApplicationId = intval($_GET['dispute_application_id'] ?? 0);
 $disputeThreads = [];
 $selectedDisputeMessages = [];
 $disputeRecipientName = 'Пользователь';
+$isDisputeChatClosed = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply_dispute') {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -36,6 +37,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
             $error = 'Заполните текст ответа';
         } else {
             try {
+                $isClosedForReply = false;
+                try {
+                    $closedCheckStmt = $pdo->prepare("SELECT dispute_chat_closed FROM applications WHERE id = ? LIMIT 1");
+                    $closedCheckStmt->execute([$disputeApplicationId]);
+                    $isClosedForReply = (int) $closedCheckStmt->fetchColumn() === 1;
+                } catch (Exception $e) {
+                    $isClosedForReply = false;
+                }
+
+                if ($isClosedForReply) {
+                    $error = 'Чат завершён. Отправка сообщений отключена.';
+                } else {
                 $threadSubject = $disputeThreadSubjectPrefix . $disputeApplicationId;
                 $userStmt = $pdo->prepare("
                 SELECT m.user_id
@@ -64,8 +77,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
                 } else {
                     $error = 'Чат не найден';
                 }
+                }
             } catch (Exception $e) {
                 $error = 'Не удалось отправить ответ';
+            }
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close_dispute_chat') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Ошибка безопасности';
+    } else {
+        $disputeApplicationId = intval($_POST['dispute_application_id'] ?? 0);
+        if ($disputeApplicationId <= 0) {
+            $error = 'Чат не найден';
+        } else {
+            try {
+                $closeStmt = $pdo->prepare("UPDATE applications SET dispute_chat_closed = 1 WHERE id = ?");
+                $closeStmt->execute([$disputeApplicationId]);
+                $_SESSION['success_message'] = 'Чат завершён. Пользователь больше не сможет отправлять сообщения.';
+                redirect('/admin/messages?dispute_application_id=' . $disputeApplicationId);
+            } catch (Exception $e) {
+                $error = 'Не удалось завершить чат';
             }
         }
     }
@@ -96,6 +130,14 @@ try {
 
 if ($selectedDisputeApplicationId > 0) {
     try {
+        try {
+            $closedStmt = $pdo->prepare("SELECT dispute_chat_closed FROM applications WHERE id = ? LIMIT 1");
+            $closedStmt->execute([$selectedDisputeApplicationId]);
+            $isDisputeChatClosed = (int) $closedStmt->fetchColumn() === 1;
+        } catch (Exception $e) {
+            $isDisputeChatClosed = false;
+        }
+
         $threadSubject = $disputeThreadSubjectPrefix . $selectedDisputeApplicationId;
         $markReadStmt = $pdo->prepare("
         UPDATE messages m
@@ -376,7 +418,12 @@ require_once __DIR__ . '/includes/header.php';
     <div class="modal__content message-modal dispute-chat-modal">
         <div class="modal__header">
             <h3>Чат по заявке #<?= (int) $selectedDisputeApplicationId ?></h3>
-            <button type="button" class="modal__close" onclick="closeDisputeChatModal()">&times;</button>
+            <div class="flex items-center gap-sm">
+                <a href="/admin/application/<?= (int) $selectedDisputeApplicationId ?>" class="btn btn--ghost btn--sm">
+                    <i class="fas fa-external-link-alt"></i> Открыть заявку
+                </a>
+                <button type="button" class="modal__close" onclick="closeDisputeChatModal()">&times;</button>
+            </div>
         </div>
         <div class="modal__body dispute-chat-modal__body">
         <?php if (empty($selectedDisputeMessages)): ?>
@@ -412,19 +459,38 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         <?php endif; ?>
 
-        <form method="POST" class="dispute-chat-modal__composer">
-            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-            <input type="hidden" name="action" value="reply_dispute">
-            <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
-            <div class="form-group">
-                <label class="form-label">Ответ в чате</label>
-                <textarea name="reply_text" class="form-textarea js-chat-hotkey" rows="4" required placeholder="Введите сообщение пользователю..."></textarea>
-            </div>
-            <button type="submit" class="btn btn--primary">
-                <i class="fas fa-paper-plane"></i> Ответить
-            </button>
-        </form>
+        <div class="flex items-center justify-between gap-sm" style="margin-top:16px;">
+            <?php if ($isDisputeChatClosed): ?>
+                <span class="badge" style="background:#6B7280; color:white;">Чат завершён</span>
+            <?php else: ?>
+                <span class="text-secondary" style="font-size:13px;">Чат активен</span>
+                <form method="POST" onsubmit="return confirm('Завершить чат? Пользователь больше не сможет писать.');">
+                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                    <input type="hidden" name="action" value="close_dispute_chat">
+                    <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
+                    <button type="submit" class="btn btn--ghost btn--sm" style="color:#EF4444;">
+                        <i class="fas fa-lock"></i> Завершить чат
+                    </button>
+                </form>
+            <?php endif; ?>
+        </div>
+
+        <?php if (!$isDisputeChatClosed): ?>
+            <form method="POST" class="dispute-chat-modal__composer">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="reply_dispute">
+                <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
+                <div class="form-group">
+                    <label class="form-label">Ответ в чате</label>
+                    <textarea name="reply_text" class="form-textarea js-chat-hotkey" rows="4" required placeholder="Введите сообщение пользователю..."></textarea>
+                </div>
+                <button type="submit" class="btn btn--primary">
+                    <i class="fas fa-paper-plane"></i> Ответить
+                </button>
+            </form>
+        <?php endif; ?>
         </div>
     </div>
 </div>
