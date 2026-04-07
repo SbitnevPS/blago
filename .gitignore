@@ -1,0 +1,33 @@
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Local env / debug
+.env
+.env.*
+.envrc
+test.php
+
+# Server-only secrets/config
+config.php
+
+# Runtime/generated server data
+uploads/**
+!uploads/
+!uploads/.gitkeep
+storage/**
+!storage/
+!storage/.gitkeep
+
+# Deployment runtime logs
+deploy.log
+
+# PHP/composer
+vendor/
+composer.phar
+
+# VCS conflict leftovers
+*.orig
