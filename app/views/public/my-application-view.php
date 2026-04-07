@@ -26,6 +26,8 @@ if (!$application) {
  redirect('/my-applications');
 }
 
+$isApplicationAccepted = in_array((string)($application['status'] ?? ''), ['accepted', 'approved'], true);
+
 $disputeChatSubject = 'Оспаривание решения по заявке #' . $applicationId;
 $isDisputeChatClosed = false;
 try {
@@ -161,7 +163,16 @@ foreach ($participants as $participantRow) {
     $participantByWorkId[(int)($participantRow['id'] ?? 0)] = $participantRow;
 }
 
+$ensureDiplomaActionsAllowed = static function () use ($isApplicationAccepted, $applicationId) {
+    if ($isApplicationAccepted) {
+        return;
+    }
+    $_SESSION['error_message'] = 'Действия с дипломами доступны только после статуса «Принята к участию».';
+    redirect('/application/' . $applicationId);
+};
+
 if (($_GET['action'] ?? '') === 'diploma_preview_one') {
+    $ensureDiplomaActionsAllowed();
     $workId = (int) ($_GET['work_id'] ?? 0);
     if (!isset($participantByWorkId[$workId])) {
         $_SESSION['error_message'] = 'Работа не найдена.';
@@ -177,6 +188,7 @@ if (($_GET['action'] ?? '') === 'diploma_preview_one') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && str_starts_with((string)$_POST['action'], 'diploma_')) {
+    $ensureDiplomaActionsAllowed();
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $_SESSION['error_message'] = 'Ошибка безопасности.';
         redirect('/application/' . $applicationId);
@@ -260,6 +272,162 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && str_star
         $_SESSION['error_message'] = $e->getMessage();
         redirect('/application/' . $applicationId);
     }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') === 'update_participant_correction') {
+    $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
+
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $message = 'Ошибка безопасности. Обновите страницу.';
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => $message], 403);
+        }
+        $_SESSION['error_message'] = $message;
+        redirect('/application/' . $applicationId);
+    }
+
+    $workId = (int)($_POST['work_id'] ?? 0);
+    $workRow = $participantByWorkId[$workId] ?? null;
+    if (!$workRow) {
+        $message = 'Работа не найдена.';
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => $message], 404);
+        }
+        $_SESSION['error_message'] = $message;
+        redirect('/application/' . $applicationId);
+    }
+
+    $participantId = (int)($workRow['participant_id'] ?? 0);
+    $correctionCheckStmt = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM application_corrections
+        WHERE application_id = ? AND participant_id = ? AND is_resolved = 0
+    ");
+    $correctionCheckStmt->execute([$applicationId, $participantId]);
+    if ((int)$correctionCheckStmt->fetchColumn() <= 0) {
+        $message = 'Корректировка для этой работы не требуется.';
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => $message], 422);
+        }
+        $_SESSION['error_message'] = $message;
+        redirect('/application/' . $applicationId);
+    }
+
+    $fio = trim((string)($_POST['fio'] ?? ''));
+    $age = max(0, (int)($_POST['age'] ?? 0));
+    $workTitle = trim((string)($_POST['work_title'] ?? ''));
+    if ($fio === '') {
+        $message = 'Укажите ФИО участника.';
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => $message], 422);
+        }
+        $_SESSION['error_message'] = $message;
+        redirect('/application/' . $applicationId);
+    }
+
+    $drawingFile = trim((string)($workRow['drawing_file'] ?? ''));
+    $oldDrawingPath = $drawingFile !== '' ? getParticipantDrawingFsPath($user['email'] ?? '', $drawingFile) : null;
+    $newDrawingPath = null;
+
+    if (isset($_FILES['drawing_file']) && (int)($_FILES['drawing_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+        if ((int)$_FILES['drawing_file']['error'] !== UPLOAD_ERR_OK) {
+            $message = 'Не удалось загрузить новый рисунок.';
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => $message], 422);
+            }
+            $_SESSION['error_message'] = $message;
+            redirect('/application/' . $applicationId);
+        }
+
+        $ext = strtolower((string)pathinfo((string)($_FILES['drawing_file']['name'] ?? ''), PATHINFO_EXTENSION));
+        $allowedExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'tif', 'tiff', 'bmp'];
+        if (!in_array($ext, $allowedExt, true)) {
+            $message = 'Недопустимый формат файла.';
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => $message], 422);
+            }
+            $_SESSION['error_message'] = $message;
+            redirect('/application/' . $applicationId);
+        }
+
+        $userUploadPath = DRAWINGS_PATH . '/' . normalizeDrawingOwner($user['email'] ?? '');
+        if (!is_dir($userUploadPath) && !mkdir($userUploadPath, 0777, true) && !is_dir($userUploadPath)) {
+            $message = 'Не удалось подготовить каталог для файла.';
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => $message], 500);
+            }
+            $_SESSION['error_message'] = $message;
+            redirect('/application/' . $applicationId);
+        }
+
+        $tmpUpload = (string)($_FILES['drawing_file']['tmp_name'] ?? '');
+        $newFilename = sanitizeFilename($fio) . '_' . $age . '_' . bin2hex(random_bytes(4)) . '.jpg';
+        $saved = processAndSaveImage($tmpUpload, $userUploadPath, $newFilename);
+        if (!$saved) {
+            $message = 'Не удалось обработать файл рисунка.';
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => $message], 422);
+            }
+            $_SESSION['error_message'] = $message;
+            redirect('/application/' . $applicationId);
+        }
+
+        $newDrawingPath = (string)$saved;
+        $drawingFile = basename($newDrawingPath);
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare("
+            UPDATE participants
+            SET fio = ?, age = ?, drawing_file = ?
+            WHERE id = ? AND application_id = ?
+        ")->execute([$fio, $age, $drawingFile, $participantId, $applicationId]);
+        $pdo->prepare("UPDATE works SET work_title = ?, updated_at = NOW() WHERE id = ? AND application_id = ?")
+            ->execute([$workTitle, $workId, $applicationId]);
+        $pdo->prepare("
+            UPDATE application_corrections
+            SET is_resolved = 1, resolved_at = NOW()
+            WHERE application_id = ? AND participant_id = ? AND is_resolved = 0
+        ")->execute([$applicationId, $participantId]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        if ($newDrawingPath && file_exists($newDrawingPath)) {
+            @unlink($newDrawingPath);
+        }
+        $message = 'Не удалось сохранить изменения участника.';
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => $message], 500);
+        }
+        $_SESSION['error_message'] = $message;
+        redirect('/application/' . $applicationId);
+    }
+
+    if ($newDrawingPath && $oldDrawingPath && file_exists($oldDrawingPath) && realpath($oldDrawingPath) !== realpath($newDrawingPath)) {
+        @unlink($oldDrawingPath);
+    }
+
+    $updatedDrawingUrl = $drawingFile !== '' ? getParticipantDrawingWebPath($user['email'] ?? '', $drawingFile) : null;
+    if ($updatedDrawingUrl) {
+        $updatedDrawingUrl .= '?v=' . time();
+    }
+
+    if ($isAjaxRequest) {
+        jsonResponse([
+            'success' => true,
+            'message' => 'Изменения сохранены.',
+            'participant' => [
+                'fio' => $fio,
+                'age' => $age > 0 ? $age : '—',
+                'work_title' => $workTitle,
+                'drawing_url' => $updatedDrawingUrl,
+            ],
+        ]);
+    }
+
+    $_SESSION['success_message'] = 'Изменения сохранены.';
+    redirect('/application/' . $applicationId);
 }
 
 // Получаем корректировки
@@ -631,7 +799,19 @@ $currentPage = 'applications';
                     <i class="fas fa-image"></i> Посмотреть рисунок
                 </button>
             <?php endif; ?>
-            <?php if ($isDiplomaAvailable): ?>
+            <?php if ($hasParticipantCorrection): ?>
+                <button
+                    type="button"
+                    class="btn btn--primary btn--sm participant-work-card__action-btn js-open-participant-edit"
+                    data-work-id="<?= (int)($participant['id'] ?? 0) ?>"
+                    data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>"
+                    data-age="<?= (int)($participant['age'] ?? 0) ?>"
+                    data-work-title="<?= htmlspecialchars($workTitle, ENT_QUOTES) ?>"
+                    data-drawing-url="<?= !empty($participant['drawing_file']) ? htmlspecialchars($drawingSrc, ENT_QUOTES) : '' ?>">
+                    <i class="fas fa-pen"></i> Исправить данные
+                </button>
+            <?php endif; ?>
+            <?php if ($isApplicationAccepted && $isDiplomaAvailable): ?>
             <a class="btn btn--ghost btn--sm participant-work-card__action-btn" href="/application/<?= $applicationId ?>?action=diploma_preview_one&work_id=<?= (int)$participant['id'] ?>" target="_blank" rel="noopener">
                 <i class="fas fa-eye"></i> Посмотреть диплом
             </a>
@@ -657,7 +837,7 @@ $currentPage = 'applications';
                 <button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-paper-plane"></i> Отправить на почту</button>
             </form>
             <?php else: ?>
-                <button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="button" disabled title="Диплом станет доступен после рассмотрения.">
+                <button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="button" disabled title="Дипломы доступны только после статуса «Принята к участию».">
                     <i class="fas fa-award"></i> Диплом пока недоступен
                 </button>
             <?php endif; ?>
@@ -698,7 +878,7 @@ $currentPage = 'applications';
         <h3>Массовые действия</h3>
     </div>
     <div class="card__body">
-        <?php if ($hasDiplomas): ?>
+        <?php if ($isApplicationAccepted && $hasDiplomas): ?>
             <p class="text-secondary" style="margin-top:0;">Будут включены только доступные дипломы.</p>
             <div class="participant-work-card__actions">
                 <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-file-archive"></i> Скачать все дипломы</button></form>
@@ -714,7 +894,7 @@ $currentPage = 'applications';
             <div class="empty-state" style="padding:20px;">
                 <div class="empty-state__icon"><i class="fas fa-award"></i></div>
                 <h3 class="empty-state__title" style="font-size:18px;">Нет доступных дипломов</h3>
-                <p class="empty-state__text">Дипломы появятся после рассмотрения.</p>
+                <p class="empty-state__text">Дипломы станут доступны после статуса «Принята к участию».</p>
             </div>
         <?php endif; ?>
     </div>
@@ -746,6 +926,32 @@ foreach ($participants as $participant) {
     }
 }
 ?>
+<div class="modal" id="participantEditModal">
+<div class="modal__content" style="max-width:720px; width:96%;">
+<div class="modal__header">
+<h3>Исправление данных участника</h3>
+<button type="button" class="modal__close" onclick="closeParticipantEditModal()">&times;</button>
+</div>
+<form id="participantEditForm" method="POST" enctype="multipart/form-data">
+<input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+<input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+<input type="hidden" name="action" value="update_participant_correction">
+<input type="hidden" name="ajax" value="1">
+<input type="hidden" name="work_id" id="participantEditWorkId" value="">
+<div class="modal__body">
+    <div class="form-group"><label class="form-label">ФИО участника</label><input class="form-input" type="text" name="fio" id="participantEditFio" required></div>
+    <div class="form-group"><label class="form-label">Возраст</label><input class="form-input" type="number" min="0" name="age" id="participantEditAge" required></div>
+    <div class="form-group"><label class="form-label">Название работы</label><input class="form-input" type="text" name="work_title" id="participantEditWorkTitle"></div>
+    <div class="form-group"><label class="form-label">Текущий рисунок</label><img id="participantEditPreview" src="" alt="Предпросмотр рисунка" style="max-width:100%; max-height:260px; border-radius:12px; border:1px solid #E5E7EB; display:none;"></div>
+    <div class="form-group"><label class="form-label">Заменить рисунок</label><input class="form-input" type="file" name="drawing_file" accept="image/*"></div>
+</div>
+<div class="modal__footer" style="display:flex; justify-content:flex-end; gap:12px;">
+    <button type="button" class="btn btn--ghost" onclick="closeParticipantEditModal()">Отмена</button>
+    <button type="submit" class="btn btn--primary" id="participantEditSubmit"><i class="fas fa-save"></i> Сохранить</button>
+</div>
+</form>
+</div>
+</div>
 <?php if (!empty($galleryImages)): ?>
 <div class="modal" id="galleryModal">
 <div class="modal__content" style="max-width: 1100px; width: 96%;">
@@ -822,6 +1028,81 @@ document.getElementById('galleryModal').addEventListener('click', (event) => {
 </script>
 <?php endif; ?>
 <script>
+function openParticipantEditModal(button) {
+ const modal = document.getElementById('participantEditModal');
+ const preview = document.getElementById('participantEditPreview');
+ document.getElementById('participantEditWorkId').value = button.dataset.workId || '';
+ document.getElementById('participantEditFio').value = button.dataset.fio || '';
+ document.getElementById('participantEditAge').value = button.dataset.age || '';
+ document.getElementById('participantEditWorkTitle').value = button.dataset.workTitle || '';
+ const drawingUrl = button.dataset.drawingUrl || '';
+ if (drawingUrl) {
+  preview.src = drawingUrl;
+  preview.style.display = 'block';
+ } else {
+  preview.removeAttribute('src');
+  preview.style.display = 'none';
+ }
+ modal.classList.add('active');
+ document.body.style.overflow = 'hidden';
+}
+
+function closeParticipantEditModal() {
+ const modal = document.getElementById('participantEditModal');
+ if (!modal) return;
+ modal.classList.remove('active');
+ document.body.style.overflow = '';
+ document.getElementById('participantEditForm')?.reset();
+}
+
+document.querySelectorAll('.js-open-participant-edit').forEach((button) => {
+ button.addEventListener('click', () => openParticipantEditModal(button));
+});
+
+document.getElementById('participantEditModal')?.addEventListener('click', (event) => {
+ if (event.target === event.currentTarget) {
+  closeParticipantEditModal();
+ }
+});
+
+const participantEditForm = document.getElementById('participantEditForm');
+if (participantEditForm) {
+ participantEditForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!participantEditForm.reportValidity()) return;
+
+  const submitButton = document.getElementById('participantEditSubmit');
+  const defaultHtml = submitButton ? submitButton.innerHTML : '';
+  if (submitButton) {
+   submitButton.disabled = true;
+   submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Сохранение...';
+  }
+
+  try {
+   const response = await fetch(window.location.href, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    body: new FormData(participantEditForm),
+   });
+   const data = await response.json();
+   if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Не удалось сохранить изменения');
+   }
+
+   showToast(data.message || 'Изменения сохранены', 'success');
+   closeParticipantEditModal();
+   window.location.reload();
+  } catch (error) {
+   showToast(error.message || 'Ошибка сохранения', 'error');
+  } finally {
+   if (submitButton) {
+    submitButton.disabled = false;
+    submitButton.innerHTML = defaultHtml;
+   }
+  }
+ });
+}
+
 const currentApplicationId = Number(<?= (int) $applicationId ?>);
 const currentApplicationStatus = <?= json_encode((string) ($application['status'] ?? '')) ?>;
 let isDisputeChatOpen = false;
@@ -1044,6 +1325,7 @@ if (['declined', 'rejected'].includes(currentApplicationStatus)) {
 
 document.addEventListener('keydown', (event) => {
  if (event.key === 'Escape') {
+  closeParticipantEditModal();
   closeDisputeChatModal();
  }
 });
