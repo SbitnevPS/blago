@@ -398,7 +398,8 @@ require_once __DIR__ . '/includes/header.php';
 
     const renderItems = (items) => {
         if (!Array.isArray(items) || !items.length) {
-            hideResults();
+            results.innerHTML = '<div class="user-results__empty">Ничего не найдено</div>';
+            results.style.display = 'block';
             return;
         }
         results.innerHTML = items.map((item) => {
@@ -417,7 +418,8 @@ require_once __DIR__ . '/includes/header.php';
         hiddenInput.value = '';
         const query = input.value.trim();
         if (timer) clearTimeout(timer);
-        if (query.length < 2) {
+        const isNumericQuery = /^\d+$/.test(query);
+        if ((!isNumericQuery && query.length < 2) || (isNumericQuery && query.length < 1)) {
             hideResults();
             return;
         }

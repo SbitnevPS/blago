@@ -73,6 +73,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
                     $reason,
                     $user['id'],
                 ]);
+                try {
+                    $unarchiveStmt = $pdo->prepare("UPDATE applications SET dispute_chat_archived = 0 WHERE id = ?");
+                    $unarchiveStmt->execute([$applicationId]);
+                } catch (Exception $ignored) {
+                }
                 $_SESSION['success_message'] = 'Сообщение отправлено администратору.';
                 if ($isAjaxRequest) {
                     $userLabel = trim(($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? ''));

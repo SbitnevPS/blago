@@ -344,7 +344,19 @@ try {
     if (adminMessagesHasDisputeChatArchivedColumn($pdo)) {
         $archivedFilterSql = $messagesView === 'disputes_archive'
             ? ' AND a.dispute_chat_archived = 1 '
-            : ' AND (a.dispute_chat_archived = 0 OR a.dispute_chat_archived IS NULL) ';
+            : " AND (
+                    a.dispute_chat_archived = 0
+                    OR a.dispute_chat_archived IS NULL
+                    OR EXISTS (
+                        SELECT 1
+                        FROM messages m_unread
+                        JOIN users u_unread ON u_unread.id = m_unread.created_by
+                        WHERE m_unread.application_id = m.application_id
+                          AND m_unread.title = m.title
+                          AND m_unread.is_read = 0
+                          AND u_unread.is_admin = 0
+                    )
+                ) ";
     }
     $closedOnlySql = ($showClosedOnly && $messagesView === 'disputes')
         ? " AND IFNULL(a.dispute_chat_closed, 0) = 1 "
