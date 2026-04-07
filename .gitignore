@@ -4,6 +4,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
+.htaccess
+.gitignore
 
 # Local env / debug
 .env
@@ -24,6 +26,9 @@ storage/**
 
 # Deployment runtime logs
 deploy.log
+deploy.php
+deploy.sh
+
 
 # PHP/composer
 vendor/
