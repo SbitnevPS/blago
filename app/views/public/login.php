@@ -1,20 +1,10 @@
 <?php
-// login.php - Вход через VK ID или по email/паролю
+// login.php - Вход через VK OAuth или по email/паролю
 require_once dirname(__DIR__, 3) . '/config.php';
 require_once dirname(__DIR__, 3) . '/includes/init.php';
 
 if (isAuthenticated()) {
     redirect('/contests');
-}
-
-// Если VK ID возвращает пользователя на /login (вместо /vk-auth), проксируем callback в корректный обработчик.
-$vkCallbackCode = trim((string) ($_GET['code'] ?? ''));
-$vkCallbackState = trim((string) ($_GET['state'] ?? ''));
-if ($vkCallbackCode !== '' && $vkCallbackState !== '') {
-    $vkCallbackQuery = (string) ($_SERVER['QUERY_STRING'] ?? '');
-    $vkCallbackTarget = '/vk-auth' . ($vkCallbackQuery !== '' ? '?' . $vkCallbackQuery : '');
-    header('Location: ' . $vkCallbackTarget);
-    exit;
 }
 
 $currentPage = 'login';
@@ -54,6 +44,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $vkUserState = bin2hex(random_bytes(16));
 $_SESSION['vk_user_oauth_state'] = $vkUserState;
+$vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
+    'client_id' => VK_CLIENT_ID,
+    'redirect_uri' => VK_USER_REDIRECT_URI,
+    'response_type' => 'code',
+    'scope' => 'email',
+    'state' => $vkUserState,
+]);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -77,7 +74,7 @@ $_SESSION['vk_user_oauth_state'] = $vkUserState;
 <i class="fas fa-envelope"></i> По email
 </button>
 <button type="button" class="login-card__tab" onclick="showTab('vk')">
-<i class="fab fa-vk"></i> Через VK ID
+<i class="fab fa-vk"></i> Через VK
 </button>
 </div>
 
@@ -105,13 +102,10 @@ $_SESSION['vk_user_oauth_state'] = $vkUserState;
 
 <div class="login-form" id="form-vk">
 <div class="divider">или</div>
-<button type="button" class="login-card__vk" id="vk-user-auth-button">
+<a class="login-card__vk" href="<?= htmlspecialchars($vkAuthUrl, ENT_QUOTES, 'UTF-8') ?>">
 <i class="fab fa-vk"></i>
-Войти через VK ID
-</button>
-<div id="vk-user-auth-error" class="error-message" style="display:none; margin-top: 12px;">
-    Не удалось инициализировать VK ID. Обновите страницу и попробуйте снова.
-</div>
+Войти через VK
+</a>
 </div>
 
 <div class="login-card__footer">
@@ -126,7 +120,6 @@ $_SESSION['vk_user_oauth_state'] = $vkUserState;
 </div>
 </div>
 
-<?php include dirname(__DIR__, 3) . '/includes/vk-id-sdk.php'; ?>
 <script>
 function showTab(tab) {
     document.querySelectorAll('.login-card__tab').forEach(t => t.classList.remove('active'));
@@ -140,37 +133,6 @@ function showTab(tab) {
         document.getElementById('form-vk').classList.add('active');
     }
 }
-
-(function initVkUserFlow() {
-    const vkButton = document.getElementById('vk-user-auth-button');
-    const vkError = document.getElementById('vk-user-auth-error');
-
-    if (!vkButton) {
-        return;
-    }
-
-    if (window.VKIDSDK && window.VKIDSDK.Config && typeof window.VKIDSDK.Config.init === 'function') {
-        window.VKIDSDK.Config.init({
-            app: <?= (int) VK_CLIENT_ID ?>,
-            redirectUrl: '<?= htmlspecialchars(VK_USER_REDIRECT_URI, ENT_QUOTES, 'UTF-8') ?>',
-            responseMode: window.VKIDSDK.ConfigResponseMode ? window.VKIDSDK.ConfigResponseMode.Callback : undefined,
-            source: window.VKIDSDK.ConfigSource ? window.VKIDSDK.ConfigSource.LOWCODE : undefined,
-            state: '<?= htmlspecialchars($vkUserState, ENT_QUOTES, 'UTF-8') ?>'
-        });
-
-        vkButton.addEventListener('click', function () {
-            if (window.VKIDSDK.Auth && typeof window.VKIDSDK.Auth.login === 'function') {
-                window.VKIDSDK.Auth.login();
-            }
-        });
-        return;
-    }
-
-    vkButton.disabled = true;
-    if (vkError) {
-        vkError.style.display = 'block';
-    }
-})();
 </script>
 </body>
 </html>
