@@ -5,7 +5,7 @@ require_once dirname(__DIR__, 3) . '/includes/init.php';
 
 // Проверка авторизации
 if (!isAuthenticated()) {
- redirect('/login');
+ redirect('/login?redirect=' . urlencode($_SERVER['REQUEST_URI'] ?? '/contests'));
 }
 
 $user = getCurrentUser();
