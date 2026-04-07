@@ -3,48 +3,65 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/init.php';
 
-// Если уже админ - редирект
 if (isAdmin()) {
     redirect('/admin');
 }
 
 $error = '';
 
+if (isset($_GET['error'])) {
+    if ($_GET['error'] === 'vk_auth') {
+        $error = 'Не удалось выполнить вход через VK ID. Повторите попытку.';
+    } elseif ($_GET['error'] === 'access_denied') {
+        $error = 'Доступ запрещён: этот аккаунт не имеет прав администратора.';
+    }
+}
+
 check_csrf();
 
-// Обработка формы
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
- $email = trim($_POST['email'] ?? '');
- $password = $_POST['password'] ?? '';
-    
- if (empty($email) || empty($password)) {
- $error = 'Заполните все поля';
- } else {
- // Ищем админа по email
- $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
- $stmt->execute([$email]);
- $admin = $stmt->fetch();
-        
- // Проверяем что пользователь найден и является админом
- if (!$admin) {
- $error = 'Пользователь с таким email не найден';
- } elseif (empty($admin['password'])) {
- $error = 'Для этого аккаунта не установлен пароль. Используйте вход через VK или создайте пароль.';
- } elseif (!password_verify($password, $admin['password'])) {
- $error = 'Неверный пароль';
- } elseif ($admin['is_admin'] !=1) {
- $error = 'У вас нет доступа к админ-панели';
- } else {
- // Успешный вход
-                $_SESSION['admin_user_id'] = $admin['id'];
-                $_SESSION['is_admin'] = true;
-                
-                // Редирект в админ-панель
-                header('Location: /admin');
-                exit;
- }
- }
+    $email = trim((string) ($_POST['email'] ?? ''));
+    $password = (string) ($_POST['password'] ?? '');
+
+    if ($email === '' || $password === '') {
+        $error = 'Заполните все поля';
+    } else {
+        $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
+        $stmt->execute([$email]);
+        $admin = $stmt->fetch();
+
+        if (!$admin) {
+            $error = 'Пользователь с таким email не найден';
+        } elseif (empty($admin['password'])) {
+            $error = 'Для этого аккаунта не установлен пароль. Используйте вход через VK ID или создайте пароль.';
+        } elseif (!password_verify($password, $admin['password'])) {
+            $error = 'Неверный пароль';
+        } elseif ((int) ($admin['is_admin'] ?? 0) !== 1) {
+            $error = 'У вас нет доступа к админ-панели';
+        } else {
+            $_SESSION['admin_user_id'] = (int) $admin['id'];
+            $_SESSION['is_admin'] = true;
+
+            $target = sanitize_internal_redirect($_SESSION['admin_auth_redirect'] ?? '/admin', '/admin');
+            unset($_SESSION['admin_auth_redirect']);
+
+            header('Location: ' . $target);
+            exit;
+        }
+    }
 }
+
+$vkAdminState = bin2hex(random_bytes(16));
+$_SESSION['vk_admin_oauth_state'] = $vkAdminState;
+
+$vkAdminAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
+    'client_id' => VK_CLIENT_ID,
+    'redirect_uri' => VK_ADMIN_REDIRECT_URI,
+    'response_type' => 'code',
+    'scope' => 'email',
+    'state' => $vkAdminState,
+    'v' => VK_API_VERSION,
+]);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -62,28 +79,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <h1>Админ-панель</h1>
 <p>ДетскиеКонкурсы.рф</p>
 </div>
-            
- <?php if ($error): ?>
+
+<?php if ($error): ?>
 <div class="error-message"><?= htmlspecialchars($error) ?></div>
- <?php endif; ?>
-            
+<?php endif; ?>
+
 <form method="POST">
 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <div class="form-group">
 <label class="form-label">Email</label>
 <input type="email" name="email" class="form-input" required placeholder="admin@example.com">
 </div>
-                
+
 <div class="form-group">
 <label class="form-label">Пароль</label>
 <input type="password" name="password" class="form-input" required placeholder="••••••••">
 </div>
-                
+
 <button type="submit" class="btn btn-primary">
 <i class="fas fa-sign-in-alt"></i> Войти
 </button>
 </form>
-            
+
+<div class="divider" style="margin-top:16px;">или</div>
+<a href="<?= htmlspecialchars($vkAdminAuthUrl) ?>" class="btn btn-secondary" style="width:100%; justify-content:center;" id="vk-admin-auth-link" rel="nofollow noopener">
+<i class="fab fa-vk"></i> Войти через VK ID
+</a>
+
 <div class="back-link">
 <a href="/">
 <i class="fas fa-arrow-left"></i> Вернуться на сайт
@@ -91,5 +113,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
 </div>
 </div>
+
+<script src="https://unpkg.com/@vkid/sdk@latest/dist-sdk/umd/index.js"></script>
+<script>
+(function initVkAdminFlow() {
+    const vkLink = document.getElementById('vk-admin-auth-link');
+    if (!vkLink) {
+        return;
+    }
+
+    if (window.VKIDSDK && window.VKIDSDK.Config && typeof window.VKIDSDK.Config.init === 'function') {
+        try {
+            window.VKIDSDK.Config.init({
+                app: <?= (int) VK_CLIENT_ID ?>,
+                redirectUrl: '<?= htmlspecialchars(VK_ADMIN_REDIRECT_URI, ENT_QUOTES, 'UTF-8') ?>',
+                responseMode: window.VKIDSDK.ConfigResponseMode ? window.VKIDSDK.ConfigResponseMode.Callback : undefined,
+                source: window.VKIDSDK.ConfigSource ? window.VKIDSDK.ConfigSource.LOWCODE : undefined,
+                state: '<?= htmlspecialchars($vkAdminState, ENT_QUOTES, 'UTF-8') ?>'
+            });
+        } catch (e) {
+            // fallback: обычная oauth-ссылка уже задана в href
+        }
+    }
+})();
+</script>
 </body>
 </html>
