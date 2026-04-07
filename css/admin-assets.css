@@ -242,6 +242,84 @@
   line-height: 1.5;
 }
 
+.application-top-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.application-top-actions__btn {
+  border: 1px solid transparent;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+.application-top-actions__btn--message { background:#EEF2FF; color:#4338CA; border-color:#C7D2FE; }
+.application-top-actions__btn--cancel { background:#FFF1F2; color:#BE123C; border-color:#FECDD3; }
+.application-top-actions__btn--delete { background:#FEE2E2; color:#B91C1C; border-color:#FCA5A5; }
+
+.application-header { padding:20px 24px; }
+.drawing-empty-state {
+  min-height: 280px;
+  border: 2px dashed #CBD5E1;
+  border-radius: 14px;
+  background: #F8FAFC;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  color: #475569;
+}
+
+.application-bottom-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+.application-bottom-actions__panel {
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 14px;
+  background: #fff;
+  flex: 1 1 320px;
+}
+.application-bottom-actions__title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #334155;
+}
+.application-diploma-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.application-diploma-actions .form-select {
+  flex: 1;
+}
+
+.messages-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+.messages-tabs__tab {
+  text-decoration: none;
+  color: #475569;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 600;
+}
+.messages-tabs__tab--active {
+  background: #fff;
+  color: #1d4ed8;
+  box-shadow: 0 3px 10px rgba(15,23,42,.08);
+}
+
 
 .card--allow-overflow {
   overflow: visible;

@@ -105,6 +105,7 @@ $routes = [
  '/admin/participants' => ['file' => 'admin/participants.php', 'name' => 'admin-participants'],
  '/admin/participant/{id}' => ['file' => 'admin/participant-view.php', 'name' => 'admin-participant-view'],
  '/admin/users' => ['file' => 'admin/users.php', 'name' => 'admin-users'],
+ '/admin/user/{id}' => ['file' => 'admin/user-view.php', 'name' => 'admin-user-view'],
  '/admin/messages' => ['file' => 'admin/messages.php', 'name' => 'admin-messages'],
  '/admin/settings' => ['file' => 'admin/settings.php', 'name' => 'admin-settings'],
  '/admin/diplomas' => ['file' => 'admin/diplomas.php', 'name' => 'admin-diplomas'],

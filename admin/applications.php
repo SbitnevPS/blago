@@ -19,8 +19,17 @@ $breadcrumb = 'Управление заявками';
 $status = $_GET['status'] ?? '';
 $contest_id = $_GET['contest_id'] ?? '';
 $search = $_GET['search'] ?? '';
+$searchUserId = max(0, (int) ($_GET['search_user_id'] ?? 0));
 $participantId = max(0, (int) ($_GET['participant_id'] ?? 0));
 $participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
+$queue = $_GET['queue'] ?? '';
+
+$hasOpenedByAdminColumn = false;
+try {
+    $hasOpenedByAdminColumn = (bool) $pdo->query("SHOW COLUMNS FROM applications LIKE 'opened_by_admin'")->fetch();
+} catch (Exception $e) {
+    $hasOpenedByAdminColumn = false;
+}
 
 $where = [];
 $params = [];
@@ -30,12 +39,23 @@ if ($status) {
     $params[] = $status;
 }
 
+if ($hasOpenedByAdminColumn) {
+    if ($queue === 'new') {
+        $where[] = "a.status = 'submitted' AND a.opened_by_admin = 0";
+    } elseif ($queue === 'work') {
+        $where[] = "a.status = 'submitted' AND a.opened_by_admin = 1";
+    }
+}
+
 if ($contest_id) {
     $where[] = 'a.contest_id = ?';
     $params[] = $contest_id;
 }
 
-if ($search) {
+if ($searchUserId > 0) {
+    $where[] = 'a.user_id = ?';
+    $params[] = $searchUserId;
+} elseif ($search) {
     $where[] = '(u.name LIKE ? OR u.surname LIKE ? OR u.email LIKE ? OR a.id LIKE ?)';
     $params = array_merge($params, ["%$search%", "%$search%", "%$search%", "%$search%"]);
 }
@@ -96,12 +116,15 @@ require_once __DIR__ . '/includes/header.php';
     <div class="card__body">
         <form method="GET" class="flex gap-md" style="flex-wrap: wrap; align-items: flex-end;">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+            <?php if ($queue !== ''): ?>
+                <input type="hidden" name="queue" value="<?= e($queue) ?>">
+            <?php endif; ?>
             <div style="min-width: 200px;">
                 <label class="form-label">Статус</label>
                 <select name="status" class="form-select">
                     <option value="">Все статусы</option>
                     <option value="draft" <?= $status === 'draft' ? 'selected' : '' ?>>Черновики</option>
-                    <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>Отправленные</option>
+                    <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>В работе</option>
                     <option value="revision" <?= $status === 'revision' ? 'selected' : '' ?>>Требуют исправлений</option>
                     <option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Принятые</option>
                     <option value="declined" <?= $status === 'declined' ? 'selected' : '' ?>>Отклонённые</option>
@@ -119,10 +142,12 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div style="flex: 1; min-width: 200px; max-width: 300px;">
+            <div style="flex: 1; min-width: 200px; max-width: 300px; position:relative;">
                 <label class="form-label">Поиск</label>
-                <input type="text" name="search" class="form-input" 
+                <input type="text" id="applicationsSearchInput" name="search" class="form-input" 
                        placeholder="ID, имя, email..." value="<?= htmlspecialchars($search) ?>">
+                <input type="hidden" name="search_user_id" id="applicationsSearchUserId" value="<?= (int) $searchUserId ?>">
+                <div id="applicationsSearchResults" class="user-results"></div>
             </div>
             <div style="flex:1; min-width: 260px; max-width: 380px; position:relative;">
                 <label class="form-label">Поиск по участнику</label>
@@ -140,7 +165,7 @@ require_once __DIR__ . '/includes/header.php';
             <button type="submit" class="btn btn--primary">
                 <i class="fas fa-filter"></i> Фильтр
             </button>
-            <?php if ($status || $contest_id || $search || $participantId > 0 || $participantQuery !== ''): ?>
+            <?php if ($status || $contest_id || $search || $searchUserId > 0 || $participantId > 0 || $participantQuery !== '' || $queue): ?>
                 <a href="applications.php" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
@@ -155,13 +180,26 @@ require_once __DIR__ . '/includes/header.php';
         'submitted' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted'")->fetchColumn(),
         'draft' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'draft'")->fetchColumn()
     ];
+    if ($hasOpenedByAdminColumn) {
+        $statCounts['new'] = $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted' AND opened_by_admin = 0")->fetchColumn();
+        $statCounts['work'] = $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted' AND opened_by_admin = 1")->fetchColumn();
+    }
     ?>
     <a href="applications.php" class="stat-pill <?= !$status ? 'stat-pill--active' : '' ?>">
         Все <span class="stat-pill__count"><?= $statCounts['all'] ?></span>
     </a>
-    <a href="?status=submitted" class="stat-pill <?= $status === 'submitted' ? 'stat-pill--active' : '' ?>">
-        Отправленные <span class="stat-pill__count"><?= $statCounts['submitted'] ?></span>
+    <?php if ($hasOpenedByAdminColumn): ?>
+    <a href="?queue=new" class="stat-pill <?= $queue === 'new' ? 'stat-pill--active' : '' ?>">
+        Новые <span class="stat-pill__count"><?= (int) $statCounts['new'] ?></span>
     </a>
+    <a href="?queue=work" class="stat-pill <?= $queue === 'work' ? 'stat-pill--active' : '' ?>">
+        В работе <span class="stat-pill__count"><?= (int) $statCounts['work'] ?></span>
+    </a>
+    <?php else: ?>
+    <a href="?status=submitted" class="stat-pill <?= $status === 'submitted' ? 'stat-pill--active' : '' ?>">
+        В работе <span class="stat-pill__count"><?= $statCounts['submitted'] ?></span>
+    </a>
+    <?php endif; ?>
     <a href="?status=draft" class="stat-pill <?= $status === 'draft' ? 'stat-pill--active' : '' ?>">
         Черновики <span class="stat-pill__count"><?= $statCounts['draft'] ?></span>
     </a>
@@ -244,12 +282,12 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="flex gap-sm">
                 <?php if ($page > 1): ?>
-                    <a href="?page=<?= $page - 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>" class="btn btn--ghost btn--sm">
+                    <a href="?page=<?= $page - 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-left"></i>
                     </a>
                 <?php endif; ?>
                 <?php if ($page < $totalPages): ?>
-                    <a href="?page=<?= $page + 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>" class="btn btn--ghost btn--sm">
+                    <a href="?page=<?= $page + 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-right"></i>
                     </a>
                 <?php endif; ?>
@@ -329,6 +367,76 @@ require_once __DIR__ . '/includes/header.php';
         if (!item) return;
         hiddenInput.value = item.dataset.id || '';
         input.value = item.dataset.name || '';
+        hideResults();
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!results.contains(event.target) && event.target !== input) {
+            hideResults();
+        }
+    });
+})();
+
+(() => {
+    const input = document.getElementById('applicationsSearchInput');
+    const hiddenInput = document.getElementById('applicationsSearchUserId');
+    const results = document.getElementById('applicationsSearchResults');
+    if (!input || !results || !hiddenInput) return;
+    let timer = null;
+
+    const hideResults = () => {
+        results.style.display = 'none';
+        results.innerHTML = '';
+    };
+
+    const escapeHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+
+    const renderItems = (items) => {
+        if (!Array.isArray(items) || !items.length) {
+            hideResults();
+            return;
+        }
+        results.innerHTML = items.map((item) => {
+            const fullName = `${item.surname || ''} ${item.name || ''}`.trim() || 'Без имени';
+            const email = item.email || 'Email не указан';
+            const displayValue = `${fullName} · ${email}`;
+            return `<button type="button" class="user-results__item" data-id="${Number(item.id || 0)}" data-value="${escapeHtml(displayValue)}">
+                <div class="user-results__name">${escapeHtml(fullName)}</div>
+                <div class="user-results__email">${escapeHtml(email)}</div>
+            </button>`;
+        }).join('');
+        results.style.display = 'block';
+    };
+
+    input.addEventListener('input', () => {
+        hiddenInput.value = '';
+        const query = input.value.trim();
+        if (timer) clearTimeout(timer);
+        if (query.length < 2) {
+            hideResults();
+            return;
+        }
+        timer = setTimeout(async () => {
+            try {
+                const response = await fetch(`/admin/search-users.php?q=${encodeURIComponent(query)}&limit=7`);
+                const data = await response.json();
+                renderItems(data);
+            } catch (e) {
+                hideResults();
+            }
+        }, 220);
+    });
+
+    results.addEventListener('click', (event) => {
+        const item = event.target.closest('.user-results__item');
+        if (!item) return;
+        hiddenInput.value = item.dataset.id || '';
+        input.value = item.dataset.value || '';
         hideResults();
     });
 

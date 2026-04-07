@@ -27,7 +27,9 @@ $selectedDisputeMessages = [];
 $disputeRecipientName = 'Пользователь';
 $isDisputeChatClosed = false;
 $selectedApplicationStatus = '';
-$messagesView = ($_GET['view'] ?? '') === 'disputes' ? 'disputes' : 'main';
+$viewParam = (string) ($_GET['view'] ?? '');
+$messagesView = in_array($viewParam, ['main', 'disputes', 'disputes_archive'], true) ? $viewParam : 'main';
+$showClosedOnly = (int) ($_GET['closed_only'] ?? 0) === 1;
 $disputeThreadsCount = 0;
 $disputeUnreadTotal = 0;
 
@@ -45,6 +47,22 @@ if (!function_exists('adminMessagesHasDisputeChatClosedColumn')) {
             $hasColumn = false;
         }
 
+        return $hasColumn;
+    }
+}
+
+if (!function_exists('adminMessagesHasDisputeChatArchivedColumn')) {
+    function adminMessagesHasDisputeChatArchivedColumn(PDO $pdo): bool {
+        static $hasColumn = null;
+        if ($hasColumn !== null) {
+            return $hasColumn;
+        }
+        try {
+            $stmt = $pdo->query("SHOW COLUMNS FROM applications LIKE 'dispute_chat_archived'");
+            $hasColumn = (bool) ($stmt && $stmt->fetch());
+        } catch (Exception $e) {
+            $hasColumn = false;
+        }
         return $hasColumn;
     }
 }
@@ -255,6 +273,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reopen_dispute_chat') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Ошибка безопасности';
+    } else {
+        $disputeApplicationId = intval($_POST['dispute_application_id'] ?? 0);
+        if ($disputeApplicationId > 0) {
+            try {
+                if (!adminMessagesHasDisputeChatClosedColumn($pdo)) {
+                    $pdo->exec("ALTER TABLE applications ADD COLUMN dispute_chat_closed TINYINT(1) NOT NULL DEFAULT 0");
+                }
+                $pdo->prepare("UPDATE applications SET dispute_chat_closed = 0 WHERE id = ?")->execute([$disputeApplicationId]);
+                $_SESSION['success_message'] = 'Чат возобновлён';
+                redirect('/admin/messages?view=disputes&dispute_application_id=' . $disputeApplicationId);
+            } catch (Exception $e) {
+                $error = 'Не удалось возобновить чат';
+            }
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'archive_dispute_threads') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Ошибка безопасности';
+    } else {
+        $ids = $_POST['archive_application_ids'] ?? [];
+        $ids = is_array($ids) ? array_values(array_filter(array_map('intval', $ids))) : [];
+        if (empty($ids)) {
+            $error = 'Не выбраны чаты для архивации';
+        } else {
+            try {
+                if (!adminMessagesHasDisputeChatArchivedColumn($pdo)) {
+                    $pdo->exec("ALTER TABLE applications ADD COLUMN dispute_chat_archived TINYINT(1) NOT NULL DEFAULT 0");
+                }
+                $in = implode(',', array_fill(0, count($ids), '?'));
+                $sql = "UPDATE applications SET dispute_chat_archived = 1 WHERE dispute_chat_closed = 1 AND id IN ($in)";
+                $pdo->prepare($sql)->execute($ids);
+                $_SESSION['success_message'] = 'Выбранные завершённые чаты перенесены в архив';
+                redirect('/admin/messages?view=disputes');
+            } catch (Exception $e) {
+                $error = 'Не удалось перенести чаты в архив';
+            }
+        }
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'approve_dispute_application') {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $error = 'Ошибка безопасности';
@@ -277,10 +340,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
 }
 
 try {
+    $archivedFilterSql = '';
+    if (adminMessagesHasDisputeChatArchivedColumn($pdo)) {
+        $archivedFilterSql = $messagesView === 'disputes_archive'
+            ? ' AND a.dispute_chat_archived = 1 '
+            : ' AND (a.dispute_chat_archived = 0 OR a.dispute_chat_archived IS NULL) ';
+    }
+    $closedOnlySql = ($showClosedOnly && $messagesView === 'disputes')
+        ? " AND IFNULL(a.dispute_chat_closed, 0) = 1 "
+        : '';
+
     $threadsStmt = $pdo->query("
     SELECT
         m.application_id,
         m.title,
+        IFNULL(a.dispute_chat_closed, 0) AS dispute_chat_closed,
+        IFNULL(a.dispute_chat_archived, 0) AS dispute_chat_archived,
         MAX(m.created_at) AS last_message_at,
         SUM(CASE WHEN m.is_read = 0 AND u.is_admin = 0 THEN 1 ELSE 0 END) AS unread_count,
         SUBSTRING_INDEX(
@@ -290,7 +365,10 @@ try {
         ) AS last_message
     FROM messages m
     JOIN users u ON u.id = m.created_by
+    LEFT JOIN applications a ON a.id = m.application_id
     WHERE m.title LIKE 'Оспаривание решения по заявке%'
+    $archivedFilterSql
+    $closedOnlySql
     GROUP BY m.application_id, m.title
     ORDER BY last_message_at DESC
     ");
@@ -618,15 +696,16 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
-<div class="messages-page-actions" style="margin-bottom:16px; justify-content:flex-start;">
-    <a href="/admin/messages?view=main" class="btn <?= $messagesView === 'main' ? 'btn--primary' : 'btn--ghost' ?>">
+<div class="messages-tabs" style="margin-bottom:16px;">
+    <a href="/admin/messages?view=main" class="messages-tabs__tab <?= $messagesView === 'main' ? 'messages-tabs__tab--active' : '' ?>">
         <i class="fas fa-envelope"></i> Сообщения
     </a>
-    <a href="/admin/messages?view=disputes" class="btn <?= $messagesView === 'disputes' ? 'btn--primary' : 'btn--ghost' ?>" style="position:relative;">
-        <i class="fas fa-comments"></i> Чаты оспаривания заявок - <?= (int) $disputeThreadsCount ?>
-        <?php if ($disputeUnreadTotal > 0): ?>
-            <span class="badge badge--warning" style="margin-left:8px;"><?= (int) $disputeUnreadTotal ?></span>
-        <?php endif; ?>
+    <a href="/admin/messages?view=disputes" class="messages-tabs__tab <?= $messagesView === 'disputes' ? 'messages-tabs__tab--active' : '' ?>" style="position:relative;">
+        <i class="fas fa-comments"></i> Чаты оспаривания заявок · <?= (int) $disputeThreadsCount ?>
+        <?php if ($disputeUnreadTotal > 0): ?><span class="badge badge--warning" style="margin-left:8px;"><?= (int) $disputeUnreadTotal ?></span><?php endif; ?>
+    </a>
+    <a href="/admin/messages?view=disputes_archive" class="messages-tabs__tab <?= $messagesView === 'disputes_archive' ? 'messages-tabs__tab--active' : '' ?>">
+        <i class="fas fa-box-archive"></i> Архив чатов
     </a>
 </div>
 
@@ -636,9 +715,24 @@ require_once __DIR__ . '/includes/header.php';
         <h3>Чаты: оспаривание решения по заявке</h3>
     </div>
     <div class="card__body" style="padding:0;">
+        <form method="GET" class="flex gap-md" style="padding:16px; border-bottom:1px solid var(--color-border); align-items:center; flex-wrap:wrap;">
+            <input type="hidden" name="view" value="disputes">
+            <label class="ios-toggle-wrap">
+                <span class="ios-toggle-label">Показать только завершённые чаты</span>
+                <span class="ios-toggle">
+                    <input type="checkbox" name="closed_only" value="1" <?= $showClosedOnly ? 'checked' : '' ?> onchange="this.form.submit()">
+                    <span class="ios-toggle__slider"></span>
+                </span>
+            </label>
+        </form>
+        <form method="POST">
+            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+            <input type="hidden" name="action" value="archive_dispute_threads">
         <table class="table">
             <thead>
                 <tr>
+                    <th>В архив</th>
                     <th>Тема</th>
                     <th>Последнее сообщение</th>
                     <th>Дата</th>
@@ -650,6 +744,16 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
                 <?php foreach ($disputeThreads as $thread): ?>
                 <tr>
+                    <td data-label="В архив">
+                        <?php if ((int) ($thread['dispute_chat_closed'] ?? 0) === 1): ?>
+                            <label style="display:inline-flex; align-items:center; gap:6px;">
+                                <input type="checkbox" name="archive_application_ids[]" value="<?= (int) $thread['application_id'] ?>">
+                                <span class="text-secondary" style="font-size:12px;">Выбрать</span>
+                            </label>
+                        <?php else: ?>
+                            —
+                        <?php endif; ?>
+                    </td>
                     <td data-label="Тема"><?= htmlspecialchars($thread['title']) ?></td>
                     <td data-label="Последнее сообщение"><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 120)) ?></td>
                     <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></td>
@@ -663,6 +767,9 @@ require_once __DIR__ . '/includes/header.php';
                     <td data-label="Заявка">
                         <?php if (!empty($thread['application_id'])): ?>
                             <a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a>
+                            <?php if ((int) ($thread['dispute_chat_closed'] ?? 0) === 1): ?>
+                                <span class="badge" style="margin-left:6px; background:#6b7280; color:#fff;">Завершён</span>
+                            <?php endif; ?>
                         <?php else: ?>
                             —
                         <?php endif; ?>
@@ -676,11 +783,41 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?>
             </tbody>
         </table>
+        <div style="padding:16px; border-top:1px solid var(--color-border); display:flex; justify-content:flex-end;">
+            <button type="submit" class="btn btn--secondary">
+                <i class="fas fa-box-archive"></i> Переместить выбранные завершённые чаты в архив
+            </button>
+        </div>
+        </form>
     </div>
 </div>
 <?php endif; ?>
 
-<?php if ($messagesView === 'disputes' && $selectedDisputeApplicationId > 0): ?>
+<?php if ($messagesView === 'disputes_archive' && !empty($disputeThreads)): ?>
+<div class="card mb-lg">
+    <div class="card__header">
+        <h3>Архив чатов оспаривания</h3>
+    </div>
+    <div class="card__body" style="padding:0;">
+        <table class="table">
+            <thead><tr><th>Тема</th><th>Последнее сообщение</th><th>Дата</th><th>Заявка</th><th></th></tr></thead>
+            <tbody>
+            <?php foreach ($disputeThreads as $thread): ?>
+                <tr>
+                    <td><?= htmlspecialchars($thread['title']) ?></td>
+                    <td><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 120)) ?></td>
+                    <td><?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></td>
+                    <td><a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a></td>
+                    <td><a class="btn btn--ghost btn--sm" href="/admin/messages?view=disputes_archive&dispute_application_id=<?= (int) $thread['application_id'] ?>">Открыть</a></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if (in_array($messagesView, ['disputes', 'disputes_archive'], true) && $selectedDisputeApplicationId > 0): ?>
 <div class="modal active" id="disputeChatModal">
     <div class="modal__content message-modal dispute-chat-modal">
         <div class="modal__header">
@@ -730,6 +867,15 @@ require_once __DIR__ . '/includes/header.php';
             <div class="flex items-center gap-sm">
                 <?php if ($isDisputeChatClosed): ?>
                     <span class="badge" style="background:#6B7280; color:white;">Чат завершён</span>
+                    <form method="POST" onsubmit="return confirm('Возобновить чат? Пользователь снова сможет писать.');">
+                        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                        <input type="hidden" name="action" value="reopen_dispute_chat">
+                        <input type="hidden" name="dispute_application_id" value="<?= (int) $selectedDisputeApplicationId ?>">
+                        <button type="submit" class="btn btn--ghost btn--sm" style="color:#2563EB;">
+                            <i class="fas fa-lock-open"></i> Возобновить чат
+                        </button>
+                    </form>
                 <?php else: ?>
                     <span class="text-secondary" style="font-size:13px;">Чат активен</span>
                     <form method="POST" onsubmit="return confirm('Завершить чат? Пользователь больше не сможет писать.');">

@@ -123,7 +123,7 @@ require_once __DIR__ . '/includes/header.php';
  <?php endif; ?>
 </td>
 <td data-label="Действия">
-<a href="user-view.php?id=<?= $user['id'] ?>" class="btn btn--primary" style="padding:10px16px; font-size:13px; display:flex; align-items:center; gap:6px; white-space:nowrap;">
+<a href="/admin/user/<?= (int) $user['id'] ?>" class="btn btn--primary" style="padding:10px16px; font-size:13px; display:flex; align-items:center; gap:6px; white-space:nowrap;">
 <i class="fas fa-eye"></i> Профиль
 </a>
 </td>

@@ -209,7 +209,7 @@ function getApplicationStatusConfig() {
             'message_priority' => 'normal',
         ],
         'submitted' => [
-            'label' => 'Отправлена',
+            'label' => 'Не обработанная заявка',
             'badge_class' => 'badge--success',
             'row_style' => '',
             'message_priority' => 'normal',

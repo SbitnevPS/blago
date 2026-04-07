@@ -96,7 +96,7 @@ require_once __DIR__ . '/includes/header.php';
 <td data-label="Участников"><?= $app['participants_count'] ?></td>
 <td data-label="Статус">
 <span class="badge <?= $app['status'] === 'submitted' ? 'badge--success' : 'badge--warning' ?>">
- <?= $app['status'] === 'submitted' ? 'Отправлена' : 'Черновик' ?>
+ <?= $app['status'] === 'submitted' ? 'Не обработанная заявка' : 'Черновик' ?>
 </span>
 </td>
 <td data-label="Дата подачи"><?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></td>
