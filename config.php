@@ -8,8 +8,8 @@ define('DB_USER', 'root');
 define('DB_PASS', 'MasTrTun');
 
 // VK API настройки
-define('VK_CLIENT_ID', '54529766'); // ID приложения VK
-define('VK_CLIENT_SECRET', 'X9AhxhLZEOHHAvIDeosA'); // Защищённый ключ
+define('VK_CLIENT_ID', ''); // ID приложения VK
+define('VK_CLIENT_SECRET', ''); // Защищённый ключ
 define('VK_API_VERSION', '5.199');
 
 // Пути
