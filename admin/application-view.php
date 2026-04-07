@@ -47,6 +47,15 @@ $works = getApplicationWorks((int)$application_id);
 $participantColumns = $pdo->query("DESCRIBE participants")->fetchAll(PDO::FETCH_COLUMN);
 $hasDrawingCompliantColumn = in_array('drawing_compliant', $participantColumns, true);
 $hasDrawingCommentColumn = in_array('drawing_comment', $participantColumns, true);
+$hasNonCompliantDrawings = false;
+if ($hasDrawingCompliantColumn) {
+    foreach ($works as $workRow) {
+        if ((int)($workRow['drawing_compliant'] ?? 1) === 0) {
+            $hasNonCompliantDrawings = true;
+            break;
+        }
+    }
+}
 
 function scaleToMinSide($image, $minSide = 1500) {
     $srcW = imagesx($image);
@@ -224,6 +233,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         readfile($zipFile);
         exit;
     } elseif ($_POST['action'] === 'approve_application') {
+        if ($hasDrawingCompliantColumn) {
+            $nonCompliantStmt = $pdo->prepare("
+                SELECT COUNT(*)
+                FROM participants
+                WHERE application_id = ? AND drawing_compliant = 0
+            ");
+            $nonCompliantStmt->execute([$application_id]);
+            if ((int)$nonCompliantStmt->fetchColumn() > 0) {
+                $errorMessage = 'Нельзя принять заявку: есть работы, не соответствующие условиям конкурса.';
+                if ($isAjaxRequest) {
+                    jsonResponse(['success' => false, 'error' => $errorMessage], 422);
+                }
+                $_SESSION['error_message'] = $errorMessage;
+                redirect('/admin/application/' . $application_id);
+            }
+        }
         $stmt = $pdo->prepare("UPDATE applications SET status = 'approved', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
         $application['status'] = 'approved';
@@ -664,7 +689,6 @@ require_once __DIR__ . '/includes/header.php';
 
         <div class="flex gap-sm mt-md" style="flex-wrap:wrap;" data-work-controls data-work-id="<?= (int) $p['id'] ?>">
             <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--primary btn--sm" type="submit">Принять к участию</button></form>
-            <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="reviewed"><button class="btn btn--secondary btn--sm" type="submit">Отметить как рассмотренную</button></form>
             <div class="flex gap-sm" style="flex-wrap:wrap; display:<?= mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null ? 'flex' : 'none' ?>;" data-diploma-actions>
                 <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--primary btn--sm" type="submit">Скачать диплом</button></form>
                 <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--secondary btn--sm" type="submit">Отправить по почте</button></form>
@@ -747,7 +771,12 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                 <input type="hidden" name="action" value="approve_application">
-                <button type="submit" class="btn" style="background:#D1FAE5; color:#065F46;">
+                <button
+                    type="submit"
+                    class="btn"
+                    id="approveApplicationButton"
+                    style="background:#D1FAE5; color:#065F46;<?= $hasNonCompliantDrawings ? ' opacity:.55; cursor:not-allowed;' : '' ?>"
+                    <?= $hasNonCompliantDrawings ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>>
                     <i class="fas fa-check"></i> Заявка принята
                 </button>
             </form>
@@ -1074,7 +1103,10 @@ document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
  const toggle = form.querySelector('.js-drawing-compliant-toggle');
  const comment = form.querySelector('.js-drawing-comment');
  if (toggle) {
-  toggle.addEventListener('change', () => saveDrawingCompliance(form));
+  toggle.addEventListener('change', () => {
+   saveDrawingCompliance(form);
+   syncApproveApplicationButtonState();
+  });
  }
  if (comment) {
   let commentTimer = null;
@@ -1085,6 +1117,34 @@ document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
  }
  form.addEventListener('submit', (event) => event.preventDefault());
 });
+
+function syncApproveApplicationButtonState() {
+ const approveButton = document.getElementById('approveApplicationButton');
+ if (!approveButton) return;
+ const toggles = Array.from(document.querySelectorAll('.js-drawing-compliant-toggle'));
+ const hasInvalid = toggles.some((toggle) => !toggle.checked);
+ approveButton.disabled = hasInvalid;
+ approveButton.setAttribute('aria-disabled', hasInvalid ? 'true' : 'false');
+ if (hasInvalid) {
+  approveButton.setAttribute('tabindex', '-1');
+  approveButton.style.opacity = '0.55';
+  approveButton.style.cursor = 'not-allowed';
+ } else {
+  approveButton.removeAttribute('tabindex');
+  approveButton.style.opacity = '';
+  approveButton.style.cursor = '';
+ }
+}
+
+document.getElementById('approveApplicationButton')?.closest('form')?.addEventListener('submit', (event) => {
+ const button = document.getElementById('approveApplicationButton');
+ if (button?.disabled) {
+  event.preventDefault();
+  showToast('Нельзя принять заявку: есть работы, не соответствующие условиям конкурса.', 'error');
+ }
+});
+
+syncApproveApplicationButtonState();
 </script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
