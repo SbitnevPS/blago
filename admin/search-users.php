@@ -24,24 +24,31 @@ if (!isAdmin()) {
 
 try {
  $query = trim((string) ($_GET['q'] ?? ''));
- if (mb_strlen($query) < 2) {
+ $isNumericQuery = ctype_digit($query);
+ if (!$isNumericQuery && mb_strlen($query) < 2) {
      echo json_encode([]);
      exit;
  }
  $limit = (int) ($_GET['limit'] ?? 7);
  $limit = max(1, min(7, $limit));
  $searchTerm = "%$query%";
+ $idQuery = $isNumericQuery ? (int) $query : 0;
 
  $stmt = $pdo->prepare("
  SELECT id, name, surname, email 
  FROM users 
  WHERE is_admin =0
- AND (name LIKE ? OR surname LIKE ? OR email LIKE ?)
+ AND (
+     name LIKE ?
+     OR surname LIKE ?
+     OR email LIKE ?
+     OR (? > 0 AND id = ?)
+ )
  ORDER BY surname ASC, name ASC
  LIMIT $limit
  ");
 
- $stmt->execute([$searchTerm, $searchTerm, $searchTerm]);
+ $stmt->execute([$searchTerm, $searchTerm, $searchTerm, $idQuery, $idQuery]);
  $users = $stmt->fetchAll();
 
  echo json_encode($users, JSON_UNESCAPED_UNICODE);

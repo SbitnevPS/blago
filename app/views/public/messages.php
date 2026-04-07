@@ -93,6 +93,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
                     $chatMessage,
                     $userId,
                 ]);
+                try {
+                    $unarchiveStmt = $pdo->prepare("UPDATE applications SET dispute_chat_archived = 0 WHERE id = ?");
+                    $unarchiveStmt->execute([$selectedDisputeApplicationId]);
+                } catch (Exception $ignored) {
+                }
                 $_SESSION['success_message'] = 'Сообщение отправлено.';
             }
         } catch (Exception $e) {
