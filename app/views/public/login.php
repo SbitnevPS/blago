@@ -7,6 +7,16 @@ if (isAuthenticated()) {
     redirect('/contests');
 }
 
+// Если VK ID возвращает пользователя на /login (вместо /vk-auth), проксируем callback в корректный обработчик.
+$vkCallbackCode = trim((string) ($_GET['code'] ?? ''));
+$vkCallbackState = trim((string) ($_GET['state'] ?? ''));
+if ($vkCallbackCode !== '' && $vkCallbackState !== '') {
+    $vkCallbackQuery = (string) ($_SERVER['QUERY_STRING'] ?? '');
+    $vkCallbackTarget = '/vk-auth' . ($vkCallbackQuery !== '' ? '?' . $vkCallbackQuery : '');
+    header('Location: ' . $vkCallbackTarget);
+    exit;
+}
+
 $currentPage = 'login';
 $error = '';
 
