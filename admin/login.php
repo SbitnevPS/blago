@@ -1,5 +1,5 @@
 <?php
-// admin/login.php - Вход в админ-панель
+// admin/login.php - Вход в админ-панель через email/пароль или VK OAuth
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/init.php';
 
@@ -11,7 +11,7 @@ $error = '';
 
 if (isset($_GET['error'])) {
     if ($_GET['error'] === 'vk_auth') {
-        $error = 'Не удалось выполнить вход через VK ID. Повторите попытку.';
+        $error = 'Не удалось выполнить вход через VK. Повторите попытку.';
     } elseif ($_GET['error'] === 'access_denied') {
         $error = 'Доступ запрещён: этот аккаунт не имеет прав администратора.';
     }
@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$admin) {
             $error = 'Пользователь с таким email не найден';
         } elseif (empty($admin['password'])) {
-            $error = 'Для этого аккаунта не установлен пароль. Используйте вход через VK ID или создайте пароль.';
+            $error = 'Для этого аккаунта не установлен пароль. Используйте вход через VK или создайте пароль.';
         } elseif (!password_verify($password, $admin['password'])) {
             $error = 'Неверный пароль';
         } elseif ((int) ($admin['is_admin'] ?? 0) !== 1) {
@@ -53,6 +53,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $vkAdminState = bin2hex(random_bytes(16));
 $_SESSION['vk_admin_oauth_state'] = $vkAdminState;
+$vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
+    'client_id' => VK_CLIENT_ID,
+    'redirect_uri' => VK_ADMIN_REDIRECT_URI,
+    'response_type' => 'code',
+    'scope' => 'email',
+    'state' => $vkAdminState,
+]);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -93,12 +100,9 @@ $_SESSION['vk_admin_oauth_state'] = $vkAdminState;
 </form>
 
 <div class="divider" style="margin-top:16px;">или</div>
-<button type="button" class="btn btn-secondary" style="width:100%; justify-content:center;" id="vk-admin-auth-button">
-<i class="fab fa-vk"></i> Войти через VK ID
-</button>
-<div id="vk-admin-auth-error" class="error-message" style="display:none; margin-top:12px;">
-Не удалось инициализировать VK ID. Обновите страницу и попробуйте снова.
-</div>
+<a class="btn btn-secondary" style="width:100%; justify-content:center;" href="<?= htmlspecialchars($vkAuthUrl, ENT_QUOTES, 'UTF-8') ?>">
+<i class="fab fa-vk"></i> Войти через VK
+</a>
 
 <div class="back-link">
 <a href="/">
@@ -108,38 +112,5 @@ $_SESSION['vk_admin_oauth_state'] = $vkAdminState;
 </div>
 </div>
 
-<?php include __DIR__ . '/../includes/vk-id-sdk.php'; ?>
-<script>
-(function initVkAdminFlow() {
-    const vkButton = document.getElementById('vk-admin-auth-button');
-    const vkError = document.getElementById('vk-admin-auth-error');
-
-    if (!vkButton) {
-        return;
-    }
-
-    if (window.VKIDSDK && window.VKIDSDK.Config && typeof window.VKIDSDK.Config.init === 'function') {
-        window.VKIDSDK.Config.init({
-            app: <?= (int) VK_CLIENT_ID ?>,
-            redirectUrl: '<?= htmlspecialchars(VK_ADMIN_REDIRECT_URI, ENT_QUOTES, 'UTF-8') ?>',
-            responseMode: window.VKIDSDK.ConfigResponseMode ? window.VKIDSDK.ConfigResponseMode.Callback : undefined,
-            source: window.VKIDSDK.ConfigSource ? window.VKIDSDK.ConfigSource.LOWCODE : undefined,
-            state: '<?= htmlspecialchars($vkAdminState, ENT_QUOTES, 'UTF-8') ?>'
-        });
-
-        vkButton.addEventListener('click', function () {
-            if (window.VKIDSDK.Auth && typeof window.VKIDSDK.Auth.login === 'function') {
-                window.VKIDSDK.Auth.login();
-            }
-        });
-        return;
-    }
-
-    vkButton.disabled = true;
-    if (vkError) {
-        vkError.style.display = 'block';
-    }
-})();
-</script>
 </body>
 </html>
