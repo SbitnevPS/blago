@@ -11,6 +11,7 @@ define('DB_PASS', 'MasTrTun');
 define('VK_CLIENT_ID', ''); // ID приложения VK
 define('VK_CLIENT_SECRET', ''); // Защищённый ключ
 define('VK_API_VERSION', '5.199');
+define('VK_SDK_VERSION', '2.6.1');
 
 // Пути
 define('ROOT_PATH', __DIR__);
