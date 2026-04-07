@@ -75,6 +75,7 @@ $routes = [
  '/login' => ['file' => 'app/views/public/login.php', 'name' => 'login'],
  '/register' => ['file' => 'app/views/public/register.php', 'name' => 'register'],
  '/logout' => ['file' => 'app/views/public/logout.php', 'name' => 'logout'],
+ '/vk-auth' => ['file' => 'app/auth/vk-auth.php', 'name' => 'vk-auth'],
  
  // Конкурсы
  '/contests' => ['file' => 'app/views/public/contests.php', 'name' => 'contests'],

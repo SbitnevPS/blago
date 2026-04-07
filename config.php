@@ -8,10 +8,9 @@ define('DB_USER', 'root');
 define('DB_PASS', 'MasTrTun');
 
 // VK API настройки
-define('VK_CLIENT_ID', '54520423'); // ID приложения VK
-define('VK_CLIENT_SECRET', 'W64AzyO8dPgPgIM2YQdq'); // Защищённый ключ
-define('VK_REDIRECT_URI', 'https://kids-contests.ru/admin/vk-auth.php');
-define('VK_API_VERSION', '5.131');
+define('VK_CLIENT_ID', '54529766'); // ID приложения VK
+define('VK_CLIENT_SECRET', 'X9AhxhLZEOHHAvIDeosA'); // Защищённый ключ
+define('VK_API_VERSION', '5.199');
 
 // Пути
 define('ROOT_PATH', __DIR__);
@@ -20,7 +19,11 @@ define('DRAWINGS_PATH', UPLOAD_PATH . '/drawings');
 define('DOCUMENTS_PATH', UPLOAD_PATH . '/documents');
 
 // URL
-define('SITE_URL', 'https://kids-contests.ru');
+define('SITE_URL', 'https://konkurs.tolkodobroe.info');
+define('VK_USER_REDIRECT_URI', SITE_URL . '/vk-auth');
+define('VK_ADMIN_REDIRECT_URI', SITE_URL . '/admin/vk-auth.php');
+// Совместимость со старым кодом
+define('VK_REDIRECT_URI', VK_ADMIN_REDIRECT_URI);
 define('SETTINGS_FILE', ROOT_PATH . '/storage/settings.json');
 
 if (is_file(__DIR__ . '/vendor/autoload.php')) {
@@ -102,6 +105,16 @@ function isAdmin() {
     }
     
     if (!isAdminAuthenticated()) {
+        $currentUri = (string) ($_SERVER['REQUEST_URI'] ?? '');
+        if (
+            $currentUri !== '' &&
+            strpos($currentUri, '/admin') === 0 &&
+            strpos($currentUri, '/admin/login') !== 0 &&
+            strpos($currentUri, '/admin/vk-auth.php') !== 0 &&
+            strpos($currentUri, '/admin/logout') !== 0
+        ) {
+            $_SESSION['admin_auth_redirect'] = sanitize_internal_redirect($currentUri, '/admin');
+        }
         return false;
     }
 
@@ -114,8 +127,37 @@ function isAdmin() {
         return true;
     }
     
+    $currentUri = (string) ($_SERVER['REQUEST_URI'] ?? '');
+    if ($currentUri !== '' && strpos($currentUri, '/admin') === 0) {
+        $_SESSION['admin_auth_redirect'] = sanitize_internal_redirect($currentUri, '/admin');
+    }
+
     unset($_SESSION['admin_user_id'], $_SESSION['is_admin']);
     return false;
+}
+
+function sanitize_internal_redirect($url, $default = '/')
+{
+    $value = trim((string) $url);
+    if ($value === '') {
+        return $default;
+    }
+
+    $path = parse_url($value, PHP_URL_PATH);
+    if (!is_string($path) || $path === '') {
+        return $default;
+    }
+
+    if (strpos($path, '/') !== 0 || strpos($path, '//') === 0) {
+        return $default;
+    }
+
+    $query = parse_url($value, PHP_URL_QUERY);
+    if (is_string($query) && $query !== '') {
+        return $path . '?' . $query;
+    }
+
+    return $path;
 }
 
 function redirect($url) {
