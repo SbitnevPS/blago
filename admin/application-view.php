@@ -30,6 +30,15 @@ if (!$application) {
     redirect('/admin/applications');
 }
 
+try {
+    $hasOpenedByAdminColumn = (bool) $pdo->query("SHOW COLUMNS FROM applications LIKE 'opened_by_admin'")->fetch();
+    if ($hasOpenedByAdminColumn) {
+        $pdo->prepare("UPDATE applications SET opened_by_admin = 1 WHERE id = ?")->execute([(int) $application_id]);
+    }
+} catch (Exception $e) {
+    // no-op: column can be missing on older installations
+}
+
 // Получаем участников
 $stmt = $pdo->prepare("SELECT * FROM participants WHERE application_id = ?");
 $stmt->execute([$application_id]);
@@ -463,15 +472,15 @@ require_once __DIR__ . '/includes/header.php';
     </a>
 </div>
 
-<div class="flex gap-md mb-lg" style="flex-wrap:wrap;">
-    <button type="button" class="btn" style="background:#EEF2FF; color:#6366F1;" onclick="openMessageModal()">
+<div class="application-top-actions mb-lg">
+    <button type="button" class="btn application-top-actions__btn application-top-actions__btn--message" onclick="openMessageModal()">
         <i class="fas fa-envelope"></i> Сообщение
     </button>
     <form method="POST">
         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
         <input type="hidden" name="action" value="cancel_application">
-        <button type="submit" class="btn" style="background:#FEE2E2; color:#B91C1C;">
+        <button type="submit" class="btn application-top-actions__btn application-top-actions__btn--cancel">
             <i class="fas fa-ban"></i> Отмена
         </button>
     </form>
@@ -479,7 +488,7 @@ require_once __DIR__ . '/includes/header.php';
         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
         <input type="hidden" name="action" value="delete">
-        <button type="submit" class="btn" style="background:#FEE2E2; color:#DC2626;">
+        <button type="submit" class="btn application-top-actions__btn application-top-actions__btn--delete">
             <i class="fas fa-trash"></i> Удалить
         </button>
     </form>
@@ -498,7 +507,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- Информация о заявке -->
 <div class="card mb-lg">
-<div class="card__header" style="padding:20px24px;">
+<div class="card__header application-header">
 <div class="flex justify-between items-center" style="flex-wrap: wrap; gap:16px;">
 <div>
 <h2 style="font-size:20px; margin-bottom:4px;">Заявка #<?= e($application_id) ?></h2>
@@ -595,11 +604,6 @@ require_once __DIR__ . '/includes/header.php';
                 <span class="badge <?= getWorkStatusBadgeClass((string)($p['status'] ?? 'pending')) ?>" data-work-status-badge>
                     <?= e(getWorkStatusLabel((string)($p['status'] ?? 'pending'))) ?>
                 </span>
-                <?php if ($p['drawing_file']): ?>
-                <span class="badge badge--success">
-                    <i class="fas fa-image"></i> Рисунок загружен
-                </span>
-                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -620,6 +624,15 @@ require_once __DIR__ . '/includes/header.php';
                 <button type="button" class="btn btn--secondary js-open-editor" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" data-image-src="<?= htmlspecialchars($drawingUrl) ?>">
                     <i class="fas fa-crop-alt"></i> Редактировать рисунок
                 </button>
+            </div>
+        </div>
+        <?php else: ?>
+        <div style="flex:0 0 360px; max-width:100%;">
+            <label class="form-label">Рисунок</label>
+            <div class="drawing-empty-state">
+                <i class="fas fa-image"></i>
+                <strong>Рисунок отсутствует</strong>
+                <span>Участник ещё не загрузил файл рисунка.</span>
             </div>
         </div>
         <?php endif; ?>
@@ -695,33 +708,25 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="card mb-lg">
     <div class="card__body">
-        <div class="flex gap-md" style="flex-wrap:wrap; justify-content:flex-end;">
-
-            <form method="POST">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="generate_all_diplomas">
-                <button type="submit" class="btn" style="background:#DBEAFE;color:#1E3A8A;">Сформировать дипломы</button>
-            </form>
-            <form method="POST">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="generate_and_send_all_diplomas">
-                <button type="submit" class="btn" style="background:#DCFCE7;color:#14532D;">Сформировать и отправить</button>
-            </form>
-            <form method="POST">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="collect_all_diploma_links">
-                <button type="submit" class="btn" style="background:#F5F3FF;color:#5B21B6;">Получить ссылки</button>
-            </form>
-            <form method="POST">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="download_zip_diplomas">
-                <button type="submit" class="btn" style="background:#FEF3C7;color:#92400E;">Скачать все дипломы (ZIP)</button>
-            </form>
-
+        <div class="application-bottom-actions">
+            <div class="application-bottom-actions__panel application-bottom-actions__panel--diplomas">
+                <h4 class="application-bottom-actions__title">Дипломы</h4>
+                <form method="POST" class="application-diploma-actions">
+                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                    <input type="hidden" name="action" value="generate_all_diplomas">
+                    <select class="form-select" name="bulk_diploma_action" id="bulkDiplomaActionSelect">
+                        <option value="generate_all_diplomas">Сформировать дипломы</option>
+                        <option value="generate_and_send_all_diplomas">Сформировать и отправить</option>
+                        <option value="collect_all_diploma_links">Получить ссылки</option>
+                        <option value="download_zip_diplomas">Скачать все дипломы (ZIP)</option>
+                    </select>
+                    <button type="submit" class="btn btn--primary" id="bulkDiplomaActionRun">Выполнить</button>
+                </form>
+            </div>
+            <div class="application-bottom-actions__panel application-bottom-actions__panel--application">
+                <h4 class="application-bottom-actions__title">Действия с заявкой</h4>
+                <div class="flex gap-md" style="flex-wrap:wrap; justify-content:flex-end;">
             <form method="POST" onsubmit="return confirm('Отправить заявку на корректировку?');">
                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -746,6 +751,8 @@ require_once __DIR__ . '/includes/header.php';
                     <i class="fas fa-check"></i> Заявка принята
                 </button>
             </form>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -832,6 +839,18 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <script>
+const bulkDiplomaActionSelect = document.getElementById('bulkDiplomaActionSelect');
+const bulkDiplomaActionRun = document.getElementById('bulkDiplomaActionRun');
+if (bulkDiplomaActionSelect && bulkDiplomaActionRun) {
+    bulkDiplomaActionRun.addEventListener('click', (event) => {
+        const form = bulkDiplomaActionRun.closest('form');
+        if (!form) return;
+        const actionInput = form.querySelector('input[name=\"action\"]');
+        if (!actionInput) return;
+        actionInput.value = bulkDiplomaActionSelect.value;
+    });
+}
+
 let cropper = null;
 let currentRotation = 0;
 let editorDirty = false;
