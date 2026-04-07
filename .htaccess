@@ -4,6 +4,7 @@ RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
+SetEnv GITHUB_WEBHOOK_SECRET
 
 # Front-controller
 RewriteRule ^ index.php [L,QSA]
