@@ -1,35 +1,18 @@
-# .htaccess для kids-contests
-
-# Включаем перенаправление
-Options +FollowSymLinks -MultiViews
 RewriteEngine On
 RewriteBase /
 
-# Если запрошенный файл существует - отдаём как есть
-RewriteCond %{REQUEST_FILENAME} !-f
-# Если запрошенная директория существует - отдаём как есть
-RewriteCond %{REQUEST_FILENAME} !-d
-# Перенаправляем всё остальное на index.php
-RewriteRule ^(.*)$ index.php [L,QSA]
+# Если файл или папка существует — отдаём напрямую
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
 
-# Защита файлов конфигурации
-<FilesMatch "^(config|database)\.php$">
- Order allow,deny
- Deny from all
+# Всё остальное — в index.php (роутер)
+RewriteRule ^ index.php [L,QSA]
+
+# 🔒 Закрываем доступ к конфигам и служебным файлам
+<FilesMatch "^(config\.php|database\.sql|composer\.json|composer\.lock|\.env|\.git)">
+    Require all denied
 </FilesMatch>
 
-# Защита директорий загрузки
-<FilesMatch "\.(jpg|jpeg|png|gif|pdf|doc|docx)$">
- Order allow,deny
- Allow from all
-</FilesMatch>
-
-# Кэширование
-<IfModule mod_expires.c>
- ExpiresActive On
- ExpiresByType image/jpeg "access plus1 year"
- ExpiresByType image/png "access plus1 year"
- ExpiresByType image/gif "access plus1 year"
- ExpiresByType text/css "access plus1 month"
- ExpiresByType application/javascript "access plus1 month"
-</IfModule>
+# ❌ Отключаем листинг директорий
+Options -Indexes
