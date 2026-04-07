@@ -8,6 +8,7 @@ if (isAuthenticated()) {
  redirect('/contests');
 }
 
+$currentPage = 'register';
 $error = '';
 $rawRedirect = trim((string)($_GET['redirect'] ?? ($_POST['redirect'] ?? '')));
 $redirectAfterAuth = '/contests';
@@ -76,7 +77,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 </head>
 <body>
-<div class="register-page">
+<?php include dirname(__DIR__) . '/partials/header.php'; ?>
+<div class="register-page" style="padding-top: var(--space-xl);">
 <div class="register-card">
 <div class="register-card__logo">
 <i class="fas fa-paint-brush"></i>

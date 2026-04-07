@@ -3,7 +3,7 @@
 require_once dirname(__DIR__, 3) . '/config.php';
 
 if (!isAuthenticated()) {
-    redirect('/login');
+    redirect('/login?redirect=' . urlencode($_SERVER['REQUEST_URI'] ?? '/contests'));
 }
 
 $user = getCurrentUser();

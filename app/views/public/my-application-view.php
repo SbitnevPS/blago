@@ -4,7 +4,7 @@ require_once dirname(__DIR__, 3) . '/config.php';
 
 // Проверка авторизации
 if (!isAuthenticated()) {
- redirect('/login');
+ redirect('/login?redirect=' . urlencode($_SERVER['REQUEST_URI'] ?? '/contests'));
 }
 check_csrf();
 
