@@ -53,13 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $vkAdminState = bin2hex(random_bytes(16));
 $_SESSION['vk_admin_oauth_state'] = $vkAdminState;
-$vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
-    'client_id' => VK_CLIENT_ID,
-    'redirect_uri' => VK_ADMIN_REDIRECT_URI,
-    'response_type' => 'code',
-    'scope' => 'email',
-    'state' => $vkAdminState,
-]);
+$vkAuthUrl = build_vk_authorize_url(VK_ADMIN_REDIRECT_URI, $vkAdminState);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
