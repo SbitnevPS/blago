@@ -176,18 +176,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     
  $pdo->prepare("DELETE FROM participants WHERE application_id = ?")->execute([$application_id]);
  } else {
- $stmt = $pdo->prepare("
- INSERT INTO applications (user_id, contest_id, parent_fio, source_info, colleagues_info, status)
- VALUES (?, ?, ?, ?, ?, ?)
- ");
- $stmt->execute([
- $user['id'],
- $contest_id,
- $parent_fio,
- $source_info,
- $colleagues_info,
- $action === 'submit' ? 'submitted' : 'draft'
- ]);
+                $stmt = $pdo->prepare("
+                INSERT INTO applications (user_id, contest_id, parent_fio, source_info, colleagues_info, status, allow_edit)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([
+                $user['id'],
+                $contest_id,
+                $parent_fio,
+                $source_info,
+                $colleagues_info,
+                $action === 'submit' ? 'submitted' : 'draft',
+                $action === 'submit' ? 0 : 1,
+                ]);
  $application_id = $pdo->lastInsertId();
  }
                 
