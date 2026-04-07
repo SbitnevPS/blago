@@ -44,15 +44,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $vkUserState = bin2hex(random_bytes(16));
 $_SESSION['vk_user_oauth_state'] = $vkUserState;
-
-$vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
-    'client_id' => VK_CLIENT_ID,
-    'redirect_uri' => VK_USER_REDIRECT_URI,
-    'response_type' => 'code',
-    'scope' => 'email',
-    'state' => $vkUserState,
-    'v' => VK_API_VERSION,
-]);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -104,10 +95,13 @@ $vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
 
 <div class="login-form" id="form-vk">
 <div class="divider">или</div>
-<a href="<?= htmlspecialchars($vkAuthUrl) ?>" class="login-card__vk" id="vk-user-auth-link" rel="nofollow noopener">
+<button type="button" class="login-card__vk" id="vk-user-auth-button">
 <i class="fab fa-vk"></i>
 Войти через VK ID
-</a>
+</button>
+<div id="vk-user-auth-error" class="error-message" style="display:none; margin-top: 12px;">
+    Не удалось инициализировать VK ID. Обновите страницу и попробуйте снова.
+</div>
 </div>
 
 <div class="login-card__footer">
@@ -122,7 +116,7 @@ $vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
 </div>
 </div>
 
-<script src="https://unpkg.com/@vkid/sdk@latest/dist-sdk/umd/index.js"></script>
+<?php include dirname(__DIR__, 3) . '/includes/vk-id-sdk.php'; ?>
 <script>
 function showTab(tab) {
     document.querySelectorAll('.login-card__tab').forEach(t => t.classList.remove('active'));
@@ -138,23 +132,33 @@ function showTab(tab) {
 }
 
 (function initVkUserFlow() {
-    const vkLink = document.getElementById('vk-user-auth-link');
-    if (!vkLink) {
+    const vkButton = document.getElementById('vk-user-auth-button');
+    const vkError = document.getElementById('vk-user-auth-error');
+
+    if (!vkButton) {
         return;
     }
 
     if (window.VKIDSDK && window.VKIDSDK.Config && typeof window.VKIDSDK.Config.init === 'function') {
-        try {
-            window.VKIDSDK.Config.init({
-                app: <?= (int) VK_CLIENT_ID ?>,
-                redirectUrl: '<?= htmlspecialchars(VK_USER_REDIRECT_URI, ENT_QUOTES, 'UTF-8') ?>',
-                responseMode: window.VKIDSDK.ConfigResponseMode ? window.VKIDSDK.ConfigResponseMode.Callback : undefined,
-                source: window.VKIDSDK.ConfigSource ? window.VKIDSDK.ConfigSource.LOWCODE : undefined,
-                state: '<?= htmlspecialchars($vkUserState, ENT_QUOTES, 'UTF-8') ?>'
-            });
-        } catch (e) {
-            // fallback: обычная oauth-ссылка уже задана в href
-        }
+        window.VKIDSDK.Config.init({
+            app: <?= (int) VK_CLIENT_ID ?>,
+            redirectUrl: '<?= htmlspecialchars(VK_USER_REDIRECT_URI, ENT_QUOTES, 'UTF-8') ?>',
+            responseMode: window.VKIDSDK.ConfigResponseMode ? window.VKIDSDK.ConfigResponseMode.Callback : undefined,
+            source: window.VKIDSDK.ConfigSource ? window.VKIDSDK.ConfigSource.LOWCODE : undefined,
+            state: '<?= htmlspecialchars($vkUserState, ENT_QUOTES, 'UTF-8') ?>'
+        });
+
+        vkButton.addEventListener('click', function () {
+            if (window.VKIDSDK.Auth && typeof window.VKIDSDK.Auth.login === 'function') {
+                window.VKIDSDK.Auth.login();
+            }
+        });
+        return;
+    }
+
+    vkButton.disabled = true;
+    if (vkError) {
+        vkError.style.display = 'block';
     }
 })();
 </script>
