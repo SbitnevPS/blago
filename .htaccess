@@ -1,18 +1,20 @@
 RewriteEngine On
-RewriteBase /
 
-# Если файл или папка существует — отдаём напрямую
+# Serve existing files/directories directly
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
-# Всё остальное — в index.php (роутер)
+# Front-controller
 RewriteRule ^ index.php [L,QSA]
 
-# 🔒 Закрываем доступ к конфигам и служебным файлам
-<FilesMatch "^(config\.php|database\.sql|composer\.json|composer\.lock|\.env|\.git)">
+# Deny direct access to sensitive files
+<FilesMatch "^(config\.php|database\.sql|composer\.json|composer\.lock|\.env)$">
     Require all denied
 </FilesMatch>
 
-# ❌ Отключаем листинг директорий
-Options -Indexes
+# Deny access to VCS metadata
+RedirectMatch 403 /\.git
+
+# Disable directory listing (without Options directives)
+IndexIgnore *
