@@ -264,7 +264,8 @@ $unresolvedCorrections = array_filter($corrections, function($c) {
 });
 
 // Проверяем, разрешено ли редактирование
-$canEdit = $application['allow_edit'] ==1 && $application['status'] !== 'approved';
+$canEdit = $application['status'] === 'draft'
+    || ($application['allow_edit'] ==1 && $application['status'] !== 'approved');
 $statusMeta = getApplicationStatusMeta($application['status']);
 $statusClass = str_replace('badge--', '', $statusMeta['badge_class']);
 $participantCorrections = [];
@@ -559,6 +560,7 @@ $currentPage = 'applications';
 
 <h2 class="mb-lg">Работы (<?= count($participants) ?>)</h2>
 
+<?php $galleryDisplayIndex = 0; ?>
 <?php foreach ($participants as $index => $participant): ?>
 <?php
     $hasParticipantCorrection = !empty($participantCorrections[(int) ($participant['participant_id'] ?? 0)]);
@@ -566,6 +568,11 @@ $currentPage = 'applications';
     $isDiplomaAvailable = mapWorkStatusToDiplomaType($workStatus) !== null;
     $workTitle = trim((string) ($participant['work_title'] ?? ''));
     $participantVkUrl = trim((string)($participant['vk_post_url'] ?? ''));
+    $participantGalleryIndex = null;
+    if (!empty($participant['drawing_file'])) {
+        $participantGalleryIndex = $galleryDisplayIndex;
+        $galleryDisplayIndex++;
+    }
 ?>
 <div class="participant-card participant-work-card<?= $hasParticipantCorrection ? ' participant-card--needs-fix' : '' ?>">
     <div class="participant-work-card__media">
@@ -574,7 +581,7 @@ $currentPage = 'applications';
             <img src="<?= htmlspecialchars($drawingSrc) ?>"
                 alt="Рисунок участника <?= htmlspecialchars((string)($participant['fio'] ?? '')) ?>"
                 class="participant-work-card__thumb js-gallery-image"
-                data-gallery-index="<?= $index ?>">
+                data-gallery-index="<?= (int) $participantGalleryIndex ?>">
         <?php else: ?>
             <div class="participant-work-card__thumb participant-work-card__thumb--placeholder">
                 <i class="fas fa-image"></i>
@@ -612,9 +619,12 @@ $currentPage = 'applications';
 
         <div class="participant-work-card__actions">
             <?php if (!empty($participant['drawing_file'])): ?>
-                <a class="btn btn--ghost btn--sm participant-work-card__action-btn" href="<?= htmlspecialchars($drawingSrc) ?>" target="_blank" rel="noopener">
+                <button
+                    type="button"
+                    class="btn btn--ghost btn--sm participant-work-card__action-btn js-gallery-open"
+                    data-gallery-index="<?= (int) $participantGalleryIndex ?>">
                     <i class="fas fa-image"></i> Посмотреть рисунок
-                </a>
+                </button>
             <?php endif; ?>
             <?php if ($isDiplomaAvailable): ?>
             <a class="btn btn--ghost btn--sm participant-work-card__action-btn" href="/application/<?= $applicationId ?>?action=diploma_preview_one&work_id=<?= (int)$participant['id'] ?>" target="_blank" rel="noopener">
@@ -762,6 +772,7 @@ function renderGalleryThumbs() {
 }
 
 function openGallery(index) {
+ if (!galleryItems[index]) return;
  galleryCurrent = index;
  const item = galleryItems[index];
  document.getElementById('galleryImage').src = item.src;
@@ -776,9 +787,19 @@ function closeGallery() {
  document.body.style.overflow = '';
 }
 
-document.querySelectorAll('.js-gallery-image').forEach((img, idx) => {
+document.querySelectorAll('.js-gallery-image').forEach((img) => {
  img.style.cursor = 'zoom-in';
- img.addEventListener('click', () => openGallery(idx));
+ img.addEventListener('click', () => {
+  const galleryIndex = Number(img.dataset.galleryIndex || 0);
+  openGallery(galleryIndex);
+ });
+});
+
+document.querySelectorAll('.js-gallery-open').forEach((button) => {
+ button.addEventListener('click', () => {
+  const galleryIndex = Number(button.dataset.galleryIndex || 0);
+  openGallery(galleryIndex);
+ });
 });
 
 document.addEventListener('keydown', (e) => {

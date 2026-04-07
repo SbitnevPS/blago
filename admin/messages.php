@@ -709,7 +709,7 @@ require_once __DIR__ . '/includes/header.php';
     </a>
 </div>
 
-<?php if ($messagesView === 'disputes' && !empty($disputeThreads)): ?>
+<?php if ($messagesView === 'disputes'): ?>
 <div class="card mb-lg">
     <div class="card__header">
         <h3>Чаты: оспаривание решения по заявке</h3>
@@ -725,6 +725,13 @@ require_once __DIR__ . '/includes/header.php';
                 </span>
             </label>
         </form>
+        <?php if (empty($disputeThreads)): ?>
+            <div class="empty-state" style="padding:20px;">
+                <div class="empty-state__icon"><i class="fas fa-comments"></i></div>
+                <h3 class="empty-state__title" style="font-size:18px;">Чатов оспаривания пока нет</h3>
+                <p class="empty-state__text">Когда пользователи откроют оспаривание по заявке, диалоги появятся здесь.</p>
+            </div>
+        <?php else: ?>
         <form method="POST">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -789,16 +796,24 @@ require_once __DIR__ . '/includes/header.php';
             </button>
         </div>
         </form>
+        <?php endif; ?>
     </div>
 </div>
 <?php endif; ?>
 
-<?php if ($messagesView === 'disputes_archive' && !empty($disputeThreads)): ?>
+<?php if ($messagesView === 'disputes_archive'): ?>
 <div class="card mb-lg">
     <div class="card__header">
         <h3>Архив чатов оспаривания</h3>
     </div>
     <div class="card__body" style="padding:0;">
+        <?php if (empty($disputeThreads)): ?>
+            <div class="empty-state" style="padding:20px;">
+                <div class="empty-state__icon"><i class="fas fa-box-archive"></i></div>
+                <h3 class="empty-state__title" style="font-size:18px;">В архиве пока нет чатов</h3>
+                <p class="empty-state__text">Здесь появятся завершённые чаты после переноса в архив.</p>
+            </div>
+        <?php else: ?>
         <table class="table">
             <thead><tr><th>Тема</th><th>Последнее сообщение</th><th>Дата</th><th>Заявка</th><th></th></tr></thead>
             <tbody>
@@ -813,6 +828,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
             </tbody>
         </table>
+        <?php endif; ?>
     </div>
 </div>
 <?php endif; ?>
