@@ -383,36 +383,150 @@ function vk_callback_handle(string $flow, PDO $pdo): void
     exit;
 }
 
-function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $rawRedirect = '/', string $vkUserIdHint = '', string $vkEmailHint = ''): array
+function vk_decode_jwt_payload(string $jwt): array
+{
+    $parts = explode('.', $jwt);
+    if (count($parts) < 2) {
+        return [];
+    }
+
+    $payload = strtr($parts[1], '-_', '+/');
+    $padLength = strlen($payload) % 4;
+    if ($padLength > 0) {
+        $payload .= str_repeat('=', 4 - $padLength);
+    }
+
+    $decoded = base64_decode($payload, true);
+    if ($decoded === false) {
+        return [];
+    }
+
+    $json = json_decode($decoded, true);
+    return is_array($json) ? $json : [];
+}
+
+function vk_extract_sdk_profile(string $accessToken, string $idToken): array
+{
+    $profile = [];
+    $profileSource = '';
+    $profileDebug = [];
+
+    if ($accessToken !== '') {
+        $userinfoUrl = 'https://id.vk.com/oauth2/user_info?' . http_build_query([
+            'client_id' => VK_CLIENT_ID,
+        ]);
+
+        $request = vk_http_get($userinfoUrl . '&access_token=' . urlencode($accessToken));
+        $responseJson = is_array($request['json']) ? $request['json'] : [];
+        $profileDebug['vk_id_user_info'] = [
+            'http_code' => $request['http_code'],
+            'curl_error' => $request['curl_error'],
+            'raw_response' => $request['raw'],
+            'json_response' => $responseJson,
+        ];
+
+        if (
+            $request['ok']
+            && empty($responseJson['error'])
+            && (
+                (isset($responseJson['user']) && is_array($responseJson['user']))
+                || (isset($responseJson['response']['user']) && is_array($responseJson['response']['user']))
+                || (isset($responseJson['response']) && is_array($responseJson['response']) && isset($responseJson['response']['user_id']))
+            )
+        ) {
+            if (isset($responseJson['user']) && is_array($responseJson['user'])) {
+                $profile = $responseJson['user'];
+            } elseif (isset($responseJson['response']['user']) && is_array($responseJson['response']['user'])) {
+                $profile = $responseJson['response']['user'];
+            } else {
+                $profile = $responseJson['response'];
+            }
+            $profileSource = 'vk_id_user_info';
+        } else {
+            $profileUrl = 'https://api.vk.com/method/users.get?' . http_build_query([
+                'access_token' => $accessToken,
+                'v' => VK_API_VERSION,
+                'fields' => 'photo_100',
+            ]);
+            $legacyResponse = vk_http_get($profileUrl);
+            $legacyJson = is_array($legacyResponse['json']) ? $legacyResponse['json'] : [];
+
+            $profileDebug['legacy_users_get'] = [
+                'http_code' => $legacyResponse['http_code'],
+                'curl_error' => $legacyResponse['curl_error'],
+                'raw_response' => $legacyResponse['raw'],
+                'json_response' => $legacyJson,
+            ];
+
+            if ($legacyResponse['ok'] && empty($legacyJson['error']) && !empty($legacyJson['response'][0])) {
+                $profile = $legacyJson['response'][0];
+                $profileSource = 'legacy_users_get';
+            }
+        }
+    }
+
+    if (empty($profile) && $idToken !== '') {
+        $idTokenPayload = vk_decode_jwt_payload($idToken);
+        $profileDebug['id_token_payload'] = $idTokenPayload;
+        if (!empty($idTokenPayload)) {
+            $profile = $idTokenPayload;
+            $profileSource = 'id_token_payload';
+        }
+    }
+
+    return [
+        'profile' => $profile,
+        'source' => $profileSource,
+        'debug' => $profileDebug,
+    ];
+}
+
+function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $rawRedirect = '/', string $vkUserIdHint = '', string $vkEmailHint = '', string $idToken = ''): array
 {
     $safeRedirect = sanitize_internal_redirect($rawRedirect, '/contests');
 
-    if ($accessToken === '') {
+    vk_auth_log('sdk_login_received', [
+        'has_access_token' => $accessToken !== '',
+        'has_id_token' => $idToken !== '',
+        'has_user_id' => $vkUserIdHint !== '',
+        'has_email' => $vkEmailHint !== '',
+    ]);
+
+    if ($accessToken === '' && $idToken === '') {
         return ['ok' => false, 'error_code' => 'exchange_failed'];
     }
 
-    $profileUrl = 'https://api.vk.com/method/users.get?' . http_build_query([
-        'access_token' => $accessToken,
-        'v' => VK_API_VERSION,
-        'fields' => 'photo_100',
-    ]);
-    $profileResponse = vk_http_get($profileUrl);
-    $profileJson = is_array($profileResponse['json']) ? $profileResponse['json'] : [];
+    $profileResult = vk_extract_sdk_profile($accessToken, $idToken);
+    $profile = is_array($profileResult['profile']) ? $profileResult['profile'] : [];
+    $profileSource = (string) ($profileResult['source'] ?? '');
 
     vk_auth_log('sdk_profile_result', [
-        'http_code' => $profileResponse['http_code'],
-        'curl_error' => $profileResponse['curl_error'],
-        'raw_response' => $profileResponse['raw'],
-        'json_response' => $profileJson,
+        'profile_source' => $profileSource,
+        'profile_debug' => $profileResult['debug'] ?? [],
+        'profile_format_keys' => array_keys($profile),
     ]);
 
-    if (!$profileResponse['ok'] || !empty($profileJson['error']) || empty($profileJson['response'][0])) {
+    if (empty($profile)) {
+        vk_auth_log('sdk_profile_failed', [
+            'reason' => 'profile_is_empty_after_vk_id_and_legacy_attempts',
+            'has_access_token' => $accessToken !== '',
+            'has_id_token' => $idToken !== '',
+        ]);
         return ['ok' => false, 'error_code' => 'profile_failed'];
     }
 
-    $profile = $profileJson['response'][0];
-    $vkUserId = trim((string) ($profile['id'] ?? ''));
+    $vkUserId = trim((string) (
+        $profile['id']
+        ?? $profile['user_id']
+        ?? $profile['sub']
+        ?? ''
+    ));
     if ($vkUserId === '') {
+        vk_auth_log('sdk_profile_failed', [
+            'reason' => 'vk_user_id_missing_in_profile',
+            'profile_source' => $profileSource,
+            'profile_format_keys' => array_keys($profile),
+        ]);
         return ['ok' => false, 'error_code' => 'profile_failed'];
     }
 
@@ -424,10 +538,10 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
         return ['ok' => false, 'error_code' => 'invalid_callback'];
     }
 
-    $firstName = trim((string) ($profile['first_name'] ?? ''));
-    $lastName = trim((string) ($profile['last_name'] ?? ''));
-    $avatarUrl = trim((string) ($profile['photo_100'] ?? ''));
-    $vkEmail = trim((string) $vkEmailHint);
+    $firstName = trim((string) ($profile['first_name'] ?? $profile['given_name'] ?? ''));
+    $lastName = trim((string) ($profile['last_name'] ?? $profile['family_name'] ?? ''));
+    $avatarUrl = trim((string) ($profile['photo_100'] ?? $profile['avatar'] ?? $profile['picture'] ?? ''));
+    $vkEmail = trim((string) ($profile['email'] ?? $vkEmailHint));
 
     $stmt = $pdo->prepare('SELECT * FROM users WHERE vk_id = ? LIMIT 1');
     $stmt->execute([$vkUserId]);
