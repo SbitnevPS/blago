@@ -736,6 +736,15 @@ overflow-x: auto;
  max-width: 100%;
  }
 
+ .admin-header {
+ position: sticky;
+ top: 0;
+ z-index: 80;
+ background: rgba(248, 250, 252, 0.96);
+ backdrop-filter: blur(6px);
+ padding: 8px 0;
+ }
+
  .admin-toggle {
  display: flex;
  }
