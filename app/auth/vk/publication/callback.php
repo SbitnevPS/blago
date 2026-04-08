@@ -60,7 +60,6 @@ $_SESSION[getVkPublicationOauthSessionKey()]['used'] = 1;
 vkPublicationLog('oauth_state_validated', ['state_prefix' => mb_substr($state, 0, 10)]);
 
 $tokenResponse = vkPublicationHttpPostForm(getVkPublicationOauthTokenEndpoint(), [
-    'grant_type' => 'authorization_code',
     'client_id' => VK_CLIENT_ID,
     'client_secret' => VK_CLIENT_SECRET,
     'redirect_uri' => getVkPublicationRedirectUri(),
@@ -76,9 +75,16 @@ vkPublicationLog('oauth_token_exchange_result', [
     'error_description' => $tokenJson['error_description'] ?? '',
 ]);
 
-if (!$tokenResponse['ok'] || !empty($tokenJson['error']) || empty($tokenJson['access_token'])) {
+if (!$tokenResponse['ok'] || !empty($tokenJson['error']) || empty($tokenJson['access_token']) || empty($tokenJson['user_id'])) {
     $vkError = (string) ($tokenJson['error'] ?? 'exchange_failed');
     $vkErrorDescription = trim((string) ($tokenJson['error_description'] ?? ''));
+    if (empty($tokenJson['access_token']) && empty($tokenJson['user_id'])) {
+        $vkError = 'missing_access_token_and_user_id';
+    } elseif (empty($tokenJson['access_token'])) {
+        $vkError = 'missing_access_token';
+    } elseif (empty($tokenJson['user_id'])) {
+        $vkError = 'missing_user_id';
+    }
     failVkPublicationOauth(
         'Не удалось обменять authorization code на токен VK.',
         $vkError . ($vkErrorDescription !== '' ? (': ' . $vkErrorDescription) : ''),
@@ -88,6 +94,13 @@ if (!$tokenResponse['ok'] || !empty($tokenJson['error']) || empty($tokenJson['ac
 
 $accessToken = trim((string) ($tokenJson['access_token'] ?? ''));
 $tokenUserId = (int) ($tokenJson['user_id'] ?? 0);
+if (str_starts_with($accessToken, 'vk1.')) {
+    failVkPublicationOauth(
+        'Получен неподходящий VK токен (формат VK ID).',
+        'token_format_vk1_not_supported',
+        'VK подключение не завершено: получен токен VK ID (vk1.*). Нужен legacy access_token VK OAuth.'
+    );
+}
 $scopeRaw = isset($tokenJson['scope']) ? (is_array($tokenJson['scope']) ? implode(',', $tokenJson['scope']) : trim((string) $tokenJson['scope'])) : '';
 $scopeItems = $scopeRaw !== '' ? array_values(array_filter(array_map('trim', preg_split('/[\s,]+/', $scopeRaw) ?: []))) : [];
 $missingScopes = [];
@@ -123,13 +136,17 @@ if (!$userInfoResult['ok'] || empty($userInfo[0])) {
 
 $resolvedUserId = (int) ($userInfo[0]['id'] ?? 0);
 if ($resolvedUserId <= 0) {
-    $resolvedUserId = $tokenUserId;
-}
-if ($resolvedUserId <= 0) {
     failVkPublicationOauth(
-        'Токен получен, но VK user ID определить не удалось.',
-        'missing_user_id_in_token_and_users_get',
+        'Токен получен, но users.get не вернул корректный VK user ID.',
+        'missing_user_id_in_users_get',
         'VK подключение не завершено: не удалось определить VK user ID.'
+    );
+}
+if ($tokenUserId > 0 && $resolvedUserId !== $tokenUserId) {
+    failVkPublicationOauth(
+        'VK вернул несовпадающий user_id при проверке токена.',
+        'token_user_id_mismatch_with_users_get',
+        'VK подключение не завершено: user_id из токена не совпадает с users.get.'
     );
 }
 
