@@ -243,6 +243,43 @@ function vk_http_get(string $url): array
     ];
 }
 
+function vk_http_post_form(string $url, array $postFields = [], array $headers = []): array
+{
+    $ch = curl_init($url);
+    if ($ch === false) {
+        return ['ok' => false, 'http_code' => 0, 'raw' => '', 'json' => null, 'curl_error' => 'curl_init_failed'];
+    }
+
+    $defaultHeaders = ['Accept: application/json'];
+    if (!empty($postFields)) {
+        $defaultHeaders[] = 'Content-Type: application/x-www-form-urlencoded';
+    }
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => array_merge($defaultHeaders, $headers),
+        CURLOPT_POSTFIELDS => http_build_query($postFields),
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = $response === false ? (string) curl_error($ch) : '';
+    curl_close($ch);
+
+    $raw = $response === false ? '' : (string) $response;
+    $json = json_decode($raw, true);
+
+    return [
+        'ok' => $curlError === '' && $httpCode >= 200 && $httpCode < 300,
+        'http_code' => $httpCode,
+        'raw' => $raw,
+        'json' => is_array($json) ? $json : null,
+        'curl_error' => $curlError,
+    ];
+}
+
 function vk_error_message(string $code): string
 {
     $messages = [
@@ -339,6 +376,8 @@ function vk_callback_handle(string $flow, PDO $pdo): void
         'client_secret' => VK_CLIENT_SECRET,
         'redirect_uri' => vk_flow_redirect_uri($flow),
         'code' => $code,
+        'code_verifier' => $storedVerifier,
+        'grant_type' => 'authorization_code',
     ]);
     $tokenResponse = vk_http_get($tokenUrl);
 
@@ -525,6 +564,7 @@ function vk_extract_patronymic(array $profile): string
         $profile['patronymic'] ?? '',
         $profile['middle_name'] ?? '',
         $profile['middleName'] ?? '',
+        $profile['first_name_patronymic'] ?? '',
         $profile['otchestvo'] ?? '',
         $profile['second_name'] ?? '',
         $profile['secondName'] ?? '',
@@ -537,6 +577,9 @@ function vk_extract_avatar_url(array $profile): string
 {
     return vk_pick_non_empty_string(
         $profile['avatar_url'] ?? '',
+        $profile['avatarUrl'] ?? '',
+        $profile['photo'] ?? '',
+        $profile['image'] ?? '',
         $profile['photo_200_orig'] ?? '',
         $profile['photo_200'] ?? '',
         $profile['photo_100'] ?? '',
@@ -579,8 +622,8 @@ function vk_map_profile_fields(array $profile, array $claims = [], string $vkEma
 
     return [
         'vk_id' => vk_pick_non_empty_string($merged['id'] ?? '', $merged['user_id'] ?? '', $merged['sub'] ?? ''),
-        'name' => vk_pick_non_empty_string($merged['first_name'] ?? '', $merged['given_name'] ?? ''),
-        'surname' => vk_pick_non_empty_string($merged['last_name'] ?? '', $merged['family_name'] ?? ''),
+        'name' => vk_pick_non_empty_string($merged['first_name'] ?? '', $merged['firstName'] ?? '', $merged['given_name'] ?? '', $merged['givenName'] ?? ''),
+        'surname' => vk_pick_non_empty_string($merged['last_name'] ?? '', $merged['lastName'] ?? '', $merged['family_name'] ?? '', $merged['familyName'] ?? ''),
         'patronymic' => vk_extract_patronymic($merged),
         'avatar_url' => vk_extract_avatar_url($merged),
         'email' => vk_pick_non_empty_string($merged['email'] ?? '', $vkEmailHint),
@@ -721,13 +764,15 @@ function vk_extract_sdk_profile(string $accessToken, string $idToken): array
     $profileDebug = [];
 
     if ($accessToken !== '') {
-        $userinfoUrl = 'https://id.vk.com/oauth2/user_info?' . http_build_query([
-            'client_id' => VK_CLIENT_ID,
-        ]);
-
-        $request = vk_http_get($userinfoUrl . '&access_token=' . urlencode($accessToken));
+        $userinfoUrl = 'https://id.vk.com/oauth2/user_info';
+        $request = vk_http_post_form(
+            $userinfoUrl,
+            ['client_id' => VK_CLIENT_ID],
+            ['Authorization: Bearer ' . $accessToken]
+        );
         $responseJson = is_array($request['json']) ? $request['json'] : [];
         $profileDebug['vk_id_user_info'] = [
+            'request_method' => 'POST',
             'http_code' => $request['http_code'],
             'curl_error' => $request['curl_error'],
             'raw_response' => $request['raw'],
@@ -752,6 +797,41 @@ function vk_extract_sdk_profile(string $accessToken, string $idToken): array
             }
             $profileSource = 'vk_id_user_info';
         } else {
+            $legacyUserInfoUrl = $userinfoUrl . '?' . http_build_query([
+                'client_id' => VK_CLIENT_ID,
+                'access_token' => $accessToken,
+            ]);
+            $legacyUserInfoResponse = vk_http_get($legacyUserInfoUrl);
+            $legacyUserInfoJson = is_array($legacyUserInfoResponse['json']) ? $legacyUserInfoResponse['json'] : [];
+            $profileDebug['vk_id_user_info_legacy_get'] = [
+                'request_method' => 'GET',
+                'http_code' => $legacyUserInfoResponse['http_code'],
+                'curl_error' => $legacyUserInfoResponse['curl_error'],
+                'raw_response' => $legacyUserInfoResponse['raw'],
+                'json_response' => $legacyUserInfoJson,
+            ];
+
+            if (
+                $legacyUserInfoResponse['ok']
+                && empty($legacyUserInfoJson['error'])
+                && (
+                    (isset($legacyUserInfoJson['user']) && is_array($legacyUserInfoJson['user']))
+                    || (isset($legacyUserInfoJson['response']['user']) && is_array($legacyUserInfoJson['response']['user']))
+                    || (isset($legacyUserInfoJson['response']) && is_array($legacyUserInfoJson['response']) && isset($legacyUserInfoJson['response']['user_id']))
+                )
+            ) {
+                if (isset($legacyUserInfoJson['user']) && is_array($legacyUserInfoJson['user'])) {
+                    $profile = $legacyUserInfoJson['user'];
+                } elseif (isset($legacyUserInfoJson['response']['user']) && is_array($legacyUserInfoJson['response']['user'])) {
+                    $profile = $legacyUserInfoJson['response']['user'];
+                } else {
+                    $profile = $legacyUserInfoJson['response'];
+                }
+                $profileSource = 'vk_id_user_info_legacy_get';
+            }
+        }
+
+        if (empty($profile)) {
             $profileUrl = 'https://api.vk.com/method/users.get?' . http_build_query([
                 'access_token' => $accessToken,
                 'v' => VK_API_VERSION,
