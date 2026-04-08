@@ -166,17 +166,19 @@ function getVkPayload(eventPayload) {
 }
 
 function installVkIdWidget() {
-    if (typeof window.VKID === 'undefined') {
+    if (!('VKIDSDK' in window) && typeof window.VKID === 'undefined') {
         setAuthError('VK ID SDK не загрузился. Проверьте соединение и обновите страницу.');
         return;
     }
 
     try {
-        window.VKID.Config.init({
-            app: String(<?= json_encode(VK_CLIENT_ID) ?>),
+        const VKID = window.VKIDSDK || window.VKID;
+
+        VKID.Config.init({
+            app: <?= json_encode((int) VK_CLIENT_ID) ?>,
             redirectUrl: 'https://konkurs.tolkodobroe.info/vk-auth',
-            responseMode: window.VKID.ConfigResponseMode.Callback,
-            source: window.VKID.ConfigSource.LOWCODE,
+            responseMode: VKID.ConfigResponseMode.Callback,
+            source: VKID.ConfigSource.LOWCODE,
             scope: 'email',
         });
 
@@ -185,10 +187,10 @@ function installVkIdWidget() {
             return;
         }
 
-        const oneTap = new window.VKID.OneTap();
+        const oneTap = new VKID.OneTap();
 
-        if (typeof oneTap.on === 'function' && window.VKID.OneTapInternalEvents && window.VKID.WidgetEvents) {
-            oneTap.on(window.VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
+        if (typeof oneTap.on === 'function' && VKID.OneTapInternalEvents && VKID.WidgetEvents) {
+            oneTap.on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
                 const data = getVkPayload(payload);
                 if (!data || !data.code || !data.device_id) {
                     setAuthError('VK ID не передал необходимые данные для входа.');
@@ -199,7 +201,7 @@ function installVkIdWidget() {
                 });
             });
 
-            oneTap.on(window.VKID.WidgetEvents.ERROR, function () {
+            oneTap.on(VKID.WidgetEvents.ERROR, function () {
                 setAuthError('Ошибка SDK VK ID. Попробуйте снова позже.');
             });
         }
