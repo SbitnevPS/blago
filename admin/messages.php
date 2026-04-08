@@ -366,8 +366,8 @@ try {
     SELECT
         m.application_id,
         m.title,
-        IFNULL(a.dispute_chat_closed, 0) AS dispute_chat_closed,
-        IFNULL(a.dispute_chat_archived, 0) AS dispute_chat_archived,
+        MAX(IFNULL(a.dispute_chat_closed, 0)) AS dispute_chat_closed,
+        MAX(IFNULL(a.dispute_chat_archived, 0)) AS dispute_chat_archived,
         MAX(m.created_at) AS last_message_at,
         SUM(CASE WHEN m.is_read = 0 AND u.is_admin = 0 THEN 1 ELSE 0 END) AS unread_count,
         SUBSTRING_INDEX(
