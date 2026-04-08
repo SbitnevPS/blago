@@ -1629,6 +1629,24 @@ h4 {
 	line-height: 1.65;
 }
 
+.cookie-management-card {
+	margin-top: var(--space-md);
+	padding: var(--space-lg);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	background: var(--color-surface);
+}
+
+.cookie-management-card h3 {
+	margin-bottom: var(--space-sm);
+}
+
+.cookie-management-card__hint,
+.cookie-management-card__status {
+	color: var(--color-text-secondary);
+	margin-bottom: var(--space-md);
+}
+
 /* Cookie consent */
 .cookie-banner {
 	position: fixed;
