@@ -975,3 +975,80 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
 
     return ['ok' => true, 'redirect_to' => $isNewVkUser ? '/profile?required=1' : $safeRedirect];
 }
+
+function vk_admin_login_by_access_token(PDO $pdo, string $accessToken, string $rawRedirect = '/admin', string $vkUserIdHint = '', string $vkEmailHint = '', string $idToken = '', string $refreshToken = '', array $claims = []): array
+{
+    $attemptId = bin2hex(random_bytes(8));
+    $safeRedirect = sanitize_internal_redirect($rawRedirect, '/admin');
+    if (strpos($safeRedirect, '/admin') !== 0) {
+        $safeRedirect = '/admin';
+    }
+
+    vk_auth_log('admin_sdk_login_received', [
+        'has_access_token' => $accessToken !== '',
+        'has_id_token' => $idToken !== '',
+        'has_refresh_token' => $refreshToken !== '',
+        'has_user_id' => $vkUserIdHint !== '',
+        'has_email' => $vkEmailHint !== '',
+        'claims_keys' => array_keys($claims),
+    ]);
+    vk_log_attempt('admin', 'sdk_login_received', [
+        'has_access_token' => $accessToken !== '',
+        'has_id_token' => $idToken !== '',
+        'has_refresh_token' => $refreshToken !== '',
+        'has_user_id_hint' => $vkUserIdHint !== '',
+        'has_email_hint' => $vkEmailHint !== '',
+        'claims_keys' => array_keys($claims),
+    ], $attemptId);
+
+    if ($accessToken === '' && $idToken === '') {
+        return ['ok' => false, 'error_code' => 'exchange_failed'];
+    }
+
+    $profileResult = vk_extract_sdk_profile($accessToken, $idToken);
+    $profile = is_array($profileResult['profile']) ? $profileResult['profile'] : [];
+    $profileSource = (string) ($profileResult['source'] ?? '');
+
+    if (empty($profile)) {
+        return ['ok' => false, 'error_code' => 'profile_failed'];
+    }
+
+    $mapped = vk_map_profile_fields($profile, $claims, $vkEmailHint);
+    $vkUserId = $mapped['vk_id'];
+    if ($vkUserId === '') {
+        return ['ok' => false, 'error_code' => 'profile_failed'];
+    }
+
+    if ($vkUserIdHint !== '' && $vkUserIdHint !== $vkUserId) {
+        vk_auth_log('admin_sdk_user_id_mismatch', [
+            'provided_user_id' => $vkUserIdHint,
+            'actual_user_id' => $vkUserId,
+        ]);
+        return ['ok' => false, 'error_code' => 'invalid_callback'];
+    }
+
+    vk_auth_log('admin_sdk_profile_mapping', [
+        'profile_source' => $profileSource,
+        'has_email' => $mapped['email'] !== '',
+    ]);
+
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE vk_id = ? LIMIT 1');
+    $stmt->execute([$vkUserId]);
+    $admin = $stmt->fetch();
+
+    if (!$admin && $mapped['email'] !== '') {
+        $emailStmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
+        $emailStmt->execute([$mapped['email']]);
+        $admin = $emailStmt->fetch();
+    }
+
+    if (!$admin || (int) ($admin['is_admin'] ?? 0) !== 1) {
+        return ['ok' => false, 'error_code' => 'admin_access_denied'];
+    }
+
+    $_SESSION['admin_user_id'] = (int) $admin['id'];
+    $_SESSION['is_admin'] = true;
+    unset($_SESSION['admin_auth_redirect']);
+
+    return ['ok' => true, 'redirect_to' => $safeRedirect];
+}
