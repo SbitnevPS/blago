@@ -2,16 +2,87 @@
 
 const VK_OAUTH_SESSION_KEY = 'vk_oauth_flows';
 const VK_OAUTH_FLOW_TTL = 900;
+const VK_AUTH_LOG_FILE = '/storage/logs/vk-auth.log';
+
+function vk_auth_log_file_path(): string
+{
+    return dirname(__DIR__, 2) . VK_AUTH_LOG_FILE;
+}
+
+function vk_mask_state(?string $value): string
+{
+    $state = trim((string) $value);
+    if ($state === '') {
+        return '';
+    }
+
+    $length = strlen($state);
+    if ($length <= 10) {
+        return substr($state, 0, 2) . str_repeat('*', max(0, $length - 4)) . substr($state, -2);
+    }
+
+    return substr($state, 0, 6) . '***' . substr($state, -4);
+}
+
+function vk_sanitize_for_log($value, ?string $key = null)
+{
+    $secretKeys = [
+        'access_token',
+        'refresh_token',
+        'id_token',
+        'token',
+        'client_secret',
+    ];
+
+    if (is_array($value)) {
+        $result = [];
+        foreach ($value as $childKey => $childValue) {
+            $result[$childKey] = vk_sanitize_for_log($childValue, is_string($childKey) ? $childKey : null);
+        }
+        return $result;
+    }
+
+    if (!is_scalar($value) && $value !== null) {
+        return $value;
+    }
+
+    $normalized = (string) $value;
+    if ($key !== null) {
+        $lowerKey = strtolower($key);
+        if (in_array($lowerKey, $secretKeys, true)) {
+            return vk_mask_secret($normalized);
+        }
+        if ($lowerKey === 'state') {
+            return vk_mask_state($normalized);
+        }
+    }
+
+    return $value;
+}
+
+function vk_log_attempt(string $flow, string $step, array $payload = [], ?string $attemptId = null): void
+{
+    $entry = [
+        'timestamp' => gmdate('c'),
+        'flow_type' => $flow === 'user' ? 'vk_user_auth' : 'vk_admin_auth',
+        'flow' => $flow,
+        'step' => $step,
+        'attempt_id' => $attemptId ?? '',
+        'payload' => vk_sanitize_for_log($payload),
+    ];
+
+    $path = vk_auth_log_file_path();
+    $dir = dirname($path);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+
+    @file_put_contents($path, json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL, FILE_APPEND | LOCK_EX);
+}
 
 function vk_auth_log(string $event, array $context = []): void
 {
-    $safeContext = $context;
-    if (isset($safeContext['client_secret'])) {
-        unset($safeContext['client_secret']);
-    }
-    if (isset($safeContext['access_token'])) {
-        $safeContext['access_token'] = vk_mask_secret((string) $safeContext['access_token']);
-    }
+    $safeContext = vk_sanitize_for_log($context);
     error_log('[VK_AUTH] ' . $event . ' ' . json_encode($safeContext, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 
@@ -209,11 +280,30 @@ function vk_admin_access_denied_redirect(): void
 
 function vk_callback_handle(string $flow, PDO $pdo): void
 {
+    $attemptId = bin2hex(random_bytes(8));
     $state = trim((string) ($_GET['state'] ?? ''));
     $code = trim((string) ($_GET['code'] ?? ''));
     $hasError = trim((string) ($_GET['error'] ?? '')) !== '';
 
     $sessionFlow = vk_flow_session_get($flow);
+    $expectedState = is_array($sessionFlow) ? (string) ($sessionFlow['state'] ?? '') : '';
+    $storedVerifier = is_array($sessionFlow) ? (string) ($sessionFlow['code_verifier'] ?? '') : '';
+    $stateMatches = $expectedState !== '' && $state !== '' && hash_equals($expectedState, $state);
+
+    vk_log_attempt($flow, 'callback_received', [
+        'request_uri' => (string) ($_SERVER['REQUEST_URI'] ?? ''),
+        'query' => $_GET,
+        'has_state' => $state !== '',
+        'has_code' => $code !== '',
+        'has_error' => $hasError,
+        'has_session_flow' => is_array($sessionFlow),
+        'state_matches_session' => $stateMatches,
+        'state_masked' => vk_mask_state($state),
+        'session_state_masked' => vk_mask_state($expectedState),
+        'has_code_verifier' => $storedVerifier !== '',
+        'callback_handler' => __FILE__,
+    ], $attemptId);
+
     vk_auth_log('callback_received', [
         'flow' => $flow,
         'has_code' => $code !== '',
@@ -235,8 +325,6 @@ function vk_callback_handle(string $flow, PDO $pdo): void
         vk_callback_fail($flow, 'session_expired');
     }
 
-    $expectedState = (string) ($sessionFlow['state'] ?? '');
-    $storedVerifier = (string) ($sessionFlow['code_verifier'] ?? '');
     if ($expectedState === '' || !hash_equals($expectedState, $state) || $storedVerifier === '') {
         vk_auth_log('callback_state_or_verifier_failed', [
             'flow' => $flow,
@@ -262,6 +350,15 @@ function vk_callback_handle(string $flow, PDO $pdo): void
         'raw_response' => $tokenResponse['raw'],
         'json_response' => $tokenResponse['json'],
     ]);
+    vk_log_attempt($flow, 'token_exchanged', [
+        'http_status' => $tokenResponse['http_code'],
+        'curl_error' => $tokenResponse['curl_error'],
+        'raw_response' => $tokenResponse['raw'],
+        'json_response' => $tokenResponse['json'],
+        'has_access_token' => !empty($tokenResponse['json']['access_token']),
+        'has_user_id' => !empty($tokenResponse['json']['user_id']),
+        'has_email' => !empty($tokenResponse['json']['email']),
+    ], $attemptId);
 
     $tokenJson = is_array($tokenResponse['json']) ? $tokenResponse['json'] : [];
     if (!$tokenResponse['ok'] || !empty($tokenJson['error']) || empty($tokenJson['access_token']) || empty($tokenJson['user_id'])) {
@@ -287,6 +384,21 @@ function vk_callback_handle(string $flow, PDO $pdo): void
         'raw_response' => $profileResponse['raw'],
         'json_response' => $profileResponse['json'],
     ]);
+    vk_log_attempt($flow, 'profile_loaded', [
+        'request' => [
+            'endpoint' => 'https://api.vk.com/method/users.get',
+            'user_ids' => $vkUserId,
+            'fields' => 'photo_100',
+            'version' => VK_API_VERSION,
+        ],
+        'http_status' => $profileResponse['http_code'],
+        'curl_error' => $profileResponse['curl_error'],
+        'raw_response' => $profileResponse['raw'],
+        'json_response' => $profileResponse['json'],
+        'has_first_name' => !empty($profileResponse['json']['response'][0]['first_name']),
+        'has_last_name' => !empty($profileResponse['json']['response'][0]['last_name']),
+        'has_photo_100' => !empty($profileResponse['json']['response'][0]['photo_100']),
+    ], $attemptId);
 
     $profileJson = is_array($profileResponse['json']) ? $profileResponse['json'] : [];
     if (!$profileResponse['ok'] || !empty($profileJson['error']) || empty($profileJson['response'][0])) {
@@ -342,7 +454,10 @@ function vk_callback_handle(string $flow, PDO $pdo): void
             'access_token_masked' => vk_mask_secret($accessToken),
         ]);
 
-        $userId = vk_save_user_profile($pdo, $mapped, $accessToken);
+        $userId = vk_save_user_profile($pdo, $mapped, $accessToken, [
+            'flow' => $flow,
+            'attempt_id' => $attemptId,
+        ]);
 
         if ($userId <= 0) {
             vk_callback_fail($flow, 'exchange_failed');
@@ -350,6 +465,11 @@ function vk_callback_handle(string $flow, PDO $pdo): void
 
         $_SESSION['user_id'] = $userId;
         $_SESSION['vk_token'] = $accessToken;
+        vk_log_attempt($flow, 'session_set', [
+            'session_keys' => ['user_id', 'vk_token'],
+            'user_id' => $userId,
+            'vk_token_masked' => vk_mask_secret($accessToken),
+        ], $attemptId);
         $target = sanitize_internal_redirect((string) ($sessionFlow['post_login_redirect'] ?? '/contests'), '/contests');
     }
 
@@ -467,7 +587,7 @@ function vk_map_profile_fields(array $profile, array $claims = [], string $vkEma
     ];
 }
 
-function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = ''): int
+function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '', array $debugContext = []): int
 {
     $vkUserId = trim((string) ($mapped['vk_id'] ?? ''));
     if ($vkUserId === '') {
@@ -490,7 +610,24 @@ function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '')
         $existingUser = $fallbackStmt->fetch();
     }
 
+    $flow = (string) ($debugContext['flow'] ?? 'user');
+    $attemptId = (string) ($debugContext['attempt_id'] ?? '');
+
     if ($existingUser) {
+        $existingUserId = (int) ($existingUser['id'] ?? 0);
+        $resolvedEmail = $email !== '' ? $email : (string) ($existingUser['email'] ?? '');
+        vk_log_attempt($flow, 'db_update_prepare', [
+            'operation' => 'update',
+            'vk_id' => $vkUserId,
+            'existing_user_found' => true,
+            'existing_user_id' => $existingUserId,
+            'email_to_save' => $resolvedEmail,
+            'first_name' => $name,
+            'last_name' => $surname,
+            'avatar_url' => $avatarUrl,
+            'has_access_token' => $accessToken !== '',
+        ], $attemptId);
+
         $updates = ['updated_at = NOW()'];
         $params = [];
 
@@ -533,9 +670,26 @@ function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '')
         $sql = 'UPDATE users SET ' . implode(', ', $updates) . ' WHERE id = ?';
         $updateStmt = $pdo->prepare($sql);
         $updateStmt->execute($params);
+        vk_log_attempt($flow, 'db_update_result', [
+            'operation' => 'update',
+            'success' => true,
+            'affected_rows' => $updateStmt->rowCount(),
+            'user_id' => $existingUserId,
+        ], $attemptId);
 
-        return (int) $existingUser['id'];
+        return $existingUserId;
     }
+
+    vk_log_attempt($flow, 'db_insert_prepare', [
+        'operation' => 'insert',
+        'vk_id' => $vkUserId,
+        'existing_user_found' => false,
+        'email_to_save' => $email,
+        'first_name' => $name,
+        'last_name' => $surname,
+        'avatar_url' => $avatarUrl,
+        'has_access_token' => $accessToken !== '',
+    ], $attemptId);
 
     $insertStmt = $pdo->prepare(
         'INSERT INTO users (vk_id, vk_access_token, name, surname, patronymic, avatar_url, email) VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -549,8 +703,15 @@ function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '')
         vk_is_valid_avatar_url($avatarUrl) ? $avatarUrl : '',
         $email,
     ]);
+    $newUserId = (int) $pdo->lastInsertId();
+    vk_log_attempt($flow, 'db_insert_result', [
+        'operation' => 'insert',
+        'success' => true,
+        'affected_rows' => $insertStmt->rowCount(),
+        'user_id' => $newUserId,
+    ], $attemptId);
 
-    return (int) $pdo->lastInsertId();
+    return $newUserId;
 }
 
 function vk_extract_sdk_profile(string $accessToken, string $idToken): array
@@ -631,6 +792,7 @@ function vk_extract_sdk_profile(string $accessToken, string $idToken): array
 
 function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $rawRedirect = '/', string $vkUserIdHint = '', string $vkEmailHint = '', string $idToken = '', string $refreshToken = '', array $claims = []): array
 {
+    $attemptId = bin2hex(random_bytes(8));
     $safeRedirect = sanitize_internal_redirect($rawRedirect, '/contests');
 
     vk_auth_log('sdk_login_received', [
@@ -641,6 +803,14 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
         'has_email' => $vkEmailHint !== '',
         'claims_keys' => array_keys($claims),
     ]);
+    vk_log_attempt('user', 'sdk_login_received', [
+        'has_access_token' => $accessToken !== '',
+        'has_id_token' => $idToken !== '',
+        'has_refresh_token' => $refreshToken !== '',
+        'has_user_id_hint' => $vkUserIdHint !== '',
+        'has_email_hint' => $vkEmailHint !== '',
+        'claims_keys' => array_keys($claims),
+    ], $attemptId);
 
     if ($accessToken === '' && $idToken === '') {
         return ['ok' => false, 'error_code' => 'exchange_failed'];
@@ -696,7 +866,10 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
         'has_id_token' => $idToken !== '',
     ]);
 
-    $userId = vk_save_user_profile($pdo, $mapped, $accessToken);
+    $userId = vk_save_user_profile($pdo, $mapped, $accessToken, [
+        'flow' => 'user',
+        'attempt_id' => $attemptId,
+    ]);
 
     if ($userId <= 0) {
         return ['ok' => false, 'error_code' => 'exchange_failed'];
@@ -704,6 +877,11 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
 
     $_SESSION['user_id'] = $userId;
     $_SESSION['vk_token'] = $accessToken;
+    vk_log_attempt('user', 'session_set', [
+        'session_keys' => ['user_id', 'vk_token'],
+        'user_id' => $userId,
+        'vk_token_masked' => vk_mask_secret($accessToken),
+    ], $attemptId);
     unset($_SESSION['user_auth_redirect']);
 
     return ['ok' => true, 'redirect_to' => $safeRedirect];
