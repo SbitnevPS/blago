@@ -76,6 +76,7 @@ $routes = [
  '/register' => ['file' => 'app/views/public/register.php', 'name' => 'register'],
  '/logout' => ['file' => 'app/views/public/logout.php', 'name' => 'logout'],
  '/auth/vk/user/start' => ['file' => 'app/auth/vk/user/start.php', 'name' => 'vk-user-start'],
+ '/auth/vk/user/sdk-login' => ['file' => 'app/auth/vk/user/sdk-login.php', 'name' => 'vk-user-sdk-login'],
  '/auth/vk/user/callback' => ['file' => 'app/auth/vk/user/callback.php', 'name' => 'vk-user-callback'],
  '/auth/vk/admin/start' => ['file' => 'app/auth/vk/admin/start.php', 'name' => 'vk-admin-start'],
  '/auth/vk/admin/callback' => ['file' => 'app/auth/vk/admin/callback.php', 'name' => 'vk-admin-callback'],

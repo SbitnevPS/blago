@@ -101,10 +101,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 <div class="login-form" id="form-vk">
 <div class="divider">или</div>
-<button type="button" id="vk-login-button" class="btn-primary" style="width:100%;display:flex;justify-content:center;gap:8px;">
-<i class="fab fa-vk"></i> Войти через VK
+<div id="vkid-onetap-container"></div>
+<button type="button" id="vk-login-button" class="btn-primary" style="width:100%;display:none;justify-content:center;gap:8px;">
+<i class="fab fa-vk"></i> Войти через VK (резервный способ)
 </button>
-<p style="font-size:14px;color:#666;margin-top:12px;">Авторизация запускается отдельным защищённым endpoint на сервере.</p>
+<p style="font-size:14px;color:#666;margin-top:12px;">Используется официальная кнопка VK ID. Если виджет не загрузится, будет доступен резервный вход через OAuth.</p>
 </div>
 
 <div class="login-card__footer">
@@ -121,9 +122,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 <script>
 const VK_START_ENDPOINT = '/auth/vk/user/start';
+const VK_SDK_LOGIN_ENDPOINT = '/auth/vk/user/sdk-login';
 const VK_REDIRECT_TARGET = <?= json_encode($redirectAfterAuth, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const CSRF_TOKEN = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 let vkStartInProgress = false;
+let vkSdkLoginInProgress = false;
 
 function setAuthError(message) {
     const errorEl = document.getElementById('auth-error-message');
@@ -192,7 +195,90 @@ function showTab(tab) {
     }
 }
 
+async function finishVkLoginViaSdk(vkPayload) {
+    if (vkSdkLoginInProgress) {
+        return;
+    }
+
+    vkSdkLoginInProgress = true;
+    try {
+        const response = await fetch(VK_SDK_LOGIN_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-Token': CSRF_TOKEN,
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                redirect: VK_REDIRECT_TARGET,
+                vk: vkPayload || {},
+            }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success || !payload.redirect_to) {
+            throw new Error(payload.error || 'Не удалось завершить вход через VK ID. Попробуйте снова.');
+        }
+
+        window.location.href = payload.redirect_to;
+    } catch (error) {
+        setAuthError(error.message || 'Не удалось завершить вход через VK ID. Попробуйте снова.');
+    } finally {
+        vkSdkLoginInProgress = false;
+    }
+}
+
+function initVkIdWidget() {
+    const fallbackButton = document.getElementById('vk-login-button');
+    const widgetContainer = document.getElementById('vkid-onetap-container');
+
+    if (!widgetContainer) {
+        return;
+    }
+
+    if (!('VKIDSDK' in window)) {
+        if (fallbackButton) {
+            fallbackButton.style.display = 'flex';
+        }
+        return;
+    }
+
+    const VKID = window.VKIDSDK;
+    VKID.Config.init({
+        app: Number(<?= json_encode(VK_CLIENT_ID) ?>),
+        redirectUrl: <?= json_encode(VK_USER_REDIRECT_URI, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+        responseMode: VKID.ConfigResponseMode.Callback,
+        source: VKID.ConfigSource.LOWCODE,
+        scope: '',
+    });
+
+    const oneTap = new VKID.OneTap();
+    oneTap
+        .render({
+            container: widgetContainer,
+            showAlternativeLogin: true,
+        })
+        .on(VKID.WidgetEvents.ERROR, function () {
+            if (fallbackButton) {
+                fallbackButton.style.display = 'flex';
+            }
+            setAuthError('Не удалось загрузить VK ID. Попробуйте резервный вход.');
+        })
+        .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
+            const code = payload?.code || '';
+            const deviceId = payload?.device_id || '';
+
+            VKID.Auth.exchangeCode(code, deviceId)
+                .then(finishVkLoginViaSdk)
+                .catch(function () {
+                    setAuthError('Не удалось завершить вход через VK ID. Попробуйте снова.');
+                });
+        });
+}
+
 document.getElementById('vk-login-button')?.addEventListener('click', startVkLogin);
 </script>
+<script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js" defer onload="initVkIdWidget()" onerror="document.getElementById('vk-login-button').style.display='flex';setAuthError('Не удалось загрузить VK ID SDK. Используйте резервный вход.');"></script>
 </body>
 </html>
