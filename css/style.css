@@ -1606,3 +1606,90 @@ h4 {
 		display: none;
 	}
 }
+
+/* Legal pages */
+.legal-page {
+	max-width: 900px;
+	margin: 0 auto;
+	padding: var(--space-xl) var(--space-lg);
+}
+
+.legal-page h1 {
+	margin-bottom: var(--space-md);
+}
+
+.legal-page h2 {
+	margin-top: var(--space-xl);
+	margin-bottom: var(--space-sm);
+}
+
+.legal-page p,
+.legal-page li {
+	color: var(--color-text-secondary);
+	line-height: 1.65;
+}
+
+/* Cookie consent */
+.cookie-banner {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 1200;
+	background: var(--color-surface);
+	border-top: 1px solid var(--color-border);
+	box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.cookie-banner__content {
+	max-width: 1200px;
+	margin: 0 auto;
+	padding: var(--space-md) var(--space-lg);
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: var(--space-md);
+	flex-wrap: wrap;
+}
+
+.cookie-banner__text {
+	margin: 0;
+	color: var(--color-text-secondary);
+	font-size: var(--font-size-sm);
+}
+
+.cookie-banner__actions {
+	display: flex;
+	gap: var(--space-sm);
+	flex-wrap: wrap;
+}
+
+.cookie-settings__description {
+	margin-bottom: var(--space-md);
+	color: var(--color-text-secondary);
+}
+
+.cookie-settings__item {
+	display: flex;
+	justify-content: space-between;
+	gap: var(--space-md);
+	align-items: center;
+	padding: var(--space-sm) 0;
+	border-bottom: 1px solid var(--color-border);
+}
+
+.cookie-settings__actions {
+	margin-top: var(--space-lg);
+	display: flex;
+	justify-content: flex-end;
+}
+
+@media (max-width: 768px) {
+	.cookie-banner__actions {
+		width: 100%;
+	}
+
+	.cookie-banner__actions .btn {
+		flex: 1;
+	}
+}
