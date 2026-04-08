@@ -4,7 +4,6 @@ RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
-SetEnv GITHUB_WEBHOOK_SECRET lkjasnfcwnofimsoirwmafjac843ucr8u(*Yiuhne9r8
 
 # Front-controller
 RewriteRule ^ index.php [L,QSA]
@@ -19,3 +18,10 @@ RedirectMatch 403 /\.git
 
 # Disable directory listing (without Options directives)
 IndexIgnore *
+
+<FilesMatch "\.local\.php$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+RewriteRule ^storage/private/ - [F,L,NC]
