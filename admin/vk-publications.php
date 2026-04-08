@@ -40,6 +40,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare("UPDATE vk_publication_tasks SET task_status = 'archived', updated_at = NOW() WHERE id = ?")
             ->execute([$taskId]);
         $_SESSION['success_message'] = 'Задание архивировано';
+    } elseif ($action === 'archive_selected') {
+        $selectedRaw = $_POST['selected'] ?? [];
+        if (!is_array($selectedRaw) || empty($selectedRaw)) {
+            $_SESSION['error_message'] = 'Не выбраны задания для архивации';
+            redirect('/admin/vk-publications');
+        }
+
+        $selectedIds = [];
+        foreach ($selectedRaw as $selectedId) {
+            $id = (int) $selectedId;
+            if ($id > 0) {
+                $selectedIds[] = $id;
+            }
+        }
+        $selectedIds = array_values(array_unique($selectedIds));
+
+        if (empty($selectedIds)) {
+            $_SESSION['error_message'] = 'Не выбраны задания для архивации';
+            redirect('/admin/vk-publications');
+        }
+
+        $placeholders = implode(',', array_fill(0, count($selectedIds), '?'));
+        $archiveStmt = $pdo->prepare("UPDATE vk_publication_tasks SET task_status = 'archived', updated_at = NOW() WHERE id IN ($placeholders)");
+        $archiveStmt->execute($selectedIds);
+        $_SESSION['success_message'] = 'В архив перемещено заданий: ' . (int) $archiveStmt->rowCount();
     }
 
     redirect('/admin/vk-publications');
@@ -180,12 +205,27 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="card">
     <div class="card__header">
-        <h3>Задания на публикацию (<?= count($tasks) ?>)</h3>
+        <div class="flex justify-between items-center w-100">
+            <h3>Задания на публикацию (<?= count($tasks) ?>)</h3>
+            <button type="button" class="btn btn--ghost" id="toggleSelectModeBtn">
+                <i class="fas fa-check-square"></i> Выбрать
+            </button>
+        </div>
+        <div class="flex items-center gap-md" id="bulkActionsBar" style="display:none; margin-top:12px; flex-wrap:nowrap;">
+            <div class="text-secondary" style="white-space:nowrap;">Выбрано: <strong id="selectedCountValue">0</strong></div>
+            <div class="flex gap-sm">
+                <button type="button" class="btn btn--ghost btn--sm" id="clearSelectedBtn">Сбросить</button>
+                <button type="button" class="btn btn--secondary btn--sm" id="bulkArchiveBtn">
+                    <i class="fas fa-box-archive"></i> Архивировать
+                </button>
+            </div>
+        </div>
     </div>
     <div class="card__body" style="padding: 0;">
         <table class="table">
             <thead>
             <tr>
+                <th class="select-col" style="display:none; width:54px;"></th>
                 <th>ID</th>
                 <th>Название</th>
                 <th>Конкурс</th>
@@ -202,7 +242,10 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
             <?php foreach ($tasks as $task): ?>
                 <?php $statusMeta = getVkTaskStatusMeta((string) $task['task_status']); ?>
-                <tr>
+                <tr class="task-row" data-task-id="<?= (int) $task['id'] ?>">
+                    <td class="select-col" style="display:none;" data-label="Выбор">
+                        <input type="checkbox" class="task-select-checkbox" value="<?= (int) $task['id'] ?>">
+                    </td>
                     <td data-label="ID">#<?= (int) $task['id'] ?></td>
                     <td data-label="Название"><?= e($task['title']) ?></td>
                     <td data-label="Конкурс"><?= e($task['contest_title'] ?: 'Все конкурсы') ?></td>
@@ -247,11 +290,112 @@ require_once __DIR__ . '/includes/header.php';
                 </tr>
             <?php endforeach; ?>
             <?php if (!$tasks): ?>
-                <tr><td colspan="11" class="text-center text-secondary" style="padding: 36px;">Заданий пока нет.</td></tr>
+                <tr><td colspan="12" class="text-center text-secondary" style="padding: 36px;">Заданий пока нет.</td></tr>
             <?php endif; ?>
             </tbody>
         </table>
     </div>
 </div>
+
+<script>
+const csrfTokenValue = document.querySelector('input[name="csrf_token"]')?.value || '';
+let selectionModeEnabled = false;
+
+function updateBulkSelectionState() {
+    const selected = Array.from(document.querySelectorAll('.task-select-checkbox:checked'));
+    const selectedCount = selected.length;
+    const selectedCounter = document.getElementById('selectedCountValue');
+    const archiveButton = document.getElementById('bulkArchiveBtn');
+    if (selectedCounter) {
+        selectedCounter.textContent = String(selectedCount);
+    }
+    if (archiveButton) {
+        archiveButton.disabled = selectedCount === 0;
+    }
+}
+
+function clearSelectedTasks() {
+    document.querySelectorAll('.task-select-checkbox').forEach((checkbox) => {
+        checkbox.checked = false;
+    });
+    updateBulkSelectionState();
+}
+
+function toggleSelectionMode(forceState = null) {
+    selectionModeEnabled = forceState === null ? !selectionModeEnabled : Boolean(forceState);
+    const selectCols = document.querySelectorAll('.select-col');
+    const bulkBar = document.getElementById('bulkActionsBar');
+    const toggleBtn = document.getElementById('toggleSelectModeBtn');
+
+    selectCols.forEach((col) => {
+        col.style.display = selectionModeEnabled ? '' : 'none';
+    });
+    if (bulkBar) {
+        bulkBar.style.display = selectionModeEnabled ? 'flex' : 'none';
+    }
+    if (toggleBtn) {
+        toggleBtn.innerHTML = selectionModeEnabled
+            ? '<i class="fas fa-times"></i> Отменить выбор'
+            : '<i class="fas fa-check-square"></i> Выбрать';
+    }
+
+    if (!selectionModeEnabled) {
+        clearSelectedTasks();
+    }
+    updateBulkSelectionState();
+}
+
+function archiveSelectedTasks() {
+    const selected = Array.from(document.querySelectorAll('.task-select-checkbox:checked')).map((item) => item.value);
+    if (!selected.length) {
+        alert('Выберите хотя бы одно задание');
+        return;
+    }
+    if (!confirm('Архивировать выбранные задания?')) {
+        return;
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/admin/vk-publications';
+
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = csrfTokenValue;
+    form.appendChild(csrfInput);
+
+    const actionInput = document.createElement('input');
+    actionInput.type = 'hidden';
+    actionInput.name = 'action';
+    actionInput.value = 'archive_selected';
+    form.appendChild(actionInput);
+
+    selected.forEach((id) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'selected[]';
+        input.value = id;
+        form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
+document.getElementById('toggleSelectModeBtn')?.addEventListener('click', function() {
+    toggleSelectionMode();
+});
+document.getElementById('clearSelectedBtn')?.addEventListener('click', function() {
+    clearSelectedTasks();
+});
+document.getElementById('bulkArchiveBtn')?.addEventListener('click', function() {
+    archiveSelectedTasks();
+});
+document.querySelectorAll('.task-select-checkbox').forEach((checkbox) => {
+    checkbox.addEventListener('change', updateBulkSelectionState);
+});
+updateBulkSelectionState();
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
