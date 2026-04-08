@@ -13,6 +13,7 @@ check_csrf();
 $admin = getCurrentUser();
 $contest_id = $_GET['id'] ?? 0;
 $isEdit = !empty($contest_id);
+$themeOptions = getContestThemeStyles();
 
 // Получаем конкурс для редактирования
 if ($isEdit) {
@@ -28,6 +29,8 @@ if ($isEdit) {
         'title' => '',
         'description' => '',
         'document_file' => '',
+        'cover_image' => '',
+        'theme_style' => 'blue',
         'is_published' => 0,
         'date_from' => date('Y-m-d'),
         'date_to' => ''
@@ -45,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $title = trim($_POST['title'] ?? '');
         $description = $_POST['description'] ?? '';
         $is_published = isset($_POST['is_published']) ? 1 : 0;
+        $theme_style = normalizeContestThemeStyle($_POST['theme_style'] ?? 'blue');
         $date_from = !empty($_POST['date_from']) ? $_POST['date_from'] : null;
         $date_to = !empty($_POST['date_to']) ? $_POST['date_to'] : null;
         
@@ -53,6 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             // Загрузка документа
             $document_file = $contest['document_file'];
+            $cover_image = $contest['cover_image'] ?? '';
             if (isset($_FILES['document_file']) && $_FILES['document_file']['error'] === UPLOAD_ERR_OK) {
                 $result = uploadFile($_FILES['document_file'], DOCUMENTS_PATH, ['pdf', 'doc', 'docx']);
                 if ($result['success']) {
@@ -63,31 +68,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $document_file = $result['filename'];
                 }
             }
+
+            if (empty($error) && isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
+                if (!is_dir(CONTEST_COVERS_PATH) && !mkdir(CONTEST_COVERS_PATH, 0775, true) && !is_dir(CONTEST_COVERS_PATH)) {
+                    $error = 'Не удалось подготовить каталог обложек';
+                } else {
+                    $uploadCoverResult = uploadFile($_FILES['cover_image'], CONTEST_COVERS_PATH, ['jpg', 'jpeg', 'png', 'webp']);
+                    if ($uploadCoverResult['success']) {
+                        $oldCoverImage = $cover_image;
+                        $cover_image = $uploadCoverResult['filename'];
+                        if (!empty($oldCoverImage) && $oldCoverImage !== $cover_image && file_exists(CONTEST_COVERS_PATH . '/' . $oldCoverImage)) {
+                            unlink(CONTEST_COVERS_PATH . '/' . $oldCoverImage);
+                        }
+                    } else {
+                        $error = $uploadCoverResult['message'] ?? 'Ошибка загрузки обложки';
+                    }
+                }
+            }
             
-            if ($isEdit) {
+            if (empty($error) && $isEdit) {
                 $stmt = $pdo->prepare("
                     UPDATE contests SET 
-                        title = ?, description = ?, document_file = ?,
+                        title = ?, description = ?, document_file = ?, cover_image = ?, theme_style = ?,
                         is_published = ?, date_from = ?, date_to = ?,
                         updated_at = NOW()
                     WHERE id = ?
                 ");
-                $stmt->execute([$title, $description, $document_file, $is_published, $date_from, $date_to, $contest_id]);
-            } else {
+                $stmt->execute([$title, $description, $document_file, $cover_image, $theme_style, $is_published, $date_from, $date_to, $contest_id]);
+            } elseif (empty($error)) {
                 $stmt = $pdo->prepare("
-                    INSERT INTO contests (title, description, document_file, is_published, date_from, date_to)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO contests (title, description, document_file, cover_image, theme_style, is_published, date_from, date_to)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt->execute([$title, $description, $document_file, $is_published, $date_from, $date_to]);
+                $stmt->execute([$title, $description, $document_file, $cover_image, $theme_style, $is_published, $date_from, $date_to]);
                 $contest_id = $pdo->lastInsertId();
             }
             
-            $success = 'Конкурс сохранён';
-            
-            // Перезагружаем данные
-            $stmt = $pdo->prepare("SELECT * FROM contests WHERE id = ?");
-            $stmt->execute([$contest_id]);
-            $contest = $stmt->fetch();
+            if (empty($error)) {
+                $success = 'Конкурс сохранён';
+                
+                // Перезагружаем данные
+                $stmt = $pdo->prepare("SELECT * FROM contests WHERE id = ?");
+                $stmt->execute([$contest_id]);
+                $contest = $stmt->fetch();
+            }
         }
     }
 }
@@ -97,6 +121,7 @@ generateCSRFToken();
 $currentPage = 'contests';
 $pageTitle = $isEdit ? 'Редактирование конкурса' : 'Новый конкурс';
 $breadcrumb = 'Конкурсы / ' . ($isEdit ? 'Редактирование' : 'Создание');
+$pageStyles = ['admin-contests.css'];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -166,6 +191,31 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endif; ?>
                 <input type="file" name="document_file" accept=".pdf,.doc,.docx" class="form-input">
                 <div class="form-hint">Максимальный размер: 10MB</div>
+            </div>
+
+            <div class="form-group mt-lg">
+                <label class="form-label">Обложка конкурса (JPG, JPEG, PNG, WEBP)</label>
+                <?php if (!empty($contest['cover_image'])): ?>
+                    <div class="contest-cover-preview mb-md">
+                        <img src="/uploads/contest-covers/<?= htmlspecialchars($contest['cover_image']) ?>" alt="Обложка конкурса">
+                    </div>
+                <?php endif; ?>
+                <input type="file" name="cover_image" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="form-input">
+                <div class="form-hint">Рекомендуемый размер: от 1200×700px. Максимальный размер: 10MB.</div>
+            </div>
+
+            <div class="form-group mt-lg">
+                <label class="form-label">Стиль оформления конкурса</label>
+                <div class="contest-theme-picker">
+                    <?php foreach ($themeOptions as $themeKey => $themeLabel): ?>
+                        <?php $checked = normalizeContestThemeStyle($contest['theme_style'] ?? 'blue') === $themeKey; ?>
+                        <label class="contest-theme-option contest-theme-option--<?= htmlspecialchars($themeKey) ?>">
+                            <input type="radio" name="theme_style" value="<?= htmlspecialchars($themeKey) ?>" <?= $checked ? 'checked' : '' ?>>
+                            <span class="contest-theme-option__swatch"></span>
+                            <span class="contest-theme-option__label"><?= htmlspecialchars($themeLabel) ?></span>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
             </div>
         </div>
     </div>

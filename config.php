@@ -5,6 +5,7 @@ define('ROOT_PATH', __DIR__);
 define('UPLOAD_PATH', ROOT_PATH . '/uploads');
 define('DRAWINGS_PATH', UPLOAD_PATH . '/drawings');
 define('DOCUMENTS_PATH', UPLOAD_PATH . '/documents');
+define('CONTEST_COVERS_PATH', UPLOAD_PATH . '/contest-covers');
 define('SETTINGS_FILE', ROOT_PATH . '/storage/settings.json');
 
 if (is_file(__DIR__ . '/vendor/autoload.php')) {
@@ -583,12 +584,57 @@ function getActiveContests() {
     $stmt = $pdo->prepare("
         SELECT * FROM contests
         WHERE is_published = 1
-        AND (date_from IS NULL OR date_from <= CURRENT_DATE)
         AND (date_to IS NULL OR date_to >= CURRENT_DATE)
         ORDER BY date_from DESC, created_at DESC
     ");
     $stmt->execute();
     return $stmt->fetchAll();
+}
+
+function getContestThemeStyles() {
+    return [
+        'green' => 'Зелёный',
+        'blue' => 'Синий',
+        'purple' => 'Фиолетовый',
+        'orange' => 'Оранжевый',
+        'pink' => 'Розовый',
+        'teal' => 'Бирюзовый',
+    ];
+}
+
+function normalizeContestThemeStyle($style) {
+    $style = strtolower(trim((string) $style));
+    $themes = getContestThemeStyles();
+    return array_key_exists($style, $themes) ? $style : 'blue';
+}
+
+function getContestPublicStatus(array $contest) {
+    if (empty($contest['is_published'])) {
+        return null;
+    }
+
+    $today = new DateTimeImmutable('today');
+    $dateFrom = !empty($contest['date_from']) ? new DateTimeImmutable($contest['date_from']) : null;
+    $dateTo = !empty($contest['date_to']) ? new DateTimeImmutable($contest['date_to']) : null;
+
+    if ($dateFrom !== null && $today < $dateFrom) {
+        return [
+            'label' => 'Скоро',
+            'class' => 'contest-status--soon',
+        ];
+    }
+
+    if ($dateTo !== null && $today > $dateTo) {
+        return [
+            'label' => 'Завершён',
+            'class' => 'contest-status--finished',
+        ];
+    }
+
+    return [
+        'label' => 'Идёт приём работ',
+        'class' => 'contest-status--active',
+    ];
 }
 
 // Функция для получения заявок пользователя

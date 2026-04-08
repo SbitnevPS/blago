@@ -30,10 +30,19 @@ if (isPostRequest() && isset($_POST['action'])) {
         $stmt->execute([$contest_id]);
         $_SESSION['success_message'] = 'Статус публикации изменён';
     } elseif ($_POST['action'] === 'delete') {
+        $coverStmt = $pdo->prepare("SELECT cover_image FROM contests WHERE id = ?");
+        $coverStmt->execute([$contest_id]);
+        $coverImage = $coverStmt->fetchColumn();
+
         // Удаляем связанные данные
         $pdo->prepare("DELETE FROM participants WHERE application_id IN (SELECT id FROM applications WHERE contest_id = ?)")->execute([$contest_id]);
         $pdo->prepare("DELETE FROM applications WHERE contest_id = ?")->execute([$contest_id]);
         $pdo->prepare("DELETE FROM contests WHERE id = ?")->execute([$contest_id]);
+
+        if (!empty($coverImage) && file_exists(CONTEST_COVERS_PATH . '/' . $coverImage)) {
+            unlink(CONTEST_COVERS_PATH . '/' . $coverImage);
+        }
+
         $_SESSION['success_message'] = 'Конкурс удалён';
     }
     
@@ -128,12 +137,21 @@ require_once __DIR__ . '/includes/header.php';
                     <span class="badge <?= $contest['is_published'] ? 'badge--success' : 'badge--secondary' ?>">
                         <?= $contest['is_published'] ? 'Опубликован' : 'Не опубликован' ?>
                     </span>
+                    <span class="contest-theme-indicator contest-theme-indicator--<?= htmlspecialchars(normalizeContestThemeStyle($contest['theme_style'] ?? 'blue')) ?>">
+                        <span class="contest-theme-indicator__dot"></span>
+                        <?= htmlspecialchars(getContestThemeStyles()[normalizeContestThemeStyle($contest['theme_style'] ?? 'blue')]) ?>
+                    </span>
                     <a class="contest-card__applications-link" href="/admin/applications?contest_id=<?= (int) $contest['id'] ?>">
                         <i class="fas fa-file-alt"></i> <?= (int) $contest['applications_count'] ?> заявок
                     </a>
                 </div>
             </div>
             <div class="card__body">
+                <?php if (!empty($contest['cover_image'])): ?>
+                    <div class="contest-admin-cover mb-md">
+                        <img src="/uploads/contest-covers/<?= htmlspecialchars($contest['cover_image']) ?>" alt="Обложка конкурса">
+                    </div>
+                <?php endif; ?>
                 <p class="text-secondary contest-description">
                     <?= htmlspecialchars(mb_substr(strip_tags($contest['description'] ?? ''), 0, 200)) ?>...
                 </p>
