@@ -456,19 +456,30 @@ function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '')
         return 0;
     }
 
-    $stmt = $pdo->prepare('SELECT * FROM users WHERE vk_id = ? LIMIT 1');
-    $stmt->execute([$vkUserId]);
-    $existingUser = $stmt->fetch();
-
     $name = trim((string) ($mapped['name'] ?? ''));
     $surname = trim((string) ($mapped['surname'] ?? ''));
     $patronymic = trim((string) ($mapped['patronymic'] ?? ''));
     $email = trim((string) ($mapped['email'] ?? ''));
     $avatarUrl = trim((string) ($mapped['avatar_url'] ?? ''));
 
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE vk_id = ? LIMIT 1');
+    $stmt->execute([$vkUserId]);
+    $existingUser = $stmt->fetch();
+
+    if (!$existingUser && $email !== '') {
+        $fallbackStmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
+        $fallbackStmt->execute([$email]);
+        $existingUser = $fallbackStmt->fetch();
+    }
+
     if ($existingUser) {
         $updates = ['updated_at = NOW()'];
         $params = [];
+
+        if ((string) ($existingUser['vk_id'] ?? '') === '') {
+            $updates[] = 'vk_id = ?';
+            $params[] = $vkUserId;
+        }
 
         if ($accessToken !== '') {
             $updates[] = 'vk_access_token = ?';
