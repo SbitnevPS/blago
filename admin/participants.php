@@ -15,6 +15,8 @@ $pageTitle = 'Участники';
 $breadcrumb = 'Конкурсы / Участники';
 
 $contest_id = $_GET['contest_id'] ?? '';
+$participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
+$participantId = (int) ($_GET['participant_id'] ?? 0);
 
 $where = [];
 $params = [];
@@ -22,6 +24,17 @@ $params = [];
 if ($contest_id !== '' && ctype_digit((string) $contest_id)) {
     $where[] = 'a.contest_id = ?';
     $params[] = (int) $contest_id;
+}
+
+if ($participantId > 0) {
+    $where[] = 'p.id = ?';
+    $params[] = $participantId;
+} elseif ($participantQuery !== '') {
+    $where[] = '(p.fio LIKE ? OR p.region LIKE ? OR u.email LIKE ?)';
+    $searchTerm = '%' . $participantQuery . '%';
+    $params[] = $searchTerm;
+    $params[] = $searchTerm;
+    $params[] = $searchTerm;
 }
 
 $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
@@ -41,20 +54,6 @@ $participants = $listStmt->fetchAll();
 
 $contests = $pdo->query('SELECT id, title FROM contests ORDER BY created_at DESC')->fetchAll();
 
-function splitParticipantFio(array $participant): array {
-    $fullName = trim((string) ($participant['fio'] ?? ''));
-    if ($fullName === '') {
-        return ['surname' => '—', 'name' => '—', 'patronymic' => '—'];
-    }
-
-    $parts = preg_split('/\s+/u', $fullName) ?: [];
-    return [
-        'surname' => $parts[0] ?? '—',
-        'name' => $parts[1] ?? '—',
-        'patronymic' => $parts[2] ?? '—',
-    ];
-}
-
 require_once __DIR__ . '/includes/header.php';
 ?>
 
@@ -73,8 +72,21 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
+            <div style="flex:1; min-width: 260px; max-width: 420px; position:relative;">
+                <label class="form-label">Поиск по участнику</label>
+                <input
+                    type="text"
+                    name="participant_query"
+                    id="participantSearchInput"
+                    class="form-input"
+                    placeholder="ФИО участника, регион или email заявителя"
+                    value="<?= htmlspecialchars($participantQuery) ?>"
+                    autocomplete="off">
+                <input type="hidden" name="participant_id" id="participantId" value="<?= (int) $participantId ?>">
+                <div id="participantSearchResults" class="user-results"></div>
+            </div>
             <button type="submit" class="btn btn--primary"><i class="fas fa-filter"></i> Применить</button>
-            <?php if ($contest_id !== ''): ?>
+            <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0): ?>
                 <a href="/admin/participants" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
@@ -89,9 +101,7 @@ require_once __DIR__ . '/includes/header.php';
         <table class="table">
             <thead>
                 <tr>
-                    <th>Фамилия</th>
-                    <th>Имя</th>
-                    <th>Отчество</th>
+                    <th>ФИО участника</th>
                     <th>Возраст</th>
                     <th>Email заявки</th>
                     <th>Регион</th>
@@ -102,15 +112,12 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
                 <?php foreach ($participants as $participant): ?>
                     <?php
-                        $fio = splitParticipantFio($participant);
                         $isRevisionState = isset($participant['allow_edit']) && (int) $participant['allow_edit'] === 1 && $participant['application_status'] !== 'approved';
                         $statusMeta = getApplicationStatusMeta($participant['application_status']);
                         $rowStyle = $isRevisionState ? 'background:#FEF9C3;' : ($statusMeta['row_style'] ?? '');
                     ?>
                     <tr style="<?= $rowStyle ?>">
-                        <td data-label="Фамилия"><?= htmlspecialchars($fio['surname']) ?></td>
-                        <td data-label="Имя"><?= htmlspecialchars($fio['name']) ?></td>
-                        <td data-label="Отчество"><?= htmlspecialchars($fio['patronymic']) ?></td>
+                        <td data-label="ФИО участника"><?= htmlspecialchars($participant['fio'] ?: '—') ?></td>
                         <td data-label="Возраст"><?= (int) ($participant['age'] ?? 0) ?: '—' ?></td>
                         <td data-label="Email заявки"><?= htmlspecialchars($participant['applicant_email'] ?: ($participant['organization_email'] ?: '—')) ?></td>
                         <td data-label="Регион"><?= htmlspecialchars($participant['region'] ?: '—') ?></td>
@@ -129,7 +136,7 @@ require_once __DIR__ . '/includes/header.php';
 
                 <?php if (empty($participants)): ?>
                     <tr>
-                        <td colspan="8" class="text-center text-secondary" style="padding: 36px;">Участники не найдены.</td>
+                        <td colspan="6" class="text-center text-secondary" style="padding: 36px;">Участники не найдены.</td>
                     </tr>
                 <?php endif; ?>
             </tbody>
@@ -140,15 +147,96 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="text-secondary" style="font-size: 14px;">Страница <?= $page ?> из <?= $totalPages ?></div>
                 <div class="flex gap-sm">
                     <?php if ($page > 1): ?>
-                        <a class="btn btn--ghost btn--sm" href="?page=<?= $page - 1 ?>&contest_id=<?= urlencode((string) $contest_id) ?>"><i class="fas fa-chevron-left"></i></a>
+                        <a class="btn btn--ghost btn--sm" href="?page=<?= $page - 1 ?>&contest_id=<?= urlencode((string) $contest_id) ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>"><i class="fas fa-chevron-left"></i></a>
                     <?php endif; ?>
                     <?php if ($page < $totalPages): ?>
-                        <a class="btn btn--ghost btn--sm" href="?page=<?= $page + 1 ?>&contest_id=<?= urlencode((string) $contest_id) ?>"><i class="fas fa-chevron-right"></i></a>
+                        <a class="btn btn--ghost btn--sm" href="?page=<?= $page + 1 ?>&contest_id=<?= urlencode((string) $contest_id) ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>"><i class="fas fa-chevron-right"></i></a>
                     <?php endif; ?>
                 </div>
             </div>
         <?php endif; ?>
     </div>
 </div>
+
+<script>
+(() => {
+    const input = document.getElementById('participantSearchInput');
+    const hiddenInput = document.getElementById('participantId');
+    const results = document.getElementById('participantSearchResults');
+    if (!input || !hiddenInput || !results) return;
+
+    let timer = null;
+
+    const hideResults = () => {
+        results.style.display = 'none';
+        results.innerHTML = '';
+    };
+
+    const renderItems = (items) => {
+        if (!Array.isArray(items) || items.length === 0) {
+            results.innerHTML = '<div class="user-results__empty">Ничего не найдено</div>';
+            results.style.display = 'block';
+            return;
+        }
+
+        const escapeHtml = (value) => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+
+        results.innerHTML = items.map((item) => {
+            const fullName = `${item.fio || ''}`.trim() || 'Без имени';
+            const region = item.region ? `Регион: ${item.region}` : 'Регион: —';
+            const email = item.email || 'Email не указан';
+            const safeName = escapeHtml(fullName);
+            const safeRegion = escapeHtml(region);
+            const safeEmail = escapeHtml(email);
+            return `
+                <button type="button" class="user-results__item" data-id="${item.id}" data-name="${safeName}">
+                    <div class="user-results__name">${safeName}</div>
+                    <div class="user-results__email">${safeRegion} · ${safeEmail}</div>
+                </button>
+            `;
+        }).join('');
+        results.style.display = 'block';
+    };
+
+    input.addEventListener('input', () => {
+        hiddenInput.value = '';
+        const query = input.value.trim();
+        if (timer) clearTimeout(timer);
+        if (query.length < 2) {
+            hideResults();
+            return;
+        }
+
+        timer = setTimeout(async () => {
+            try {
+                const response = await fetch(`/admin/search-participants.php?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                renderItems(data);
+            } catch (error) {
+                hideResults();
+            }
+        }, 220);
+    });
+
+    results.addEventListener('click', (event) => {
+        const item = event.target.closest('.user-results__item');
+        if (!item) return;
+        hiddenInput.value = item.dataset.id || '';
+        input.value = item.dataset.name || '';
+        hideResults();
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!results.contains(event.target) && event.target !== input) {
+            hideResults();
+        }
+    });
+})();
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
