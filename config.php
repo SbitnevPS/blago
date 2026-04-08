@@ -10,7 +10,6 @@ define('SETTINGS_FILE', ROOT_PATH . '/storage/settings.json');
 if (is_file(__DIR__ . '/vendor/autoload.php')) {
     require_once __DIR__ . '/vendor/autoload.php';
 }
-define('VK_SDK_VERSION', (string) config_get($config, 'vk.sdk_version', '2.6.1'));
 
 $localConfigPath = ROOT_PATH . '/storage/private/config.local.php';
 
@@ -52,6 +51,8 @@ function config_require(array $config, string $path)
 
     return $value;
 }
+
+define('VK_SDK_VERSION', (string) config_get($config, 'vk.sdk_version', '2.6.1'));
 
 // База данных
 define('DB_HOST', (string) config_require($config, 'db.host'));
