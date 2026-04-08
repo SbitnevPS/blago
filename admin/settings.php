@@ -75,8 +75,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'application_declined_message' => trim($_POST['application_declined_message'] ?? ''),
             'application_revision_subject' => trim($_POST['application_revision_subject'] ?? ''),
             'application_revision_message' => trim($_POST['application_revision_message'] ?? ''),
-            'vk_publication_user_token' => trim($_POST['vk_publication_user_token'] ?? ''),
-            'vk_publication_access_token' => trim($_POST['vk_publication_user_token'] ?? ''), // backward compatibility
             'vk_publication_group_id' => trim($_POST['vk_publication_group_id'] ?? ''),
             'vk_publication_api_version' => trim($_POST['vk_publication_api_version'] ?? '5.131'),
             'vk_publication_from_group' => isset($_POST['vk_publication_from_group']) ? 1 : 0,
@@ -98,6 +96,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $settings = getSystemSettings();
+$vkPublicationSettings = getVkPublicationSettings();
+$vkReadiness = verifyVkPublicationReadiness(false);
+$vkStatus = !empty($vkReadiness['ok']) ? 'connected' : (($vkPublicationSettings['user_token'] !== '') ? 'attention' : 'disconnected');
+$vkStatusLabel = $vkStatus === 'connected'
+    ? 'VK подключён'
+    : ($vkStatus === 'attention' ? 'Требуется внимание' : 'VK не подключён');
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -107,6 +111,13 @@ require_once __DIR__ . '/includes/header.php';
         <i class="fas fa-check-circle"></i> <?= htmlspecialchars($_SESSION['success_message']) ?>
     </div>
     <?php unset($_SESSION['success_message']); ?>
+<?php endif; ?>
+
+<?php if (!empty($_SESSION['flash_error'])): ?>
+    <div class="alert alert--error mb-lg">
+        <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($_SESSION['flash_error']) ?>
+    </div>
+    <?php unset($_SESSION['flash_error']); ?>
 <?php endif; ?>
 
 <?php if (!empty($error)): ?>
@@ -259,19 +270,53 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
 
                     <div class="settings-vk-card">
+                        <div class="vk-connection-card">
+                            <div class="vk-connection-card__header">
+                                <div>
+                                    <strong><?= htmlspecialchars($vkStatusLabel) ?></strong>
+                                    <div class="form-hint">
+                                        <?= htmlspecialchars($vkStatus === 'connected' ? 'Публикация рисунков в VK доступна.' : 'Перед публикацией выполните подключение VK ID OAuth.') ?>
+                                    </div>
+                                </div>
+                                <span class="badge <?= $vkStatus === 'connected' ? 'badge--success' : ($vkStatus === 'attention' ? 'badge--warning' : 'badge--secondary') ?>">
+                                    <?= htmlspecialchars($vkStatus === 'connected' ? 'Connected' : ($vkStatus === 'attention' ? 'Warning' : 'Disconnected')) ?>
+                                </span>
+                            </div>
+
+                            <div class="vk-connection-card__meta">
+                                <div><strong>Аккаунт:</strong> <?= htmlspecialchars($vkPublicationSettings['oauth_user_name'] !== '' ? $vkPublicationSettings['oauth_user_name'] : '—') ?></div>
+                                <div><strong>VK user ID:</strong> <?= htmlspecialchars($vkPublicationSettings['oauth_user_id'] !== '' ? $vkPublicationSettings['oauth_user_id'] : '—') ?></div>
+                                <div><strong>Подключено:</strong> <?= htmlspecialchars($vkPublicationSettings['oauth_connected_at'] !== '' ? $vkPublicationSettings['oauth_connected_at'] : '—') ?></div>
+                                <div><strong>Токен истекает:</strong> <?= htmlspecialchars($vkPublicationSettings['token_expires_at'] !== '' ? $vkPublicationSettings['token_expires_at'] : 'не указан') ?></div>
+                                <div><strong>Маска токена:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
+                                <div><strong>Последняя проверка:</strong> <?= htmlspecialchars($vkPublicationSettings['last_checked_at'] !== '' ? $vkPublicationSettings['last_checked_at'] : '—') ?></div>
+                            </div>
+
+                            <?php if (!empty($vkReadiness['issues'])): ?>
+                                <div class="alert alert--warning">
+                                    <i class="fas fa-triangle-exclamation"></i>
+                                    <?= htmlspecialchars(implode('; ', $vkReadiness['issues'])) ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="vk-connection-card__actions">
+                                <button type="button" class="btn btn--primary btn--sm" id="vkConnectBtn">
+                                    <i class="fab fa-vk"></i> <?= $vkPublicationSettings['user_token'] !== '' ? 'Переподключить VK' : 'Подключить VK' ?>
+                                </button>
+                                <button type="button" class="btn btn--ghost btn--sm" id="vkCheckBtn">
+                                    <i class="fas fa-plug-circle-check"></i> Проверить подключение VK
+                                </button>
+                                <button type="button" class="btn btn--danger btn--sm" id="vkDisconnectBtn" <?= $vkPublicationSettings['user_token'] === '' ? 'disabled' : '' ?>>
+                                    <i class="fas fa-link-slash"></i> Отключить VK
+                                </button>
+                            </div>
+                        </div>
+
                         <div class="form-group">
-                            <label class="form-label">VK User Access Token для публикации</label>
-                            <input
-                                type="password"
-                                name="vk_publication_user_token"
-                                class="form-input"
-                                value="<?= htmlspecialchars($settings['vk_publication_user_token'] ?? ($settings['vk_publication_access_token'] ?? '')) ?>"
-                                placeholder="vk1.a...."
-                            >
+                            <label class="form-label">Статус OAuth-подключения</label>
+                            <input type="text" class="form-input" value="<?= htmlspecialchars($vkStatusLabel) ?>" readonly>
                             <div class="form-hint">
-                                Нужен <strong>пользовательский</strong> токен администратора сообщества (не токен сообщества).
-                                Права токена: <code>wall</code>, <code>photos</code>, <code>groups</code>, <code>offline</code>.
-                                Используется для этапов <code>photos.getWallUploadServer</code> → <code>photos.saveWallPhoto</code> → <code>wall.post</code>.
+                                Токен больше не вводится вручную. Используется авторизация VK ID OAuth (authorization code + PKCE).
                             </div>
                         </div>
 
@@ -365,6 +410,9 @@ require_once __DIR__ . '/includes/header.php';
     const title = document.getElementById('homepageHeroUploadTitle');
     const hint = document.getElementById('homepageHeroUploadHint');
     const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
+    const vkConnectBtn = document.getElementById('vkConnectBtn');
+    const vkCheckBtn = document.getElementById('vkCheckBtn');
+    const vkDisconnectBtn = document.getElementById('vkDisconnectBtn');
 
     if (!uploadArea || !input || !hiddenInput || !previewImage) return;
 
@@ -428,6 +476,54 @@ require_once __DIR__ . '/includes/header.php';
         }).finally(() => {
             input.value = '';
         });
+    });
+
+    const postJson = async (url) => {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken,
+            },
+            body: JSON.stringify({}),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.error || payload.message || 'Ошибка запроса');
+        }
+        return payload;
+    };
+
+    vkConnectBtn?.addEventListener('click', async () => {
+        try {
+            const payload = await postJson('/auth/vk/publication/start');
+            if (!payload.auth_url) throw new Error('VK не вернул ссылку авторизации');
+            window.location.href = payload.auth_url;
+        } catch (error) {
+            alert(error.message || 'Не удалось запустить подключение VK');
+        }
+    });
+
+    vkCheckBtn?.addEventListener('click', async () => {
+        try {
+            const payload = await postJson('/auth/vk/publication/test');
+            alert(payload.message || 'Подключение VK проверено');
+            window.location.reload();
+        } catch (error) {
+            alert(error.message || 'Проверка VK завершилась с ошибкой');
+            window.location.reload();
+        }
+    });
+
+    vkDisconnectBtn?.addEventListener('click', async () => {
+        if (!confirm('Отключить VK-подключение для публикации?')) return;
+        try {
+            const payload = await postJson('/auth/vk/publication/disconnect');
+            alert(payload.message || 'VK отключен');
+            window.location.reload();
+        } catch (error) {
+            alert(error.message || 'Не удалось отключить VK');
+        }
     });
 })();
 </script>

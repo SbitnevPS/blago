@@ -426,6 +426,32 @@
   padding: 16px;
   background: #fff;
 }
+.vk-connection-card {
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+  background: #f8fbff;
+}
+.vk-connection-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.vk-connection-card__meta {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  font-size: 13px;
+}
+.vk-connection-card__actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
 .upload-area.dragover {
   border-color: var(--color-primary);
@@ -485,6 +511,9 @@
   }
 
   .settings-messages-grid {
+    grid-template-columns: 1fr;
+  }
+  .vk-connection-card__meta {
     grid-template-columns: 1fr;
   }
 }

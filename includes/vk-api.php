@@ -95,7 +95,7 @@ class VkApiClient
         ];
     }
 
-    private function assertUserTokenCanPublish(): void
+    public function validatePublicationAccess(): void
     {
         $response = $this->apiRequest('users.get', []);
         if (!$response) {
@@ -104,6 +104,22 @@ class VkApiClient
                 'users.get returned empty response during token validation'
             );
         }
+
+        $groupsResponse = $this->apiRequest('groups.getById', [
+            'group_id' => $this->groupId,
+        ]);
+
+        if (!$groupsResponse) {
+            throw new VkApiException(
+                'Не удалось проверить доступ к сообществу VK.',
+                'groups.getById returned empty response for group_id=' . $this->groupId
+            );
+        }
+    }
+
+    private function assertUserTokenCanPublish(): void
+    {
+        $this->validatePublicationAccess();
     }
 
     private function uploadPhoto(string $uploadUrl, string $imageFsPath): array

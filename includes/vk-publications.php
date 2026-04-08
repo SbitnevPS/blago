@@ -122,14 +122,298 @@ function getVkItemStatusMeta(string $status): array
 function getVkPublicationSettings(): array
 {
     $settings = getSystemSettings();
+    $tokenExpiresAt = trim((string) ($settings['vk_publication_token_expires_at'] ?? ''));
+    $tokenObtainedAt = trim((string) ($settings['vk_publication_token_obtained_at'] ?? ''));
+    $oauthConnectedAt = trim((string) ($settings['vk_publication_oauth_connected_at'] ?? ''));
+    $lastCheckedAt = trim((string) ($settings['vk_publication_last_checked_at'] ?? ''));
+    $scopeRaw = trim((string) ($settings['vk_publication_token_scope'] ?? ($settings['vk_publication_scope'] ?? '')));
+    $scopeItems = $scopeRaw !== '' ? array_values(array_filter(array_map('trim', preg_split('/[\s,]+/', $scopeRaw) ?: []))) : [];
 
     return [
         'user_token' => trim((string) ($settings['vk_publication_user_token'] ?? ($settings['vk_publication_access_token'] ?? ''))),
+        'refresh_token' => trim((string) ($settings['vk_publication_refresh_token'] ?? '')),
         'group_id' => trim((string) ($settings['vk_publication_group_id'] ?? '')),
         'api_version' => trim((string) ($settings['vk_publication_api_version'] ?? VK_API_VERSION)),
         'from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1,
         'post_template' => trim((string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate())),
+        'oauth_connected_at' => $oauthConnectedAt,
+        'token_obtained_at' => $tokenObtainedAt,
+        'token_expires_at' => $tokenExpiresAt,
+        'token_scope' => $scopeRaw,
+        'token_scope_items' => $scopeItems,
+        'oauth_user_id' => trim((string) ($settings['vk_publication_oauth_user_id'] ?? '')),
+        'oauth_user_name' => trim((string) ($settings['vk_publication_oauth_user_name'] ?? '')),
+        'oauth_user_profile_url' => trim((string) ($settings['vk_publication_oauth_user_profile_url'] ?? '')),
+        'oauth_state' => trim((string) ($settings['vk_publication_oauth_state'] ?? 'disconnected')),
+        'oauth_last_error' => trim((string) ($settings['vk_publication_oauth_last_error'] ?? '')),
+        'last_checked_at' => $lastCheckedAt,
+        'last_check_status' => trim((string) ($settings['vk_publication_last_check_status'] ?? '')),
+        'last_check_message' => trim((string) ($settings['vk_publication_last_check_message'] ?? '')),
+        'token_masked' => maskVkPublicationToken((string) ($settings['vk_publication_user_token'] ?? ($settings['vk_publication_access_token'] ?? ''))),
     ];
+}
+
+function maskVkPublicationToken(string $token): string
+{
+    $token = trim($token);
+    if ($token === '') {
+        return '';
+    }
+
+    if (strlen($token) <= 10) {
+        return substr($token, 0, 2) . str_repeat('*', max(0, strlen($token) - 4)) . substr($token, -2);
+    }
+
+    return substr($token, 0, 5) . str_repeat('*', max(0, strlen($token) - 10)) . substr($token, -5);
+}
+
+function getVkPublicationOauthSessionKey(): string
+{
+    return 'vk_publication_oauth_flow';
+}
+
+function getVkPublicationRedirectUri(): string
+{
+    return SITE_URL . '/auth/vk/publication/callback';
+}
+
+function createVkPublicationOauthFlow(): array
+{
+    $state = bin2hex(random_bytes(24));
+    $codeVerifier = rtrim(strtr(base64_encode(random_bytes(64)), '+/', '-_'), '=');
+    $codeChallenge = rtrim(strtr(base64_encode(hash('sha256', $codeVerifier, true)), '+/', '-_'), '=');
+
+    $flow = [
+        'state' => $state,
+        'code_verifier' => $codeVerifier,
+        'code_challenge' => $codeChallenge,
+        'created_at' => time(),
+        'used' => 0,
+    ];
+
+    $_SESSION[getVkPublicationOauthSessionKey()] = $flow;
+
+    return $flow;
+}
+
+function getVkPublicationOauthFlow(): ?array
+{
+    $flow = $_SESSION[getVkPublicationOauthSessionKey()] ?? null;
+    if (!is_array($flow)) {
+        return null;
+    }
+
+    $createdAt = (int) ($flow['created_at'] ?? 0);
+    if ($createdAt <= 0 || (time() - $createdAt) > 900) {
+        unset($_SESSION[getVkPublicationOauthSessionKey()]);
+        return null;
+    }
+
+    return $flow;
+}
+
+function clearVkPublicationOauthFlow(): void
+{
+    unset($_SESSION[getVkPublicationOauthSessionKey()]);
+}
+
+function buildVkPublicationOauthUrl(array $flow): string
+{
+    return 'https://oauth.vk.com/authorize?' . http_build_query([
+        'client_id' => VK_CLIENT_ID,
+        'redirect_uri' => getVkPublicationRedirectUri(),
+        'response_type' => 'code',
+        'state' => (string) ($flow['state'] ?? ''),
+        'scope' => 'wall,photos,groups,offline',
+        'code_challenge' => (string) ($flow['code_challenge'] ?? ''),
+        'code_challenge_method' => 'S256',
+        'v' => VK_API_VERSION,
+    ]);
+}
+
+function getVkPublicationTokenDiagnostics(array $settings): array
+{
+    $nowTs = time();
+    $expiresAt = trim((string) ($settings['token_expires_at'] ?? ''));
+    $expiresTs = $expiresAt !== '' ? strtotime($expiresAt) : false;
+    $expiresIn = $expiresTs ? ($expiresTs - $nowTs) : null;
+
+    $status = 'ok';
+    $message = 'VK подключён и готов к публикации.';
+
+    if (trim((string) ($settings['user_token'] ?? '')) === '') {
+        $status = 'not_connected';
+        $message = 'VK не подключён.';
+    } elseif ($expiresTs && $expiresIn !== null && $expiresIn <= 0) {
+        $status = 'expired';
+        $message = 'Токен VK истёк, требуется переподключение.';
+    }
+
+    return [
+        'status' => $status,
+        'message' => $message,
+        'expires_at' => $expiresAt,
+        'expires_in_seconds' => $expiresIn,
+    ];
+}
+
+function verifyVkPublicationReadiness(bool $attemptRefresh = true): array
+{
+    $settings = getVkPublicationSettings();
+    $issues = [];
+
+    if ($settings['user_token'] === '') {
+        $issues[] = 'VK не подключён';
+    }
+
+    if ($settings['group_id'] === '' || (int) $settings['group_id'] <= 0) {
+        $issues[] = 'Не указан ID сообщества';
+    }
+
+    $diagnostics = getVkPublicationTokenDiagnostics($settings);
+    if ($diagnostics['status'] === 'expired') {
+        if ($attemptRefresh && !empty($settings['refresh_token'])) {
+            $refreshResult = refreshVkPublicationAccessToken();
+            if (!empty($refreshResult['success'])) {
+                $settings = getVkPublicationSettings();
+                $diagnostics = getVkPublicationTokenDiagnostics($settings);
+            } else {
+                $issues[] = 'Токен VK истёк, требуется переподключение';
+            }
+        } else {
+            $issues[] = 'Токен VK истёк, требуется переподключение';
+        }
+    }
+
+    $requiredScopes = ['wall', 'photos', 'groups'];
+    if (!empty($settings['token_scope_items'])) {
+        $scopeItems = array_map('mb_strtolower', $settings['token_scope_items']);
+        foreach ($requiredScopes as $requiredScope) {
+            if (!in_array($requiredScope, $scopeItems, true)) {
+                $issues[] = 'Недостаточно прав для публикации изображений';
+                break;
+            }
+        }
+    }
+
+    if ($settings['user_token'] !== '' && (int) $settings['group_id'] > 0) {
+        try {
+            $client = new VkApiClient($settings['user_token'], (int) $settings['group_id'], (string) $settings['api_version']);
+            $client->validatePublicationAccess();
+        } catch (Throwable $e) {
+            $normalized = normalizeVkPublicationError($e);
+            $issues[] = $normalized['message'];
+        }
+    }
+
+    return [
+        'ok' => empty($issues),
+        'issues' => $issues,
+        'settings' => $settings,
+        'diagnostics' => $diagnostics,
+    ];
+}
+
+function refreshVkPublicationAccessToken(): array
+{
+    $settings = getVkPublicationSettings();
+    $refreshToken = trim((string) ($settings['refresh_token'] ?? ''));
+    if ($refreshToken === '') {
+        return ['success' => false, 'error' => 'refresh_token отсутствует'];
+    }
+
+    $url = 'https://oauth.vk.com/access_token';
+    $response = vkPublicationHttpPostForm($url, [
+        'grant_type' => 'refresh_token',
+        'refresh_token' => $refreshToken,
+        'client_id' => VK_CLIENT_ID,
+        'client_secret' => VK_CLIENT_SECRET,
+    ]);
+    $json = is_array($response['json']) ? $response['json'] : [];
+
+    if (!$response['ok'] || !empty($json['error']) || empty($json['access_token'])) {
+        return ['success' => false, 'error' => 'Не удалось обновить VK токен'];
+    }
+
+    persistVkPublicationTokens($json, [
+        'oauth_state' => 'connected',
+        'oauth_last_error' => '',
+    ]);
+
+    return ['success' => true];
+}
+
+function vkPublicationHttpPostForm(string $url, array $postFields = []): array
+{
+    $ch = curl_init($url);
+    if ($ch === false) {
+        return ['ok' => false, 'http_code' => 0, 'raw' => '', 'json' => null, 'curl_error' => 'curl_init_failed'];
+    }
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Accept: application/json',
+            'Content-Type: application/x-www-form-urlencoded',
+        ],
+        CURLOPT_POSTFIELDS => http_build_query($postFields),
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = $response === false ? (string) curl_error($ch) : '';
+    curl_close($ch);
+
+    $raw = $response === false ? '' : (string) $response;
+    $json = json_decode($raw, true);
+
+    return [
+        'ok' => $curlError === '' && $httpCode >= 200 && $httpCode < 300,
+        'http_code' => $httpCode,
+        'raw' => $raw,
+        'json' => is_array($json) ? $json : null,
+        'curl_error' => $curlError,
+    ];
+}
+
+function vkPublicationApiRequest(string $method, array $params): array
+{
+    $url = 'https://api.vk.com/method/' . $method;
+    $response = vkPublicationHttpPostForm($url, $params);
+    $json = is_array($response['json']) ? $response['json'] : [];
+
+    if (!$response['ok'] || isset($json['error']) || !isset($json['response'])) {
+        return ['ok' => false, 'response' => [], 'error' => $json['error'] ?? null];
+    }
+
+    return ['ok' => true, 'response' => (array) $json['response'], 'error' => null];
+}
+
+function persistVkPublicationTokens(array $tokenData, array $extra = []): bool
+{
+    $now = date('Y-m-d H:i:s');
+    $expiresIn = isset($tokenData['expires_in']) ? (int) $tokenData['expires_in'] : 0;
+    $expiresAt = $expiresIn > 0 ? date('Y-m-d H:i:s', time() + $expiresIn) : '';
+    $scopeValue = '';
+    if (isset($tokenData['scope'])) {
+        $scopeRaw = $tokenData['scope'];
+        $scopeValue = is_array($scopeRaw) ? implode(',', $scopeRaw) : trim((string) $scopeRaw);
+    }
+
+    $payload = array_merge([
+        'vk_publication_user_token' => trim((string) ($tokenData['access_token'] ?? '')),
+        'vk_publication_access_token' => trim((string) ($tokenData['access_token'] ?? '')),
+        'vk_publication_refresh_token' => trim((string) ($tokenData['refresh_token'] ?? '')),
+        'vk_publication_oauth_user_id' => trim((string) ($tokenData['user_id'] ?? '')),
+        'vk_publication_token_scope' => $scopeValue,
+        'vk_publication_token_obtained_at' => $now,
+        'vk_publication_token_expires_at' => $expiresAt,
+        'vk_publication_oauth_connected_at' => $now,
+    ], $extra);
+
+    return saveSystemSettings($payload);
 }
 
 function defaultVkPostTemplate(): string
@@ -596,7 +880,14 @@ function publishVkTaskItem(int $itemId): array
         return ['success' => true, 'already' => true, 'post_url' => $item['vk_post_url']];
     }
 
-    $settings = getVkPublicationSettings();
+    $readiness = verifyVkPublicationReadiness(true);
+    if (empty($readiness['ok'])) {
+        $error = (string) ($readiness['issues'][0] ?? 'VK не готов к публикации');
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, implode('; ', $readiness['issues'] ?? []));
+        return ['success' => false, 'error' => $error];
+    }
+
+    $settings = $readiness['settings'];
     try {
         $client = new VkApiClient($settings['user_token'], (int) $settings['group_id'], (string) $settings['api_version']);
     } catch (Throwable $e) {
@@ -683,6 +974,16 @@ function normalizeVkPublicationError(Throwable $e): array
 function publishVkTask(int $taskId): array
 {
     global $pdo;
+
+    $readiness = verifyVkPublicationReadiness(true);
+    if (empty($readiness['ok'])) {
+        return [
+            'total' => 0,
+            'published' => 0,
+            'failed' => 0,
+            'error' => implode('; ', $readiness['issues'] ?? ['VK не готов к публикации']),
+        ];
+    }
 
     $pdo->prepare("UPDATE vk_publication_tasks SET task_status = 'publishing', updated_at = NOW() WHERE id = ?")
         ->execute([$taskId]);
