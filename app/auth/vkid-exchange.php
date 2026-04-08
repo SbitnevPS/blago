@@ -31,6 +31,18 @@ if ($code === '' || $deviceId === '') {
 
 $sessionOauth = $_SESSION['vkid_oauth'] ?? null;
 if (!is_array($sessionOauth)) {
+    error_log('VK ID exchange validation failed: ' . json_encode([
+        'reason' => 'missing_vkid_oauth_session',
+        'has_vkid_oauth_session' => isset($_SESSION['vkid_oauth']) && is_array($_SESSION['vkid_oauth']),
+        'expected_state' => '',
+        'has_state' => $state !== '',
+        'expected_code_verifier' => '',
+        'has_code_verifier' => $codeVerifier !== '',
+        'expected_redirect_uri' => '',
+        'current_redirect_uri' => VK_USER_REDIRECT_URI,
+        'session_created_at' => 0,
+        'session_age_seconds' => null,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     jsonResponse(['success' => false, 'error' => 'Сессия VK ID не найдена. Обновите страницу и попробуйте снова.'], 400);
 }
 
@@ -38,8 +50,21 @@ $expectedState = trim((string) ($sessionOauth['state'] ?? ''));
 $expectedCodeVerifier = trim((string) ($sessionOauth['code_verifier'] ?? ''));
 $expectedRedirectUri = trim((string) ($sessionOauth['redirect_uri'] ?? ''));
 $createdAt = (int) ($sessionOauth['created_at'] ?? 0);
+$sessionAge = $createdAt > 0 ? time() - $createdAt : null;
 
 if ($createdAt <= 0 || (time() - $createdAt) > 900) {
+    error_log('VK ID exchange validation failed: ' . json_encode([
+        'reason' => 'vkid_session_expired',
+        'has_vkid_oauth_session' => true,
+        'expected_state' => $expectedState,
+        'has_state' => $state !== '',
+        'expected_code_verifier' => $expectedCodeVerifier,
+        'has_code_verifier' => $codeVerifier !== '',
+        'expected_redirect_uri' => $expectedRedirectUri,
+        'current_redirect_uri' => VK_USER_REDIRECT_URI,
+        'session_created_at' => $createdAt,
+        'session_age_seconds' => $sessionAge,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     unset($_SESSION['vkid_oauth']);
     jsonResponse(['success' => false, 'error' => 'Сессия VK ID истекла. Обновите страницу и попробуйте снова.'], 400);
 }
@@ -49,16 +74,52 @@ if (
     || $expectedState === ''
     || !hash_equals($expectedState, $state)
 ) {
+    error_log('VK ID exchange validation failed: ' . json_encode([
+        'reason' => 'vkid_state_mismatch',
+        'has_vkid_oauth_session' => true,
+        'expected_state' => $expectedState,
+        'has_state' => $state !== '',
+        'expected_code_verifier' => $expectedCodeVerifier,
+        'has_code_verifier' => $codeVerifier !== '',
+        'expected_redirect_uri' => $expectedRedirectUri,
+        'current_redirect_uri' => VK_USER_REDIRECT_URI,
+        'session_created_at' => $createdAt,
+        'session_age_seconds' => $sessionAge,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     unset($_SESSION['vkid_oauth']);
     jsonResponse(['success' => false, 'error' => 'Проверка состояния VK ID не пройдена. Обновите страницу и попробуйте снова.'], 400);
 }
 
 if ($codeVerifier === '' || $expectedCodeVerifier === '' || !hash_equals($expectedCodeVerifier, $codeVerifier)) {
+    error_log('VK ID exchange validation failed: ' . json_encode([
+        'reason' => 'vkid_code_verifier_mismatch',
+        'has_vkid_oauth_session' => true,
+        'expected_state' => $expectedState,
+        'has_state' => $state !== '',
+        'expected_code_verifier' => $expectedCodeVerifier,
+        'has_code_verifier' => $codeVerifier !== '',
+        'expected_redirect_uri' => $expectedRedirectUri,
+        'current_redirect_uri' => VK_USER_REDIRECT_URI,
+        'session_created_at' => $createdAt,
+        'session_age_seconds' => $sessionAge,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     unset($_SESSION['vkid_oauth']);
     jsonResponse(['success' => false, 'error' => 'Проверка PKCE для VK ID не пройдена. Обновите страницу и попробуйте снова.'], 400);
 }
 
 if ($expectedRedirectUri === '' || $expectedRedirectUri !== VK_USER_REDIRECT_URI) {
+    error_log('VK ID exchange validation failed: ' . json_encode([
+        'reason' => 'vkid_redirect_uri_mismatch',
+        'has_vkid_oauth_session' => true,
+        'expected_state' => $expectedState,
+        'has_state' => $state !== '',
+        'expected_code_verifier' => $expectedCodeVerifier,
+        'has_code_verifier' => $codeVerifier !== '',
+        'expected_redirect_uri' => $expectedRedirectUri,
+        'current_redirect_uri' => VK_USER_REDIRECT_URI,
+        'session_created_at' => $createdAt,
+        'session_age_seconds' => $sessionAge,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     unset($_SESSION['vkid_oauth']);
     jsonResponse(['success' => false, 'error' => 'Некорректная конфигурация redirect_uri VK ID.'], 500);
 }
