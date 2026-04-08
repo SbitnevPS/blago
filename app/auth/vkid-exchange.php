@@ -7,7 +7,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
 
 $csrfToken = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
 if (!verifyCSRFToken($csrfToken)) {
-    jsonResponse(['success' => false, 'error' => 'CSRF token validation failed'], 403);
+    error_log('VK ID exchange CSRF validation failed: ' . json_encode([
+        'has_header_token' => $csrfToken !== '',
+        'session_has_csrf' => isset($_SESSION['csrf_token']),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    jsonResponse(['success' => false, 'error' => 'Не удалось завершить вход через VK ID. Попробуйте ещё раз.'], 403);
 }
 
 $rawBody = file_get_contents('php://input');
@@ -61,12 +65,25 @@ function vkid_http_post(string $url, array $params): array
 
     return [
         'ok' => $curlError === '' && $httpCode >= 200 && $httpCode < 300,
+        'url' => $url,
         'http_code' => $httpCode,
         'raw' => $raw,
         'json' => $json,
         'curl_error' => $curlError,
     ];
 }
+
+function vkid_log(string $message, array $context = []): void
+{
+    error_log($message . ': ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
+$exchangeContext = [
+    'request_url' => 'https://id.vk.com/oauth2/auth',
+    'redirect_uri' => VK_USER_REDIRECT_URI,
+    'has_code' => $code !== '',
+    'has_device_id' => $deviceId !== '',
+];
 
 $tokenResponse = vkid_http_post('https://id.vk.com/oauth2/auth', [
     'grant_type' => 'authorization_code',
@@ -77,27 +94,52 @@ $tokenResponse = vkid_http_post('https://id.vk.com/oauth2/auth', [
     'device_id' => $deviceId,
 ]);
 
-if (empty($tokenResponse['ok'])) {
-    error_log('VK ID code exchange failed: ' . json_encode([
+if (!empty($tokenResponse['curl_error'])) {
+    vkid_log('VK ID code exchange curl error', array_merge($exchangeContext, [
         'http_code' => $tokenResponse['http_code'] ?? 0,
         'curl_error' => $tokenResponse['curl_error'] ?? '',
         'raw' => $tokenResponse['raw'] ?? '',
-        'redirect_uri' => VK_USER_REDIRECT_URI,
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-
-    jsonResponse(['success' => false, 'error' => 'Не удалось выполнить вход через VK ID. Попробуйте снова.'], 400);
+        'json' => $tokenResponse['json'] ?? null,
+    ]));
+    jsonResponse(['success' => false, 'error' => 'Временная ошибка соединения с VK ID. Попробуйте ещё раз.'], 400);
 }
 
-$tokenData = is_array($tokenResponse['json'] ?? null) ? $tokenResponse['json'] : [];
-if (empty($tokenData['access_token']) || empty($tokenData['user_id'])) {
-    error_log('VK ID code exchange returned incomplete payload: ' . json_encode([
+if (empty($tokenResponse['ok'])) {
+    vkid_log('VK ID code exchange non-success HTTP', array_merge($exchangeContext, [
+        'http_code' => $tokenResponse['http_code'] ?? 0,
+        'curl_error' => $tokenResponse['curl_error'] ?? '',
+        'raw' => $tokenResponse['raw'] ?? '',
+        'json' => $tokenResponse['json'] ?? null,
+    ]));
+    jsonResponse(['success' => false, 'error' => 'Не удалось завершить вход через VK ID. Попробуйте ещё раз.'], 400);
+}
+
+if (!is_array($tokenResponse['json'] ?? null)) {
+    vkid_log('VK ID code exchange invalid JSON', array_merge($exchangeContext, [
+        'http_code' => $tokenResponse['http_code'] ?? 0,
+        'raw' => $tokenResponse['raw'] ?? '',
+        'json' => $tokenResponse['json'] ?? null,
+    ]));
+    jsonResponse(['success' => false, 'error' => 'VK ID вернул некорректные данные. Попробуйте ещё раз.'], 400);
+}
+
+$tokenData = $tokenResponse['json'];
+if (empty($tokenData['access_token'])) {
+    vkid_log('VK ID code exchange missing access_token', array_merge($exchangeContext, [
         'http_code' => $tokenResponse['http_code'] ?? 0,
         'raw' => $tokenResponse['raw'] ?? '',
         'json' => $tokenData,
-        'redirect_uri' => VK_USER_REDIRECT_URI,
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    ]));
+    jsonResponse(['success' => false, 'error' => 'Не удалось завершить вход через VK ID. Попробуйте ещё раз.'], 400);
+}
 
-    jsonResponse(['success' => false, 'error' => 'Не удалось выполнить вход через VK ID. Попробуйте снова.'], 400);
+if (empty($tokenData['user_id'])) {
+    vkid_log('VK ID code exchange missing user_id', array_merge($exchangeContext, [
+        'http_code' => $tokenResponse['http_code'] ?? 0,
+        'raw' => $tokenResponse['raw'] ?? '',
+        'json' => $tokenData,
+    ]));
+    jsonResponse(['success' => false, 'error' => 'VK ID вернул некорректные данные. Попробуйте ещё раз.'], 400);
 }
 
 $accessToken = (string) $tokenData['access_token'];
@@ -113,6 +155,14 @@ $userResponse = vkid_http_post('https://api.vk.com/method/users.get', [
 
 $userData = is_array($userResponse['json'] ?? null) ? $userResponse['json'] : [];
 if (empty($userResponse['ok']) || !empty($userData['error']) || empty($userData['response'][0])) {
+    vkid_log('VK ID users.get failed', [
+        'request_url' => 'https://api.vk.com/method/users.get',
+        'http_code' => $userResponse['http_code'] ?? 0,
+        'curl_error' => $userResponse['curl_error'] ?? '',
+        'raw' => $userResponse['raw'] ?? '',
+        'json' => $userData,
+        'has_user_id' => $vkUserId !== '',
+    ]);
     jsonResponse(['success' => false, 'error' => 'Не удалось получить профиль пользователя VK.'], 400);
 }
 

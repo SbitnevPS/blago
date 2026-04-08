@@ -69,7 +69,7 @@ define('VK_CLIENT_ID', (string) config_require($config, 'vk.client_id'));
 define('VK_CLIENT_SECRET', (string) config_require($config, 'vk.client_secret'));
 define('VK_API_VERSION', (string) config_get($config, 'vk.api_version', '5.131'));
 define('VK_ADMIN_REDIRECT_URI', (string) config_get($config, 'vk.admin_redirect_uri', SITE_URL . '/admin/vk-auth.php'));
-define('VK_USER_REDIRECT_URI', (string) config_get($config, 'vk.user_redirect_uri', SITE_URL . '/vk-auth'));
+define('VK_USER_REDIRECT_URI', (string) config_get($config, 'vk.user_redirect_uri', SITE_URL . '/login'));
 
 // Обратная совместимость со старым кодом
 define('VK_REDIRECT_URI', VK_ADMIN_REDIRECT_URI);

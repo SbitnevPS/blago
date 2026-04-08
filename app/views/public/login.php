@@ -115,6 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 const VKID_EXCHANGE_ENDPOINT = '/auth/vkid-exchange';
 const VKID_REDIRECT_TARGET = <?= json_encode($redirectAfterAuth, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const CSRF_TOKEN = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+let vkExchangeInProgress = false;
 
 function setAuthError(message) {
     const errorEl = document.getElementById('auth-error-message');
@@ -133,25 +134,43 @@ function setAuthError(message) {
 }
 
 async function exchangeVkIdCode(payload) {
-    const response = await fetch(VKID_EXCHANGE_ENDPOINT, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-CSRF-Token': CSRF_TOKEN,
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({
-            code: payload.code,
-            device_id: payload.device_id,
-            redirect: VKID_REDIRECT_TARGET,
-        }),
-    });
+    if (vkExchangeInProgress) {
+        return;
+    }
+
+    if (!payload || typeof payload !== 'object' || !payload.code || !payload.device_id) {
+        setAuthError('VK ID вернул некорректные данные. Попробуйте ещё раз.');
+        return;
+    }
+
+    vkExchangeInProgress = true;
+
+    let response;
+    try {
+        response = await fetch(VKID_EXCHANGE_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-Token': CSRF_TOKEN,
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                code: payload.code,
+                device_id: payload.device_id,
+                redirect: VKID_REDIRECT_TARGET,
+            }),
+        });
+    } catch (error) {
+        throw new Error('Временная ошибка соединения с VK ID. Попробуйте ещё раз.');
+    } finally {
+        vkExchangeInProgress = false;
+    }
 
     const responseBody = await response.json().catch(() => ({}));
 
     if (!response.ok || !responseBody.success) {
-        throw new Error(responseBody.error || 'Не удалось завершить вход через VK ID.');
+        throw new Error(responseBody.error || 'Не удалось завершить вход через VK ID. Попробуйте ещё раз.');
     }
 
     window.location.href = responseBody.redirect || '/contests';
@@ -169,6 +188,18 @@ function installVkIdWidget() {
     if (!('VKIDSDK' in window) && typeof window.VKID === 'undefined') {
         setAuthError('VK ID SDK не загрузился. Проверьте соединение и обновите страницу.');
         return;
+    }
+
+    function handleVkSuccess(payload) {
+        const data = getVkPayload(payload);
+        if (!data || !data.code || !data.device_id) {
+            setAuthError('VK ID вернул некорректные данные. Попробуйте ещё раз.');
+            return;
+        }
+
+        exchangeVkIdCode(data).catch(function (error) {
+            setAuthError(error.message || 'Не удалось завершить вход через VK ID. Попробуйте ещё раз.');
+        });
     }
 
     try {
@@ -190,37 +221,19 @@ function installVkIdWidget() {
         const oneTap = new VKID.OneTap();
 
         if (typeof oneTap.on === 'function' && VKID.OneTapInternalEvents && VKID.WidgetEvents) {
-            oneTap.on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
-                const data = getVkPayload(payload);
-                if (!data || !data.code || !data.device_id) {
-                    setAuthError('VK ID не передал необходимые данные для входа.');
-                    return;
-                }
-                exchangeVkIdCode(data).catch(function (error) {
-                    setAuthError(error.message || 'Ошибка обмена кода VK ID.');
-                });
-            });
+            oneTap.on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, handleVkSuccess);
 
             oneTap.on(VKID.WidgetEvents.ERROR, function () {
-                setAuthError('Ошибка SDK VK ID. Попробуйте снова позже.');
+                setAuthError('Не удалось завершить вход через VK ID. Попробуйте ещё раз.');
             });
         }
 
         oneTap.render({
             container: container,
             showAlternativeLogin: true,
-            onSuccess: function (payload) {
-                const data = getVkPayload(payload);
-                if (!data || !data.code || !data.device_id) {
-                    setAuthError('VK ID не передал необходимые данные для входа.');
-                    return;
-                }
-                exchangeVkIdCode(data).catch(function (error) {
-                    setAuthError(error.message || 'Ошибка обмена кода VK ID.');
-                });
-            },
+            onSuccess: handleVkSuccess,
             onError: function () {
-                setAuthError('Ошибка SDK VK ID. Попробуйте снова позже.');
+                setAuthError('Не удалось завершить вход через VK ID. Попробуйте ещё раз.');
             },
         });
     } catch (error) {
