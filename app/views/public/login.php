@@ -18,14 +18,28 @@ $rawRedirect = (string) ($_GET['redirect'] ?? ($_POST['redirect'] ?? ($_SESSION[
 $redirectAfterAuth = sanitize_internal_redirect($rawRedirect, '/contests');
 $_SESSION['user_auth_redirect'] = $redirectAfterAuth;
 
-$vkidState = bin2hex(random_bytes(16));
-$vkidCodeVerifier = rtrim(strtr(base64_encode(random_bytes(64)), '+/', '-_'), '=');
-$_SESSION['vkid_oauth'] = [
-    'state' => $vkidState,
-    'code_verifier' => $vkidCodeVerifier,
-    'redirect_uri' => VK_USER_REDIRECT_URI,
-    'created_at' => time(),
-];
+$sessionVkidOauth = $_SESSION['vkid_oauth'] ?? null;
+$sessionVkidCreatedAt = is_array($sessionVkidOauth) ? (int) ($sessionVkidOauth['created_at'] ?? 0) : 0;
+$hasValidVkidSession = is_array($sessionVkidOauth)
+    && trim((string) ($sessionVkidOauth['state'] ?? '')) !== ''
+    && trim((string) ($sessionVkidOauth['code_verifier'] ?? '')) !== ''
+    && trim((string) ($sessionVkidOauth['redirect_uri'] ?? '')) === VK_USER_REDIRECT_URI
+    && $sessionVkidCreatedAt > 0
+    && (time() - $sessionVkidCreatedAt) <= 900;
+
+if ($hasValidVkidSession) {
+    $vkidState = trim((string) $sessionVkidOauth['state']);
+    $vkidCodeVerifier = trim((string) $sessionVkidOauth['code_verifier']);
+} else {
+    $vkidState = bin2hex(random_bytes(16));
+    $vkidCodeVerifier = rtrim(strtr(base64_encode(random_bytes(64)), '+/', '-_'), '=');
+    $_SESSION['vkid_oauth'] = [
+        'state' => $vkidState,
+        'code_verifier' => $vkidCodeVerifier,
+        'redirect_uri' => VK_USER_REDIRECT_URI,
+        'created_at' => time(),
+    ];
+}
 
 check_csrf();
 
