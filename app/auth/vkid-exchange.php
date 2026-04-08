@@ -22,9 +22,45 @@ if (!is_array($body)) {
 
 $code = trim((string) ($body['code'] ?? ''));
 $deviceId = trim((string) ($body['device_id'] ?? ''));
+$state = trim((string) ($body['state'] ?? ''));
+$codeVerifier = trim((string) ($body['code_verifier'] ?? ''));
 
 if ($code === '' || $deviceId === '') {
     jsonResponse(['success' => false, 'error' => 'Отсутствуют обязательные параметры code/device_id.'], 400);
+}
+
+$sessionOauth = $_SESSION['vkid_oauth'] ?? null;
+if (!is_array($sessionOauth)) {
+    jsonResponse(['success' => false, 'error' => 'Сессия VK ID не найдена. Обновите страницу и попробуйте снова.'], 400);
+}
+
+$expectedState = trim((string) ($sessionOauth['state'] ?? ''));
+$expectedCodeVerifier = trim((string) ($sessionOauth['code_verifier'] ?? ''));
+$expectedRedirectUri = trim((string) ($sessionOauth['redirect_uri'] ?? ''));
+$createdAt = (int) ($sessionOauth['created_at'] ?? 0);
+
+if ($createdAt <= 0 || (time() - $createdAt) > 900) {
+    unset($_SESSION['vkid_oauth']);
+    jsonResponse(['success' => false, 'error' => 'Сессия VK ID истекла. Обновите страницу и попробуйте снова.'], 400);
+}
+
+if (
+    $state === ''
+    || $expectedState === ''
+    || !hash_equals($expectedState, $state)
+) {
+    unset($_SESSION['vkid_oauth']);
+    jsonResponse(['success' => false, 'error' => 'Проверка состояния VK ID не пройдена. Обновите страницу и попробуйте снова.'], 400);
+}
+
+if ($codeVerifier === '' || $expectedCodeVerifier === '' || !hash_equals($expectedCodeVerifier, $codeVerifier)) {
+    unset($_SESSION['vkid_oauth']);
+    jsonResponse(['success' => false, 'error' => 'Проверка PKCE для VK ID не пройдена. Обновите страницу и попробуйте снова.'], 400);
+}
+
+if ($expectedRedirectUri === '' || $expectedRedirectUri !== VK_USER_REDIRECT_URI) {
+    unset($_SESSION['vkid_oauth']);
+    jsonResponse(['success' => false, 'error' => 'Некорректная конфигурация redirect_uri VK ID.'], 500);
 }
 
 $rawRedirect = (string) ($body['redirect'] ?? ($_SESSION['user_auth_redirect'] ?? '/contests'));
@@ -83,6 +119,8 @@ $exchangeContext = [
     'redirect_uri' => VK_USER_REDIRECT_URI,
     'has_code' => $code !== '',
     'has_device_id' => $deviceId !== '',
+    'has_state' => $state !== '',
+    'has_code_verifier' => $codeVerifier !== '',
 ];
 
 $tokenResponse = vkid_http_post('https://id.vk.com/oauth2/auth', [
@@ -92,6 +130,8 @@ $tokenResponse = vkid_http_post('https://id.vk.com/oauth2/auth', [
     'redirect_uri' => VK_USER_REDIRECT_URI,
     'code' => $code,
     'device_id' => $deviceId,
+    'state' => $state,
+    'code_verifier' => $codeVerifier,
 ]);
 
 if (!empty($tokenResponse['curl_error'])) {
@@ -220,6 +260,7 @@ if ($userId <= 0) {
 
 $_SESSION['user_id'] = $userId;
 $_SESSION['vk_token'] = $accessToken;
+unset($_SESSION['vkid_oauth']);
 
 $target = sanitize_internal_redirect($_SESSION['user_auth_redirect'] ?? '/contests', '/contests');
 unset($_SESSION['user_auth_redirect']);

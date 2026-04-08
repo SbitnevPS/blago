@@ -18,6 +18,15 @@ $rawRedirect = (string) ($_GET['redirect'] ?? ($_POST['redirect'] ?? ($_SESSION[
 $redirectAfterAuth = sanitize_internal_redirect($rawRedirect, '/contests');
 $_SESSION['user_auth_redirect'] = $redirectAfterAuth;
 
+$vkidState = bin2hex(random_bytes(16));
+$vkidCodeVerifier = rtrim(strtr(base64_encode(random_bytes(64)), '+/', '-_'), '=');
+$_SESSION['vkid_oauth'] = [
+    'state' => $vkidState,
+    'code_verifier' => $vkidCodeVerifier,
+    'redirect_uri' => VK_USER_REDIRECT_URI,
+    'created_at' => time(),
+];
+
 check_csrf();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -115,6 +124,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 const VKID_EXCHANGE_ENDPOINT = '/auth/vkid-exchange';
 const VKID_REDIRECT_TARGET = <?= json_encode($redirectAfterAuth, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const CSRF_TOKEN = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+const VKID_STATE = <?= json_encode($vkidState, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+const VKID_CODE_VERIFIER = <?= json_encode($vkidCodeVerifier, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 let vkExchangeInProgress = false;
 
 function setAuthError(message) {
@@ -143,6 +154,11 @@ async function exchangeVkIdCode(payload) {
         return;
     }
 
+    if (payload.state && payload.state !== VKID_STATE) {
+        setAuthError('Сессия входа через VK ID устарела. Обновите страницу и попробуйте снова.');
+        return;
+    }
+
     vkExchangeInProgress = true;
 
     let response;
@@ -158,6 +174,8 @@ async function exchangeVkIdCode(payload) {
             body: JSON.stringify({
                 code: payload.code,
                 device_id: payload.device_id,
+                state: payload.state || VKID_STATE,
+                code_verifier: VKID_CODE_VERIFIER,
                 redirect: VKID_REDIRECT_TARGET,
             }),
         });
@@ -211,6 +229,8 @@ function installVkIdWidget() {
             responseMode: VKID.ConfigResponseMode.Callback,
             source: VKID.ConfigSource.LOWCODE,
             scope: 'email',
+            state: VKID_STATE,
+            codeVerifier: VKID_CODE_VERIFIER,
         });
 
         const container = document.getElementById('vkid-signin-container');
