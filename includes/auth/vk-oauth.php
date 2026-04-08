@@ -493,10 +493,11 @@ function vk_callback_handle(string $flow, PDO $pdo): void
             'access_token_masked' => vk_mask_secret($accessToken),
         ]);
 
+        $isNewVkUser = false;
         $userId = vk_save_user_profile($pdo, $mapped, $accessToken, [
             'flow' => $flow,
             'attempt_id' => $attemptId,
-        ]);
+        ], $isNewVkUser);
 
         if ($userId <= 0) {
             vk_callback_fail($flow, 'exchange_failed');
@@ -509,7 +510,11 @@ function vk_callback_handle(string $flow, PDO $pdo): void
             'user_id' => $userId,
             'vk_token_masked' => vk_mask_secret($accessToken),
         ], $attemptId);
-        $target = sanitize_internal_redirect((string) ($sessionFlow['post_login_redirect'] ?? '/contests'), '/contests');
+        if ($isNewVkUser) {
+            $target = '/profile?required=1';
+        } else {
+            $target = sanitize_internal_redirect((string) ($sessionFlow['post_login_redirect'] ?? '/contests'), '/contests');
+        }
     }
 
     vk_flow_session_clear($flow);
@@ -630,10 +635,11 @@ function vk_map_profile_fields(array $profile, array $claims = [], string $vkEma
     ];
 }
 
-function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '', array $debugContext = []): int
+function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '', array $debugContext = [], ?bool &$wasCreated = null): int
 {
     $vkUserId = trim((string) ($mapped['vk_id'] ?? ''));
     if ($vkUserId === '') {
+        $wasCreated = false;
         return 0;
     }
 
@@ -657,6 +663,7 @@ function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '',
     $attemptId = (string) ($debugContext['attempt_id'] ?? '');
 
     if ($existingUser) {
+        $wasCreated = false;
         $existingUserId = (int) ($existingUser['id'] ?? 0);
         $resolvedEmail = $email !== '' ? $email : (string) ($existingUser['email'] ?? '');
         vk_log_attempt($flow, 'db_update_prepare', [
@@ -747,6 +754,7 @@ function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '',
         $email,
     ]);
     $newUserId = (int) $pdo->lastInsertId();
+    $wasCreated = true;
     vk_log_attempt($flow, 'db_insert_result', [
         'operation' => 'insert',
         'success' => true,
@@ -946,10 +954,11 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
         'has_id_token' => $idToken !== '',
     ]);
 
+    $isNewVkUser = false;
     $userId = vk_save_user_profile($pdo, $mapped, $accessToken, [
         'flow' => 'user',
         'attempt_id' => $attemptId,
-    ]);
+    ], $isNewVkUser);
 
     if ($userId <= 0) {
         return ['ok' => false, 'error_code' => 'exchange_failed'];
@@ -964,5 +973,5 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
     ], $attemptId);
     unset($_SESSION['user_auth_redirect']);
 
-    return ['ok' => true, 'redirect_to' => $safeRedirect];
+    return ['ok' => true, 'redirect_to' => $isNewVkUser ? '/profile?required=1' : $safeRedirect];
 }
