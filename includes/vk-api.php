@@ -2,34 +2,48 @@
 
 class VkApiException extends RuntimeException
 {
+    private string $technicalMessage;
+
+    public function __construct(string $message, string $technicalMessage = '', int $code = 0, ?Throwable $previous = null)
+    {
+        parent::__construct($message, $code, $previous);
+        $this->technicalMessage = $technicalMessage !== '' ? $technicalMessage : $message;
+    }
+
+    public function getTechnicalMessage(): string
+    {
+        return $this->technicalMessage;
+    }
 }
 
 class VkApiClient
 {
-    private string $accessToken;
+    private string $userAccessToken;
     private string $apiVersion;
     private int $groupId;
 
-    public function __construct(string $accessToken, int $groupId, string $apiVersion = '5.131')
+    public function __construct(string $userAccessToken, int $groupId, string $apiVersion = '5.131')
     {
-        $this->accessToken = trim($accessToken);
+        $this->userAccessToken = trim($userAccessToken);
         $this->groupId = $groupId;
         $this->apiVersion = trim($apiVersion) !== '' ? trim($apiVersion) : '5.131';
 
-        if ($this->accessToken === '') {
-            throw new VkApiException('Не задан VK access token');
+        if ($this->userAccessToken === '') {
+            throw new VkApiException('Не задан пользовательский VK токен для публикации.');
         }
 
         if ($this->groupId <= 0) {
-            throw new VkApiException('Некорректный VK group_id');
+            throw new VkApiException('Некорректный VK group_id.');
         }
     }
 
     public function publishPhotoPost(string $imageFsPath, string $message, bool $fromGroup = true): array
     {
         if (!is_file($imageFsPath) || !is_readable($imageFsPath)) {
-            throw new VkApiException('Файл изображения недоступен');
+            throw new VkApiException('Файл изображения недоступен для публикации.');
         }
+
+        $this->assertUserTokenCanPublish();
 
         $uploadServer = $this->apiRequest('photos.getWallUploadServer', [
             'group_id' => $this->groupId,
@@ -37,7 +51,7 @@ class VkApiClient
 
         $uploadUrl = (string) ($uploadServer['upload_url'] ?? '');
         if ($uploadUrl === '') {
-            throw new VkApiException('VK не вернул upload_url');
+            throw new VkApiException('VK не вернул upload_url для загрузки изображения.');
         }
 
         $uploadResponse = $this->uploadPhoto($uploadUrl, $imageFsPath);
@@ -51,13 +65,13 @@ class VkApiClient
 
         $photo = $savedPhoto[0] ?? null;
         if (!is_array($photo)) {
-            throw new VkApiException('VK не вернул данные сохраненного фото');
+            throw new VkApiException('VK не вернул данные сохраненного фото.');
         }
 
         $ownerId = (int) ($photo['owner_id'] ?? 0);
         $photoId = (int) ($photo['id'] ?? 0);
         if ($ownerId === 0 || $photoId === 0) {
-            throw new VkApiException('VK вернул некорректный photo id');
+            throw new VkApiException('VK вернул некорректный идентификатор фото.');
         }
 
         $attachment = 'photo' . $ownerId . '_' . $photoId;
@@ -71,7 +85,7 @@ class VkApiClient
 
         $postId = (int) ($post['post_id'] ?? 0);
         if ($postId <= 0) {
-            throw new VkApiException('VK не вернул post_id');
+            throw new VkApiException('VK не вернул post_id опубликованной записи.');
         }
 
         return [
@@ -81,11 +95,22 @@ class VkApiClient
         ];
     }
 
+    private function assertUserTokenCanPublish(): void
+    {
+        $response = $this->apiRequest('users.get', []);
+        if (!$response) {
+            throw new VkApiException(
+                'Не удалось проверить токен VK: метод users.get вернул пустой ответ.',
+                'users.get returned empty response during token validation'
+            );
+        }
+    }
+
     private function uploadPhoto(string $uploadUrl, string $imageFsPath): array
     {
         $ch = curl_init($uploadUrl);
         if ($ch === false) {
-            throw new VkApiException('Не удалось инициализировать CURL для upload');
+            throw new VkApiException('Не удалось инициализировать CURL для загрузки фото.');
         }
 
         $payload = [
@@ -105,20 +130,21 @@ class VkApiClient
         curl_close($ch);
 
         if ($response === false) {
-            throw new VkApiException('Ошибка загрузки фото: ' . $curlError);
+            throw new VkApiException('Ошибка загрузки фото в VK.', 'upload error: ' . $curlError);
         }
 
         if ($httpCode < 200 || $httpCode >= 300) {
-            throw new VkApiException('Ошибка загрузки фото: HTTP ' . $httpCode);
+            throw new VkApiException('VK вернул ошибку при загрузке фото.', 'upload HTTP status: ' . $httpCode);
         }
 
         $decoded = json_decode($response, true);
         if (!is_array($decoded)) {
-            throw new VkApiException('Некорректный ответ VK upload');
+            throw new VkApiException('Некорректный ответ сервера загрузки VK.', 'upload response: ' . mb_substr((string) $response, 0, 1000));
         }
 
         if (!empty($decoded['error'])) {
-            throw new VkApiException('Ошибка загрузки фото: ' . json_encode($decoded['error'], JSON_UNESCAPED_UNICODE));
+            $rawError = json_encode($decoded['error'], JSON_UNESCAPED_UNICODE);
+            throw new VkApiException('Ошибка загрузки изображения в VK.', 'upload error: ' . $rawError);
         }
 
         return $decoded;
@@ -126,14 +152,14 @@ class VkApiClient
 
     private function apiRequest(string $method, array $params): array
     {
-        $params['access_token'] = $this->accessToken;
+        $params['access_token'] = $this->userAccessToken;
         $params['v'] = $this->apiVersion;
 
         $url = 'https://api.vk.com/method/' . $method;
 
         $ch = curl_init($url);
         if ($ch === false) {
-            throw new VkApiException('Не удалось инициализировать CURL для VK API');
+            throw new VkApiException('Не удалось инициализировать CURL для VK API.');
         }
 
         curl_setopt_array($ch, [
@@ -148,23 +174,53 @@ class VkApiClient
         curl_close($ch);
 
         if ($response === false) {
-            throw new VkApiException('Ошибка VK API: ' . $curlError);
+            throw new VkApiException('Ошибка соединения с VK API.', 'curl error: ' . $curlError);
         }
 
         $decoded = json_decode($response, true);
         if (!is_array($decoded)) {
-            throw new VkApiException('Некорректный ответ VK API');
+            throw new VkApiException('Некорректный ответ VK API.', 'raw response: ' . mb_substr((string) $response, 0, 1000));
         }
 
         if (isset($decoded['error'])) {
-            $errorMessage = (string) ($decoded['error']['error_msg'] ?? 'Неизвестная ошибка VK API');
-            throw new VkApiException($errorMessage);
+            $error = (array) $decoded['error'];
+            $errorCode = (int) ($error['error_code'] ?? 0);
+            $errorMessage = (string) ($error['error_msg'] ?? 'Неизвестная ошибка VK API');
+            $friendlyMessage = $this->normalizeVkError($errorCode, $errorMessage);
+            throw new VkApiException($friendlyMessage, 'VK API ' . $method . ' error #' . $errorCode . ': ' . $errorMessage, $errorCode);
         }
 
         if (!isset($decoded['response'])) {
-            throw new VkApiException('VK API не вернул поле response');
+            throw new VkApiException('VK API не вернул поле response.', 'response: ' . mb_substr((string) $response, 0, 1000));
         }
 
         return (array) $decoded['response'];
+    }
+
+    private function normalizeVkError(int $errorCode, string $errorMessage): string
+    {
+        $msg = mb_strtolower($errorMessage);
+
+        if (str_contains($msg, 'method is unavailable with group auth')) {
+            return 'Указан токен сообщества. Для публикации рисунков нужен пользовательский токен администратора сообщества с правами photos, wall, groups и offline.';
+        }
+
+        if ($errorCode === 5) {
+            return 'Невалидный VK токен или у токена нет необходимых прав (photos, wall, groups, offline).';
+        }
+
+        if ($errorCode === 7 || $errorCode === 15) {
+            return 'Недостаточно прав для публикации: убедитесь, что владелец токена администратор нужного сообщества VK.';
+        }
+
+        if ($errorCode === 100) {
+            return 'VK отклонил параметры запроса. Проверьте ID сообщества, текст и изображение публикации.';
+        }
+
+        if ($errorCode === 214) {
+            return 'Публикация на стене сообщества запрещена настройками сообщества VK.';
+        }
+
+        return 'Ошибка VK API: ' . $errorMessage;
     }
 }

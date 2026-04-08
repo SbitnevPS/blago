@@ -48,6 +48,7 @@ function ensureVkPublicationSchema(): void
             vk_post_id VARCHAR(64) NULL,
             vk_post_url VARCHAR(255) NULL,
             error_message TEXT NULL,
+            technical_error TEXT NULL,
             published_at DATETIME NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -73,6 +74,14 @@ function ensureVkPublicationSchema(): void
         }
         if (!in_array('vk_publish_error', $columns, true)) {
             $pdo->exec("ALTER TABLE works ADD COLUMN vk_publish_error TEXT NULL");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $itemColumns = $pdo->query("SHOW COLUMNS FROM vk_publication_task_items")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('technical_error', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN technical_error TEXT NULL AFTER error_message");
         }
     } catch (Throwable $e) {
     }
@@ -115,7 +124,7 @@ function getVkPublicationSettings(): array
     $settings = getSystemSettings();
 
     return [
-        'token' => trim((string) ($settings['vk_publication_access_token'] ?? '')),
+        'user_token' => trim((string) ($settings['vk_publication_user_token'] ?? ($settings['vk_publication_access_token'] ?? ''))),
         'group_id' => trim((string) ($settings['vk_publication_group_id'] ?? '')),
         'api_version' => trim((string) ($settings['vk_publication_api_version'] ?? VK_API_VERSION)),
         'from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1,
@@ -589,17 +598,17 @@ function publishVkTaskItem(int $itemId): array
 
     $settings = getVkPublicationSettings();
     try {
-        $client = new VkApiClient($settings['token'], (int) $settings['group_id'], (string) $settings['api_version']);
+        $client = new VkApiClient($settings['user_token'], (int) $settings['group_id'], (string) $settings['api_version']);
     } catch (Throwable $e) {
-        $error = $e->getMessage();
-        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error);
-        return ['success' => false, 'error' => $error];
+        $normalized = normalizeVkPublicationError($e);
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $normalized['message'], $normalized['technical']);
+        return ['success' => false, 'error' => $normalized['message']];
     }
 
     $imageFsPath = getParticipantDrawingFsPath((string) ($item['applicant_email'] ?? ''), (string) ($item['work_image_path'] ?? ''));
     if (!$imageFsPath || !is_file($imageFsPath)) {
         $error = 'Изображение для публикации не найдено';
-        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error);
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
         return ['success' => false, 'error' => $error];
     }
 
@@ -607,7 +616,7 @@ function publishVkTaskItem(int $itemId): array
         $published = $client->publishPhotoPost($imageFsPath, (string) ($item['post_text'] ?? ''), (bool) $settings['from_group']);
 
         $pdo->prepare("UPDATE vk_publication_task_items
-            SET item_status = 'published', vk_post_id = ?, vk_post_url = ?, error_message = NULL, published_at = NOW(), updated_at = NOW()
+            SET item_status = 'published', vk_post_id = ?, vk_post_url = ?, error_message = NULL, technical_error = NULL, published_at = NOW(), updated_at = NOW()
             WHERE id = ?")
             ->execute([(string) $published['post_id'], (string) $published['post_url'], (int) $item['id']]);
 
@@ -624,20 +633,24 @@ function publishVkTaskItem(int $itemId): array
             'post_url' => (string) $published['post_url'],
         ];
     } catch (Throwable $e) {
-        $error = $e->getMessage();
-        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error);
-        return ['success' => false, 'error' => $error];
+        $normalized = normalizeVkPublicationError($e);
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $normalized['message'], $normalized['technical']);
+        return ['success' => false, 'error' => $normalized['message']];
     }
 }
 
-function markVkTaskItemFailed(int $itemId, int $taskId, string $error): void
+function markVkTaskItemFailed(int $itemId, int $taskId, string $error, string $technicalError = ''): void
 {
     global $pdo;
 
     $pdo->prepare("UPDATE vk_publication_task_items
-        SET item_status = 'failed', error_message = ?, updated_at = NOW()
+        SET item_status = 'failed', error_message = ?, technical_error = ?, updated_at = NOW()
         WHERE id = ?")
-        ->execute([mb_substr($error, 0, 2000), $itemId]);
+        ->execute([
+            mb_substr($error, 0, 2000),
+            mb_substr($technicalError !== '' ? $technicalError : $error, 0, 4000),
+            $itemId,
+        ]);
 
     $pdo->prepare("UPDATE works w
         INNER JOIN vk_publication_task_items i ON i.work_id = w.id
@@ -646,6 +659,25 @@ function markVkTaskItemFailed(int $itemId, int $taskId, string $error): void
         ->execute([mb_substr($error, 0, 2000), $itemId]);
 
     refreshVkTaskCounters($taskId);
+}
+
+function normalizeVkPublicationError(Throwable $e): array
+{
+    $message = trim((string) $e->getMessage());
+    $technical = $message;
+
+    if ($e instanceof VkApiException) {
+        $technical = $e->getTechnicalMessage();
+    }
+
+    if ($message === '') {
+        $message = 'Неизвестная ошибка публикации в VK.';
+    }
+
+    return [
+        'message' => $message,
+        'technical' => $technical,
+    ];
 }
 
 function publishVkTask(int $taskId): array
