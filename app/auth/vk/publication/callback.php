@@ -1,6 +1,6 @@
 <?php
-require_once dirname(__DIR__, 5) . '/config.php';
-require_once dirname(__DIR__, 5) . '/includes/init.php';
+require_once dirname(__DIR__, 4) . '/config.php';
+require_once dirname(__DIR__, 4) . '/includes/init.php';
 
 if (!isAdmin()) {
     $_SESSION['flash_error'] = 'Для подключения VK требуется вход в админку.';
