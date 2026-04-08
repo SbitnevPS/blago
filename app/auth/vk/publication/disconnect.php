@@ -28,6 +28,9 @@ saveSystemSettings([
     'vk_publication_oauth_connected_at' => '',
     'vk_publication_oauth_state' => 'disconnected',
     'vk_publication_oauth_last_error' => '',
+    'vk_publication_oauth_last_error_technical' => '',
+    'vk_publication_token_type' => '',
+    'vk_publication_confirmed_permissions' => '',
 ]);
 
 clearVkPublicationOauthFlow();

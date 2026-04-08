@@ -102,6 +102,10 @@ $vkStatus = !empty($vkReadiness['ok']) ? 'connected' : (($vkPublicationSettings[
 $vkStatusLabel = $vkStatus === 'connected'
     ? 'VK подключён'
     : ($vkStatus === 'attention' ? 'Требуется внимание' : 'VK не подключён');
+$vkScopeDisplay = $vkPublicationSettings['token_scope'] !== '' ? $vkPublicationSettings['token_scope'] : 'не указан VK';
+$vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== '' ? $vkPublicationSettings['confirmed_permissions'] : 'нет подтверждённых прав';
+$vkLastError = $vkPublicationSettings['oauth_last_error'] !== '' ? $vkPublicationSettings['oauth_last_error'] : '—';
+$vkTokenTypeLabel = $vkPublicationSettings['token_type'] === 'user' ? 'Пользовательский токен' : $vkPublicationSettings['token_type'];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -286,10 +290,15 @@ require_once __DIR__ . '/includes/header.php';
                             <div class="vk-connection-card__meta">
                                 <div><strong>Аккаунт:</strong> <?= htmlspecialchars($vkPublicationSettings['oauth_user_name'] !== '' ? $vkPublicationSettings['oauth_user_name'] : '—') ?></div>
                                 <div><strong>VK user ID:</strong> <?= htmlspecialchars($vkPublicationSettings['oauth_user_id'] !== '' ? $vkPublicationSettings['oauth_user_id'] : '—') ?></div>
+                                <div><strong>Тип токена:</strong> <?= htmlspecialchars($vkTokenTypeLabel) ?></div>
+                                <div><strong>Scope токена:</strong> <?= htmlspecialchars($vkScopeDisplay) ?></div>
+                                <div><strong>Подтверждённые права:</strong> <?= htmlspecialchars($vkConfirmedPermissions) ?></div>
                                 <div><strong>Подключено:</strong> <?= htmlspecialchars($vkPublicationSettings['oauth_connected_at'] !== '' ? $vkPublicationSettings['oauth_connected_at'] : '—') ?></div>
                                 <div><strong>Токен истекает:</strong> <?= htmlspecialchars($vkPublicationSettings['token_expires_at'] !== '' ? $vkPublicationSettings['token_expires_at'] : 'не указан') ?></div>
                                 <div><strong>Маска токена:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
                                 <div><strong>Последняя проверка:</strong> <?= htmlspecialchars($vkPublicationSettings['last_checked_at'] !== '' ? $vkPublicationSettings['last_checked_at'] : '—') ?></div>
+                                <div><strong>Последняя успешная проверка:</strong> <?= htmlspecialchars($vkPublicationSettings['last_success_checked_at'] !== '' ? $vkPublicationSettings['last_success_checked_at'] : '—') ?></div>
+                                <div><strong>Последняя ошибка:</strong> <?= htmlspecialchars($vkLastError) ?></div>
                             </div>
 
                             <?php if (!empty($vkReadiness['issues'])): ?>
@@ -316,7 +325,7 @@ require_once __DIR__ . '/includes/header.php';
                             <label class="form-label">Статус OAuth-подключения</label>
                             <input type="text" class="form-input" value="<?= htmlspecialchars($vkStatusLabel) ?>" readonly>
                             <div class="form-hint">
-                                Токен больше не вводится вручную. Используется авторизация VK ID OAuth (authorization code + PKCE).
+                                Токен больше не вводится вручную. Используется OAuth authorization code + PKCE (code_challenge_method=plain) через endpoint <code>oauth.vk.com</code>, полностью совместимый с callback и <code>code_verifier</code>.
                             </div>
                         </div>
 

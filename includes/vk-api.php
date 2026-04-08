@@ -117,6 +117,20 @@ class VkApiClient
         }
     }
 
+    public function probePublicationPermissions(): void
+    {
+        $uploadServer = $this->apiRequest('photos.getWallUploadServer', [
+            'group_id' => $this->groupId,
+        ]);
+        $uploadUrl = (string) ($uploadServer['upload_url'] ?? '');
+        if ($uploadUrl === '') {
+            throw new VkApiException(
+                'Токен не прошёл проверку прав на публикацию фото в сообществе.',
+                'photos.getWallUploadServer returned empty upload_url for group_id=' . $this->groupId
+            );
+        }
+    }
+
     private function assertUserTokenCanPublish(): void
     {
         $this->validatePublicationAccess();
