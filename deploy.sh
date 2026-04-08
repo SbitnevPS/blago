@@ -1,49 +1,33 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BRANCH_REF="origin/main"
+set -e
 
-log() {
-  printf '[deploy] %s\n' "$1"
-}
+PROJECT_DIR="/home/users/p/pavel-sbitnev/domains/konkurs.tolkodobroe.info"
+BRANCH="main"
 
-fail() {
-  printf '[deploy][error] %s\n' "$1" >&2
-  exit 1
-}
+echo "[deploy] Starting deploy in $PROJECT_DIR"
+cd "$PROJECT_DIR"
 
-log "Starting deploy in ${PROJECT_DIR}"
-cd "${PROJECT_DIR}" || fail "Project directory not found"
+echo "[deploy] Current branch:"
+git branch --show-current || true
 
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  fail "Directory is not a git repository"
-fi
-
-log "Aborting unfinished merge/rebase if present"
-git merge --abort 2>/dev/null || true
-git rebase --abort 2>/dev/null || true
-
-log "Fetching latest changes from origin"
+echo "[deploy] Fetching origin"
 git fetch origin
 
-log "Resetting working tree to ${BRANCH_REF}"
-git reset --hard "${BRANCH_REF}"
+echo "[deploy] Resetting to origin/$BRANCH"
+git reset --hard "origin/$BRANCH"
 
-log "Cleaning untracked files"
-git clean -fd
+echo "[deploy] Restoring permissions"
+find . -type d -exec chmod 755 {} \;
+find . -type f -exec chmod 644 {} \;
 
-if command -v composer >/dev/null 2>&1; then
-  log "Installing/updating production dependencies"
-  composer install --no-dev --optimize-autoloader --no-interaction
-else
-  log "Composer not found, skipping dependency install"
-fi
+[ -f deploy.sh ] && chmod 755 deploy.sh
+[ -f deploy.php ] && chmod 644 deploy.php
+[ -f .htaccess ] && chmod 644 .htaccess
+[ -f config.php ] && chmod 600 config.php
 
-log "Ensuring runtime directories exist"
-mkdir -p uploads storage storage/logs storage/cache storage/mpdf storage/mpdf/tmp
+mkdir -p uploads storage
+[ -f uploads/.gitkeep ] || touch uploads/.gitkeep
+[ -f storage/.gitkeep ] || touch storage/.gitkeep
 
-log "Setting permissions for runtime directories"
-chmod -R u+rwX,go+rX uploads storage
-
-log "Deploy finished successfully"
+echo "[deploy] Done"

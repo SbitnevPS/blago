@@ -1,38 +1,47 @@
-# OS / editor junk
+#######################################
+# OS / Editor
+#######################################
 .DS_Store
 Thumbs.db
 *.swp
 *.swo
 *~
-.htaccess
-.gitignore
 
-# Local env / debug
+#######################################
+# ENV / Local config (СЕКРЕТЫ)
+#######################################
 .env
 .env.*
 .envrc
-test.php
-
-# Server-only secrets/config
 config.php
 
-# Runtime/generated server data
-uploads/**
-!uploads/
+#######################################
+# Debug / временные файлы
+#######################################
+test.php
+*.log
+
+#######################################
+# Runtime данные
+#######################################
+uploads/*
 !uploads/.gitkeep
-storage/**
-!storage/
+
+storage/*
 !storage/.gitkeep
 
-# Deployment runtime logs
-deploy.log
-deploy.php
-deploy.sh
-
-
-# PHP/composer
+#######################################
+# Composer / зависимости
+#######################################
 vendor/
 composer.phar
 
-# VCS conflict leftovers
+#######################################
+# Deployment logs
+#######################################
+deploy.log
+
+#######################################
+# Git мусор / конфликты
+#######################################
 *.orig
