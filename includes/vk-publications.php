@@ -192,6 +192,23 @@ function getVkPublicationOauthTokenEndpoint(): string
     return 'https://oauth.vk.com/access_token';
 }
 
+function getVkPublicationOauthFlowMode(): string
+{
+    return 'authorization_code (legacy oauth.vk.com)';
+}
+
+function getVkPublicationOauthExpectedSetup(): array
+{
+    $websiteAddress = SITE_URL;
+    $baseDomain = (string) parse_url($websiteAddress, PHP_URL_HOST);
+
+    return [
+        'authorized_redirect_uri' => getVkPublicationRedirectUri(),
+        'website_address' => $websiteAddress,
+        'base_domain' => $baseDomain,
+    ];
+}
+
 function getVkPublicationRequiredScopes(): array
 {
     return ['wall', 'photos', 'groups', 'offline'];

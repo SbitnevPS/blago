@@ -4,9 +4,9 @@
 
 Модуль позволяет администратору сформировать задание на публикацию работ участников и публиковать элементы по одному или всем пакетом в сообщество VK.
 
-## Авторизация VK ID OAuth (code + PKCE)
+## Авторизация VK OAuth (authorization_code, legacy oauth.vk.com)
 
-Для публикации поста с изображением используется **пользовательский токен** администратора сообщества VK, полученный через VK ID OAuth по схеме `authorization_code + PKCE`.
+Для публикации поста с изображением используется **пользовательский токен** администратора сообщества VK, полученный через legacy OAuth на `oauth.vk.com` по схеме `authorization_code`.
 
 > Важно: токен сообщества (group token) для цепочки загрузки изображения на стену не подходит и приводит к ошибке `method is unavailable with group auth`.
 
@@ -16,6 +16,28 @@
 - `GET /auth/vk/publication/callback` — callback, валидация `state`, обмен `code` на токены, сохранение подключения;
 - `POST /auth/vk/publication/test` — проверка готовности подключения для публикации;
 - `POST /auth/vk/publication/disconnect` — отключение VK-подключения.
+
+На этапе `POST /auth/vk/publication/start` добавлен диагностический лог с полями:
+
+- `client_id`
+- `redirect_uri`
+- `authorize_endpoint`
+- `flow_mode`
+
+`client_secret` в лог не пишется.
+
+### Проверка настроек VK-приложения (критично при 401 на authorize)
+
+Если авторизация падает прямо на `https://oauth.vk.com/authorize` с `401 Unauthorized` (до callback), это означает, что VK отклоняет authorize-запрос. Проверьте:
+
+1. Приложение VK настроено под тот же сценарий, который использует сайт: **legacy OAuth на `oauth.vk.com`**, flow `authorization_code`.
+2. В настройках приложения VK заданы точные значения:
+   - `Authorized redirect URI = https://konkurs.tolkodobroe.info/auth/vk/publication/callback`
+   - `Website address = https://konkurs.tolkodobroe.info`
+   - `Base domain = konkurs.tolkodobroe.info`
+3. `client_id` и `client_secret` взяты из **одного и того же** VK-приложения.
+4. Приложение включено и доступно всем (не ограничено только владельцем/тестерами).
+5. Не используется неподходящий тип приложения (например, VK ID-only) при авторизации через legacy `oauth.vk.com`.
 
 ### Какие настройки используются
 

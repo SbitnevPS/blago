@@ -106,6 +106,7 @@ $vkScopeDisplay = $vkPublicationSettings['token_scope'] !== '' ? $vkPublicationS
 $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== '' ? $vkPublicationSettings['confirmed_permissions'] : 'нет подтверждённых прав';
 $vkLastError = $vkPublicationSettings['oauth_last_error'] !== '' ? $vkPublicationSettings['oauth_last_error'] : '—';
 $vkTokenTypeLabel = $vkPublicationSettings['token_type'] === 'user' ? 'Пользовательский токен' : $vkPublicationSettings['token_type'];
+$vkOauthExpectedSetup = getVkPublicationOauthExpectedSetup();
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -311,6 +312,11 @@ require_once __DIR__ . '/includes/header.php';
                                 </div>
                             <?php endif; ?>
 
+                            <div class="alert alert--warning">
+                                <i class="fas fa-circle-info"></i>
+                                Если на шаге <code>https://oauth.vk.com/authorize</code> появляется <strong>401 Unauthorized</strong>, проверьте настройки приложения VK: <strong>Authorized redirect URI</strong>, <strong>Website address</strong>, <strong>Base domain</strong>, пару <strong>client_id/client_secret</strong> от одного приложения, доступность приложения для всех и тип приложения (нужен legacy OAuth для <code>oauth.vk.com</code>, а не VK ID-only).
+                            </div>
+
                             <div class="vk-connection-card__actions">
                                 <button type="button" class="btn btn--primary btn--sm" id="vkConnectBtn">
                                     <i class="fab fa-vk"></i> <?= $vkPublicationSettings['user_token'] !== '' ? 'Переподключить VK' : 'Подключить VK' ?>
@@ -329,6 +335,9 @@ require_once __DIR__ . '/includes/header.php';
                             <input type="text" class="form-input" value="<?= htmlspecialchars($vkStatusLabel) ?>" readonly>
                             <div class="form-hint">
                                 Используется единый OAuth authorization code flow VK: после возврата из VK токен валидируется через <code>users.get</code> и проверяется готовность к публикации (<code>groups.getById</code>, <code>photos.getWallUploadServer</code>).
+                            </div>
+                            <div class="form-hint" style="margin-top:8px;">
+                                Обязательные значения в кабинете VK приложения: <code>Authorized redirect URI = <?= htmlspecialchars($vkOauthExpectedSetup['authorized_redirect_uri']) ?></code>, <code>Website address = <?= htmlspecialchars($vkOauthExpectedSetup['website_address']) ?></code>, <code>Base domain = <?= htmlspecialchars($vkOauthExpectedSetup['base_domain']) ?></code>.
                             </div>
                         </div>
 
