@@ -11,6 +11,18 @@ function failVkPublicationOauth(string $userMessage, string $technicalMessage, s
 {
     clearVkPublicationOauthFlow();
     saveSystemSettings([
+        'vk_publication_user_token' => '',
+        'vk_publication_access_token' => '',
+        'vk_publication_refresh_token' => '',
+        'vk_publication_oauth_user_id' => '',
+        'vk_publication_oauth_user_name' => '',
+        'vk_publication_oauth_user_profile_url' => '',
+        'vk_publication_token_scope' => '',
+        'vk_publication_token_obtained_at' => '',
+        'vk_publication_token_expires_at' => '',
+        'vk_publication_oauth_connected_at' => '',
+        'vk_publication_token_type' => '',
+        'vk_publication_confirmed_permissions' => '',
         'vk_publication_oauth_state' => $state,
         'vk_publication_oauth_last_error' => $userMessage,
         'vk_publication_oauth_last_error_technical' => mb_substr($technicalMessage, 0, 1000),
