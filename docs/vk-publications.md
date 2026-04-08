@@ -4,21 +4,32 @@
 
 Модуль позволяет администратору сформировать задание на публикацию работ участников и публиковать элементы по одному или всем пакетом в сообщество VK.
 
-## Авторизация VK
+## Авторизация VK ID OAuth (code + PKCE)
 
-Для публикации поста с изображением используется **пользовательский токен** администратора сообщества VK.
+Для публикации поста с изображением используется **пользовательский токен** администратора сообщества VK, полученный через VK ID OAuth по схеме `authorization_code + PKCE`.
 
 > Важно: токен сообщества (group token) для цепочки загрузки изображения на стену не подходит и приводит к ошибке `method is unavailable with group auth`.
 
+### Маршруты подключения
+
+- `POST /auth/vk/publication/start` — старт OAuth, генерация `state`, `code_verifier`, `code_challenge`;
+- `GET /auth/vk/publication/callback` — callback, валидация `state`, обмен `code` на токены, сохранение подключения;
+- `POST /auth/vk/publication/test` — проверка готовности подключения для публикации;
+- `POST /auth/vk/publication/disconnect` — отключение VK-подключения.
+
 ### Какие настройки используются
 
-В системных настройках (`storage/settings.json`):
+В системных настройках (`storage/settings.json`) сохраняются:
 
-- `vk_publication_user_token` — пользовательский access token для публикации;
+- `vk_publication_user_token` — пользовательский access token для публикации (маскируется в UI);
+- `vk_publication_refresh_token` — refresh token (если выдан);
 - `vk_publication_group_id` — ID сообщества VK;
 - `vk_publication_api_version` — версия VK API (по умолчанию `5.131`);
 - `vk_publication_from_group` — публиковать ли от имени сообщества;
 - `vk_publication_post_template` — шаблон текста публикации.
+- `vk_publication_oauth_user_id`, `vk_publication_oauth_user_name` — данные подключенного VK-аккаунта;
+- `vk_publication_token_obtained_at`, `vk_publication_token_expires_at` — сроки токена;
+- `vk_publication_last_checked_at`, `vk_publication_last_check_status`, `vk_publication_last_check_message` — результат последней проверки.
 
 Для обратной совместимости читается также старый ключ `vk_publication_access_token`.
 
@@ -27,6 +38,16 @@
 Минимальный набор: `wall`, `photos`, `groups`, `offline`.
 
 ## Цепочка публикации изображения + текста
+
+Перед публикацией выполняется проверка готовности:
+
+1. подключен ли VK;
+2. не пустой ли токен;
+3. не истек ли токен (при наличии `refresh_token` выполняется попытка обновления);
+4. указан ли `group_id`;
+5. проходят ли базовые вызовы `users.get` и `groups.getById`.
+
+Если проверка не проходит, публикация не запускается и администратор получает читаемую ошибку (`VK не подключён`, `Токен VK истёк, требуется переподключение`, `Не указан ID сообщества`, `Недостаточно прав для публикации изображений`).
 
 Для каждого элемента задания вызывается последовательность:
 
