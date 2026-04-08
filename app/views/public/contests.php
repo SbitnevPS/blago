@@ -70,16 +70,13 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
         $shortDescription .= '...';
     }
     $coverImage = trim((string)($contest['cover_image'] ?? ''));
+    $coverSrc = $coverImage !== ''
+        ? '/uploads/contest-covers/' . rawurlencode($coverImage)
+        : getContestThemePlaceholderPath($themeStyle);
 ?>
 <article class="contest-card contest-theme--<?= htmlspecialchars($themeStyle) ?> slide-up">
     <div class="contest-card__image-box">
-        <?php if ($coverImage !== ''): ?>
-            <img src="/uploads/contest-covers/<?= htmlspecialchars($coverImage) ?>" alt="<?= htmlspecialchars($contest['title']) ?>" class="contest-card__image">
-        <?php else: ?>
-            <div class="contest-card__placeholder">
-                <i class="fas fa-palette"></i>
-            </div>
-        <?php endif; ?>
+        <img src="<?= htmlspecialchars($coverSrc) ?>" alt="<?= htmlspecialchars($contest['title']) ?>" class="contest-card__image">
         <div class="contest-card__badges">
             <span class="contest-status-badge <?= htmlspecialchars($statusClass) ?>"><?= htmlspecialchars($statusLabel) ?></span>
             <?php if ($isApplied): ?>

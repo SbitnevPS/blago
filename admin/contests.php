@@ -147,11 +147,15 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
             <div class="card__body">
-                <?php if (!empty($contest['cover_image'])): ?>
-                    <div class="contest-admin-cover mb-md">
-                        <img src="/uploads/contest-covers/<?= htmlspecialchars($contest['cover_image']) ?>" alt="Обложка конкурса">
-                    </div>
-                <?php endif; ?>
+                <?php
+                    $contestTheme = normalizeContestThemeStyle($contest['theme_style'] ?? 'blue');
+                    $coverSrc = !empty($contest['cover_image'])
+                        ? '/uploads/contest-covers/' . rawurlencode((string)$contest['cover_image'])
+                        : getContestThemePlaceholderPath($contestTheme);
+                ?>
+                <div class="contest-admin-cover mb-md">
+                    <img src="<?= htmlspecialchars($coverSrc) ?>" alt="Обложка конкурса">
+                </div>
                 <p class="text-secondary contest-description">
                     <?= htmlspecialchars(mb_substr(strip_tags($contest['description'] ?? ''), 0, 200)) ?>...
                 </p>

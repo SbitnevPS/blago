@@ -572,6 +572,85 @@ function uploadFile($file, $directory, $allowedTypes = []) {
     return ['success' => false, 'message' => 'Не удалось сохранить файл'];
 }
 
+function uploadContestCoverImage($file, $directory, $size = 500) {
+    if (!isset($file['error']) || is_array($file['error'])) {
+        return ['success' => false, 'message' => 'Ошибка загрузки файла'];
+    }
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        return ['success' => false, 'message' => 'Ошибка: ' . $file['error']];
+    }
+
+    $fileName = (string)($file['name'] ?? '');
+    $tmpName = (string)($file['tmp_name'] ?? '');
+    $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+    $allowedTypes = ['jpg', 'jpeg', 'png', 'webp'];
+
+    if (!in_array($ext, $allowedTypes, true)) {
+        return ['success' => false, 'message' => 'Недопустимый тип файла'];
+    }
+
+    if (!extension_loaded('gd')) {
+        return uploadFile($file, $directory, $allowedTypes);
+    }
+
+    if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
+        return ['success' => false, 'message' => 'Не удалось подготовить каталог обложек'];
+    }
+
+    switch ($ext) {
+        case 'jpg':
+        case 'jpeg':
+            $source = @imagecreatefromjpeg($tmpName);
+            break;
+        case 'png':
+            $source = @imagecreatefrompng($tmpName);
+            break;
+        case 'webp':
+            $source = function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($tmpName) : false;
+            break;
+        default:
+            $source = false;
+            break;
+    }
+
+    if (!$source) {
+        return ['success' => false, 'message' => 'Не удалось обработать изображение'];
+    }
+
+    $sourceWidth = imagesx($source);
+    $sourceHeight = imagesy($source);
+    if ($sourceWidth <= 0 || $sourceHeight <= 0) {
+        imagedestroy($source);
+        return ['success' => false, 'message' => 'Некорректный размер изображения'];
+    }
+
+    $cropSize = min($sourceWidth, $sourceHeight);
+    $srcX = (int) floor(($sourceWidth - $cropSize) / 2);
+    $srcY = (int) floor(($sourceHeight - $cropSize) / 2);
+
+    $canvas = imagecreatetruecolor($size, $size);
+    imagealphablending($canvas, false);
+    imagesavealpha($canvas, true);
+    $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
+    imagefilledrectangle($canvas, 0, 0, $size, $size, $transparent);
+
+    imagecopyresampled($canvas, $source, 0, 0, $srcX, $srcY, $size, $size, $cropSize, $cropSize);
+
+    $newFileName = uniqid() . '_contest_cover.webp';
+    $targetPath = rtrim($directory, '/') . '/' . $newFileName;
+    $saved = function_exists('imagewebp') ? imagewebp($canvas, $targetPath, 90) : false;
+
+    imagedestroy($source);
+    imagedestroy($canvas);
+
+    if (!$saved) {
+        return ['success' => false, 'message' => 'Не удалось сохранить файл'];
+    }
+
+    return ['success' => true, 'filename' => $newFileName];
+}
+
 // Функция для получения конкурса
 function getContestById($id) {
     global $pdo;
@@ -608,6 +687,11 @@ function normalizeContestThemeStyle($style) {
     $style = strtolower(trim((string) $style));
     $themes = getContestThemeStyles();
     return array_key_exists($style, $themes) ? $style : 'blue';
+}
+
+function getContestThemePlaceholderPath($style) {
+    $normalized = normalizeContestThemeStyle($style);
+    return '/public/placeholders/contest-cover-' . $normalized . '.svg';
 }
 
 function getContestPublicStatus(array $contest) {
