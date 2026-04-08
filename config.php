@@ -149,12 +149,55 @@ function check_csrf() {
     }
 }
 
+function resolveSessionUser(?int $userId): ?array
+{
+    static $cache = [];
+
+    if ($userId === null || $userId <= 0) {
+        return null;
+    }
+
+    if (array_key_exists($userId, $cache)) {
+        return $cache[$userId];
+    }
+
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch();
+
+    $cache[$userId] = $user ?: null;
+    return $cache[$userId];
+}
+
 function isAuthenticated() {
-    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+    $userId = getCurrentUserId();
+    if (!$userId) {
+        return false;
+    }
+
+    $user = resolveSessionUser((int) $userId);
+    if (!$user) {
+        unset($_SESSION['user_id'], $_SESSION['vk_token']);
+        return false;
+    }
+
+    return true;
 }
 
 function isAdminAuthenticated() {
-    return isset($_SESSION['admin_user_id']) && !empty($_SESSION['admin_user_id']);
+    $adminId = getCurrentAdminId();
+    if (!$adminId) {
+        return false;
+    }
+
+    $admin = resolveSessionUser((int) $adminId);
+    if (!$admin || (int) ($admin['is_admin'] ?? 0) !== 1) {
+        unset($_SESSION['admin_user_id'], $_SESSION['is_admin']);
+        return false;
+    }
+
+    return true;
 }
 
 function getCurrentUserId() {
@@ -171,10 +214,7 @@ function getCurrentUser() {
         return null;
     }
 
-    global $pdo;
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-    $stmt->execute([$sessionUserId]);
-    return $stmt->fetch();
+    return resolveSessionUser((int) $sessionUserId);
 }
 
 function getCurrentAdmin() {
@@ -183,10 +223,12 @@ function getCurrentAdmin() {
         return null;
     }
 
-    global $pdo;
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
-    $stmt->execute([$adminId]);
-    return $stmt->fetch();
+    $admin = resolveSessionUser((int) $adminId);
+    if (!$admin || (int) ($admin['is_admin'] ?? 0) !== 1) {
+        return null;
+    }
+
+    return $admin;
 }
 
 function isValidAvatarUrl($value): bool
