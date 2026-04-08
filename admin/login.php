@@ -79,14 +79,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <p>ДетскиеКонкурсы.рф</p>
 </div>
 
+<div class="login-card__tabs" style="margin-bottom:16px;">
+<button type="button" class="login-card__tab active" onclick="showAdminTab('email')">
+<i class="fas fa-envelope"></i> По email
+</button>
+<button type="button" class="login-card__tab" onclick="showAdminTab('vk')">
+<i class="fab fa-vk"></i> Через VK
+</button>
+</div>
+
 <?php if ($error): ?>
 <div class="error-message" id="auth-error-message"><?= htmlspecialchars($error) ?></div>
 <?php else: ?>
 <div class="error-message" id="auth-error-message" style="display:none;"></div>
 <?php endif; ?>
 
-<form method="POST">
+<form method="POST" class="login-form active" id="admin-form-email">
 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+<input type="hidden" name="redirect" value="<?= htmlspecialchars($redirectAfterAuth) ?>">
 <div class="form-group">
 <label class="form-label">Email</label>
 <input type="email" name="email" class="form-input" required placeholder="admin@example.com">
@@ -102,10 +112,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 </button>
 </form>
 
-<div class="divider" style="margin-top:16px;">или</div>
-<button class="btn btn-secondary" id="vk-admin-login-button" type="button" style="width:100%; justify-content:center;">
-<i class="fab fa-vk"></i> Войти через VK
+<div class="login-form" id="admin-form-vk">
+<div class="divider">или</div>
+<div id="vkid-admin-onetap-container"></div>
+<button class="btn btn-secondary" id="vk-admin-login-button" type="button" style="width:100%; justify-content:center;display:none;">
+<i class="fab fa-vk"></i> Войти через VK (резервный способ)
 </button>
+<p style="font-size:14px;color:#666;margin-top:12px;">Используется официальная кнопка VK ID. Если виджет не загрузится, будет доступен резервный вход через OAuth.</p>
+</div>
 
 <div class="back-link">
 <a href="/">
@@ -116,9 +130,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 </div>
 <script>
 const VK_ADMIN_START_ENDPOINT = '/auth/vk/admin/start';
+const VK_ADMIN_SDK_LOGIN_ENDPOINT = '/auth/vk/admin/sdk-login';
 const VK_ADMIN_REDIRECT_TARGET = <?= json_encode($redirectAfterAuth, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const CSRF_TOKEN = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 let vkStartInProgress = false;
+let vkAdminSdkLoginInProgress = false;
 
 function setAdminAuthError(message) {
     const errorEl = document.getElementById('auth-error-message');
@@ -174,7 +190,103 @@ async function startAdminVkLogin() {
     }
 }
 
+function showAdminTab(tab) {
+    document.querySelectorAll('.login-card__tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.login-form').forEach(f => f.classList.remove('active'));
+
+    if (tab === 'email') {
+        document.querySelector('.login-card__tab:first-child').classList.add('active');
+        document.getElementById('admin-form-email').classList.add('active');
+    } else {
+        document.querySelector('.login-card__tab:last-child').classList.add('active');
+        document.getElementById('admin-form-vk').classList.add('active');
+    }
+}
+
+async function finishAdminVkLoginViaSdk(vkPayload) {
+    if (vkAdminSdkLoginInProgress) {
+        return;
+    }
+
+    vkAdminSdkLoginInProgress = true;
+    try {
+        const response = await fetch(VK_ADMIN_SDK_LOGIN_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-Token': CSRF_TOKEN,
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                redirect: VK_ADMIN_REDIRECT_TARGET,
+                vk: vkPayload || {},
+            }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success || !payload.redirect_to) {
+            throw new Error(payload.error || 'Не удалось завершить вход через VK ID. Попробуйте снова.');
+        }
+
+        window.location.href = payload.redirect_to;
+    } catch (error) {
+        setAdminAuthError(error.message || 'Не удалось завершить вход через VK ID. Попробуйте снова.');
+    } finally {
+        vkAdminSdkLoginInProgress = false;
+    }
+}
+
+function initVkAdminIdWidget() {
+    const fallbackButton = document.getElementById('vk-admin-login-button');
+    const widgetContainer = document.getElementById('vkid-admin-onetap-container');
+
+    if (!widgetContainer) {
+        return;
+    }
+
+    if (!('VKIDSDK' in window)) {
+        if (fallbackButton) {
+            fallbackButton.style.display = 'flex';
+        }
+        return;
+    }
+
+    const VKID = window.VKIDSDK;
+    VKID.Config.init({
+        app: Number(<?= json_encode(VK_CLIENT_ID) ?>),
+        redirectUrl: <?= json_encode(VK_ADMIN_REDIRECT_URI, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
+        responseMode: VKID.ConfigResponseMode.Callback,
+        source: VKID.ConfigSource.LOWCODE,
+        scope: '',
+    });
+
+    const oneTap = new VKID.OneTap();
+    oneTap
+        .render({
+            container: widgetContainer,
+            showAlternativeLogin: true,
+        })
+        .on(VKID.WidgetEvents.ERROR, function () {
+            if (fallbackButton) {
+                fallbackButton.style.display = 'flex';
+            }
+            setAdminAuthError('Не удалось загрузить VK ID. Попробуйте резервный вход.');
+        })
+        .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
+            const code = payload?.code || '';
+            const deviceId = payload?.device_id || '';
+
+            VKID.Auth.exchangeCode(code, deviceId)
+                .then(finishAdminVkLoginViaSdk)
+                .catch(function () {
+                    setAdminAuthError('Не удалось завершить вход через VK ID. Попробуйте снова.');
+                });
+        });
+}
+
 document.getElementById('vk-admin-login-button')?.addEventListener('click', startAdminVkLogin);
 </script>
+<script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js" defer onload="initVkAdminIdWidget()" onerror="document.getElementById('vk-admin-login-button').style.display='flex';setAdminAuthError('Не удалось загрузить VK ID SDK. Используйте резервный вход.');"></script>
 </body>
 </html>
