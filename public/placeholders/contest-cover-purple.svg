@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500" viewBox="0 0 500 500" fill="none">
+  <rect width="500" height="500" rx="28" fill="#7C3AED"/>
+  <circle cx="392" cy="112" r="52" fill="#C4B5FD" fill-opacity="0.68"/>
+  <path d="M82 384L188 252L252 321L328 228L418 384H82Z" fill="#EDE9FE" fill-opacity="0.85"/>
+  <rect x="86" y="91" width="244" height="56" rx="10" fill="#F5F3FF" fill-opacity="0.94"/>
+  <text x="106" y="127" fill="#4C1D95" font-size="26" font-family="Arial, sans-serif" font-weight="700">Нет обложки</text>
+</svg>

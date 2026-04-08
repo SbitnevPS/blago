@@ -89,7 +89,8 @@
 }
 
 .contest-cover-preview {
-    max-width: 360px;
+    width: 500px;
+    max-width: 100%;
     border-radius: 12px;
     overflow: hidden;
     border: 1px solid #e2e8f0;
@@ -97,7 +98,61 @@
 
 .contest-cover-preview img {
     width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
     display: block;
+    cursor: zoom-in;
+}
+
+.contest-cover-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.contest-cover-modal.is-hidden {
+    display: none;
+}
+
+.contest-cover-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgba(15, 23, 42, 0.75);
+    cursor: pointer;
+}
+
+.contest-cover-modal__dialog {
+    position: relative;
+    z-index: 1;
+    width: min(90vw, 700px);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #0f172a;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.contest-cover-modal__dialog img {
+    width: 100%;
+    max-height: 85vh;
+    object-fit: contain;
+    display: block;
+}
+
+.contest-cover-modal__close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 0;
+    color: #fff;
+    background: rgba(15, 23, 42, 0.7);
+    cursor: pointer;
 }
 
 .contest-theme-picker {

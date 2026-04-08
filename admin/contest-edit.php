@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
         jsonResponse(['success' => false, 'message' => 'Не удалось подготовить каталог обложек'], 500);
     }
 
-    $uploadCoverResult = uploadFile($_FILES['cover_image'], CONTEST_COVERS_PATH, ['jpg', 'jpeg', 'png', 'webp']);
+    $uploadCoverResult = uploadContestCoverImage($_FILES['cover_image'], CONTEST_COVERS_PATH, 500);
     if (!$uploadCoverResult['success']) {
         jsonResponse(['success' => false, 'message' => $uploadCoverResult['message'] ?? 'Ошибка загрузки обложки'], 422);
     }
@@ -97,26 +97,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $coverImageUploaded = trim((string)($_POST['cover_image_uploaded'] ?? ''));
-            if ($coverImageUploaded !== '') {
+            $removeCoverImage = (int)($_POST['remove_cover_image'] ?? 0) === 1;
+            if ($removeCoverImage) {
+                if (!empty($cover_image) && file_exists(CONTEST_COVERS_PATH . '/' . $cover_image)) {
+                    unlink(CONTEST_COVERS_PATH . '/' . $cover_image);
+                }
+                $cover_image = '';
+            } elseif ($coverImageUploaded !== '') {
                 $oldCoverImage = $cover_image;
                 $cover_image = $coverImageUploaded;
                 if (!empty($oldCoverImage) && $oldCoverImage !== $cover_image && file_exists(CONTEST_COVERS_PATH . '/' . $oldCoverImage)) {
                     unlink(CONTEST_COVERS_PATH . '/' . $oldCoverImage);
                 }
             } elseif (empty($error) && isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
-                if (!is_dir(CONTEST_COVERS_PATH) && !mkdir(CONTEST_COVERS_PATH, 0775, true) && !is_dir(CONTEST_COVERS_PATH)) {
-                    $error = 'Не удалось подготовить каталог обложек';
-                } else {
-                    $uploadCoverResult = uploadFile($_FILES['cover_image'], CONTEST_COVERS_PATH, ['jpg', 'jpeg', 'png', 'webp']);
-                    if ($uploadCoverResult['success']) {
-                        $oldCoverImage = $cover_image;
-                        $cover_image = $uploadCoverResult['filename'];
-                        if (!empty($oldCoverImage) && $oldCoverImage !== $cover_image && file_exists(CONTEST_COVERS_PATH . '/' . $oldCoverImage)) {
-                            unlink(CONTEST_COVERS_PATH . '/' . $oldCoverImage);
-                        }
-                    } else {
-                        $error = $uploadCoverResult['message'] ?? 'Ошибка загрузки обложки';
+                $uploadCoverResult = uploadContestCoverImage($_FILES['cover_image'], CONTEST_COVERS_PATH, 500);
+                if ($uploadCoverResult['success']) {
+                    $oldCoverImage = $cover_image;
+                    $cover_image = $uploadCoverResult['filename'];
+                    if (!empty($oldCoverImage) && $oldCoverImage !== $cover_image && file_exists(CONTEST_COVERS_PATH . '/' . $oldCoverImage)) {
+                        unlink(CONTEST_COVERS_PATH . '/' . $oldCoverImage);
                     }
+                } else {
+                    $error = $uploadCoverResult['message'] ?? 'Ошибка загрузки обложки';
                 }
             }
             
@@ -229,23 +231,29 @@ require_once __DIR__ . '/includes/header.php';
 
             <div class="form-group mt-lg">
                 <label class="form-label">Обложка конкурса (JPG, JPEG, PNG, WEBP)</label>
-                <?php $coverPreviewSrc = !empty($contest['cover_image']) ? '/uploads/contest-covers/' . rawurlencode((string) $contest['cover_image']) : ''; ?>
+                <?php
+                    $selectedThemeStyle = normalizeContestThemeStyle($contest['theme_style'] ?? 'blue');
+                    $coverPreviewSrc = !empty($contest['cover_image'])
+                        ? '/uploads/contest-covers/' . rawurlencode((string) $contest['cover_image'])
+                        : getContestThemePlaceholderPath($selectedThemeStyle);
+                ?>
                 <input type="hidden" name="cover_image_uploaded" id="cover_image_uploaded" value="">
+                <input type="hidden" name="remove_cover_image" id="remove_cover_image" value="0">
                 <div class="upload-area admin-upload-area <?= $coverPreviewSrc !== '' ? 'has-file' : '' ?>" id="contestCoverUploadArea">
                     <input type="file" id="contestCoverInput" name="cover_image" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="file-upload__input" style="display:none;">
                     <div class="upload-area__icon"><i class="fas fa-image"></i></div>
-                    <div class="upload-area__title" id="contestCoverUploadTitle"><?= $coverPreviewSrc !== '' ? 'Обложка уже загружена' : 'Нажмите или перетащите изображение' ?></div>
-                    <div class="upload-area__hint" id="contestCoverUploadHint">JPG, JPEG, PNG, WEBP. Загрузка без перезагрузки страницы.</div>
+                    <div class="upload-area__title" id="contestCoverUploadTitle"><?= !empty($contest['cover_image']) ? 'Обложка уже загружена' : 'Нажмите или перетащите изображение' ?></div>
+                    <div class="upload-area__hint" id="contestCoverUploadHint">JPG, JPEG, PNG, WEBP. Итоговый размер: 500×500px.</div>
                 </div>
-                <div class="contest-cover-preview mb-md <?= $coverPreviewSrc !== '' ? '' : 'is-hidden' ?>" id="contestCoverPreviewWrap">
+                <div class="contest-cover-preview mb-md" id="contestCoverPreviewWrap">
                     <img src="<?= htmlspecialchars($coverPreviewSrc) ?>" alt="Обложка конкурса" id="contestCoverPreviewImage">
                     <div class="admin-upload-preview-actions">
-                        <button type="button" class="btn btn--ghost btn--sm" id="contestCoverOpenPreview">
-                            <i class="fas fa-up-right-from-square"></i> Открыть предпросмотр
+                        <button type="button" class="btn btn--ghost btn--sm" id="contestCoverRemoveImage">
+                            <i class="fas fa-trash"></i> Удалить изображение
                         </button>
                     </div>
                 </div>
-                <div class="form-hint">Рекомендуемый размер: от 1200×700px. Максимальный размер: 10MB.</div>
+                <div class="form-hint">Клик по изображению открывает модальное окно просмотра. Максимальный размер файла: 10MB.</div>
             </div>
 
             <div class="form-group mt-lg">
@@ -302,6 +310,15 @@ require_once __DIR__ . '/includes/header.php';
         </a>
     </div>
 </form>
+<div class="contest-cover-modal is-hidden" id="contestCoverModal" role="dialog" aria-modal="true" aria-label="Просмотр обложки конкурса">
+    <button type="button" class="contest-cover-modal__backdrop" id="contestCoverModalBackdrop"></button>
+    <div class="contest-cover-modal__dialog">
+        <button type="button" class="contest-cover-modal__close" id="contestCoverModalClose" aria-label="Закрыть">
+            <i class="fas fa-times"></i>
+        </button>
+        <img src="" alt="Предпросмотр обложки конкурса" id="contestCoverModalImage">
+    </div>
+</div>
 
 <!-- CKEditor5 - бесплатный редактор -->
 <script src="https://cdn.ckeditor.com/ckeditor5/41.0.0/classic/ckeditor.js"></script>
@@ -335,28 +352,39 @@ require_once __DIR__ . '/includes/header.php';
     const uploadArea = document.getElementById('contestCoverUploadArea');
     const input = document.getElementById('contestCoverInput');
     const hiddenInput = document.getElementById('cover_image_uploaded');
-    const previewWrap = document.getElementById('contestCoverPreviewWrap');
     const previewImage = document.getElementById('contestCoverPreviewImage');
-    const openPreviewBtn = document.getElementById('contestCoverOpenPreview');
+    const removeImageBtn = document.getElementById('contestCoverRemoveImage');
+    const removeInput = document.getElementById('remove_cover_image');
+    const themeInputs = document.querySelectorAll('input[name="theme_style"]');
+    const modal = document.getElementById('contestCoverModal');
+    const modalImage = document.getElementById('contestCoverModalImage');
+    const modalClose = document.getElementById('contestCoverModalClose');
+    const modalBackdrop = document.getElementById('contestCoverModalBackdrop');
     const title = document.getElementById('contestCoverUploadTitle');
     const hint = document.getElementById('contestCoverUploadHint');
     const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
+    const initialImage = <?= json_encode(!empty($contest['cover_image']) ? '/uploads/contest-covers/' . rawurlencode((string)$contest['cover_image']) : '', JSON_UNESCAPED_UNICODE) ?>;
+    const placeholderByTheme = <?= json_encode(array_combine(array_keys($themeOptions), array_map('getContestThemePlaceholderPath', array_keys($themeOptions))), JSON_UNESCAPED_UNICODE) ?>;
 
     if (!uploadArea || !input || !previewImage) return;
 
-    const openPreview = () => {
-        if (!previewImage.src) return;
-        window.open(previewImage.src, '_blank', 'noopener');
+    const getSelectedTheme = () => {
+        const checked = document.querySelector('input[name="theme_style"]:checked');
+        return checked ? checked.value : 'blue';
     };
 
-    if (openPreviewBtn) {
-        openPreviewBtn.addEventListener('click', openPreview);
-    }
+    const getPlaceholderUrl = () => {
+        const selected = getSelectedTheme();
+        return placeholderByTheme[selected] || placeholderByTheme.blue || '';
+    };
 
     const renderPreview = (url) => {
         previewImage.src = url;
-        previewWrap?.classList.remove('is-hidden');
         uploadArea.classList.add('has-file');
+    };
+
+    const renderPlaceholder = () => {
+        previewImage.src = getPlaceholderUrl();
     };
 
     const uploadCover = async (file) => {
@@ -377,10 +405,44 @@ require_once __DIR__ . '/includes/header.php';
         }
 
         hiddenInput.value = payload.filename || '';
+        removeInput.value = '0';
         renderPreview(payload.url || '');
         title.textContent = payload.original_name ? `Файл загружен: ${payload.original_name}` : 'Файл загружен';
         hint.textContent = 'Можно перетащить другое изображение для замены';
     };
+
+    const openModal = () => {
+        if (!modal || !modalImage || !previewImage.src) return;
+        modalImage.src = previewImage.src;
+        modal.classList.remove('is-hidden');
+    };
+
+    const closeModal = () => {
+        if (!modal || !modalImage) return;
+        modal.classList.add('is-hidden');
+        modalImage.src = '';
+    };
+
+    removeImageBtn?.addEventListener('click', () => {
+        hiddenInput.value = '';
+        removeInput.value = '1';
+        renderPlaceholder();
+        title.textContent = 'Изображение удалено';
+        hint.textContent = 'Будет использована заглушка темы конкурса';
+    });
+    previewImage.addEventListener('click', openModal);
+    modalClose?.addEventListener('click', closeModal);
+    modalBackdrop?.addEventListener('click', closeModal);
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeModal();
+    });
+    themeInputs.forEach((themeInput) => {
+        themeInput.addEventListener('change', () => {
+            if (!hiddenInput.value && removeInput.value === '1') {
+                renderPlaceholder();
+            }
+        });
+    });
 
     uploadArea.addEventListener('click', (event) => {
         if (!event.target.closest('.admin-upload-preview-actions')) {
@@ -414,6 +476,10 @@ require_once __DIR__ . '/includes/header.php';
             input.value = '';
         });
     });
+
+    if (!initialImage) {
+        renderPlaceholder();
+    }
 })();
 </script>
 
