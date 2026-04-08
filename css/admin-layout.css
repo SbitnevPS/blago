@@ -193,6 +193,13 @@ overflow-x: hidden;
  display: flex;
  justify-content: center;
  }
+
+ .admin-user__avatar-initials {
+ font-size: 13px;
+ font-weight: 700;
+ letter-spacing: .03em;
+ line-height: 1;
+ }
         
  /* Stats Grid */
  .stats-grid {

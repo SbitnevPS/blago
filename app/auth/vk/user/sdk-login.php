@@ -23,20 +23,37 @@ $vkPayload = is_array($vkPayload) ? $vkPayload : [];
 
 $accessToken = trim((string) ($vkPayload['access_token'] ?? $vkPayload['accessToken'] ?? ''));
 $idToken = trim((string) ($vkPayload['id_token'] ?? $vkPayload['idToken'] ?? ''));
+$refreshToken = trim((string) ($vkPayload['refresh_token'] ?? $vkPayload['refreshToken'] ?? ''));
 $vkUserId = trim((string) ($vkPayload['user_id'] ?? $vkPayload['userId'] ?? ''));
 $vkEmail = trim((string) ($vkPayload['email'] ?? ''));
+$claims = [];
+foreach ($vkPayload as $key => $value) {
+    if (is_scalar($value) || $value === null) {
+        $claims[$key] = $value;
+    }
+}
+
+if (isset($vkPayload['user']) && is_array($vkPayload['user'])) {
+    foreach ($vkPayload['user'] as $key => $value) {
+        if (is_scalar($value) || $value === null) {
+            $claims[$key] = $value;
+        }
+    }
+}
 
 vk_auth_log('sdk_login_request_payload', [
     'has_access_token' => $accessToken !== '',
     'has_id_token' => $idToken !== '',
+    'has_refresh_token' => $refreshToken !== '',
     'has_user_id' => $vkUserId !== '',
     'has_email' => $vkEmail !== '',
     'scope' => $vkPayload['scope'] ?? null,
     'state' => $vkPayload['state'] ?? null,
     'payload_keys' => array_keys($vkPayload),
+    'claims_keys' => array_keys($claims),
 ]);
 
-$result = vk_user_login_by_access_token($pdo, $accessToken, $redirect, $vkUserId, $vkEmail, $idToken);
+$result = vk_user_login_by_access_token($pdo, $accessToken, $redirect, $vkUserId, $vkEmail, $idToken, $refreshToken, $claims);
 if (empty($result['ok'])) {
     vk_auth_log('sdk_login_failed', [
         'error_code' => (string) ($result['error_code'] ?? 'exchange_failed'),
