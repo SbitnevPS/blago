@@ -696,6 +696,12 @@ exit;
 require_once __DIR__ . '/includes/header.php';
 ?>
 
+<style>
+    .card__body {
+        overflow: visible;
+    }
+</style>
+
 <?php if (isset($error)): ?>
 <div class="alert alert--error mb-lg js-toast-alert">
 <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?>
