@@ -75,7 +75,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'application_declined_message' => trim($_POST['application_declined_message'] ?? ''),
             'application_revision_subject' => trim($_POST['application_revision_subject'] ?? ''),
             'application_revision_message' => trim($_POST['application_revision_message'] ?? ''),
-            'vk_publication_access_token' => trim($_POST['vk_publication_access_token'] ?? ''),
+            'vk_publication_user_token' => trim($_POST['vk_publication_user_token'] ?? ''),
+            'vk_publication_access_token' => trim($_POST['vk_publication_user_token'] ?? ''), // backward compatibility
             'vk_publication_group_id' => trim($_POST['vk_publication_group_id'] ?? ''),
             'vk_publication_api_version' => trim($_POST['vk_publication_api_version'] ?? '5.131'),
             'vk_publication_from_group' => isset($_POST['vk_publication_from_group']) ? 1 : 0,
@@ -259,15 +260,19 @@ require_once __DIR__ . '/includes/header.php';
 
                     <div class="settings-vk-card">
                         <div class="form-group">
-                            <label class="form-label">VK Access Token сообщества</label>
+                            <label class="form-label">VK User Access Token для публикации</label>
                             <input
                                 type="password"
-                                name="vk_publication_access_token"
+                                name="vk_publication_user_token"
                                 class="form-input"
-                                value="<?= htmlspecialchars($settings['vk_publication_access_token'] ?? '') ?>"
+                                value="<?= htmlspecialchars($settings['vk_publication_user_token'] ?? ($settings['vk_publication_access_token'] ?? '')) ?>"
                                 placeholder="vk1.a...."
                             >
-                            <div class="form-hint">Токен хранится в storage/settings.json и не отображается публично.</div>
+                            <div class="form-hint">
+                                Нужен <strong>пользовательский</strong> токен администратора сообщества (не токен сообщества).
+                                Права токена: <code>wall</code>, <code>photos</code>, <code>groups</code>, <code>offline</code>.
+                                Используется для этапов <code>photos.getWallUploadServer</code> → <code>photos.saveWallPhoto</code> → <code>wall.post</code>.
+                            </div>
                         </div>
 
                         <div class="form-row">
@@ -299,6 +304,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <span class="form-checkbox__mark"></span>
                                 <span>Публиковать от имени сообщества</span>
                             </label>
+                            <div class="form-hint">Если включено, пост публикуется на стене сообщества от имени сообщества (параметр <code>from_group=1</code>).</div>
                         </div>
 
                         <div class="form-group">

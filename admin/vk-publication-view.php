@@ -154,6 +154,12 @@ require_once __DIR__ . '/includes/header.php';
                             <a href="<?= e($item['vk_post_url']) ?>" target="_blank" class="btn btn--ghost btn--sm"><i class="fas fa-up-right-from-square"></i> Пост</a>
                         <?php elseif (!empty($item['error_message'])): ?>
                             <div class="text-secondary" style="max-width:220px;"><?= e($item['error_message']) ?></div>
+                            <?php if (!empty($item['technical_error'])): ?>
+                                <details style="max-width:220px; margin-top:6px;">
+                                    <summary class="text-secondary" style="cursor:pointer;">Тех. детали</summary>
+                                    <div class="text-secondary" style="white-space:pre-wrap; font-size:12px; margin-top:4px;"><?= e($item['technical_error']) ?></div>
+                                </details>
+                            <?php endif; ?>
                         <?php elseif (!empty($item['skip_reason'])): ?>
                             <div class="text-secondary" style="max-width:220px;"><?= e($item['skip_reason']) ?></div>
                         <?php else: ?>
