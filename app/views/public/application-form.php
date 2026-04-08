@@ -3,28 +3,7 @@
 require_once dirname(__DIR__, 3) . '/config.php';
 require_once dirname(__DIR__, 3) . '/includes/init.php';
 
-// Регионы России
-$regions = [
-'01. Адыгея', '02. Башкортостан', '03. Бурятия', '04. Алтай', '05. Дагестан', '06. Ингушетия',
-'07. Кабардино-Балкария', '08. Калмыкия', '09. Карачаево-Черкесия', '10. Карелия', '11. Коми',
-'12. Марий Эл', '13. Мордовия', '14. Саха (Якутия)', '15. Северная Осетия', '16. Татарстан',
-'17. Тыва', '18. Удмуртия', '19. Хакасия', '20. Чечня', '21. Чувашия', '22. Алтайский край',
-'23. Краснодарский край', '24. Красноярский край', '25. Приморский край', '26. Ставропольский край',
-'27. Хабаровский край', '28. Амурская область', '29. Архангельская область', '30. Астраханская область',
-'31. Белгородская область', '32. Брянская область', '33. Владимирская область', '34. Волгоградская область',
-'35. Вологодская область', '36. Воронежская область', '37. Ивановская область', '38. Иркутская область',
-'39. Калининградская область', '40. Калужская область', '41. Кемеровская область', '42. Кировская область',
-'43. Костромская область', '44. Курганская область', '45. Курская область', '46. Ленинградская область',
-'47. Липецкая область', '48. Магаданская область', '49. Московская область', '50. Мурманская область',
-'51. Нижегородская область', '52. Новгородская область', '53. Новосибирская область', '54. Омская область',
-'55. Оренбургская область', '56. Орловская область', '57. Пензенская область', '58. Псковская область',
-'59. Ростовская область', '60. Рязанская область', '61. Самарская область', '62. Саратовская область',
-'63. Сахалинская область', '64. Свердловская область', '65. Смоленская область', '66. Тамбовская область',
-'67. Тверская область', '68. Томская область', '69. Тульская область', '70. Тюменская область',
-'71. Ульяновская область', '72. Челябинская область', '73. Ярославская область', '74. Москва',
-'75. Санкт-Петербург', '76. Севастополь', '77. Еврейская АО', '78. Ненецкий АО',
-'79. Ханты-Мансийский АО', '80. Чукотский АО', '81. Ямало-Ненецкий АО', '82. Крым'
-];
+$regions = require dirname(__DIR__, 2) . '/data/regions.php';
 
 // Проверка авторизации
 if (!isAuthenticated()) {
@@ -115,13 +94,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
  'success' => true,
  'temp_file' => basename($tempFilePath),
  'preview' => $previewUrl,
- 'original_name' => $file['name']
+ 'original_name' => $file['name'],
+ 'original_url' => '/uploads/drawings/temp/' . basename($tempFilePath)
  ]);
  exit;
  }
  }
     
  echo json_encode(['success' => false, 'message' => 'Ошибка загрузки файла']);
+ exit;
+}
+
+
+// Обработка AJAX удаления временного изображения
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_temp') {
+ header('Content-Type: application/json');
+
+ if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+ echo json_encode(['success' => false, 'message' => 'Ошибка безопасности']);
+ exit;
+ }
+
+ $tempFile = basename((string) ($_POST['temp_file'] ?? ''));
+ if ($tempFile === '') {
+ echo json_encode(['success' => true]);
+ exit;
+ }
+
+ $safeTempPath = realpath($tempPath);
+ if ($safeTempPath === false) {
+ echo json_encode(['success' => false, 'message' => 'Временная директория недоступна']);
+ exit;
+ }
+
+ $targetFsPath = $safeTempPath . '/' . $tempFile;
+ $targetRealPath = realpath($targetFsPath);
+
+ if ($targetRealPath !== false && strpos($targetRealPath, $safeTempPath . DIRECTORY_SEPARATOR) === 0 && is_file($targetRealPath)) {
+ @unlink($targetRealPath);
+ }
+
+ $pathInfo = pathinfo($tempFile);
+ $thumbFile = ($pathInfo['filename'] ?? '') . '_thumb.jpg';
+ $thumbFsPath = $safeTempPath . '/' . $thumbFile;
+ $thumbRealPath = realpath($thumbFsPath);
+ if ($thumbRealPath !== false && strpos($thumbRealPath, $safeTempPath . DIRECTORY_SEPARATOR) === 0 && is_file($thumbRealPath)) {
+ @unlink($thumbRealPath);
+ }
+
+ echo json_encode(['success' => true]);
  exit;
 }
 
@@ -390,12 +411,7 @@ generateCSRFToken();
             <span class="application-hero__highlight">Черновик можно сохранить</span>
         </div>
 
-        <div class="application-hero__note" role="note" aria-label="Важная информация">
-            <div class="application-hero__note-title"><i class="fas fa-circle-info" aria-hidden="true"></i> Важно</div>
-            <p class="application-hero__note-text">
-                Если участие происходит самостоятельно, часть полей можно заполнить прочерком согласно правилам конкурса.
-            </p>
-        </div>
+        
     </div>
 </section>
         
@@ -481,8 +497,8 @@ generateCSRFToken();
 <input type="text" name="source_info" class="form-input" placeholder="Например: от друзей, из социальных сетей..." value="<?= htmlspecialchars($initialFormData['source_info']) ?>">
 </div>
 <div class="form-group">
-<label class="form-label">Проинформировали ли Вы коллег о Конкурсе?</label>
-<input type="text" name="colleagues_info" class="form-input" placeholder="Например: да, около5 человек" value="<?= htmlspecialchars($initialFormData['colleagues_info']) ?>">
+<label class="form-label">Рассказали ли вы о конкурсе ещё кому-нибудь: друзьям, родственникам, коллегам?</label>
+<input type="text" name="colleagues_info" class="form-input" placeholder="Например: да, отправила ссылку друзьям и коллегам" value="<?= htmlspecialchars($initialFormData['colleagues_info']) ?>">
 </div>
 </div>
 </div>
@@ -546,9 +562,12 @@ generateCSRFToken();
             
  const previewHtml = data && data.preview ? `
 <div class="drawing-preview visible" id="preview_${index}">
-<img src="${data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large" id="preview_img_${index}">
+<img src="${data.original_url || data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large" id="preview_img_${index}">
 <div class="drawing-preview__info" id="preview_info_${index}">Файл загружен</div>
-<button type="button" class="drawing-preview__remove" onclick="removeDrawing(${index})">Удалить</button>
+<div class="drawing-preview__actions">
+<button type="button" class="drawing-preview__action" onclick="viewDrawing(${index})">Посмотреть</button>
+<button type="button" class="drawing-preview__action drawing-preview__action--danger" onclick="removeDrawing(${index})">Удалить</button>
+</div>
 </div>` : '';
             
  container.innerHTML = `
@@ -677,15 +696,18 @@ function handleFileSelect(file, index) {
  previewContainer.className = 'drawing-preview visible';
  previewContainer.id = `preview_${index}`;
  previewContainer.innerHTML = `
-<img src="${data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large" id="preview_img_${index}">
+<img src="${data.original_url || data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large" id="preview_img_${index}">
 <div class="drawing-preview__info" id="preview_info_${index}">Загружено</div>
-<button type="button" class="drawing-preview__remove" onclick="removeDrawing(${index})">Удалить</button>
+<div class="drawing-preview__actions">
+<button type="button" class="drawing-preview__action" onclick="viewDrawing(${index})">Посмотреть</button>
+<button type="button" class="drawing-preview__action drawing-preview__action--danger" onclick="removeDrawing(${index})">Удалить</button>
+</div>
  `;
  const previewWrap = area.parentElement.querySelector('.drawing-preview-wrap') || area.parentElement;
  previewWrap.appendChild(previewContainer);
  } else {
  previewContainer.classList.add('visible');
- document.getElementById(`preview_img_${index}`).src = data.preview;
+ document.getElementById(`preview_img_${index}`).src = data.original_url || data.preview;
  }
         
  area.classList.add('has-file');
@@ -704,24 +726,63 @@ function handleFileSelect(file, index) {
  });
  }
         
- function removeDrawing(index) {
+ function viewDrawing(index) {
+ const previewImage = document.getElementById(`preview_img_${index}`);
+ if (!previewImage || !previewImage.src) return;
+ window.open(previewImage.src, '_blank', 'noopener');
+ }
+
+ function resetDrawingUi(index) {
  const area = document.getElementById(`drawingUpload_${index}`);
  const title = document.getElementById(`upload_title_${index}`);
  const hint = document.getElementById(`upload_hint_${index}`);
  const preview = document.getElementById(`preview_${index}`);
  const tempFile = document.getElementById(`temp_file_${index}`);
  const existingFile = document.getElementById(`existing_file_${index}`);
-            
+
  if (tempFile) tempFile.value = '';
  if (existingFile) existingFile.value = '';
  if (preview) preview.classList.remove('visible');
- area.classList.remove('has-file');
+ if (area) area.classList.remove('has-file');
+ if (title) {
  title.textContent = 'Нажмите или перетащите рисунок';
  title.style.color = '';
- hint.textContent = 'JPG, PNG, GIF, WebP, TIF. Можно заменить позже.';
-            
- const input = area.querySelector('input[type="file"]');
+ }
+ if (hint) hint.textContent = 'JPG, PNG, GIF, WebP, TIF. Можно заменить позже.';
+
+ const input = area ? area.querySelector('input[type="file"]') : null;
  if (input) input.value = '';
+ }
+
+ function removeDrawing(index) {
+ const tempFileInput = document.getElementById(`temp_file_${index}`);
+ const tempFile = tempFileInput ? tempFileInput.value : '';
+
+ if (!tempFile) {
+ resetDrawingUi(index);
+ return;
+ }
+
+ const formData = new FormData();
+ formData.append('action', 'delete_temp');
+ formData.append('csrf_token', csrfToken);
+ formData.append('temp_file', tempFile);
+
+ fetch('/application-form?contest_id=' + contestId, {
+ method: 'POST',
+ body: formData
+ })
+ .then(response => response.json())
+ .then(data => {
+ if (!data.success) {
+ throw new Error(data.message || 'Не удалось удалить файл');
+ }
+ resetDrawingUi(index);
+ })
+ .catch(error => {
+ console.error('Remove error:', error);
+ alert(error.message || 'Не удалось удалить файл');
+ });
  }
         
  function saveDraft() {

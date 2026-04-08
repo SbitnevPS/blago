@@ -193,6 +193,20 @@ function vk_callback_fail(string $flow, string $errorCode): void
     exit;
 }
 
+function vk_admin_session_reset(): void
+{
+    unset($_SESSION['admin_user_id'], $_SESSION['is_admin'], $_SESSION['admin_auth_redirect']);
+}
+
+function vk_admin_access_denied_redirect(): void
+{
+    vk_admin_session_reset();
+    vk_flow_session_clear('admin');
+    $_SESSION['flash_error'] = 'У вас нет доступа к административному разделу.';
+    header('Location: /');
+    exit;
+}
+
 function vk_callback_handle(string $flow, PDO $pdo): void
 {
     $state = trim((string) ($_GET['state'] ?? ''));
@@ -302,17 +316,21 @@ function vk_callback_handle(string $flow, PDO $pdo): void
                 'user_found' => (bool) $existingUser,
                 'is_admin' => (int) ($existingUser['is_admin'] ?? 0),
             ]);
-            vk_callback_fail($flow, 'admin_access_denied');
+            vk_admin_access_denied_redirect();
         }
-
-        vk_save_user_profile($pdo, $mapped, $accessToken);
 
         $_SESSION['admin_user_id'] = (int) $existingUser['id'];
         $_SESSION['is_admin'] = true;
-        $target = sanitize_internal_redirect((string) ($sessionFlow['post_login_redirect'] ?? '/admin'), '/admin');
+
+        $redirectFromSession = (string) ($_SESSION['admin_auth_redirect'] ?? '');
+        $target = sanitize_internal_redirect(
+            $redirectFromSession !== '' ? $redirectFromSession : (string) ($sessionFlow['post_login_redirect'] ?? '/admin'),
+            '/admin'
+        );
         if (strpos($target, '/admin') !== 0) {
             $target = '/admin';
         }
+        unset($_SESSION['admin_auth_redirect']);
     } else {
         vk_auth_log('callback_profile_mapping', [
             'flow' => $flow,
