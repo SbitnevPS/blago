@@ -279,7 +279,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <div>
                                     <strong><?= htmlspecialchars($vkStatusLabel) ?></strong>
                                     <div class="form-hint">
-                                        <?= htmlspecialchars($vkStatus === 'connected' ? 'Публикация рисунков в VK доступна.' : 'Перед публикацией выполните подключение VK ID OAuth.') ?>
+                                        <?= htmlspecialchars($vkStatus === 'connected' ? 'Публикация рисунков в VK доступна.' : 'Перед публикацией выполните подключение VK OAuth.') ?>
                                     </div>
                                 </div>
                                 <span class="badge <?= $vkStatus === 'connected' ? 'badge--success' : ($vkStatus === 'attention' ? 'badge--warning' : 'badge--secondary') ?>">
@@ -298,7 +298,10 @@ require_once __DIR__ . '/includes/header.php';
                                 <div><strong>Маска токена:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
                                 <div><strong>Последняя проверка:</strong> <?= htmlspecialchars($vkPublicationSettings['last_checked_at'] !== '' ? $vkPublicationSettings['last_checked_at'] : '—') ?></div>
                                 <div><strong>Последняя успешная проверка:</strong> <?= htmlspecialchars($vkPublicationSettings['last_success_checked_at'] !== '' ? $vkPublicationSettings['last_success_checked_at'] : '—') ?></div>
+                                <div><strong>Статус последней проверки:</strong> <?= htmlspecialchars($vkPublicationSettings['last_check_status'] !== '' ? $vkPublicationSettings['last_check_status'] : '—') ?></div>
+                                <div><strong>Сообщение проверки:</strong> <?= htmlspecialchars($vkPublicationSettings['last_check_message'] !== '' ? $vkPublicationSettings['last_check_message'] : '—') ?></div>
                                 <div><strong>Последняя ошибка:</strong> <?= htmlspecialchars($vkLastError) ?></div>
+                                <div><strong>Техническая ошибка:</strong> <?= htmlspecialchars($vkPublicationSettings['oauth_last_error_technical'] !== '' ? $vkPublicationSettings['oauth_last_error_technical'] : '—') ?></div>
                             </div>
 
                             <?php if (!empty($vkReadiness['issues'])): ?>
@@ -325,7 +328,7 @@ require_once __DIR__ . '/includes/header.php';
                             <label class="form-label">Статус OAuth-подключения</label>
                             <input type="text" class="form-input" value="<?= htmlspecialchars($vkStatusLabel) ?>" readonly>
                             <div class="form-hint">
-                                Токен больше не вводится вручную. Используется OAuth authorization code + PKCE (code_challenge_method=plain) через endpoint <code>oauth.vk.com</code>, полностью совместимый с callback и <code>code_verifier</code>.
+                                Используется единый OAuth authorization code flow VK: после возврата из VK токен валидируется через <code>users.get</code> и проверяется готовность к публикации (<code>groups.getById</code>, <code>photos.getWallUploadServer</code>).
                             </div>
                         </div>
 
