@@ -426,6 +426,48 @@
   padding: 16px;
   background: #fff;
 }
+
+.upload-area.dragover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  transform: scale(1.01);
+}
+
+.upload-area.has-file {
+  border-color: var(--color-success);
+  background: var(--color-success-light);
+}
+
+.admin-upload-area {
+  margin-top: 16px;
+}
+
+.admin-upload-preview-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.is-hidden {
+  display: none !important;
+}
+
+.settings-hero-preview {
+  max-width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px;
+  margin-top: 12px;
+  background: #fff;
+}
+
+.settings-hero-preview img {
+  width: 100%;
+  aspect-ratio: 1500 / 400;
+  object-fit: cover;
+  display: block;
+  border-radius: 8px;
+}
 .settings-actions {
   display: flex;
   justify-content: flex-end;

@@ -8,6 +8,9 @@ $userId = (int) (getCurrentUserId() ?? 0);
 $contests = getActiveContests();
 $submittedContestIds = $isGuest ? [] : array_flip(getUserSubmittedContestIds($userId));
 $isSingleContest = count($contests) === 1;
+$settings = getSystemSettings();
+$homepageHeroImage = trim((string)($settings['homepage_hero_image'] ?? ''));
+$homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurlencode($homepageHeroImage) : '/public/contest-hero-placeholder.svg';
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -28,7 +31,7 @@ $isSingleContest = count($contests) === 1;
             <p class="contests-hero__subtitle">Открывайте новые творческие вызовы, вдохновляйтесь и отправляйте работы на любимые конкурсы.</p>
         </div>
         <div class="contests-hero__image-wrap">
-            <img src="/public/contest-hero-placeholder.svg" alt="Декоративная обложка страницы конкурсов" class="contests-hero__image">
+            <img src="<?= htmlspecialchars($homepageHeroSrc) ?>" alt="Обложка главной страницы" class="contests-hero__image">
         </div>
     </div>
 </section>

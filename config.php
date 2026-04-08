@@ -6,6 +6,7 @@ define('UPLOAD_PATH', ROOT_PATH . '/uploads');
 define('DRAWINGS_PATH', UPLOAD_PATH . '/drawings');
 define('DOCUMENTS_PATH', UPLOAD_PATH . '/documents');
 define('CONTEST_COVERS_PATH', UPLOAD_PATH . '/contest-covers');
+define('SITE_BANNERS_PATH', UPLOAD_PATH . '/site-banners');
 define('SETTINGS_FILE', ROOT_PATH . '/storage/settings.json');
 
 if (is_file(__DIR__ . '/vendor/autoload.php')) {
@@ -414,6 +415,7 @@ function getSystemSettings() {
         'email_from_name' => 'ДетскиеКонкурсы.рф',
         'email_from_address' => 'no-reply@kids-contests.ru',
         'email_reply_to' => '',
+        'homepage_hero_image' => '',
     ];
 
     if (!is_file(SETTINGS_FILE)) {
