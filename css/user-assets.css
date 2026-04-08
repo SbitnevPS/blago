@@ -68,6 +68,22 @@
 
 .application-note { background:var(--color-info-light); border-left:4px solid var(--color-info); padding:var(--space-md); border-radius:0 var(--radius-md) var(--radius-md) 0; margin-bottom:var(--space-lg); font-size:var(--font-size-sm); color:#1E40AF; }
 .application-note strong { display:block; margin-bottom:var(--space-xs); }
+.application-hero { background:linear-gradient(135deg, #F8FAFF 0%, #EEF4FF 100%); border:1px solid #DCE7FF; border-radius:24px; box-shadow:0 18px 34px rgba(37, 99, 235, 0.08); overflow:hidden; }
+.application-hero__inner { padding:clamp(20px, 4vw, 40px); }
+.application-hero__eyebrow { display:inline-flex; align-items:center; gap:6px; font-size:var(--font-size-xs); font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#1D4ED8; background:rgba(59, 130, 246, .12); border:1px solid rgba(59, 130, 246, .2); border-radius:999px; padding:6px 12px; margin-bottom:var(--space-md); }
+.application-hero__title { font-size:clamp(28px, 4vw, 38px); line-height:1.15; margin:0 0 var(--space-md); color:#0F172A; }
+.application-hero__text { margin:0; max-width:900px; color:#1E293B; font-size:var(--font-size-base); line-height:1.6; }
+.application-hero__steps { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:var(--space-md); margin-top:var(--space-xl); }
+.application-step { background:#fff; border:1px solid #E2E8F0; border-radius:18px; padding:var(--space-md); box-shadow:0 8px 18px rgba(15, 23, 42, .06); }
+.application-step__badge { display:inline-flex; align-items:center; justify-content:center; font-size:var(--font-size-xs); font-weight:700; color:#1D4ED8; background:#EFF6FF; border-radius:999px; padding:4px 10px; margin-bottom:10px; }
+.application-step__icon { width:42px; height:42px; display:flex; align-items:center; justify-content:center; border-radius:12px; background:#E0ECFF; color:#1D4ED8; font-size:18px; margin-bottom:12px; }
+.application-step__title { margin:0 0 8px; color:#0F172A; font-size:var(--font-size-base); line-height:1.35; }
+.application-step__text { margin:0; color:#475569; font-size:var(--font-size-sm); line-height:1.5; }
+.application-hero__highlights { display:flex; flex-wrap:wrap; gap:10px; margin-top:var(--space-lg); }
+.application-hero__highlight { display:inline-flex; align-items:center; padding:8px 12px; border-radius:999px; background:#fff; border:1px solid #DBEAFE; color:#1E3A8A; font-weight:600; font-size:var(--font-size-sm); }
+.application-hero__note { display:grid; grid-template-columns:auto 1fr; gap:10px 12px; margin-top:var(--space-lg); background:#FFFBEB; border:1px solid #FDE68A; border-radius:14px; padding:14px 16px; }
+.application-hero__note-title { display:inline-flex; align-items:center; gap:8px; font-weight:700; color:#92400E; }
+.application-hero__note-text { margin:0; color:#78350F; line-height:1.5; font-size:var(--font-size-sm); }
 .participant-form { background:var(--color-bg); border-radius:var(--radius-lg); padding:var(--space-lg); margin-bottom:var(--space-lg); border:1px solid var(--color-border); }
 .participant-form__header { display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-lg); padding-bottom:var(--space-md); border-bottom:1px solid var(--color-border); }
 .participant-form__title { font-size:var(--font-size-lg); font-weight:var(--font-weight-semibold); display:flex; align-items:center; gap:var(--space-sm); }
@@ -121,6 +137,7 @@
 
 @media (max-width: 900px) {
  .drawing-layout { grid-template-columns:1fr; }
+ .application-hero__steps { grid-template-columns:repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 768px) {
@@ -181,5 +198,31 @@
  .application-card__footer--actions .btn {
   width:100%;
   justify-content:center;
+ }
+
+ .application-hero {
+  border-radius:18px;
+ }
+
+ .application-hero__inner {
+  padding:20px 16px;
+ }
+
+ .application-hero__title {
+  font-size:28px;
+ }
+
+ .application-hero__steps {
+  grid-template-columns:1fr;
+  gap:12px;
+  margin-top:var(--space-lg);
+ }
+
+ .application-step {
+  border-radius:14px;
+ }
+
+ .application-hero__note {
+  grid-template-columns:1fr;
  }
 }

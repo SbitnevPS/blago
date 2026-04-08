@@ -346,10 +346,58 @@ generateCSRFToken();
         
 <div class="card mb-lg"><div class="card__body"><h3><?= htmlspecialchars($contest['title']) ?></h3></div></div>
 
-<div class="application-note">
-    <strong>Как заполнить заявку</strong>
-    <span>Шаг 1 — данные родителя. Шаг 2 — общие данные организации. Шаг 3 — добавьте участников: 1 участник = 1 работа.</span>
-</div>
+<section class="application-hero mb-lg" aria-label="Инструкция по заполнению заявки">
+    <div class="application-hero__inner">
+        <div class="application-hero__eyebrow">Подача заявки</div>
+        <h2 class="application-hero__title">Как заполнить заявку</h2>
+        <p class="application-hero__text">
+            Заполнение займёт всего несколько минут. Сначала укажите данные родителя или куратора, затем общую информацию
+            об организации, после этого добавьте участников. Один участник = одна конкурсная работа.
+        </p>
+
+        <div class="application-hero__steps">
+            <article class="application-step">
+                <div class="application-step__badge">Шаг 1</div>
+                <div class="application-step__icon" aria-hidden="true"><i class="fas fa-user"></i></div>
+                <h3 class="application-step__title">Данные родителя или куратора</h3>
+                <p class="application-step__text">
+                    Заполните ФИО и контактные данные ответственного взрослого, который подаёт заявку.
+                </p>
+            </article>
+
+            <article class="application-step">
+                <div class="application-step__badge">Шаг 2</div>
+                <div class="application-step__icon" aria-hidden="true"><i class="fas fa-building"></i></div>
+                <h3 class="application-step__title">Общие данные организации</h3>
+                <p class="application-step__text">
+                    Укажите регион, название, адрес и email организации. Эти данные будут использованы для всех участников заявки.
+                </p>
+            </article>
+
+            <article class="application-step">
+                <div class="application-step__badge">Шаг 3</div>
+                <div class="application-step__icon" aria-hidden="true"><i class="fas fa-image"></i></div>
+                <h3 class="application-step__title">Добавьте участников и рисунки</h3>
+                <p class="application-step__text">
+                    Каждый участник оформляется отдельной карточкой, и для каждого участника загружается отдельная конкурсная работа.
+                </p>
+            </article>
+        </div>
+
+        <div class="application-hero__highlights" aria-label="Краткие подсказки">
+            <span class="application-hero__highlight">1 участник = 1 работа</span>
+            <span class="application-hero__highlight">Можно добавить несколько участников</span>
+            <span class="application-hero__highlight">Черновик можно сохранить</span>
+        </div>
+
+        <div class="application-hero__note" role="note" aria-label="Важная информация">
+            <div class="application-hero__note-title"><i class="fas fa-circle-info" aria-hidden="true"></i> Важно</div>
+            <p class="application-hero__note-text">
+                Если участие происходит самостоятельно, часть полей можно заполнить прочерком согласно правилам конкурса.
+            </p>
+        </div>
+    </div>
+</section>
         
  <?php if ($error): ?>
 <div class="alert alert--error mb-lg">
@@ -357,11 +405,6 @@ generateCSRFToken();
 <div class="alert__content"><div class="alert__message"><?= htmlspecialchars($error) ?></div></div>
 </div>
  <?php endif; ?>
-        
-<div class="application-note">
-<strong>Важная информация:</strong>
- Если участие происходит самостоятельно, заполняются:1 (организация),3,6 (ФИО и контактная информация родителя),8,9,10,12. В остальных графах — прочерк.
-</div>
         
 <form method="POST" enctype="multipart/form-data" id="applicationForm">
 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
