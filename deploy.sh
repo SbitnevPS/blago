@@ -1,33 +1,34 @@
 #!/bin/bash
 
-set -e
+# deploy.sh — деплой проекта
 
-PROJECT_DIR="/home/users/p/pavel-sbitnev/domains/konkurs.tolkodobroe.info"
-BRANCH="main"
+echo "[deploy] Starting deploy..."
 
-echo "[deploy] Starting deploy in $PROJECT_DIR"
-cd "$PROJECT_DIR"
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "[deploy] Current branch:"
-git branch --show-current || true
+cd "$PROJECT_DIR" || {
+  echo "[deploy][error] Project directory not found"
+  exit 1
+}
 
-echo "[deploy] Fetching origin"
+# 🔄 Обновляем код
+echo "[deploy] Fetching updates..."
 git fetch origin
 
-echo "[deploy] Resetting to origin/$BRANCH"
-git reset --hard "origin/$BRANCH"
+echo "[deploy] Reset to origin/main..."
+git reset --hard origin/main
 
-echo "[deploy] Restoring permissions"
-find . -type d -exec chmod 755 {} \;
-find . -type f -exec chmod 644 {} \;
+# 🧹 Очистка (если нужно)
+echo "[deploy] Cleaning..."
+git clean -fd
 
-[ -f deploy.sh ] && chmod 755 deploy.sh
-[ -f deploy.php ] && chmod 644 deploy.php
-[ -f .htaccess ] && chmod 644 .htaccess
-[ -f config.php ] && chmod 600 config.php
+# 📦 Установка зависимостей (если используешь composer)
+if [ -f "composer.json" ]; then
+  echo "[deploy] Installing composer dependencies..."
+  composer install --no-dev --optimize-autoloader
+fi
 
-mkdir -p uploads storage
-[ -f uploads/.gitkeep ] || touch uploads/.gitkeep
-[ -f storage/.gitkeep ] || touch storage/.gitkeep
+# 🔐 Права (опционально)
+chmod -R 775 storage uploads 2>/dev/null
 
-echo "[deploy] Done"
+echo "[deploy] Done."
