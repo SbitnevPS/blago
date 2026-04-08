@@ -1648,6 +1648,8 @@ h4 {
 
 .contests-hero__image {
 	width: 100%;
+	aspect-ratio: 1500 / 400;
+	object-fit: cover;
 	display: block;
 	border-radius: calc(var(--radius-2xl) - 6px);
 }

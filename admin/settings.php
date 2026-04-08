@@ -36,6 +36,33 @@ $messageTemplates = [
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (($_POST['action'] ?? '') === 'upload_homepage_hero_async') {
+        if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            jsonResponse(['success' => false, 'message' => 'Ошибка безопасности'], 403);
+        }
+
+        if (!isset($_FILES['homepage_hero_image']) || (int)($_FILES['homepage_hero_image']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            jsonResponse(['success' => false, 'message' => 'Файл не выбран'], 422);
+        }
+
+        if (!is_dir(SITE_BANNERS_PATH) && !mkdir(SITE_BANNERS_PATH, 0775, true) && !is_dir(SITE_BANNERS_PATH)) {
+            jsonResponse(['success' => false, 'message' => 'Не удалось подготовить каталог баннеров'], 500);
+        }
+
+        $uploadResult = uploadFile($_FILES['homepage_hero_image'], SITE_BANNERS_PATH, ['jpg', 'jpeg', 'png', 'webp']);
+        if (!$uploadResult['success']) {
+            jsonResponse(['success' => false, 'message' => $uploadResult['message'] ?? 'Ошибка загрузки'], 422);
+        }
+
+        $filename = (string)($uploadResult['filename'] ?? '');
+        jsonResponse([
+            'success' => true,
+            'filename' => $filename,
+            'url' => '/uploads/site-banners/' . rawurlencode($filename),
+            'original_name' => (string)($_FILES['homepage_hero_image']['name'] ?? ''),
+        ]);
+    }
+
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $error = 'Ошибка безопасности';
     } else {
@@ -57,6 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'email_from_name' => trim($_POST['email_from_name'] ?? ''),
             'email_from_address' => trim($_POST['email_from_address'] ?? ''),
             'email_reply_to' => trim($_POST['email_reply_to'] ?? ''),
+            'homepage_hero_image' => trim($_POST['homepage_hero_image'] ?? ''),
         ];
 
         if (saveSystemSettings($payload)) {
@@ -111,6 +139,13 @@ require_once __DIR__ . '/includes/header.php';
                 <span>
                     <strong>Интеграция VK</strong>
                     <small>Публикация работ в сообщество</small>
+                </span>
+            </a>
+            <a href="#homepage-banner" class="settings-nav__link">
+                <i class="fas fa-image"></i>
+                <span>
+                    <strong>Главная страница</strong>
+                    <small>Баннер 1500×400 px</small>
                 </span>
             </a>
         </div>
@@ -278,6 +313,31 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                 </section>
 
+                <section id="homepage-banner" class="settings-section">
+                    <div class="settings-section__header">
+                        <h4><i class="fas fa-image"></i> Баннер главной страницы</h4>
+                        <p>Изображение для верхнего блока на главной странице (рекомендуемый размер: 1500×400 px).</p>
+                    </div>
+
+                    <?php $heroImageSrc = !empty($settings['homepage_hero_image']) ? '/uploads/site-banners/' . rawurlencode((string)$settings['homepage_hero_image']) : ''; ?>
+                    <input type="hidden" name="homepage_hero_image" id="homepage_hero_image" value="<?= htmlspecialchars((string)($settings['homepage_hero_image'] ?? '')) ?>">
+                    <div class="upload-area admin-upload-area <?= $heroImageSrc !== '' ? 'has-file' : '' ?>" id="homepageHeroUploadArea">
+                        <input type="file" id="homepageHeroInput" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="file-upload__input" style="display:none;">
+                        <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                        <div class="upload-area__title" id="homepageHeroUploadTitle"><?= $heroImageSrc !== '' ? 'Баннер уже загружен' : 'Нажмите или перетащите изображение 1500×400' ?></div>
+                        <div class="upload-area__hint" id="homepageHeroUploadHint">Загрузка проходит без перезагрузки страницы.</div>
+                    </div>
+                    <div class="settings-hero-preview <?= $heroImageSrc !== '' ? '' : 'is-hidden' ?>" id="homepageHeroPreviewWrap">
+                        <img src="<?= htmlspecialchars($heroImageSrc) ?>" alt="Баннер главной страницы" id="homepageHeroPreviewImage">
+                        <div class="admin-upload-preview-actions">
+                            <button type="button" class="btn btn--ghost btn--sm" id="homepageHeroOpenPreview">
+                                <i class="fas fa-up-right-from-square"></i> Открыть предпросмотр
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-hint">Поддерживаются JPG, JPEG, PNG и WEBP. Для сохранения в настройках нажмите кнопку «Сохранить настройки».</div>
+                </section>
+
                 <div class="settings-actions">
                     <button type="submit" class="btn btn--primary">
                         <i class="fas fa-save"></i> Сохранить настройки
@@ -287,5 +347,83 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 </div>
+
+<script>
+(() => {
+    const uploadArea = document.getElementById('homepageHeroUploadArea');
+    const input = document.getElementById('homepageHeroInput');
+    const hiddenInput = document.getElementById('homepage_hero_image');
+    const previewWrap = document.getElementById('homepageHeroPreviewWrap');
+    const previewImage = document.getElementById('homepageHeroPreviewImage');
+    const openPreviewBtn = document.getElementById('homepageHeroOpenPreview');
+    const title = document.getElementById('homepageHeroUploadTitle');
+    const hint = document.getElementById('homepageHeroUploadHint');
+    const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
+
+    if (!uploadArea || !input || !hiddenInput || !previewImage) return;
+
+    const uploadImage = async (file) => {
+        title.textContent = 'Загрузка...';
+        hint.textContent = 'Пожалуйста, подождите';
+
+        const formData = new FormData();
+        formData.append('action', 'upload_homepage_hero_async');
+        formData.append('csrf_token', csrfToken);
+        formData.append('homepage_hero_image', file);
+
+        const response = await fetch('/admin/settings', {
+            method: 'POST',
+            body: formData,
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || 'Не удалось загрузить файл');
+        }
+
+        hiddenInput.value = payload.filename || '';
+        previewImage.src = payload.url || '';
+        previewWrap?.classList.remove('is-hidden');
+        uploadArea.classList.add('has-file');
+        title.textContent = payload.original_name ? `Файл загружен: ${payload.original_name}` : 'Файл загружен';
+        hint.textContent = 'Можно загрузить другой файл для замены';
+    };
+
+    if (openPreviewBtn) {
+        openPreviewBtn.addEventListener('click', () => {
+            if (!previewImage.src) return;
+            window.open(previewImage.src, '_blank', 'noopener');
+        });
+    }
+
+    uploadArea.addEventListener('click', () => input.click());
+    uploadArea.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+    uploadArea.addEventListener('dragleave', (event) => {
+        event.preventDefault();
+        uploadArea.classList.remove('dragover');
+    });
+    uploadArea.addEventListener('drop', (event) => {
+        event.preventDefault();
+        uploadArea.classList.remove('dragover');
+        if (event.dataTransfer?.files?.length) {
+            uploadImage(event.dataTransfer.files[0]).catch((error) => {
+                title.textContent = error.message || 'Ошибка загрузки';
+                hint.textContent = 'Попробуйте снова';
+            });
+        }
+    });
+    input.addEventListener('change', () => {
+        if (!input.files?.length) return;
+        uploadImage(input.files[0]).catch((error) => {
+            title.textContent = error.message || 'Ошибка загрузки';
+            hint.textContent = 'Попробуйте снова';
+        }).finally(() => {
+            input.value = '';
+        });
+    });
+})();
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
