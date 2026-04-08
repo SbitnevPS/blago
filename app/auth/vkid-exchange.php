@@ -27,11 +27,17 @@ $rawRedirect = (string) ($body['redirect'] ?? ($_SESSION['user_auth_redirect'] ?
 $redirectAfterAuth = sanitize_internal_redirect($rawRedirect, '/contests');
 $_SESSION['user_auth_redirect'] = $redirectAfterAuth;
 
-function vkid_http_post(string $url, array $params): ?array
+function vkid_http_post(string $url, array $params): array
 {
     $ch = curl_init($url);
     if ($ch === false) {
-        return null;
+        return [
+            'ok' => false,
+            'http_code' => 0,
+            'raw' => '',
+            'json' => null,
+            'curl_error' => 'curl_init_failed',
+        ];
     }
 
     curl_setopt_array($ch, [
@@ -43,42 +49,70 @@ function vkid_http_post(string $url, array $params): ?array
     ]);
 
     $response = curl_exec($ch);
+    $curlError = $response === false ? (string) curl_error($ch) : '';
     $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    if ($response === false || $httpCode < 200 || $httpCode >= 300) {
-        return null;
+    $raw = $response === false ? '' : (string) $response;
+    $json = json_decode($raw, true);
+    if (!is_array($json)) {
+        $json = null;
     }
 
-    $decoded = json_decode($response, true);
-    return is_array($decoded) ? $decoded : null;
+    return [
+        'ok' => $curlError === '' && $httpCode >= 200 && $httpCode < 300,
+        'http_code' => $httpCode,
+        'raw' => $raw,
+        'json' => $json,
+        'curl_error' => $curlError,
+    ];
 }
 
-$tokenData = vkid_http_post('https://id.vk.com/oauth2/auth', [
+$tokenResponse = vkid_http_post('https://id.vk.com/oauth2/auth', [
     'grant_type' => 'authorization_code',
     'client_id' => VK_CLIENT_ID,
     'client_secret' => VK_CLIENT_SECRET,
-    'redirect_uri' => 'https://konkurs.tolkodobroe.info/vk-auth',
+    'redirect_uri' => VK_USER_REDIRECT_URI,
     'code' => $code,
     'device_id' => $deviceId,
 ]);
 
-if (!is_array($tokenData) || empty($tokenData['access_token']) || empty($tokenData['user_id'])) {
-    jsonResponse(['success' => false, 'error' => 'Не удалось обменять код VK ID.'], 400);
+if (empty($tokenResponse['ok'])) {
+    error_log('VK ID code exchange failed: ' . json_encode([
+        'http_code' => $tokenResponse['http_code'] ?? 0,
+        'curl_error' => $tokenResponse['curl_error'] ?? '',
+        'raw' => $tokenResponse['raw'] ?? '',
+        'redirect_uri' => VK_USER_REDIRECT_URI,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+    jsonResponse(['success' => false, 'error' => 'Не удалось выполнить вход через VK ID. Попробуйте снова.'], 400);
+}
+
+$tokenData = is_array($tokenResponse['json'] ?? null) ? $tokenResponse['json'] : [];
+if (empty($tokenData['access_token']) || empty($tokenData['user_id'])) {
+    error_log('VK ID code exchange returned incomplete payload: ' . json_encode([
+        'http_code' => $tokenResponse['http_code'] ?? 0,
+        'raw' => $tokenResponse['raw'] ?? '',
+        'json' => $tokenData,
+        'redirect_uri' => VK_USER_REDIRECT_URI,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+    jsonResponse(['success' => false, 'error' => 'Не удалось выполнить вход через VK ID. Попробуйте снова.'], 400);
 }
 
 $accessToken = (string) $tokenData['access_token'];
 $vkUserId = (string) $tokenData['user_id'];
 $vkEmail = trim((string) ($tokenData['email'] ?? ''));
 
-$userData = vkid_http_post('https://api.vk.com/method/users.get', [
+$userResponse = vkid_http_post('https://api.vk.com/method/users.get', [
     'access_token' => $accessToken,
     'v' => VK_API_VERSION,
     'user_ids' => $vkUserId,
     'fields' => 'photo_100',
 ]);
 
-if (!is_array($userData) || !empty($userData['error']) || empty($userData['response'][0])) {
+$userData = is_array($userResponse['json'] ?? null) ? $userResponse['json'] : [];
+if (empty($userResponse['ok']) || !empty($userData['error']) || empty($userData['response'][0])) {
     jsonResponse(['success' => false, 'error' => 'Не удалось получить профиль пользователя VK.'], 400);
 }
 

@@ -176,7 +176,7 @@ function installVkIdWidget() {
 
         VKID.Config.init({
             app: <?= json_encode((int) VK_CLIENT_ID) ?>,
-            redirectUrl: 'https://konkurs.tolkodobroe.info/vk-auth',
+            redirectUrl: <?= json_encode(VK_USER_REDIRECT_URI, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
             responseMode: VKID.ConfigResponseMode.Callback,
             source: VKID.ConfigSource.LOWCODE,
             scope: 'email',
