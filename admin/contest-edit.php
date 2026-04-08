@@ -14,6 +14,21 @@ $admin = getCurrentUser();
 $contest_id = $_GET['id'] ?? 0;
 $isEdit = !empty($contest_id);
 $themeOptions = getContestThemeStyles();
+$contestTableColumns = [];
+
+try {
+    $contestTableColumns = $pdo->query("SHOW COLUMNS FROM contests")->fetchAll(PDO::FETCH_COLUMN) ?: [];
+} catch (Throwable $e) {
+    $contestTableColumns = [];
+}
+
+$hasDocumentFileColumn = in_array('document_file', $contestTableColumns, true);
+$hasCoverImageColumn = in_array('cover_image', $contestTableColumns, true);
+$hasThemeStyleColumn = in_array('theme_style', $contestTableColumns, true);
+$hasPublishedColumn = in_array('is_published', $contestTableColumns, true);
+$hasDateFromColumn = in_array('date_from', $contestTableColumns, true);
+$hasDateToColumn = in_array('date_to', $contestTableColumns, true);
+$hasUpdatedAtColumn = in_array('updated_at', $contestTableColumns, true);
 
 // Получаем конкурс для редактирования
 if ($isEdit) {
@@ -41,6 +56,10 @@ $error = '';
 $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'upload_cover_async') {
+    if (!$hasCoverImageColumn) {
+        jsonResponse(['success' => false, 'message' => 'Обновите структуру базы данных: отсутствует поле cover_image'], 422);
+    }
+
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         jsonResponse(['success' => false, 'message' => 'Ошибка безопасности'], 403);
     }
@@ -83,9 +102,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Введите название конкурса';
         } else {
             // Загрузка документа
-            $document_file = $contest['document_file'];
+            $document_file = $contest['document_file'] ?? '';
             $cover_image = $contest['cover_image'] ?? '';
-            if (isset($_FILES['document_file']) && $_FILES['document_file']['error'] === UPLOAD_ERR_OK) {
+            if ($hasDocumentFileColumn && isset($_FILES['document_file']) && $_FILES['document_file']['error'] === UPLOAD_ERR_OK) {
                 $result = uploadFile($_FILES['document_file'], DOCUMENTS_PATH, ['pdf', 'doc', 'docx']);
                 if ($result['success']) {
                     // Удаляем старый файл
@@ -96,47 +115,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $coverImageUploaded = trim((string)($_POST['cover_image_uploaded'] ?? ''));
-            $removeCoverImage = (int)($_POST['remove_cover_image'] ?? 0) === 1;
-            if ($removeCoverImage) {
-                if (!empty($cover_image) && file_exists(CONTEST_COVERS_PATH . '/' . $cover_image)) {
-                    unlink(CONTEST_COVERS_PATH . '/' . $cover_image);
-                }
-                $cover_image = '';
-            } elseif ($coverImageUploaded !== '') {
-                $oldCoverImage = $cover_image;
-                $cover_image = $coverImageUploaded;
-                if (!empty($oldCoverImage) && $oldCoverImage !== $cover_image && file_exists(CONTEST_COVERS_PATH . '/' . $oldCoverImage)) {
-                    unlink(CONTEST_COVERS_PATH . '/' . $oldCoverImage);
-                }
-            } elseif (empty($error) && isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
-                $uploadCoverResult = uploadContestCoverImage($_FILES['cover_image'], CONTEST_COVERS_PATH, 500);
-                if ($uploadCoverResult['success']) {
-                    $oldCoverImage = $cover_image;
-                    $cover_image = $uploadCoverResult['filename'];
-                    if (!empty($oldCoverImage) && $oldCoverImage !== $cover_image && file_exists(CONTEST_COVERS_PATH . '/' . $oldCoverImage)) {
-                        unlink(CONTEST_COVERS_PATH . '/' . $oldCoverImage);
+            if ($hasCoverImageColumn) {
+                $coverImageUploaded = trim((string)($_POST['cover_image_uploaded'] ?? ''));
+                $removeCoverImage = (int)($_POST['remove_cover_image'] ?? 0) === 1;
+                if ($removeCoverImage) {
+                    if (!empty($cover_image) && file_exists(CONTEST_COVERS_PATH . '/' . $cover_image)) {
+                        unlink(CONTEST_COVERS_PATH . '/' . $cover_image);
                     }
+                    $cover_image = '';
                 } else {
-                    $error = $uploadCoverResult['message'] ?? 'Ошибка загрузки обложки';
+                    if ($coverImageUploaded !== '') {
+                        $oldCoverImage = $cover_image;
+                        $cover_image = $coverImageUploaded;
+                        if (!empty($oldCoverImage) && $oldCoverImage !== $cover_image && file_exists(CONTEST_COVERS_PATH . '/' . $oldCoverImage)) {
+                            unlink(CONTEST_COVERS_PATH . '/' . $oldCoverImage);
+                        }
+                    } elseif (empty($error) && isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
+                        $uploadCoverResult = uploadContestCoverImage($_FILES['cover_image'], CONTEST_COVERS_PATH, 500);
+                        if ($uploadCoverResult['success']) {
+                            $oldCoverImage = $cover_image;
+                            $cover_image = $uploadCoverResult['filename'];
+                            if (!empty($oldCoverImage) && $oldCoverImage !== $cover_image && file_exists(CONTEST_COVERS_PATH . '/' . $oldCoverImage)) {
+                                unlink(CONTEST_COVERS_PATH . '/' . $oldCoverImage);
+                            }
+                        } else {
+                            $error = $uploadCoverResult['message'] ?? 'Ошибка загрузки обложки';
+                        }
+                    }
                 }
             }
             
             if (empty($error) && $isEdit) {
-                $stmt = $pdo->prepare("
-                    UPDATE contests SET 
-                        title = ?, description = ?, document_file = ?, cover_image = ?, theme_style = ?,
-                        is_published = ?, date_from = ?, date_to = ?,
-                        updated_at = NOW()
-                    WHERE id = ?
-                ");
-                $stmt->execute([$title, $description, $document_file, $cover_image, $theme_style, $is_published, $date_from, $date_to, $contest_id]);
+                $updateFields = ['title = ?', 'description = ?'];
+                $updateValues = [$title, $description];
+
+                if ($hasDocumentFileColumn) {
+                    $updateFields[] = 'document_file = ?';
+                    $updateValues[] = $document_file;
+                }
+                if ($hasCoverImageColumn) {
+                    $updateFields[] = 'cover_image = ?';
+                    $updateValues[] = $cover_image;
+                }
+                if ($hasThemeStyleColumn) {
+                    $updateFields[] = 'theme_style = ?';
+                    $updateValues[] = $theme_style;
+                }
+                if ($hasPublishedColumn) {
+                    $updateFields[] = 'is_published = ?';
+                    $updateValues[] = $is_published;
+                }
+                if ($hasDateFromColumn) {
+                    $updateFields[] = 'date_from = ?';
+                    $updateValues[] = $date_from;
+                }
+                if ($hasDateToColumn) {
+                    $updateFields[] = 'date_to = ?';
+                    $updateValues[] = $date_to;
+                }
+                if ($hasUpdatedAtColumn) {
+                    $updateFields[] = 'updated_at = NOW()';
+                }
+
+                $updateValues[] = $contest_id;
+                $stmt = $pdo->prepare("UPDATE contests SET " . implode(', ', $updateFields) . " WHERE id = ?");
+                $stmt->execute($updateValues);
             } elseif (empty($error)) {
-                $stmt = $pdo->prepare("
-                    INSERT INTO contests (title, description, document_file, cover_image, theme_style, is_published, date_from, date_to)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-                $stmt->execute([$title, $description, $document_file, $cover_image, $theme_style, $is_published, $date_from, $date_to]);
+                $insertColumns = ['title', 'description'];
+                $insertValues = [$title, $description];
+
+                if ($hasDocumentFileColumn) {
+                    $insertColumns[] = 'document_file';
+                    $insertValues[] = $document_file;
+                }
+                if ($hasCoverImageColumn) {
+                    $insertColumns[] = 'cover_image';
+                    $insertValues[] = $cover_image;
+                }
+                if ($hasThemeStyleColumn) {
+                    $insertColumns[] = 'theme_style';
+                    $insertValues[] = $theme_style;
+                }
+                if ($hasPublishedColumn) {
+                    $insertColumns[] = 'is_published';
+                    $insertValues[] = $is_published;
+                }
+                if ($hasDateFromColumn) {
+                    $insertColumns[] = 'date_from';
+                    $insertValues[] = $date_from;
+                }
+                if ($hasDateToColumn) {
+                    $insertColumns[] = 'date_to';
+                    $insertValues[] = $date_to;
+                }
+
+                $placeholders = implode(', ', array_fill(0, count($insertColumns), '?'));
+                $stmt = $pdo->prepare("INSERT INTO contests (" . implode(', ', $insertColumns) . ") VALUES ($placeholders)");
+                $stmt->execute($insertValues);
                 $contest_id = $pdo->lastInsertId();
             }
             
