@@ -320,18 +320,20 @@ require_once __DIR__ . '/includes/header.php';
                 ?>
                 <input type="hidden" name="cover_image_uploaded" id="cover_image_uploaded" value="">
                 <input type="hidden" name="remove_cover_image" id="remove_cover_image" value="0">
-                <div class="upload-area admin-upload-area <?= $coverPreviewSrc !== '' ? 'has-file' : '' ?>" id="contestCoverUploadArea">
-                    <input type="file" id="contestCoverInput" name="cover_image" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="file-upload__input" style="display:none;">
-                    <div class="upload-area__icon"><i class="fas fa-image"></i></div>
-                    <div class="upload-area__title" id="contestCoverUploadTitle"><?= !empty($contest['cover_image']) ? 'Обложка уже загружена' : 'Нажмите или перетащите изображение' ?></div>
-                    <div class="upload-area__hint" id="contestCoverUploadHint">JPG, JPEG, PNG, WEBP. Итоговый размер: 500×500px.</div>
-                </div>
-                <div class="contest-cover-preview mb-md" id="contestCoverPreviewWrap">
-                    <img src="<?= htmlspecialchars($coverPreviewSrc) ?>" alt="Обложка конкурса" id="contestCoverPreviewImage">
-                    <div class="admin-upload-preview-actions">
-                        <button type="button" class="btn btn--ghost btn--sm" id="contestCoverRemoveImage">
-                            <i class="fas fa-trash"></i> Удалить изображение
-                        </button>
+                <div class="contest-cover-layout">
+                    <div class="upload-area admin-upload-area contest-cover-dropzone <?= $coverPreviewSrc !== '' ? 'has-file' : '' ?>" id="contestCoverUploadArea">
+                        <input type="file" id="contestCoverInput" name="cover_image" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="file-upload__input" style="display:none;">
+                        <div class="upload-area__icon"><i class="fas fa-image"></i></div>
+                        <div class="upload-area__title" id="contestCoverUploadTitle"><?= !empty($contest['cover_image']) ? 'Обложка уже загружена' : 'Нажмите или перетащите изображение' ?></div>
+                        <div class="upload-area__hint" id="contestCoverUploadHint">JPG, JPEG, PNG, WEBP. Итоговый размер: 500×500px.</div>
+                    </div>
+                    <div class="contest-cover-preview mb-md" id="contestCoverPreviewWrap">
+                        <img src="<?= htmlspecialchars($coverPreviewSrc) ?>" alt="Обложка конкурса" id="contestCoverPreviewImage">
+                        <div class="admin-upload-preview-actions">
+                            <button type="button" class="btn btn--ghost btn--sm" id="contestCoverRemoveImage">
+                                <i class="fas fa-trash"></i> Удалить изображение
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="form-hint">Клик по изображению открывает модальное окно просмотра. Максимальный размер файла: 10MB.</div>
@@ -473,14 +475,16 @@ require_once __DIR__ . '/includes/header.php';
         hint.textContent = 'Пожалуйста, подождите';
         const formData = new FormData();
         formData.append('action', 'upload_cover_async');
+        formData.append('csrf', csrfToken);
         formData.append('csrf_token', csrfToken);
         formData.append('cover_image', file);
 
         const response = await fetch(window.location.pathname + window.location.search, {
             method: 'POST',
             body: formData,
+            credentials: 'same-origin',
         });
-        const payload = await response.json();
+        const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.success) {
             throw new Error(payload.message || 'Ошибка загрузки');
         }

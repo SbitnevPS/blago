@@ -262,17 +262,26 @@ require_once __DIR__ . '/includes/header.php';
                 $descriptionPlain = trim(strip_tags((string) ($contest['description'] ?? '')));
             ?>
             <article class="contest-card" role="listitem">
+                <?php
+                    $coverUrl = !empty($contest['cover_image'])
+                        ? '/uploads/contest-covers/' . rawurlencode((string) $contest['cover_image'])
+                        : getContestThemePlaceholderPath((string) ($contest['theme_style'] ?? 'blue'));
+                ?>
+                <div class="contest-card__cover-wrap">
+                    <img src="<?= htmlspecialchars($coverUrl) ?>" alt="Обложка конкурса <?= htmlspecialchars((string) $contest['title']) ?>" class="contest-card__cover">
+                    <div class="contest-card__badges">
+                        <span class="contest-badge <?= $isPublished ? 'contest-badge--published' : 'contest-badge--draft' ?>">
+                            <?= $isPublished ? 'Опубликован' : 'Черновик' ?>
+                        </span>
+                        <span class="contest-badge contest-badge--time contest-badge--<?= htmlspecialchars($timeStatus['class']) ?>">
+                            <?= htmlspecialchars($timeStatus['label']) ?>
+                        </span>
+                    </div>
+                </div>
+
                 <header class="contest-card__header">
                     <div class="contest-card__heading-wrap">
                         <h2 class="contest-card__title" title="<?= htmlspecialchars((string) $contest['title']) ?>"><?= htmlspecialchars((string) $contest['title']) ?></h2>
-                        <div class="contest-card__badges">
-                            <span class="contest-badge <?= $isPublished ? 'contest-badge--published' : 'contest-badge--draft' ?>">
-                                <?= $isPublished ? 'Опубликован' : 'Черновик' ?>
-                            </span>
-                            <span class="contest-badge contest-badge--time contest-badge--<?= htmlspecialchars($timeStatus['class']) ?>">
-                                <?= htmlspecialchars($timeStatus['label']) ?>
-                            </span>
-                        </div>
                     </div>
                 </header>
 

@@ -124,7 +124,7 @@
     padding: 16px;
     display: flex;
     flex-direction: column;
-    min-height: 360px;
+    min-height: 420px;
     transition: box-shadow .2s ease, transform .2s ease;
 }
 
@@ -133,8 +133,21 @@
     transform: translateY(-1px);
 }
 
-.contest-card__header {
+.contest-card__cover-wrap {
     margin-bottom: 12px;
+}
+
+.contest-card__cover {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 12px;
+    object-fit: cover;
+    display: block;
+    border: 1px solid #e2e8f0;
+}
+
+.contest-card__header {
+    margin-bottom: 10px;
 }
 
 .contest-card__title {
@@ -149,7 +162,7 @@
 }
 
 .contest-card__badges {
-    margin-top: 10px;
+    margin-top: 8px;
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -158,10 +171,10 @@
 .contest-badge {
     display: inline-flex;
     align-items: center;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
-    border-radius: 999px;
-    padding: 5px 10px;
+    border-radius: 8px;
+    padding: 4px 8px;
     border: 1px solid transparent;
 }
 
@@ -257,7 +270,7 @@
 .contest-card__secondary-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    gap: 12px;
 }
 
 .contest-btn-main,
@@ -290,6 +303,7 @@
 
 .inline-form {
     display: block;
+    width: 100%;
 }
 
 .contests-empty-state-card {
@@ -421,10 +435,20 @@ body.is-modal-open {
     .contests-controls__actions .btn {
         flex: 1;
     }
+
+    .contest-cover-layout {
+        flex-direction: column;
+    }
+
+    .contest-cover-dropzone,
+    .contest-cover-preview {
+        width: 100%;
+        max-width: 300px;
+    }
 }
 
 .contest-cover-preview {
-    width: 500px;
+    width: 300px;
     max-width: 100%;
     border-radius: 12px;
     overflow: hidden;
@@ -433,10 +457,28 @@ body.is-modal-open {
 
 .contest-cover-preview img {
     width: 100%;
-    aspect-ratio: 1 / 1;
+    height: 300px;
     object-fit: cover;
     display: block;
     cursor: zoom-in;
+}
+
+.contest-cover-layout {
+    margin-top: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.contest-cover-dropzone {
+    margin-top: 0;
+    width: 300px;
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 16px;
 }
 
 .contest-cover-modal {
