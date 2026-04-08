@@ -24,7 +24,44 @@ $currentPage = 'legal-cookies';
     </ul>
 
     <h2>Управление Cookie</h2>
-    <p>Вы можете управлять согласием через баннер и кнопку «Настройки cookie» внизу страницы, включая отключение необязательных категорий.</p>
+    <p>Вы можете менять настройки прямо на этой странице. После сохранения сайт сразу применит выбранные категории.</p>
+
+    <section class="cookie-management-card" aria-labelledby="cookiePreferencesTitle">
+        <h3 id="cookiePreferencesTitle">Настройки Cookie</h3>
+        <p class="cookie-management-card__hint">Обязательные cookie всегда включены, так как без них сайт не сможет работать корректно.</p>
+
+        <label class="cookie-settings__item">
+            <span>
+                <strong>Обязательные</strong><br>
+                <small>Авторизация, безопасность и базовая функциональность.</small>
+            </span>
+            <input type="checkbox" checked disabled aria-disabled="true">
+        </label>
+
+        <label class="cookie-settings__item">
+            <span>
+                <strong>Аналитические</strong><br>
+                <small>Помогают улучшать сайт на основе обезличенной статистики.</small>
+            </span>
+            <input type="checkbox" id="legalCookieAnalytics" data-cookie-preference="analytics">
+        </label>
+
+        <label class="cookie-settings__item">
+            <span>
+                <strong>Функциональные</strong><br>
+                <small>Запоминают выбранные параметры и настройки интерфейса.</small>
+            </span>
+            <input type="checkbox" id="legalCookiePreferences" data-cookie-preference="preferences">
+        </label>
+
+        <p class="cookie-management-card__status" id="legalCookieStatus" aria-live="polite">Текущие настройки ещё не заданы.</p>
+
+        <div class="cookie-settings__actions">
+            <button type="button" class="btn btn--secondary" data-cookie-action="reject-optional">Только обязательные</button>
+            <button type="button" class="btn btn--ghost" data-cookie-action="accept-all">Принять все</button>
+            <button type="button" class="btn btn--primary" data-cookie-action="save-settings">Сохранить выбор</button>
+        </div>
+    </section>
 
     <h2>Отзыв согласия</h2>
     <p>Вы вправе изменить выбор в любое время, повторно открыв настройки cookie.</p>
