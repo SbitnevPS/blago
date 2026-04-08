@@ -382,3 +382,98 @@ function vk_callback_handle(string $flow, PDO $pdo): void
     header('Location: ' . $target);
     exit;
 }
+
+function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $rawRedirect = '/', string $vkUserIdHint = '', string $vkEmailHint = ''): array
+{
+    $safeRedirect = sanitize_internal_redirect($rawRedirect, '/contests');
+
+    if ($accessToken === '') {
+        return ['ok' => false, 'error_code' => 'exchange_failed'];
+    }
+
+    $profileUrl = 'https://api.vk.com/method/users.get?' . http_build_query([
+        'access_token' => $accessToken,
+        'v' => VK_API_VERSION,
+        'fields' => 'photo_100',
+    ]);
+    $profileResponse = vk_http_get($profileUrl);
+    $profileJson = is_array($profileResponse['json']) ? $profileResponse['json'] : [];
+
+    vk_auth_log('sdk_profile_result', [
+        'http_code' => $profileResponse['http_code'],
+        'curl_error' => $profileResponse['curl_error'],
+        'raw_response' => $profileResponse['raw'],
+        'json_response' => $profileJson,
+    ]);
+
+    if (!$profileResponse['ok'] || !empty($profileJson['error']) || empty($profileJson['response'][0])) {
+        return ['ok' => false, 'error_code' => 'profile_failed'];
+    }
+
+    $profile = $profileJson['response'][0];
+    $vkUserId = trim((string) ($profile['id'] ?? ''));
+    if ($vkUserId === '') {
+        return ['ok' => false, 'error_code' => 'profile_failed'];
+    }
+
+    if ($vkUserIdHint !== '' && $vkUserIdHint !== $vkUserId) {
+        vk_auth_log('sdk_user_id_mismatch', [
+            'provided_user_id' => $vkUserIdHint,
+            'actual_user_id' => $vkUserId,
+        ]);
+        return ['ok' => false, 'error_code' => 'invalid_callback'];
+    }
+
+    $firstName = trim((string) ($profile['first_name'] ?? ''));
+    $lastName = trim((string) ($profile['last_name'] ?? ''));
+    $avatarUrl = trim((string) ($profile['photo_100'] ?? ''));
+    $vkEmail = trim((string) $vkEmailHint);
+
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE vk_id = ? LIMIT 1');
+    $stmt->execute([$vkUserId]);
+    $existingUser = $stmt->fetch();
+
+    if ($existingUser) {
+        $emailToSave = trim((string) ($existingUser['email'] ?? ''));
+        if ($vkEmail !== '') {
+            $emailToSave = $vkEmail;
+        }
+
+        $updateStmt = $pdo->prepare(
+            'UPDATE users SET vk_access_token = ?, name = ?, surname = ?, avatar_url = ?, email = ?, updated_at = NOW() WHERE id = ?'
+        );
+        $updateStmt->execute([
+            $accessToken,
+            $firstName !== '' ? $firstName : (string) ($existingUser['name'] ?? ''),
+            $lastName,
+            $avatarUrl,
+            $emailToSave,
+            $existingUser['id'],
+        ]);
+
+        $userId = (int) $existingUser['id'];
+    } else {
+        $insertStmt = $pdo->prepare(
+            'INSERT INTO users (vk_id, vk_access_token, name, surname, avatar_url, email) VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        $insertStmt->execute([
+            $vkUserId,
+            $accessToken,
+            $firstName,
+            $lastName,
+            $avatarUrl,
+            $vkEmail,
+        ]);
+        $userId = (int) $pdo->lastInsertId();
+    }
+
+    if ($userId <= 0) {
+        return ['ok' => false, 'error_code' => 'exchange_failed'];
+    }
+
+    $_SESSION['user_id'] = $userId;
+    $_SESSION['vk_token'] = $accessToken;
+    unset($_SESSION['user_auth_redirect']);
+
+    return ['ok' => true, 'redirect_to' => $safeRedirect];
+}
