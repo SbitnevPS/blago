@@ -29,7 +29,6 @@ $isDisputeChatClosed = false;
 $selectedApplicationStatus = '';
 $viewParam = (string) ($_GET['view'] ?? '');
 $messagesView = in_array($viewParam, ['main', 'disputes', 'disputes_archive'], true) ? $viewParam : 'main';
-$showClosedOnly = (int) ($_GET['closed_only'] ?? 0) === 1;
 $disputeThreadsCount = 0;
 $disputeUnreadTotal = 0;
 
@@ -262,10 +261,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'close
                 if (!adminMessagesHasDisputeChatClosedColumn($pdo)) {
                     $pdo->exec("ALTER TABLE applications ADD COLUMN dispute_chat_closed TINYINT(1) NOT NULL DEFAULT 0");
                 }
-                $closeStmt = $pdo->prepare("UPDATE applications SET dispute_chat_closed = 1 WHERE id = ?");
+                if (!adminMessagesHasDisputeChatArchivedColumn($pdo)) {
+                    $pdo->exec("ALTER TABLE applications ADD COLUMN dispute_chat_archived TINYINT(1) NOT NULL DEFAULT 0");
+                }
+                $closeStmt = $pdo->prepare("UPDATE applications SET dispute_chat_closed = 1, dispute_chat_archived = 1 WHERE id = ?");
                 $closeStmt->execute([$disputeApplicationId]);
-                $_SESSION['success_message'] = 'Чат завершён. Пользователь больше не сможет отправлять сообщения.';
-                redirect('/admin/messages?view=disputes&dispute_application_id=' . $disputeApplicationId);
+                $_SESSION['success_message'] = 'Чат завершён и перемещён в архив. Пользователь больше не сможет отправлять сообщения.';
+                redirect('/admin/messages?view=disputes_archive&dispute_application_id=' . $disputeApplicationId);
             } catch (Exception $e) {
                 $error = 'Не удалось завершить чат';
             }
@@ -283,36 +285,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reope
                 if (!adminMessagesHasDisputeChatClosedColumn($pdo)) {
                     $pdo->exec("ALTER TABLE applications ADD COLUMN dispute_chat_closed TINYINT(1) NOT NULL DEFAULT 0");
                 }
-                $pdo->prepare("UPDATE applications SET dispute_chat_closed = 0 WHERE id = ?")->execute([$disputeApplicationId]);
+                if (!adminMessagesHasDisputeChatArchivedColumn($pdo)) {
+                    $pdo->exec("ALTER TABLE applications ADD COLUMN dispute_chat_archived TINYINT(1) NOT NULL DEFAULT 0");
+                }
+                $pdo->prepare("UPDATE applications SET dispute_chat_closed = 0, dispute_chat_archived = 0 WHERE id = ?")->execute([$disputeApplicationId]);
                 $_SESSION['success_message'] = 'Чат возобновлён';
                 redirect('/admin/messages?view=disputes&dispute_application_id=' . $disputeApplicationId);
             } catch (Exception $e) {
                 $error = 'Не удалось возобновить чат';
-            }
-        }
-    }
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'archive_dispute_threads') {
-    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
-        $error = 'Ошибка безопасности';
-    } else {
-        $ids = $_POST['archive_application_ids'] ?? [];
-        $ids = is_array($ids) ? array_values(array_filter(array_map('intval', $ids))) : [];
-        if (empty($ids)) {
-            $error = 'Не выбраны чаты для архивации';
-        } else {
-            try {
-                if (!adminMessagesHasDisputeChatArchivedColumn($pdo)) {
-                    $pdo->exec("ALTER TABLE applications ADD COLUMN dispute_chat_archived TINYINT(1) NOT NULL DEFAULT 0");
-                }
-                $in = implode(',', array_fill(0, count($ids), '?'));
-                $sql = "UPDATE applications SET dispute_chat_archived = 1 WHERE dispute_chat_closed = 1 AND id IN ($in)";
-                $pdo->prepare($sql)->execute($ids);
-                $_SESSION['success_message'] = 'Выбранные завершённые чаты перенесены в архив';
-                redirect('/admin/messages?view=disputes');
-            } catch (Exception $e) {
-                $error = 'Не удалось перенести чаты в архив';
             }
         }
     }
@@ -342,13 +322,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'appro
 try {
     $archivedFilterSql = '';
     if (adminMessagesHasDisputeChatArchivedColumn($pdo)) {
+        $pdo->exec("UPDATE applications SET dispute_chat_archived = 1 WHERE IFNULL(dispute_chat_closed, 0) = 1 AND IFNULL(dispute_chat_archived, 0) = 0");
         $archivedFilterSql = $messagesView === 'disputes_archive'
             ? ' AND a.dispute_chat_archived = 1 '
-            : '';
+            : ' AND IFNULL(a.dispute_chat_archived, 0) = 0 ';
     }
-    $closedOnlySql = ($showClosedOnly && $messagesView === 'disputes')
-        ? " AND IFNULL(a.dispute_chat_closed, 0) = 1 "
-        : '';
 
     $threadsStmt = $pdo->query("
     SELECT
@@ -368,7 +346,6 @@ try {
     LEFT JOIN applications a ON a.id = m.application_id
     WHERE m.title LIKE 'Оспаривание решения по заявке%'
     $archivedFilterSql
-    $closedOnlySql
     GROUP BY m.application_id, m.title
     ORDER BY last_message_at DESC
     ");
@@ -721,16 +698,6 @@ require_once __DIR__ . '/includes/header.php';
         <h3>Чаты: оспаривание решения по заявке</h3>
     </div>
     <div class="card__body" style="padding:0;">
-        <form method="GET" class="flex gap-md" style="padding:16px; border-bottom:1px solid var(--color-border); align-items:center; flex-wrap:wrap;">
-            <input type="hidden" name="view" value="disputes">
-            <label class="ios-toggle-wrap">
-                <span class="ios-toggle-label">Показать только завершённые чаты</span>
-                <span class="ios-toggle">
-                    <input type="checkbox" name="closed_only" value="1" <?= $showClosedOnly ? 'checked' : '' ?> onchange="this.form.submit()">
-                    <span class="ios-toggle__slider"></span>
-                </span>
-            </label>
-        </form>
         <?php if (empty($disputeThreads)): ?>
             <div class="empty-state" style="padding:20px;">
                 <div class="empty-state__icon"><i class="fas fa-comments"></i></div>
@@ -738,14 +705,9 @@ require_once __DIR__ . '/includes/header.php';
                 <p class="empty-state__text">Когда пользователи откроют оспаривание по заявке, диалоги появятся здесь.</p>
             </div>
         <?php else: ?>
-        <form method="POST">
-            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-            <input type="hidden" name="action" value="archive_dispute_threads">
         <table class="table">
             <thead>
                 <tr>
-                    <th>В архив</th>
                     <th>Тема</th>
                     <th>Последнее сообщение</th>
                     <th>Дата</th>
@@ -757,16 +719,6 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
                 <?php foreach ($disputeThreads as $thread): ?>
                 <tr>
-                    <td data-label="В архив">
-                        <?php if ((int) ($thread['dispute_chat_closed'] ?? 0) === 1): ?>
-                            <label style="display:inline-flex; align-items:center; gap:6px;">
-                                <input type="checkbox" name="archive_application_ids[]" value="<?= (int) $thread['application_id'] ?>">
-                                <span class="text-secondary" style="font-size:12px;">Выбрать</span>
-                            </label>
-                        <?php else: ?>
-                            —
-                        <?php endif; ?>
-                    </td>
                     <td data-label="Тема"><?= htmlspecialchars($thread['title']) ?></td>
                     <td data-label="Последнее сообщение"><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 120)) ?></td>
                     <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></td>
@@ -796,12 +748,6 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?>
             </tbody>
         </table>
-        <div style="padding:16px; border-top:1px solid var(--color-border); display:flex; justify-content:flex-end;">
-            <button type="submit" class="btn btn--secondary">
-                <i class="fas fa-box-archive"></i> Переместить выбранные завершённые чаты в архив
-            </button>
-        </div>
-        </form>
         <?php endif; ?>
     </div>
 </div>
