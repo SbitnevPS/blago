@@ -14,21 +14,27 @@ $admin = getCurrentUser();
 $contest_id = $_GET['id'] ?? 0;
 $isEdit = !empty($contest_id);
 $themeOptions = getContestThemeStyles();
-$contestTableColumns = [];
 
-try {
-    $contestTableColumns = $pdo->query("SHOW COLUMNS FROM contests")->fetchAll(PDO::FETCH_COLUMN) ?: [];
-} catch (Throwable $e) {
-    $contestTableColumns = [];
-}
+$columnExists = static function (PDO $pdo, string $table, string $column): bool {
+    if (!preg_match('/^[a-zA-Z0-9_]+$/', $table) || !preg_match('/^[a-zA-Z0-9_]+$/', $column)) {
+        return false;
+    }
 
-$hasDocumentFileColumn = in_array('document_file', $contestTableColumns, true);
-$hasCoverImageColumn = in_array('cover_image', $contestTableColumns, true);
-$hasThemeStyleColumn = in_array('theme_style', $contestTableColumns, true);
-$hasPublishedColumn = in_array('is_published', $contestTableColumns, true);
-$hasDateFromColumn = in_array('date_from', $contestTableColumns, true);
-$hasDateToColumn = in_array('date_to', $contestTableColumns, true);
-$hasUpdatedAtColumn = in_array('updated_at', $contestTableColumns, true);
+    try {
+        $pdo->query(sprintf("SELECT `%s` FROM `%s` LIMIT 1", $column, $table));
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+};
+
+$hasDocumentFileColumn = $columnExists($pdo, 'contests', 'document_file');
+$hasCoverImageColumn = $columnExists($pdo, 'contests', 'cover_image');
+$hasThemeStyleColumn = $columnExists($pdo, 'contests', 'theme_style');
+$hasPublishedColumn = $columnExists($pdo, 'contests', 'is_published');
+$hasDateFromColumn = $columnExists($pdo, 'contests', 'date_from');
+$hasDateToColumn = $columnExists($pdo, 'contests', 'date_to');
+$hasUpdatedAtColumn = $columnExists($pdo, 'contests', 'updated_at');
 
 // Получаем конкурс для редактирования
 if ($isEdit) {
