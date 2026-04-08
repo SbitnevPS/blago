@@ -280,21 +280,22 @@ function vk_callback_handle(string $flow, PDO $pdo): void
     }
 
     $profile = $profileJson['response'][0];
-    $firstName = trim((string) ($profile['first_name'] ?? ''));
-    $lastName = trim((string) ($profile['last_name'] ?? ''));
-    $avatarUrl = trim((string) ($profile['photo_100'] ?? ''));
-
-    $stmt = $pdo->prepare('SELECT * FROM users WHERE vk_id = ? LIMIT 1');
-    $stmt->execute([$vkUserId]);
-    $existingUser = $stmt->fetch();
-
-    vk_auth_log('user_lookup', [
-        'flow' => $flow,
-        'vk_user_id' => $vkUserId,
-        'user_found' => (bool) $existingUser,
-    ]);
+    $mapped = vk_map_profile_fields($profile, [], $vkEmail);
+    if ($mapped['vk_id'] === '') {
+        $mapped['vk_id'] = $vkUserId;
+    }
 
     if ($flow === 'admin') {
+        $stmt = $pdo->prepare('SELECT * FROM users WHERE vk_id = ? LIMIT 1');
+        $stmt->execute([$vkUserId]);
+        $existingUser = $stmt->fetch();
+
+        vk_auth_log('user_lookup', [
+            'flow' => $flow,
+            'vk_user_id' => $vkUserId,
+            'user_found' => (bool) $existingUser,
+        ]);
+
         if (!$existingUser || (int) ($existingUser['is_admin'] ?? 0) !== 1) {
             vk_auth_log('admin_access_check_failed', [
                 'flow' => $flow,
@@ -304,22 +305,7 @@ function vk_callback_handle(string $flow, PDO $pdo): void
             vk_callback_fail($flow, 'admin_access_denied');
         }
 
-        $emailToSave = trim((string) ($existingUser['email'] ?? ''));
-        if ($vkEmail !== '') {
-            $emailToSave = $vkEmail;
-        }
-
-        $updateStmt = $pdo->prepare(
-            'UPDATE users SET vk_access_token = ?, name = ?, surname = ?, avatar_url = ?, email = ?, updated_at = NOW() WHERE id = ?'
-        );
-        $updateStmt->execute([
-            $accessToken,
-            $firstName !== '' ? $firstName : (string) ($existingUser['name'] ?? ''),
-            $lastName,
-            $avatarUrl,
-            $emailToSave,
-            $existingUser['id'],
-        ]);
+        vk_save_user_profile($pdo, $mapped, $accessToken);
 
         $_SESSION['admin_user_id'] = (int) $existingUser['id'];
         $_SESSION['is_admin'] = true;
@@ -328,39 +314,17 @@ function vk_callback_handle(string $flow, PDO $pdo): void
             $target = '/admin';
         }
     } else {
-        if ($existingUser) {
-            $emailToSave = trim((string) ($existingUser['email'] ?? ''));
-            if ($vkEmail !== '') {
-                $emailToSave = $vkEmail;
-            }
+        vk_auth_log('callback_profile_mapping', [
+            'flow' => $flow,
+            'has_name' => $mapped['name'] !== '',
+            'has_surname' => $mapped['surname'] !== '',
+            'has_patronymic' => $mapped['patronymic'] !== '',
+            'has_email' => $mapped['email'] !== '',
+            'has_avatar_url' => $mapped['avatar_url'] !== '',
+            'access_token_masked' => vk_mask_secret($accessToken),
+        ]);
 
-            $updateStmt = $pdo->prepare(
-                'UPDATE users SET vk_access_token = ?, name = ?, surname = ?, avatar_url = ?, email = ?, updated_at = NOW() WHERE id = ?'
-            );
-            $updateStmt->execute([
-                $accessToken,
-                $firstName !== '' ? $firstName : (string) ($existingUser['name'] ?? ''),
-                $lastName,
-                $avatarUrl,
-                $emailToSave,
-                $existingUser['id'],
-            ]);
-
-            $userId = (int) $existingUser['id'];
-        } else {
-            $insertStmt = $pdo->prepare(
-                'INSERT INTO users (vk_id, vk_access_token, name, surname, avatar_url, email) VALUES (?, ?, ?, ?, ?, ?)'
-            );
-            $insertStmt->execute([
-                $vkUserId,
-                $accessToken,
-                $firstName,
-                $lastName,
-                $avatarUrl,
-                $vkEmail,
-            ]);
-            $userId = (int) $pdo->lastInsertId();
-        }
+        $userId = vk_save_user_profile($pdo, $mapped, $accessToken);
 
         if ($userId <= 0) {
             vk_callback_fail($flow, 'exchange_failed');
@@ -403,6 +367,161 @@ function vk_decode_jwt_payload(string $jwt): array
 
     $json = json_decode($decoded, true);
     return is_array($json) ? $json : [];
+}
+
+function vk_pick_non_empty_string(...$values): string
+{
+    foreach ($values as $value) {
+        $normalized = trim((string) $value);
+        if ($normalized !== '') {
+            return $normalized;
+        }
+    }
+
+    return '';
+}
+
+function vk_extract_patronymic(array $profile): string
+{
+    return vk_pick_non_empty_string(
+        $profile['patronymic'] ?? '',
+        $profile['middle_name'] ?? '',
+        $profile['middleName'] ?? '',
+        $profile['otchestvo'] ?? '',
+        $profile['second_name'] ?? '',
+        $profile['secondName'] ?? '',
+        $profile['additional_name'] ?? '',
+        $profile['additionalName'] ?? ''
+    );
+}
+
+function vk_extract_avatar_url(array $profile): string
+{
+    return vk_pick_non_empty_string(
+        $profile['avatar_url'] ?? '',
+        $profile['photo_200_orig'] ?? '',
+        $profile['photo_200'] ?? '',
+        $profile['photo_100'] ?? '',
+        $profile['photo_max_orig'] ?? '',
+        $profile['photo_max'] ?? '',
+        $profile['avatar'] ?? '',
+        $profile['picture'] ?? ''
+    );
+}
+
+function vk_is_valid_avatar_url(string $url): bool
+{
+    if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL)) {
+        return false;
+    }
+
+    $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+    return in_array($scheme, ['http', 'https'], true);
+}
+
+function vk_merge_profile_data(array $base, array $extra): array
+{
+    foreach ($extra as $key => $value) {
+        if (is_array($value)) {
+            continue;
+        }
+
+        $normalized = trim((string) $value);
+        if ($normalized !== '') {
+            $base[$key] = $normalized;
+        }
+    }
+
+    return $base;
+}
+
+function vk_map_profile_fields(array $profile, array $claims = [], string $vkEmailHint = ''): array
+{
+    $merged = vk_merge_profile_data($profile, $claims);
+
+    return [
+        'vk_id' => vk_pick_non_empty_string($merged['id'] ?? '', $merged['user_id'] ?? '', $merged['sub'] ?? ''),
+        'name' => vk_pick_non_empty_string($merged['first_name'] ?? '', $merged['given_name'] ?? ''),
+        'surname' => vk_pick_non_empty_string($merged['last_name'] ?? '', $merged['family_name'] ?? ''),
+        'patronymic' => vk_extract_patronymic($merged),
+        'avatar_url' => vk_extract_avatar_url($merged),
+        'email' => vk_pick_non_empty_string($merged['email'] ?? '', $vkEmailHint),
+    ];
+}
+
+function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = ''): int
+{
+    $vkUserId = trim((string) ($mapped['vk_id'] ?? ''));
+    if ($vkUserId === '') {
+        return 0;
+    }
+
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE vk_id = ? LIMIT 1');
+    $stmt->execute([$vkUserId]);
+    $existingUser = $stmt->fetch();
+
+    $name = trim((string) ($mapped['name'] ?? ''));
+    $surname = trim((string) ($mapped['surname'] ?? ''));
+    $patronymic = trim((string) ($mapped['patronymic'] ?? ''));
+    $email = trim((string) ($mapped['email'] ?? ''));
+    $avatarUrl = trim((string) ($mapped['avatar_url'] ?? ''));
+
+    if ($existingUser) {
+        $updates = ['updated_at = NOW()'];
+        $params = [];
+
+        if ($accessToken !== '') {
+            $updates[] = 'vk_access_token = ?';
+            $params[] = $accessToken;
+        }
+
+        if ($name !== '') {
+            $updates[] = 'name = ?';
+            $params[] = $name;
+        }
+
+        if ($surname !== '') {
+            $updates[] = 'surname = ?';
+            $params[] = $surname;
+        }
+
+        if ($patronymic !== '') {
+            $updates[] = 'patronymic = ?';
+            $params[] = $patronymic;
+        }
+
+        if ($email !== '') {
+            $updates[] = 'email = ?';
+            $params[] = $email;
+        }
+
+        if ($avatarUrl !== '' && vk_is_valid_avatar_url($avatarUrl)) {
+            $updates[] = 'avatar_url = ?';
+            $params[] = $avatarUrl;
+        }
+
+        $params[] = $existingUser['id'];
+        $sql = 'UPDATE users SET ' . implode(', ', $updates) . ' WHERE id = ?';
+        $updateStmt = $pdo->prepare($sql);
+        $updateStmt->execute($params);
+
+        return (int) $existingUser['id'];
+    }
+
+    $insertStmt = $pdo->prepare(
+        'INSERT INTO users (vk_id, vk_access_token, name, surname, patronymic, avatar_url, email) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    );
+    $insertStmt->execute([
+        $vkUserId,
+        $accessToken,
+        $name,
+        $surname,
+        $patronymic,
+        vk_is_valid_avatar_url($avatarUrl) ? $avatarUrl : '',
+        $email,
+    ]);
+
+    return (int) $pdo->lastInsertId();
 }
 
 function vk_extract_sdk_profile(string $accessToken, string $idToken): array
@@ -481,15 +600,17 @@ function vk_extract_sdk_profile(string $accessToken, string $idToken): array
     ];
 }
 
-function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $rawRedirect = '/', string $vkUserIdHint = '', string $vkEmailHint = '', string $idToken = ''): array
+function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $rawRedirect = '/', string $vkUserIdHint = '', string $vkEmailHint = '', string $idToken = '', string $refreshToken = '', array $claims = []): array
 {
     $safeRedirect = sanitize_internal_redirect($rawRedirect, '/contests');
 
     vk_auth_log('sdk_login_received', [
         'has_access_token' => $accessToken !== '',
         'has_id_token' => $idToken !== '',
+        'has_refresh_token' => $refreshToken !== '',
         'has_user_id' => $vkUserIdHint !== '',
         'has_email' => $vkEmailHint !== '',
+        'claims_keys' => array_keys($claims),
     ]);
 
     if ($accessToken === '' && $idToken === '') {
@@ -515,12 +636,8 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
         return ['ok' => false, 'error_code' => 'profile_failed'];
     }
 
-    $vkUserId = trim((string) (
-        $profile['id']
-        ?? $profile['user_id']
-        ?? $profile['sub']
-        ?? ''
-    ));
+    $mapped = vk_map_profile_fields($profile, $claims, $vkEmailHint);
+    $vkUserId = $mapped['vk_id'];
     if ($vkUserId === '') {
         vk_auth_log('sdk_profile_failed', [
             'reason' => 'vk_user_id_missing_in_profile',
@@ -538,48 +655,19 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
         return ['ok' => false, 'error_code' => 'invalid_callback'];
     }
 
-    $firstName = trim((string) ($profile['first_name'] ?? $profile['given_name'] ?? ''));
-    $lastName = trim((string) ($profile['last_name'] ?? $profile['family_name'] ?? ''));
-    $avatarUrl = trim((string) ($profile['photo_100'] ?? $profile['avatar'] ?? $profile['picture'] ?? ''));
-    $vkEmail = trim((string) ($profile['email'] ?? $vkEmailHint));
+    vk_auth_log('sdk_profile_mapping', [
+        'profile_source' => $profileSource,
+        'has_name' => $mapped['name'] !== '',
+        'has_surname' => $mapped['surname'] !== '',
+        'has_patronymic' => $mapped['patronymic'] !== '',
+        'has_email' => $mapped['email'] !== '',
+        'has_avatar_url' => $mapped['avatar_url'] !== '',
+        'access_token_masked' => vk_mask_secret($accessToken),
+        'has_refresh_token' => $refreshToken !== '',
+        'has_id_token' => $idToken !== '',
+    ]);
 
-    $stmt = $pdo->prepare('SELECT * FROM users WHERE vk_id = ? LIMIT 1');
-    $stmt->execute([$vkUserId]);
-    $existingUser = $stmt->fetch();
-
-    if ($existingUser) {
-        $emailToSave = trim((string) ($existingUser['email'] ?? ''));
-        if ($vkEmail !== '') {
-            $emailToSave = $vkEmail;
-        }
-
-        $updateStmt = $pdo->prepare(
-            'UPDATE users SET vk_access_token = ?, name = ?, surname = ?, avatar_url = ?, email = ?, updated_at = NOW() WHERE id = ?'
-        );
-        $updateStmt->execute([
-            $accessToken,
-            $firstName !== '' ? $firstName : (string) ($existingUser['name'] ?? ''),
-            $lastName,
-            $avatarUrl,
-            $emailToSave,
-            $existingUser['id'],
-        ]);
-
-        $userId = (int) $existingUser['id'];
-    } else {
-        $insertStmt = $pdo->prepare(
-            'INSERT INTO users (vk_id, vk_access_token, name, surname, avatar_url, email) VALUES (?, ?, ?, ?, ?, ?)'
-        );
-        $insertStmt->execute([
-            $vkUserId,
-            $accessToken,
-            $firstName,
-            $lastName,
-            $avatarUrl,
-            $vkEmail,
-        ]);
-        $userId = (int) $pdo->lastInsertId();
-    }
+    $userId = vk_save_user_profile($pdo, $mapped, $accessToken);
 
     if ($userId <= 0) {
         return ['ok' => false, 'error_code' => 'exchange_failed'];

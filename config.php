@@ -177,6 +177,85 @@ function getCurrentUser() {
     return $stmt->fetch();
 }
 
+function getCurrentAdmin() {
+    $adminId = getCurrentAdminId();
+    if (!$adminId) {
+        return null;
+    }
+
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
+    $stmt->execute([$adminId]);
+    return $stmt->fetch();
+}
+
+function isValidAvatarUrl($value): bool
+{
+    $url = trim((string) ($value ?? ''));
+    if ($url === '' || !filter_var($url, FILTER_VALIDATE_URL)) {
+        return false;
+    }
+
+    $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+    return in_array($scheme, ['http', 'https'], true);
+}
+
+function getUserDisplayName($user, bool $includePatronymic = false): string
+{
+    if (!is_array($user)) {
+        return '';
+    }
+
+    $nameParts = [
+        trim((string) ($user['name'] ?? '')),
+        trim((string) ($user['surname'] ?? '')),
+    ];
+
+    if ($includePatronymic) {
+        $nameParts[] = trim((string) ($user['patronymic'] ?? ''));
+    }
+
+    return trim(implode(' ', array_filter($nameParts, static fn ($part) => $part !== '')));
+}
+
+function getUserInitials($user): string
+{
+    if (!is_array($user)) {
+        return 'U';
+    }
+
+    $parts = [
+        trim((string) ($user['name'] ?? '')),
+        trim((string) ($user['surname'] ?? '')),
+    ];
+
+    $initials = '';
+    foreach ($parts as $part) {
+        if ($part === '') {
+            continue;
+        }
+
+        $initials .= mb_substr($part, 0, 1, 'UTF-8');
+        if (mb_strlen($initials, 'UTF-8') >= 2) {
+            break;
+        }
+    }
+
+    return $initials !== '' ? mb_strtoupper($initials, 'UTF-8') : 'U';
+}
+
+function getUserAvatarData($user): array
+{
+    $avatarUrl = trim((string) ($user['avatar_url'] ?? ''));
+    $displayName = getUserDisplayName($user, true);
+
+    return [
+        'url' => isValidAvatarUrl($avatarUrl) ? $avatarUrl : '',
+        'initials' => getUserInitials($user),
+        'label' => $displayName !== '' ? $displayName : 'Пользователь',
+    ];
+}
+
 function isAdmin() {
     // Миграция со старой схемы сессии (is_admin + user_id)
     if (!isAdminAuthenticated() && isset($_SESSION['is_admin']) && $_SESSION['is_admin'] === true && isAuthenticated()) {

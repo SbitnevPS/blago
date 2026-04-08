@@ -9,6 +9,7 @@ if (!isAuthenticated()) {
 }
 
 $user = getCurrentUser();
+$avatar = getUserAvatarData($user ?? []);
 $error = '';
 
 check_csrf();
@@ -124,10 +125,10 @@ generateCSRFToken();
 <div class="card__body">
  <!-- Аватар -->
 <div class="profile-avatar">
- <?php if (!empty($user['avatar_url'])): ?>
-<img src="<?= htmlspecialchars($user['avatar_url']) ?>" alt="" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">
+ <?php if ($avatar['url'] !== ''): ?>
+<img src="<?= htmlspecialchars($avatar['url']) ?>" alt="<?= htmlspecialchars($avatar['label']) ?>" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">
  <?php else: ?>
-<i class="fas fa-user"></i>
+<span class="profile-avatar__initials"><?= htmlspecialchars($avatar['initials']) ?></span>
  <?php endif; ?>
 </div>
             

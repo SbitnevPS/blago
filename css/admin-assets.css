@@ -50,6 +50,7 @@
 .user-view-profile { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
 .user-view-avatar { width:120px; height:120px; border-radius:50%; object-fit:cover; flex-shrink:0; }
 .user-view-avatar--placeholder { background:#EEF2FF; display:flex; align-items:center; justify-content:center; color:#6366F1; font-size:48px; }
+.user-view-avatar__initials { font-size:36px; font-weight:700; line-height:1; color:#6366F1; }
 .user-view-profile__content { flex:1; min-width:260px; }
 .user-view-empty { padding:40px !important; }
 .card__body--compact { padding:0; }

@@ -49,6 +49,7 @@ $currentPage = 'users';
 $pageTitle = htmlspecialchars($user['name'] . ' ' . $user['surname']);
 $breadcrumb = 'Пользователи / Просмотр';
 $hasSuccessMessage = isset($_GET['success']) && $_GET['success'] == '1';
+$userAvatar = getUserAvatarData($user ?? []);
 
 // Обработка отправки сообщения
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'send_message') {
@@ -116,16 +117,16 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card mb-lg">
 <div class="card__body">
 <div class="user-view-profile">
- <?php if (!empty($user['avatar_url'])): ?>
-<img src="<?= htmlspecialchars($user['avatar_url']) ?>" class="user-view-avatar" alt="Аватар пользователя">
+ <?php if ($userAvatar['url'] !== ''): ?>
+<img src="<?= htmlspecialchars($userAvatar['url']) ?>" class="user-view-avatar" alt="<?= htmlspecialchars($userAvatar['label']) ?>">
  <?php else: ?>
 <div class="user-view-avatar user-view-avatar--placeholder">
-<i class="fas fa-user"></i>
+<span class="user-view-avatar__initials"><?= htmlspecialchars($userAvatar['initials']) ?></span>
 </div>
  <?php endif; ?>
             
 <div class="user-view-profile__content">
-<h2><?= htmlspecialchars(($user['name'] ?? '') . ' ' . ($user['surname'] ?? '')) ?></h2>
+<h2><?= htmlspecialchars(getUserDisplayName($user ?? [], true)) ?></h2>
  <?php if ($user['is_admin']): ?>
 <span class="badge badge--primary mb-md">Администратор</span>
  <?php endif; ?>

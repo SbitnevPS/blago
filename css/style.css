@@ -241,6 +241,13 @@ h4 {
 	color: var(--color-primary);
 }
 
+.navbar__avatar-initials {
+	color: var(--color-primary);
+	font-size: 13px;
+	font-weight: 700;
+	line-height: 1;
+}
+
 .navbar__chevron {
 	font-size: 12px;
 	color: var(--color-text-secondary);

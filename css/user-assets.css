@@ -29,6 +29,7 @@
 
 .profile-card { max-width:600px; margin:0 auto; }
 .profile-avatar { width:100px; height:100px; border-radius:50%; background:var(--color-primary-light); display:flex; align-items:center; justify-content:center; margin:0 auto var(--space-lg); font-size:40px; color:var(--color-primary); }
+.profile-avatar__initials { font-size:34px; font-weight:700; line-height:1; color:var(--color-primary); }
 .profile-section { margin-bottom:var(--space-xl); }
 .profile-section__title { font-size:var(--font-size-lg); font-weight:var(--font-weight-semibold); margin-bottom:var(--space-md); padding-bottom:var(--space-sm); border-bottom:1px solid var(--color-border); }
 

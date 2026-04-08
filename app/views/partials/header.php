@@ -3,6 +3,7 @@
 require_once dirname(__DIR__, 3) . '/config.php';
 
 $user = getCurrentUser();
+$userAvatar = getUserAvatarData($user ?? []);
 $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) :0;
 ?>
 <nav class="navbar">
@@ -31,14 +32,14 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
                     <!-- Выпадающее меню пользователя -->
                     <div class="navbar__user-dropdown" id="userDropdown">
                         <div class="navbar__user-trigger" onclick="toggleUserMenu()">
-                            <?php if (!empty($user['avatar_url'])): ?>
-                                <img src="<?= htmlspecialchars($user['avatar_url']) ?>" alt="" class="navbar__avatar">
+                            <?php if ($userAvatar['url'] !== ''): ?>
+                                <img src="<?= htmlspecialchars($userAvatar['url']) ?>" alt="<?= htmlspecialchars($userAvatar['label']) ?>" class="navbar__avatar">
                             <?php else: ?>
-                                <div class="navbar__avatar navbar__avatar--placeholder">
-                                    <i class="fas fa-user navbar__avatar-icon"></i>
+                                <div class="navbar__avatar navbar__avatar--placeholder" title="<?= htmlspecialchars($userAvatar['label']) ?>">
+                                    <span class="navbar__avatar-initials"><?= htmlspecialchars($userAvatar['initials']) ?></span>
                                 </div>
                             <?php endif; ?>
-                            <span class="navbar__user-name"><?= htmlspecialchars($user['name'] ?? 'Пользователь') ?></span>
+                            <span class="navbar__user-name"><?= htmlspecialchars(getUserDisplayName($user ?? []) ?: 'Пользователь') ?></span>
                         </div>
 
                         <div class="navbar__user-menu">

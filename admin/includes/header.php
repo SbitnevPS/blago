@@ -4,6 +4,7 @@ $safePageTitle = htmlspecialchars($pageTitle ?? 'Админ-панель', ENT_Q
 $safeHeaderTitle = htmlspecialchars($pageTitle ?? 'Панель управления', ENT_QUOTES, 'UTF-8');
 $safeBreadcrumb = isset($breadcrumb) ? htmlspecialchars($breadcrumb, ENT_QUOTES, 'UTF-8') : null;
 $adminUnreadDisputes = function_exists('getAdminUnreadDisputeCount') ? getAdminUnreadDisputeCount() : 0;
+$adminAvatar = getUserAvatarData($admin ?? []);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -85,14 +86,14 @@ $adminUnreadDisputes = function_exists('getAdminUnreadDisputeCount') ? getAdminU
 <i class="fas fa-bars"></i>
 </button>
 <div class="admin-user">
- <?php if (!empty($admin['avatar_url'])): ?>
-<img src="<?= htmlspecialchars($admin['avatar_url'], ENT_QUOTES, 'UTF-8') ?>" class="admin-user__avatar">
+ <?php if ($adminAvatar['url'] !== ''): ?>
+<img src="<?= htmlspecialchars($adminAvatar['url'], ENT_QUOTES, 'UTF-8') ?>" class="admin-user__avatar" alt="<?= htmlspecialchars($adminAvatar['label'], ENT_QUOTES, 'UTF-8') ?>">
  <?php else: ?>
-<div class="admin-user__avatar admin-user__avatar--fallback">
-<i class="fas fa-user"></i>
+<div class="admin-user__avatar admin-user__avatar--fallback" title="<?= htmlspecialchars($adminAvatar['label'], ENT_QUOTES, 'UTF-8') ?>">
+<span class="admin-user__avatar-initials"><?= htmlspecialchars($adminAvatar['initials'], ENT_QUOTES, 'UTF-8') ?></span>
 </div>
  <?php endif; ?>
-<span class="admin-user__name"><?= htmlspecialchars($admin['name'] ?? 'Админ') ?></span>
+<span class="admin-user__name"><?= htmlspecialchars(getUserDisplayName($admin ?? []) ?: 'Админ') ?></span>
 <a href="/admin/logout.php" class="admin-user__logout">
 <i class="fas fa-sign-out-alt"></i>
 </a>
