@@ -7,6 +7,7 @@ $isGuest = !isAuthenticated();
 $userId = (int) (getCurrentUserId() ?? 0);
 $contests = getActiveContests();
 $submittedContestIds = $isGuest ? [] : array_flip(getUserSubmittedContestIds($userId));
+$isSingleContest = count($contests) === 1;
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -19,9 +20,22 @@ $submittedContestIds = $isGuest ? [] : array_flip(getUserSubmittedContestIds($us
 <body>
 <?php include dirname(__DIR__) . '/partials/header.php'; ?>
 
-<main class="container" style="padding: var(--space-xl) var(--space-lg);">
+<main class="contests-page">
+<section class="contests-hero">
+    <div class="container contests-hero__inner">
+        <div class="contests-hero__content">
+            <h1 class="contests-hero__title">Конкурсы рисунков</h1>
+            <p class="contests-hero__subtitle">Открывайте новые творческие вызовы, вдохновляйтесь и отправляйте работы на любимые конкурсы.</p>
+        </div>
+        <div class="contests-hero__image-wrap">
+            <img src="/public/contest-hero-placeholder.svg" alt="Декоративная обложка страницы конкурсов" class="contests-hero__image">
+        </div>
+    </div>
+</section>
+
+<section class="container contests-page__content">
 <div class="flex justify-between items-center mb-lg">
-<h1>Конкурсы</h1>
+<h2>Актуальные конкурсы</h2>
 <?php if (!$isGuest): ?>
     <a href="/my-applications" class="btn btn--secondary">
         <i class="fas fa-file-alt"></i> Мои заявки
@@ -38,23 +52,42 @@ $submittedContestIds = $isGuest ? [] : array_flip(getUserSubmittedContestIds($us
     <p class="empty-state__text">Проверьте страницу позже — новые конкурсы появляются регулярно.</p>
 </div>
 <?php else: ?>
-<div class="cards-grid cards-grid--2">
+<div class="contest-list-grid <?= $isSingleContest ? 'contest-list-grid--single' : '' ?>">
 <?php foreach ($contests as $contest): ?>
 <?php
     $isApplied = isset($submittedContestIds[(int)$contest['id']]);
     $hasDates = !empty($contest['date_from']) || !empty($contest['date_to']);
+    $themeStyle = normalizeContestThemeStyle($contest['theme_style'] ?? 'blue');
+    $statusMeta = getContestPublicStatus($contest);
+    $statusLabel = $statusMeta['label'] ?? 'Идёт приём работ';
+    $statusClass = $statusMeta['class'] ?? 'contest-status--active';
+    $descriptionText = trim(strip_tags($contest['description'] ?? ''));
+    $shortDescription = $descriptionText !== '' ? mb_substr($descriptionText, 0, 190) : 'Подробности конкурса доступны на странице с полным описанием.';
+    if (mb_strlen($descriptionText) > 190) {
+        $shortDescription .= '...';
+    }
+    $coverImage = trim((string)($contest['cover_image'] ?? ''));
 ?>
-<div class="contest-card slide-up">
-    <div class="contest-card__content">
-        <div class="application-card__badges-row" style="margin-bottom:8px;">
-            <span class="badge badge--success">Идёт приём заявок</span>
+<article class="contest-card contest-theme--<?= htmlspecialchars($themeStyle) ?> slide-up">
+    <div class="contest-card__image-box">
+        <?php if ($coverImage !== ''): ?>
+            <img src="/uploads/contest-covers/<?= htmlspecialchars($coverImage) ?>" alt="<?= htmlspecialchars($contest['title']) ?>" class="contest-card__image">
+        <?php else: ?>
+            <div class="contest-card__placeholder">
+                <i class="fas fa-palette"></i>
+            </div>
+        <?php endif; ?>
+        <div class="contest-card__badges">
+            <span class="contest-status-badge <?= htmlspecialchars($statusClass) ?>"><?= htmlspecialchars($statusLabel) ?></span>
             <?php if ($isApplied): ?>
                 <span class="badge badge--info">Заявка уже подана</span>
             <?php endif; ?>
         </div>
+    </div>
+    <div class="contest-card__content">
         <h3 class="contest-card__title"><?= htmlspecialchars($contest['title']) ?></h3>
         <div class="contest-card__description">
-            <?= htmlspecialchars(mb_substr(strip_tags($contest['description'] ?? ''), 0, 200)) ?>...
+            <?= htmlspecialchars($shortDescription) ?>
         </div>
         <?php if ($hasDates): ?>
             <div class="contest-card__dates">
@@ -68,9 +101,8 @@ $submittedContestIds = $isGuest ? [] : array_flip(getUserSubmittedContestIds($us
                 <?php endif; ?>
             </div>
         <?php endif; ?>
-    </div>
-    <div class="contest-card__actions">
-        <a href="/contest/<?= (int)$contest['id'] ?>" class="btn btn--outline">
+        <div class="contest-card__actions">
+        <a href="/contest/<?= (int)$contest['id'] ?>" class="btn btn--outline contest-card__btn-details">
             <i class="fas fa-info-circle"></i> Подробнее
         </a>
         <?php if ($isGuest): ?>
@@ -87,11 +119,34 @@ $submittedContestIds = $isGuest ? [] : array_flip(getUserSubmittedContestIds($us
                 <i class="fas fa-paper-plane"></i> Подать заявку
             </a>
         <?php endif; ?>
+        </div>
     </div>
-</div>
+</article>
 <?php endforeach; ?>
 </div>
 <?php endif; ?>
+
+<section class="contests-benefits">
+    <h2 class="contests-benefits__title">Почему стоит участвовать?</h2>
+    <div class="contests-benefits__grid">
+        <article class="contests-benefit-card">
+            <div class="contests-benefit-card__icon"><i class="fas fa-lightbulb"></i></div>
+            <h3>Прояви свой талант</h3>
+            <p>Участвуйте в творческих конкурсах</p>
+        </article>
+        <article class="contests-benefit-card">
+            <div class="contests-benefit-card__icon"><i class="fas fa-star"></i></div>
+            <h3>Получите признание</h3>
+            <p>Ваши работы увидят тысячи людей</p>
+        </article>
+        <article class="contests-benefit-card">
+            <div class="contests-benefit-card__icon"><i class="fas fa-gift"></i></div>
+            <h3>Выигрывайте призы</h3>
+            <p>Победителей ждут ценные награды</p>
+        </article>
+    </div>
+</section>
+</section>
 </main>
 
 <?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>

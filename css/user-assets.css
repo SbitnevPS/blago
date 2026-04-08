@@ -83,6 +83,21 @@
 
 .application-note { background:var(--color-info-light); border-left:4px solid var(--color-info); padding:var(--space-md); border-radius:0 var(--radius-md) var(--radius-md) 0; margin-bottom:var(--space-lg); font-size:var(--font-size-sm); color:#1E40AF; }
 .application-note strong { display:block; margin-bottom:var(--space-xs); }
+.profile-autofill-note {
+ margin-top:-4px;
+ margin-bottom:12px;
+ padding:10px 12px;
+ border-radius:10px;
+ border:1px solid #D4D4D8;
+ background:#F8FAFC;
+ color:#475569;
+ font-size:var(--font-size-sm);
+}
+.profile-field-missing {
+ border-color:#EF4444 !important;
+ box-shadow:0 0 0 3px rgba(239, 68, 68, 0.15) !important;
+ background:#FFF5F5;
+}
 .contest-prep { margin-bottom:var(--space-lg); }
 .contest-prep__inner {
  background:linear-gradient(145deg, #F8FBFF 0%, #EEF4FF 100%);

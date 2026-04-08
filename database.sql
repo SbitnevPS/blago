@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS contests (
     title VARCHAR(255) NOT NULL,
     description TEXT,
     document_file VARCHAR(255),
+    cover_image VARCHAR(255) NULL,
+    theme_style VARCHAR(50) NOT NULL DEFAULT 'blue',
     is_published TINYINT(1) DEFAULT 0,
     date_from DATE,
     date_to DATE,
