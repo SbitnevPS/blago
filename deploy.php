@@ -1,91 +1,60 @@
 <?php
+// deploy.php — обработчик GitHub webhook
 
-declare(strict_types=1);
+require_once __DIR__ . '/config.php';
 
-$projectDir = __DIR__;
-$scriptPath = $projectDir . '/deploy.sh';
-$logPath = $projectDir . '/deploy.log';
-$lockPath = $projectDir . '/deploy.lock';
+// 🔐 Секрет (должен совпадать с GitHub webhook)
+$secret = GITHUB_WEBHOOK_SECRET ?? '';
 
-$githubSecret = getenv('GITHUB_WEBHOOK_SECRET') ?: '';
-
-header('Content-Type: text/plain; charset=UTF-8');
-
-if ($githubSecret === '') {
+if (!$secret) {
     http_response_code(500);
-    echo "GITHUB_WEBHOOK_SECRET is not configured.\n";
+    echo 'GITHUB_WEBHOOK_SECRET is not configured.';
     exit;
 }
 
-if (!is_file($scriptPath) || !is_executable($scriptPath)) {
-    http_response_code(500);
-    echo "deploy.sh is missing or not executable.\n";
-    exit;
-}
+// 📦 Получаем подпись
+$signature = $_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '';
+$payload = file_get_contents('php://input');
 
-$rawBody = file_get_contents('php://input') ?: '';
-$signature256 = $_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '';
-$event = $_SERVER['HTTP_X_GITHUB_EVENT'] ?? '';
-
-if ($signature256 === '') {
-    http_response_code(403);
-    echo "Missing GitHub signature.\n";
-    exit;
-}
-
-$expected = 'sha256=' . hash_hmac('sha256', $rawBody, $githubSecret);
-if (!hash_equals($expected, $signature256)) {
-    http_response_code(403);
-    echo "Invalid signature.\n";
-    exit;
-}
-
-if ($event !== 'push') {
-    echo "Ignored event: {$event}\n";
-    exit;
-}
-
-$data = json_decode($rawBody, true);
-if (!is_array($data)) {
+if (!$signature || !$payload) {
     http_response_code(400);
-    echo "Invalid JSON payload.\n";
+    echo 'Invalid request.';
     exit;
 }
 
-$ref = (string)($data['ref'] ?? '');
-if ($ref !== 'refs/heads/main') {
-    echo "Ignored ref: {$ref}\n";
+// 🔑 Проверка подписи
+$expected = 'sha256=' . hash_hmac('sha256', $payload, $secret);
+
+if (!hash_equals($expected, $signature)) {
+    http_response_code(403);
+    echo 'Invalid signature.';
     exit;
 }
 
-$lockHandle = fopen($lockPath, 'c');
-if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
-    http_response_code(409);
-    echo "Deploy is already running.\n";
-    exit;
-}
+// 🚀 Запуск деплоя
+$script = __DIR__ . '/deploy.sh';
 
-$command = escapeshellarg($scriptPath) . ' 2>&1';
-$output = [];
-$exitCode = 1;
-exec($command, $output, $exitCode);
-
-$logEntry = "==== " . date('c') . " ====\n";
-$logEntry .= "Event: {$event}\n";
-$logEntry .= "Ref: {$ref}\n";
-$logEntry .= "Exit code: {$exitCode}\n";
-$logEntry .= implode("\n", $output) . "\n\n";
-file_put_contents($logPath, $logEntry, FILE_APPEND | LOCK_EX);
-
-flock($lockHandle, LOCK_UN);
-fclose($lockHandle);
-
-if ($exitCode !== 0) {
+if (!file_exists($script)) {
     http_response_code(500);
-    echo "Deploy failed.\n\n";
-    echo implode("\n", $output) . "\n";
+    echo 'deploy.sh not found.';
     exit;
 }
 
-echo "Deploy completed successfully.\n\n";
-echo implode("\n", $output) . "\n";
+// Лог
+echo "Deploy started...\n";
+
+// Выполнение
+$output = [];
+$returnVar = 0;
+
+exec("bash $script 2>&1", $output, $returnVar);
+
+echo implode("\n", $output);
+
+if ($returnVar !== 0) {
+    http_response_code(500);
+    echo "\nDeploy failed.";
+    exit;
+}
+
+echo "\nDeploy finished.";
