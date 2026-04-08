@@ -211,7 +211,15 @@ function getCurrentAdminId() {
 }
 
 function getCurrentUser() {
-    $sessionUserId = getCurrentUserId() ?? getCurrentAdminId();
+    $currentUri = (string) ($_SERVER['REQUEST_URI'] ?? '');
+    $isAdminAreaRequest = $currentUri !== '' && strpos($currentUri, '/admin') === 0;
+
+    if ($isAdminAreaRequest) {
+        $sessionUserId = getCurrentAdminId() ?? getCurrentUserId();
+    } else {
+        $sessionUserId = getCurrentUserId() ?? getCurrentAdminId();
+    }
+
     if (!$sessionUserId) {
         return null;
     }
