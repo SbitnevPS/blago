@@ -333,13 +333,7 @@ $currentPage = 'messages';
 </div>
 </main>
 
-<footer class="footer">
-<div class="container">
-<div class="footer__inner">
-<p class="footer__text">© <?= date('Y') ?> ДетскиеКонкурсы.рф</p>
-</div>
-</div>
-</footer>
+<?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>
 
 <script>
 let currentUnreadCount = <?= (int) $unreadCount ?>;

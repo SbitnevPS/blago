@@ -96,7 +96,11 @@ $routes = [
  // Сообщения
  '/messages' => ['file' => 'app/views/public/messages.php', 'name' => 'messages'],
  '/mark-message-read' => ['file' => 'mark-message-read.php', 'name' => 'mark-message-read'],
- 
+
+ // Правовые документы
+ '/legal/privacy' => ['file' => 'app/views/public/legal-privacy.php', 'name' => 'legal-privacy'],
+ '/legal/cookies' => ['file' => 'app/views/public/legal-cookies.php', 'name' => 'legal-cookies'],
+ '/legal/terms' => ['file' => 'app/views/public/legal-terms.php', 'name' => 'legal-terms'],
 
  '/diploma/{token}' => ['file' => 'app/views/public/diploma-public.php', 'name' => 'diploma-public'],
 

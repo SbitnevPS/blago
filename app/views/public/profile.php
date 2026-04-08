@@ -278,38 +278,6 @@ generateCSRFToken();
 </div>
 </main>
 
-<footer class="footer">
-<div class="container">
-<div class="footer__inner">
-<p class="footer__text">© <?= date('Y') ?> ДетскиеКонкурсы.рф</p>
-</div>
-</div>
-</footer>
-
-<script>
-const requiredMissingKeys = <?= json_encode($missingRequiredFields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
-
-if (Array.isArray(requiredMissingKeys) && requiredMissingKeys.length > 0) {
-    const requiredMissingSet = new Set(requiredMissingKeys);
-    let firstMissingField = null;
-
-    document.querySelectorAll('[data-required-key]').forEach((field) => {
-        const key = field.getAttribute('data-required-key') || '';
-        if (!requiredMissingSet.has(key)) {
-            field.classList.remove('profile-field-missing');
-            return;
-        }
-
-        field.classList.add('profile-field-missing');
-        if (!firstMissingField) {
-            firstMissingField = field;
-        }
-    });
-
-    if (firstMissingField && typeof firstMissingField.focus === 'function') {
-        firstMissingField.focus();
-    }
-}
-</script>
+<?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>
 </body>
 </html>
