@@ -79,10 +79,53 @@ $currentPage = 'contests';
             </div>
         </div>
 
-        <div class="application-note" style="margin-bottom:16px;">
-            <strong>Что понадобится для подачи заявки</strong>
-            <span>ФИО участника, возраст и отдельный рисунок для каждой записи участника.</span>
-        </div>
+        <section class="contest-prep" aria-labelledby="contestPrepTitle">
+            <div class="contest-prep__inner">
+                <span class="contest-prep__eyebrow">Перед подачей заявки</span>
+                <h2 class="contest-prep__title" id="contestPrepTitle">Что понадобится для участия</h2>
+                <p class="contest-prep__text">Подготовьте основную информацию заранее — так заполнение заявки займёт всего несколько минут.</p>
+
+                <div class="contest-prep__grid">
+                    <article class="contest-prep-card">
+                        <div class="contest-prep-card__icon" aria-hidden="true">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <h3 class="contest-prep-card__title">Данные участника</h3>
+                        <p class="contest-prep-card__text">Укажите ФИО участника и его возраст.</p>
+                    </article>
+
+                    <article class="contest-prep-card">
+                        <div class="contest-prep-card__icon" aria-hidden="true">
+                            <i class="fas fa-file-lines"></i>
+                        </div>
+                        <h3 class="contest-prep-card__title">Информация для заявки</h3>
+                        <p class="contest-prep-card__text">Понадобятся основные данные для заполнения формы и оформления участия.</p>
+                    </article>
+
+                    <article class="contest-prep-card">
+                        <div class="contest-prep-card__icon" aria-hidden="true">
+                            <i class="fas fa-image"></i>
+                        </div>
+                        <h3 class="contest-prep-card__title">Отдельный рисунок</h3>
+                        <p class="contest-prep-card__text">Для каждого участника нужно загрузить отдельную конкурсную работу.</p>
+                    </article>
+                </div>
+
+                <div class="contest-prep__highlights" aria-label="Ключевые условия подачи">
+                    <span class="contest-prep__highlight">1 участник = 1 работа</span>
+                    <span class="contest-prep__highlight">Можно добавить несколько участников</span>
+                    <span class="contest-prep__highlight">Подача заявки занимает несколько минут</span>
+                </div>
+
+                <div class="contest-prep__tip" role="note" aria-label="Совет по заполнению">
+                    <h3 class="contest-prep__tip-title">
+                        <i class="fas fa-circle-info" aria-hidden="true"></i>
+                        Совет
+                    </h3>
+                    <p class="contest-prep__tip-text">Если вы планируете подать несколько работ, подготовьте рисунки заранее, чтобы быстрее заполнить заявку.</p>
+                </div>
+            </div>
+        </section>
 
         <div class="contest-description">
             <?= $contest['description'] ?? '<p style="color: var(--color-text-muted);">Описание конкурса скоро появится.</p>' ?>
