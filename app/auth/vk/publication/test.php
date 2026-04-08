@@ -21,17 +21,10 @@ $message = !empty($readiness['ok'])
     ? 'Подключение VK прошло проверку. Публикация доступна.'
     : implode('; ', $readiness['issues'] ?? ['Ошибка проверки VK']);
 $checks = $readiness['checks'] ?? [];
-$confirmedPermissions = !empty($readiness['ok']) ? implode(', ', getVkPublicationRequiredScopes()) : '';
-
-saveSystemSettings([
-    'vk_publication_last_checked_at' => date('Y-m-d H:i:s'),
-    'vk_publication_last_success_checked_at' => !empty($readiness['ok']) ? date('Y-m-d H:i:s') : trim((string) (getSystemSettings()['vk_publication_last_success_checked_at'] ?? '')),
-    'vk_publication_last_check_status' => $status,
-    'vk_publication_last_check_message' => $message,
-    'vk_publication_confirmed_permissions' => $confirmedPermissions,
-    'vk_publication_oauth_last_error' => !empty($readiness['ok']) ? '' : $message,
-    'vk_publication_oauth_last_error_technical' => !empty($readiness['ok']) ? '' : implode('; ', $checks),
-    'vk_publication_oauth_state' => $status === 'ok' ? 'connected' : 'attention',
+vkPublicationLog('manual_test_completed', [
+    'ok' => !empty($readiness['ok']),
+    'issues' => $readiness['issues'] ?? [],
+    'checks' => $checks,
 ]);
 
 jsonResponse([

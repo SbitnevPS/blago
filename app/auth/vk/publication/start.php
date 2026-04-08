@@ -27,7 +27,7 @@ try {
     vkPublicationLog('oauth_start_failed', ['reason' => 'exception', 'message' => $e->getMessage()]);
     jsonResponse(['success' => false, 'error' => 'Не удалось подготовить VK OAuth-сессию.'], 500);
 }
-if (empty($flow['state']) || empty($flow['code_verifier'])) {
+if (empty($flow['state'])) {
     saveSystemSettings([
         'vk_publication_oauth_state' => 'error',
         'vk_publication_oauth_last_error' => 'Не удалось инициализировать OAuth-подключение VK.',
@@ -55,7 +55,6 @@ saveSystemSettings([
 ]);
 vkPublicationLog('oauth_start_success', [
     'state_prefix' => mb_substr((string) $flow['state'], 0, 10),
-    'has_code_verifier' => !empty($flow['code_verifier']),
 ]);
 
 jsonResponse([

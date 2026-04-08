@@ -46,10 +46,9 @@ if ($error !== '' || $state === '' || $code === '') {
 
 $flow = getVkPublicationOauthFlow();
 $expectedState = trim((string) ($flow['state'] ?? ''));
-$codeVerifier = trim((string) ($flow['code_verifier'] ?? ''));
 $alreadyUsed = (int) ($flow['used'] ?? 0) === 1;
 
-if (!$flow || $expectedState === '' || $codeVerifier === '' || $alreadyUsed || !hash_equals($expectedState, $state)) {
+if (!$flow || $expectedState === '' || $alreadyUsed || !hash_equals($expectedState, $state)) {
     failVkPublicationOauth(
         'Состояние OAuth-сессии VK недействительно или истекло.',
         'state_mismatch_or_flow_missing',
@@ -66,7 +65,6 @@ $tokenResponse = vkPublicationHttpPostForm(getVkPublicationOauthTokenEndpoint(),
     'client_secret' => VK_CLIENT_SECRET,
     'redirect_uri' => getVkPublicationRedirectUri(),
     'code' => $code,
-    'code_verifier' => $codeVerifier,
 ]);
 $tokenJson = is_array($tokenResponse['json']) ? $tokenResponse['json'] : [];
 vkPublicationLog('oauth_token_exchange_result', [
@@ -78,7 +76,7 @@ vkPublicationLog('oauth_token_exchange_result', [
     'error_description' => $tokenJson['error_description'] ?? '',
 ]);
 
-if (!$tokenResponse['ok'] || !empty($tokenJson['error']) || empty($tokenJson['access_token']) || empty($tokenJson['user_id'])) {
+if (!$tokenResponse['ok'] || !empty($tokenJson['error']) || empty($tokenJson['access_token'])) {
     $vkError = (string) ($tokenJson['error'] ?? 'exchange_failed');
     $vkErrorDescription = trim((string) ($tokenJson['error_description'] ?? ''));
     failVkPublicationOauth(
@@ -88,52 +86,93 @@ if (!$tokenResponse['ok'] || !empty($tokenJson['error']) || empty($tokenJson['ac
     );
 }
 
-$profileName = '';
-$userInfoResult = vkPublicationApiRequest('users.get', [
-    'access_token' => (string) $tokenJson['access_token'],
-    'v' => VK_API_VERSION,
-]);
-$userInfo = $userInfoResult['ok'] ? ($userInfoResult['response'] ?? []) : [];
-if (!$userInfoResult['ok']) {
+$accessToken = trim((string) ($tokenJson['access_token'] ?? ''));
+$tokenUserId = (int) ($tokenJson['user_id'] ?? 0);
+$scopeRaw = isset($tokenJson['scope']) ? (is_array($tokenJson['scope']) ? implode(',', $tokenJson['scope']) : trim((string) $tokenJson['scope'])) : '';
+$scopeItems = $scopeRaw !== '' ? array_values(array_filter(array_map('trim', preg_split('/[\s,]+/', $scopeRaw) ?: []))) : [];
+$missingScopes = [];
+foreach (getVkPublicationRequiredScopes() as $requiredScope) {
+    if (!in_array($requiredScope, array_map('mb_strtolower', $scopeItems), true)) {
+        $missingScopes[] = $requiredScope;
+    }
+}
+if (!empty($missingScopes)) {
     failVkPublicationOauth(
-        'Токен получен, но не удалось загрузить профиль пользователя VK.',
-        'users.get failed',
-        'VK подключение не завершено: не удалось получить профиль пользователя.'
+        'Токен получен, но не содержит нужные права (scope).',
+        'missing_scope: ' . implode(',', $missingScopes),
+        'VK подключение не завершено: токен не содержит нужные права (' . implode(', ', $missingScopes) . ').'
     );
 }
 
-if (!empty($userInfo[0])) {
-    $profileName = trim((string) (($userInfo[0]['first_name'] ?? '') . ' ' . ($userInfo[0]['last_name'] ?? '')));
+$userInfoResult = vkPublicationApiRequest('users.get', [
+    'access_token' => $accessToken,
+    'v' => VK_API_VERSION,
+]);
+$userInfo = $userInfoResult['ok'] ? ($userInfoResult['response'] ?? []) : [];
+vkPublicationLog('oauth_users_get_result', [
+    'ok' => $userInfoResult['ok'] ?? false,
+    'has_user' => !empty($userInfo[0]),
+]);
+if (!$userInfoResult['ok'] || empty($userInfo[0])) {
+    failVkPublicationOauth(
+        'Токен получен, но users.get не вернул данные пользователя.',
+        'users.get_failed_or_empty',
+        'VK подключение не завершено: users.get не вернул пользователя.'
+    );
 }
 
-$userId = trim((string) ($tokenJson['user_id'] ?? ''));
-$extra = [
+$resolvedUserId = (int) ($userInfo[0]['id'] ?? 0);
+if ($resolvedUserId <= 0) {
+    $resolvedUserId = $tokenUserId;
+}
+if ($resolvedUserId <= 0) {
+    failVkPublicationOauth(
+        'Токен получен, но VK user ID определить не удалось.',
+        'missing_user_id_in_token_and_users_get',
+        'VK подключение не завершено: не удалось определить VK user ID.'
+    );
+}
+
+$profileName = trim((string) (($userInfo[0]['first_name'] ?? '') . ' ' . ($userInfo[0]['last_name'] ?? '')));
+$tokenJson['user_id'] = $resolvedUserId;
+persistVkPublicationTokens($tokenJson, [
     'vk_publication_oauth_user_name' => $profileName,
-    'vk_publication_oauth_user_profile_url' => $userId !== '' ? ('https://vk.com/id' . $userId) : '',
-    'vk_publication_oauth_state' => 'connected',
+    'vk_publication_oauth_user_profile_url' => 'https://vk.com/id' . $resolvedUserId,
+    'vk_publication_oauth_state' => 'attention',
     'vk_publication_oauth_last_error' => '',
     'vk_publication_oauth_last_error_technical' => '',
-];
-
-persistVkPublicationTokens($tokenJson, $extra);
+]);
 vkPublicationLog('oauth_token_persisted', [
-    'oauth_user_id' => $userId,
+    'oauth_user_id' => $resolvedUserId,
     'oauth_user_name' => $profileName,
+    'users_get_ok' => true,
 ]);
 
 $readiness = verifyVkPublicationReadiness(false);
 if (empty($readiness['ok'])) {
     $message = implode('; ', $readiness['issues'] ?? ['Ошибка проверки прав токена']);
     saveSystemSettings([
+        'vk_publication_user_token' => '',
+        'vk_publication_access_token' => '',
+        'vk_publication_refresh_token' => '',
+        'vk_publication_oauth_user_id' => '',
+        'vk_publication_oauth_user_name' => '',
+        'vk_publication_oauth_user_profile_url' => '',
+        'vk_publication_token_scope' => '',
+        'vk_publication_token_obtained_at' => '',
+        'vk_publication_token_expires_at' => '',
+        'vk_publication_oauth_connected_at' => '',
+        'vk_publication_token_type' => '',
+        'vk_publication_confirmed_permissions' => '',
         'vk_publication_oauth_state' => 'attention',
-        'vk_publication_oauth_last_error' => 'VK подключён, но проверка прав не пройдена.',
+        'vk_publication_oauth_last_error' => 'VK подключение отклонено: токен не прошёл проверку.',
         'vk_publication_oauth_last_error_technical' => mb_substr($message, 0, 1000),
     ]);
     vkPublicationLog('oauth_connected_with_attention', [
         'issues' => $readiness['issues'] ?? [],
     ]);
     clearVkPublicationOauthFlow();
-    $_SESSION['flash_error'] = 'VK подключён, но проверка прав не пройдена: ' . $message;
+    $_SESSION['flash_error'] = 'VK подключение не завершено: ' . $message;
     redirect('/admin/settings#vk-integration');
 }
 

@@ -235,15 +235,9 @@ function vkPublicationLog(string $event, array $context = []): void
 function createVkPublicationOauthFlow(): array
 {
     $state = bin2hex(random_bytes(24));
-    $codeVerifier = rtrim(strtr(base64_encode(random_bytes(64)), '+/', '-_'), '=');
-    $codeChallengeMethod = 'plain';
-    $codeChallenge = $codeVerifier;
 
     $flow = [
         'state' => $state,
-        'code_verifier' => $codeVerifier,
-        'code_challenge' => $codeChallenge,
-        'code_challenge_method' => $codeChallengeMethod,
         'scope' => implode(',', getVkPublicationRequiredScopes()),
         'created_at' => time(),
         'used' => 0,
@@ -252,8 +246,6 @@ function createVkPublicationOauthFlow(): array
     $_SESSION[getVkPublicationOauthSessionKey()] = $flow;
     vkPublicationLog('oauth_flow_created', [
         'has_state' => true,
-        'has_code_verifier' => true,
-        'code_challenge_method' => $codeChallengeMethod,
         'scope' => $flow['scope'],
     ]);
 
@@ -294,8 +286,6 @@ function buildVkPublicationOauthUrl(array $flow): string
         'response_type' => 'code',
         'state' => (string) ($flow['state'] ?? ''),
         'scope' => $scope,
-        'code_challenge' => (string) ($flow['code_challenge'] ?? ''),
-        'code_challenge_method' => (string) ($flow['code_challenge_method'] ?? 'plain'),
         'v' => VK_API_VERSION,
     ]);
 
@@ -303,7 +293,6 @@ function buildVkPublicationOauthUrl(array $flow): string
         'authorize_endpoint' => getVkPublicationOauthAuthorizeEndpoint(),
         'redirect_uri' => getVkPublicationRedirectUri(),
         'scope' => $scope,
-        'code_challenge_method' => (string) ($flow['code_challenge_method'] ?? 'plain'),
     ]);
 
     return $url;
@@ -341,11 +330,25 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true): array
     $issues = [];
     $checks = [];
 
+    if ($settings['token_type'] !== '' && $settings['token_type'] !== 'user') {
+        $issues[] = 'Используется неподходящий тип токена: требуется пользовательский access token.';
+        $checks[] = 'Тип токена не подходит: ' . $settings['token_type'];
+    } else {
+        $checks[] = 'Тип токена: пользовательский';
+    }
+
     if ($settings['user_token'] === '') {
         $issues[] = 'VK не подключён';
         $checks[] = 'Токен отсутствует';
     } else {
         $checks[] = 'Токен присутствует';
+    }
+
+    if ($settings['oauth_user_id'] === '' || (int) $settings['oauth_user_id'] <= 0) {
+        $issues[] = 'Не определён VK user ID владельца токена.';
+        $checks[] = 'VK user ID отсутствует';
+    } else {
+        $checks[] = 'VK user ID сохранён';
     }
 
     if ($settings['group_id'] === '' || (int) $settings['group_id'] <= 0) {
@@ -407,6 +410,19 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true): array
             $checks[] = 'VK API check failed: ' . $normalized['technical'];
         }
     }
+
+    $status = empty($issues) ? 'connected' : ($settings['user_token'] !== '' ? 'attention' : 'disconnected');
+    $confirmedPermissions = empty($issues) ? implode(', ', getVkPublicationRequiredScopes()) : '';
+    saveSystemSettings([
+        'vk_publication_last_checked_at' => date('Y-m-d H:i:s'),
+        'vk_publication_last_success_checked_at' => empty($issues) ? date('Y-m-d H:i:s') : trim((string) (getSystemSettings()['vk_publication_last_success_checked_at'] ?? '')),
+        'vk_publication_last_check_status' => empty($issues) ? 'ok' : 'error',
+        'vk_publication_last_check_message' => empty($issues) ? 'Подключение VK прошло проверку. Публикация доступна.' : implode('; ', $issues),
+        'vk_publication_confirmed_permissions' => $confirmedPermissions,
+        'vk_publication_oauth_last_error' => empty($issues) ? '' : implode('; ', $issues),
+        'vk_publication_oauth_last_error_technical' => empty($issues) ? '' : implode('; ', $checks),
+        'vk_publication_oauth_state' => $status,
+    ]);
 
     vkPublicationLog('readiness_check', [
         'ok' => empty($issues),
@@ -1006,6 +1022,12 @@ function publishVkTaskItem(int $itemId): array
         return ['success' => true, 'already' => true, 'post_url' => $item['vk_post_url']];
     }
 
+    vkPublicationLog('publish_item_attempt', [
+        'item_id' => (int) $item['id'],
+        'task_id' => (int) $item['task_id'],
+        'work_id' => (int) $item['work_id'],
+    ]);
+
     $readiness = verifyVkPublicationReadiness(true);
     if (empty($readiness['ok'])) {
         $error = (string) ($readiness['issues'][0] ?? 'VK не готов к публикации');
@@ -1043,6 +1065,12 @@ function publishVkTaskItem(int $itemId): array
             ->execute([(string) $published['post_id'], (string) $published['post_url'], (int) $item['work_id']]);
 
         refreshVkTaskCounters((int) $item['task_id']);
+        vkPublicationLog('publish_item_success', [
+            'item_id' => (int) $item['id'],
+            'task_id' => (int) $item['task_id'],
+            'work_id' => (int) $item['work_id'],
+            'post_id' => (string) $published['post_id'],
+        ]);
 
         return [
             'success' => true,
