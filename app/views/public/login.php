@@ -1,5 +1,5 @@
 <?php
-// login.php - Вход через VK OAuth или по email/паролю
+// login.php - Вход через VK ID SDK или по email/паролю
 require_once dirname(__DIR__, 3) . '/config.php';
 require_once dirname(__DIR__, 3) . '/includes/init.php';
 
@@ -11,7 +11,7 @@ $currentPage = 'login';
 $error = '';
 
 if (isset($_GET['error']) && $_GET['error'] === 'vk_auth') {
-    $error = 'Не удалось выполнить вход через VK. Попробуйте снова.';
+    $error = 'Не удалось выполнить вход через VK ID. Попробуйте снова.';
 }
 
 $rawRedirect = (string) ($_GET['redirect'] ?? ($_POST['redirect'] ?? ($_SESSION['user_auth_redirect'] ?? '/contests')));
@@ -41,16 +41,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
-
-$vkUserState = bin2hex(random_bytes(16));
-$_SESSION['vk_user_oauth_state'] = $vkUserState;
-$vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
-    'client_id' => VK_CLIENT_ID,
-    'redirect_uri' => VK_USER_REDIRECT_URI,
-    'response_type' => 'code',
-    'scope' => 'email',
-    'state' => $vkUserState,
-]);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -59,6 +49,7 @@ $vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Вход - ДетскиеКонкурсы.рф</title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
+<script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
 </head>
 <body>
 <?php include dirname(__DIR__) . '/partials/header.php'; ?>
@@ -74,12 +65,14 @@ $vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
 <i class="fas fa-envelope"></i> По email
 </button>
 <button type="button" class="login-card__tab" onclick="showTab('vk')">
-<i class="fab fa-vk"></i> Через VK
+<i class="fab fa-vk"></i> Через VK ID
 </button>
 </div>
 
 <?php if ($error): ?>
-<div class="error-message"><?= htmlspecialchars($error) ?></div>
+<div class="error-message" id="auth-error-message"><?= htmlspecialchars($error) ?></div>
+<?php else: ?>
+<div class="error-message" id="auth-error-message" style="display:none;"></div>
 <?php endif; ?>
 
 <form method="POST" class="login-form active" id="form-email">
@@ -102,10 +95,8 @@ $vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
 
 <div class="login-form" id="form-vk">
 <div class="divider">или</div>
-<a class="login-card__vk" href="<?= htmlspecialchars($vkAuthUrl, ENT_QUOTES, 'UTF-8') ?>">
-<i class="fab fa-vk"></i>
-Войти через VK
-</a>
+<div id="vkid-signin-container"></div>
+<p style="font-size:14px;color:#666;margin-top:12px;">Вход через VK ID выполняется безопасно: код авторизации обменивается только на сервере.</p>
 </div>
 
 <div class="login-card__footer">
@@ -121,6 +112,120 @@ $vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
 </div>
 
 <script>
+const VKID_EXCHANGE_ENDPOINT = '/auth/vkid-exchange';
+const VKID_REDIRECT_TARGET = <?= json_encode($redirectAfterAuth, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+const CSRF_TOKEN = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+
+function setAuthError(message) {
+    const errorEl = document.getElementById('auth-error-message');
+    if (!errorEl) {
+        return;
+    }
+
+    if (!message) {
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+        return;
+    }
+
+    errorEl.style.display = 'block';
+    errorEl.textContent = message;
+}
+
+async function exchangeVkIdCode(payload) {
+    const response = await fetch(VKID_EXCHANGE_ENDPOINT, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-Token': CSRF_TOKEN,
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+            code: payload.code,
+            device_id: payload.device_id,
+            redirect: VKID_REDIRECT_TARGET,
+        }),
+    });
+
+    const responseBody = await response.json().catch(() => ({}));
+
+    if (!response.ok || !responseBody.success) {
+        throw new Error(responseBody.error || 'Не удалось завершить вход через VK ID.');
+    }
+
+    window.location.href = responseBody.redirect || '/contests';
+}
+
+function getVkPayload(eventPayload) {
+    if (eventPayload && eventPayload.payload && typeof eventPayload.payload === 'object') {
+        return eventPayload.payload;
+    }
+
+    return eventPayload;
+}
+
+function installVkIdWidget() {
+    if (typeof window.VKID === 'undefined') {
+        setAuthError('VK ID SDK не загрузился. Проверьте соединение и обновите страницу.');
+        return;
+    }
+
+    try {
+        window.VKID.Config.init({
+            app: String(<?= json_encode(VK_CLIENT_ID) ?>),
+            redirectUrl: 'https://konkurs.tolkodobroe.info/vk-auth',
+            responseMode: window.VKID.ConfigResponseMode.Callback,
+            source: window.VKID.ConfigSource.LOWCODE,
+            scope: 'email',
+        });
+
+        const container = document.getElementById('vkid-signin-container');
+        if (!container) {
+            return;
+        }
+
+        const oneTap = new window.VKID.OneTap();
+
+        if (typeof oneTap.on === 'function' && window.VKID.OneTapInternalEvents && window.VKID.WidgetEvents) {
+            oneTap.on(window.VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
+                const data = getVkPayload(payload);
+                if (!data || !data.code || !data.device_id) {
+                    setAuthError('VK ID не передал необходимые данные для входа.');
+                    return;
+                }
+                exchangeVkIdCode(data).catch(function (error) {
+                    setAuthError(error.message || 'Ошибка обмена кода VK ID.');
+                });
+            });
+
+            oneTap.on(window.VKID.WidgetEvents.ERROR, function () {
+                setAuthError('Ошибка SDK VK ID. Попробуйте снова позже.');
+            });
+        }
+
+        oneTap.render({
+            container: container,
+            showAlternativeLogin: true,
+            onSuccess: function (payload) {
+                const data = getVkPayload(payload);
+                if (!data || !data.code || !data.device_id) {
+                    setAuthError('VK ID не передал необходимые данные для входа.');
+                    return;
+                }
+                exchangeVkIdCode(data).catch(function (error) {
+                    setAuthError(error.message || 'Ошибка обмена кода VK ID.');
+                });
+            },
+            onError: function () {
+                setAuthError('Ошибка SDK VK ID. Попробуйте снова позже.');
+            },
+        });
+    } catch (error) {
+        setAuthError('Не удалось инициализировать VK ID. Обновите страницу и повторите попытку.');
+    }
+}
+
 function showTab(tab) {
     document.querySelectorAll('.login-card__tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.login-form').forEach(f => f.classList.remove('active'));
@@ -133,6 +238,8 @@ function showTab(tab) {
         document.getElementById('form-vk').classList.add('active');
     }
 }
+
+installVkIdWidget();
 </script>
 </body>
 </html>
