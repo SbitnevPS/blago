@@ -15,6 +15,17 @@ if (!verifyCSRFToken($csrfToken)) {
     jsonResponse(['success' => false, 'error' => 'Ошибка безопасности'], 403);
 }
 
+$expectedSetup = getVkPublicationOauthExpectedSetup();
+vkPublicationLog('oauth_start_diagnostics', [
+    'client_id' => VK_CLIENT_ID,
+    'redirect_uri' => getVkPublicationRedirectUri(),
+    'authorize_endpoint' => getVkPublicationOauthAuthorizeEndpoint(),
+    'flow_mode' => getVkPublicationOauthFlowMode(),
+    'website_address' => $expectedSetup['website_address'] ?? '',
+    'base_domain' => $expectedSetup['base_domain'] ?? '',
+    'has_client_secret' => trim((string) VK_CLIENT_SECRET) !== '',
+]);
+
 $flow = [];
 try {
     $flow = createVkPublicationOauthFlow();
@@ -55,6 +66,10 @@ saveSystemSettings([
 ]);
 vkPublicationLog('oauth_start_success', [
     'state_prefix' => mb_substr((string) $flow['state'], 0, 10),
+    'client_id' => VK_CLIENT_ID,
+    'redirect_uri' => getVkPublicationRedirectUri(),
+    'authorize_endpoint' => getVkPublicationOauthAuthorizeEndpoint(),
+    'flow_mode' => getVkPublicationOauthFlowMode(),
 ]);
 
 jsonResponse([
