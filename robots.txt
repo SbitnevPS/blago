@@ -1,7 +1,0 @@
-User-agent: *
-Disallow: /admin/
-Disallow: /api/
-Disallow: /config.php
-Disallow: /login.php
-Disallow: /application-form.php
-Allow: /

@@ -1,8 +1,0 @@
-{
-  "name": "kids-contests/blago",
-  "description": "Kids contests diploma module",
-  "type": "project",
-  "require": {
-    "mpdf/mpdf": "^8.2"
-  }
-}
