@@ -80,11 +80,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
  } else {
  // Проверяем пароль при смене email
  if ($email !== (string) ($user['email'] ?? '')) {
- if (empty($user['password'])) {
+ if (empty($user['password']) && $newPassword === '') {
  $error = 'Для смены email необходимо сначала установить пароль';
- } elseif (empty($_POST['current_password'])) {
+ } elseif (!empty($user['password']) && empty($_POST['current_password'])) {
  $error = 'Введите текущий пароль для смены email';
- } elseif (!password_verify((string) $_POST['current_password'], (string) $user['password'])) {
+ } elseif (!empty($user['password']) && !password_verify((string) $_POST['current_password'], (string) $user['password'])) {
  $error = 'Неверный текущий пароль';
  }
  }
