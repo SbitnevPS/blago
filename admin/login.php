@@ -1,5 +1,4 @@
 <?php
-// admin/login.php - Вход в админ-панель через email/пароль или VK OAuth
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/init.php';
 
@@ -8,18 +7,29 @@ if (isAdmin()) {
 }
 
 $error = '';
+$authErrorCode = trim((string) ($_GET['auth_error'] ?? ''));
+$authErrorMessages = [
+    'session_expired' => 'Сессия входа через VK устарела. Попробуйте снова.',
+    'invalid_callback' => 'VK вернул некорректные данные входа.',
+    'exchange_failed' => 'Не удалось завершить вход через VK. Попробуйте снова.',
+    'profile_failed' => 'Не удалось получить профиль VK. Попробуйте снова.',
+    'admin_access_denied' => 'Доступ в админку запрещён.',
+];
 
-if (isset($_GET['error'])) {
-    if ($_GET['error'] === 'vk_auth') {
-        $error = 'Не удалось выполнить вход через VK. Повторите попытку.';
-    } elseif ($_GET['error'] === 'access_denied') {
-        $error = 'Доступ запрещён: этот аккаунт не имеет прав администратора.';
-    }
+if ($authErrorCode !== '' && isset($authErrorMessages[$authErrorCode])) {
+    $error = $authErrorMessages[$authErrorCode];
 }
+
+$rawRedirect = (string) ($_GET['redirect'] ?? ($_POST['redirect'] ?? ($_SESSION['admin_auth_redirect'] ?? '/admin')));
+$redirectAfterAuth = sanitize_internal_redirect($rawRedirect, '/admin');
+if (strpos($redirectAfterAuth, '/admin') !== 0) {
+    $redirectAfterAuth = '/admin';
+}
+$_SESSION['admin_auth_redirect'] = $redirectAfterAuth;
 
 check_csrf();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $email = trim((string) ($_POST['email'] ?? ''));
     $password = (string) ($_POST['password'] ?? '');
 
@@ -43,23 +53,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['is_admin'] = true;
 
             $target = sanitize_internal_redirect($_SESSION['admin_auth_redirect'] ?? '/admin', '/admin');
+            if (strpos($target, '/admin') !== 0) {
+                $target = '/admin';
+            }
             unset($_SESSION['admin_auth_redirect']);
-
-            header('Location: ' . $target);
-            exit;
+            redirect($target);
         }
     }
 }
-
-$vkAdminState = bin2hex(random_bytes(16));
-$_SESSION['vk_admin_oauth_state'] = $vkAdminState;
-$vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
-    'client_id' => VK_CLIENT_ID,
-    'redirect_uri' => VK_ADMIN_REDIRECT_URI,
-    'response_type' => 'code',
-    'scope' => 'email',
-    'state' => $vkAdminState,
-]);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -79,7 +80,9 @@ $vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
 </div>
 
 <?php if ($error): ?>
-<div class="error-message"><?= htmlspecialchars($error) ?></div>
+<div class="error-message" id="auth-error-message"><?= htmlspecialchars($error) ?></div>
+<?php else: ?>
+<div class="error-message" id="auth-error-message" style="display:none;"></div>
 <?php endif; ?>
 
 <form method="POST">
@@ -100,9 +103,9 @@ $vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
 </form>
 
 <div class="divider" style="margin-top:16px;">или</div>
-<a class="btn btn-secondary" style="width:100%; justify-content:center;" href="<?= htmlspecialchars($vkAuthUrl, ENT_QUOTES, 'UTF-8') ?>">
+<button class="btn btn-secondary" id="vk-admin-login-button" type="button" style="width:100%; justify-content:center;">
 <i class="fab fa-vk"></i> Войти через VK
-</a>
+</button>
 
 <div class="back-link">
 <a href="/">
@@ -111,6 +114,67 @@ $vkAuthUrl = 'https://oauth.vk.com/authorize?' . http_build_query([
 </div>
 </div>
 </div>
+<script>
+const VK_ADMIN_START_ENDPOINT = '/auth/vk/admin/start';
+const VK_ADMIN_REDIRECT_TARGET = <?= json_encode($redirectAfterAuth, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+const CSRF_TOKEN = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+let vkStartInProgress = false;
 
+function setAdminAuthError(message) {
+    const errorEl = document.getElementById('auth-error-message');
+    if (!errorEl) {
+        return;
+    }
+
+    if (!message) {
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+        return;
+    }
+
+    errorEl.style.display = 'block';
+    errorEl.textContent = message;
+}
+
+async function startAdminVkLogin() {
+    if (vkStartInProgress) {
+        return;
+    }
+
+    vkStartInProgress = true;
+    const button = document.getElementById('vk-admin-login-button');
+    if (button) {
+        button.disabled = true;
+    }
+
+    try {
+        const response = await fetch(VK_ADMIN_START_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-Token': CSRF_TOKEN,
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({ redirect: VK_ADMIN_REDIRECT_TARGET }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success || !payload.auth_url) {
+            throw new Error(payload.error || 'Не удалось инициализировать вход через VK.');
+        }
+
+        window.location.href = payload.auth_url;
+    } catch (error) {
+        setAdminAuthError(error.message || 'Не удалось инициализировать вход через VK.');
+        vkStartInProgress = false;
+        if (button) {
+            button.disabled = false;
+        }
+    }
+}
+
+document.getElementById('vk-admin-login-button')?.addEventListener('click', startAdminVkLogin);
+</script>
 </body>
 </html>

@@ -17,8 +17,8 @@ return [
         'client_id' => 'vk_client_id',
         'client_secret' => 'vk_client_secret',
         'api_version' => '5.131',
-        'admin_redirect_uri' => 'https://example.com/admin/vk-auth.php',
-        'user_redirect_uri' => 'https://example.com/login',
+        'admin_redirect_uri' => 'https://example.com/auth/vk/admin/callback',
+        'user_redirect_uri' => 'https://example.com/auth/vk/user/callback',
     ],
 
     'secrets' => [
