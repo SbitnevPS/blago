@@ -1,5 +1,4 @@
 <?php
-// login.php - Вход через VK ID SDK или по email/паролю
 require_once dirname(__DIR__, 3) . '/config.php';
 require_once dirname(__DIR__, 3) . '/includes/init.php';
 
@@ -10,40 +9,25 @@ if (isAuthenticated()) {
 $currentPage = 'login';
 $error = '';
 
-if (isset($_GET['error']) && $_GET['error'] === 'vk_auth') {
-    $error = 'Не удалось выполнить вход через VK ID. Попробуйте снова.';
+$authErrorCode = trim((string) ($_GET['auth_error'] ?? ''));
+$authErrorMessages = [
+    'session_expired' => 'Сессия входа через VK устарела. Попробуйте снова.',
+    'invalid_callback' => 'VK вернул некорректные данные входа.',
+    'exchange_failed' => 'Не удалось завершить вход через VK. Попробуйте снова.',
+    'profile_failed' => 'Не удалось получить профиль VK. Попробуйте снова.',
+];
+
+if ($authErrorCode !== '' && isset($authErrorMessages[$authErrorCode])) {
+    $error = $authErrorMessages[$authErrorCode];
 }
 
 $rawRedirect = (string) ($_GET['redirect'] ?? ($_POST['redirect'] ?? ($_SESSION['user_auth_redirect'] ?? '/contests')));
 $redirectAfterAuth = sanitize_internal_redirect($rawRedirect, '/contests');
 $_SESSION['user_auth_redirect'] = $redirectAfterAuth;
 
-$sessionVkidOauth = $_SESSION['vkid_oauth'] ?? null;
-$sessionVkidCreatedAt = is_array($sessionVkidOauth) ? (int) ($sessionVkidOauth['created_at'] ?? 0) : 0;
-$hasValidVkidSession = is_array($sessionVkidOauth)
-    && trim((string) ($sessionVkidOauth['state'] ?? '')) !== ''
-    && trim((string) ($sessionVkidOauth['code_verifier'] ?? '')) !== ''
-    && trim((string) ($sessionVkidOauth['redirect_uri'] ?? '')) === VK_USER_REDIRECT_URI
-    && $sessionVkidCreatedAt > 0
-    && (time() - $sessionVkidCreatedAt) <= 900;
-
-if ($hasValidVkidSession) {
-    $vkidState = trim((string) $sessionVkidOauth['state']);
-    $vkidCodeVerifier = trim((string) $sessionVkidOauth['code_verifier']);
-} else {
-    $vkidState = bin2hex(random_bytes(16));
-    $vkidCodeVerifier = rtrim(strtr(base64_encode(random_bytes(64)), '+/', '-_'), '=');
-    $_SESSION['vkid_oauth'] = [
-        'state' => $vkidState,
-        'code_verifier' => $vkidCodeVerifier,
-        'redirect_uri' => VK_USER_REDIRECT_URI,
-        'created_at' => time(),
-    ];
-}
-
 check_csrf();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $email = trim((string) ($_POST['email'] ?? ''));
     $password = (string) ($_POST['password'] ?? '');
 
@@ -59,9 +43,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $target = sanitize_internal_redirect($_SESSION['user_auth_redirect'] ?? '/contests', '/contests');
             unset($_SESSION['user_auth_redirect']);
             redirect($target);
-        } else {
-            $error = 'Неверный email или пароль';
         }
+
+        $error = 'Неверный email или пароль';
     }
 }
 ?>
@@ -72,7 +56,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Вход - ДетскиеКонкурсы.рф</title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
-<script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
 </head>
 <body>
 <?php include dirname(__DIR__) . '/partials/header.php'; ?>
@@ -88,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <i class="fas fa-envelope"></i> По email
 </button>
 <button type="button" class="login-card__tab" onclick="showTab('vk')">
-<i class="fab fa-vk"></i> Через VK ID
+<i class="fab fa-vk"></i> Через VK
 </button>
 </div>
 
@@ -118,8 +101,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="login-form" id="form-vk">
 <div class="divider">или</div>
-<div id="vkid-signin-container"></div>
-<p style="font-size:14px;color:#666;margin-top:12px;">Вход через VK ID выполняется безопасно: код авторизации обменивается только на сервере.</p>
+<button type="button" id="vk-login-button" class="btn-primary" style="width:100%;display:flex;justify-content:center;gap:8px;">
+<i class="fab fa-vk"></i> Войти через VK
+</button>
+<p style="font-size:14px;color:#666;margin-top:12px;">Авторизация запускается отдельным защищённым endpoint на сервере.</p>
 </div>
 
 <div class="login-card__footer">
@@ -135,12 +120,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
 
 <script>
-const VKID_EXCHANGE_ENDPOINT = '/auth/vkid-exchange';
-const VKID_REDIRECT_TARGET = <?= json_encode($redirectAfterAuth, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+const VK_START_ENDPOINT = '/auth/vk/user/start';
+const VK_REDIRECT_TARGET = <?= json_encode($redirectAfterAuth, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const CSRF_TOKEN = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
-const VKID_STATE = <?= json_encode($vkidState, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
-const VKID_CODE_VERIFIER = <?= json_encode($vkidCodeVerifier, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
-let vkExchangeInProgress = false;
+let vkStartInProgress = false;
 
 function setAuthError(message) {
     const errorEl = document.getElementById('auth-error-message');
@@ -158,26 +141,19 @@ function setAuthError(message) {
     errorEl.textContent = message;
 }
 
-async function exchangeVkIdCode(payload) {
-    if (vkExchangeInProgress) {
+async function startVkLogin() {
+    if (vkStartInProgress) {
         return;
     }
 
-    if (!payload || typeof payload !== 'object' || !payload.code || !payload.device_id) {
-        setAuthError('VK ID вернул некорректные данные. Попробуйте ещё раз.');
-        return;
+    vkStartInProgress = true;
+    const button = document.getElementById('vk-login-button');
+    if (button) {
+        button.disabled = true;
     }
 
-    if (payload.state && payload.state !== VKID_STATE) {
-        setAuthError('Сессия входа через VK ID устарела. Обновите страницу и попробуйте снова.');
-        return;
-    }
-
-    vkExchangeInProgress = true;
-
-    let response;
     try {
-        response = await fetch(VKID_EXCHANGE_ENDPOINT, {
+        const response = await fetch(VK_START_ENDPOINT, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -185,93 +161,21 @@ async function exchangeVkIdCode(payload) {
                 'X-CSRF-Token': CSRF_TOKEN,
             },
             credentials: 'same-origin',
-            body: JSON.stringify({
-                code: payload.code,
-                device_id: payload.device_id,
-                state: payload.state || VKID_STATE,
-                code_verifier: VKID_CODE_VERIFIER,
-                redirect: VKID_REDIRECT_TARGET,
-            }),
+            body: JSON.stringify({ redirect: VK_REDIRECT_TARGET }),
         });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success || !payload.auth_url) {
+            throw new Error(payload.error || 'Не удалось инициализировать вход через VK. Попробуйте снова.');
+        }
+
+        window.location.href = payload.auth_url;
     } catch (error) {
-        throw new Error('Временная ошибка соединения с VK ID. Попробуйте ещё раз.');
-    } finally {
-        vkExchangeInProgress = false;
-    }
-
-    const responseBody = await response.json().catch(() => ({}));
-
-    if (!response.ok || !responseBody.success) {
-        throw new Error(responseBody.error || 'Не удалось завершить вход через VK ID. Попробуйте ещё раз.');
-    }
-
-    window.location.href = responseBody.redirect || '/contests';
-}
-
-function getVkPayload(eventPayload) {
-    if (eventPayload && eventPayload.payload && typeof eventPayload.payload === 'object') {
-        return eventPayload.payload;
-    }
-
-    return eventPayload;
-}
-
-function installVkIdWidget() {
-    if (!('VKIDSDK' in window) && typeof window.VKID === 'undefined') {
-        setAuthError('VK ID SDK не загрузился. Проверьте соединение и обновите страницу.');
-        return;
-    }
-
-    function handleVkSuccess(payload) {
-        const data = getVkPayload(payload);
-        if (!data || !data.code || !data.device_id) {
-            setAuthError('VK ID вернул некорректные данные. Попробуйте ещё раз.');
-            return;
+        setAuthError(error.message || 'Не удалось инициализировать вход через VK. Попробуйте снова.');
+        vkStartInProgress = false;
+        if (button) {
+            button.disabled = false;
         }
-
-        exchangeVkIdCode(data).catch(function (error) {
-            setAuthError(error.message || 'Не удалось завершить вход через VK ID. Попробуйте ещё раз.');
-        });
-    }
-
-    try {
-        const VKID = window.VKIDSDK || window.VKID;
-
-        VKID.Config.init({
-            app: <?= json_encode((int) VK_CLIENT_ID) ?>,
-            redirectUrl: <?= json_encode(VK_USER_REDIRECT_URI, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
-            responseMode: VKID.ConfigResponseMode.Callback,
-            source: VKID.ConfigSource.LOWCODE,
-            scope: 'email',
-            state: VKID_STATE,
-            codeVerifier: VKID_CODE_VERIFIER,
-        });
-
-        const container = document.getElementById('vkid-signin-container');
-        if (!container) {
-            return;
-        }
-
-        const oneTap = new VKID.OneTap();
-
-        if (typeof oneTap.on === 'function' && VKID.OneTapInternalEvents && VKID.WidgetEvents) {
-            oneTap.on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, handleVkSuccess);
-
-            oneTap.on(VKID.WidgetEvents.ERROR, function () {
-                setAuthError('Не удалось завершить вход через VK ID. Попробуйте ещё раз.');
-            });
-        }
-
-        oneTap.render({
-            container: container,
-            showAlternativeLogin: true,
-            onSuccess: handleVkSuccess,
-            onError: function () {
-                setAuthError('Не удалось завершить вход через VK ID. Попробуйте ещё раз.');
-            },
-        });
-    } catch (error) {
-        setAuthError('Не удалось инициализировать VK ID. Обновите страницу и повторите попытку.');
     }
 }
 
@@ -288,7 +192,7 @@ function showTab(tab) {
     }
 }
 
-installVkIdWidget();
+document.getElementById('vk-login-button')?.addEventListener('click', startVkLogin);
 </script>
 </body>
 </html>
