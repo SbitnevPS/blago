@@ -685,6 +685,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                             <div class="work-card__details">
                                 <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd><dt>Название рисунка</dt><dd><?= e(trim((string) ($p['title'] ?? '')) ?: '—') ?></dd></dl></section>
                                 <section class="work-section"><h4>Организация</h4><dl class="application-kv-list"><dt>Организация</dt><dd><?= e($p['organization_name'] ?? '—') ?></dd><dt>Адрес</dt><dd><?= e($p['organization_address'] ?? '—') ?></dd></dl></section>
+                                <?php $isComplianceLocked = $isApplicationApproved || ((string) ($p['status'] ?? 'pending')) === 'accepted'; ?>
                                 <section class="work-section"><h4>Проверка работы</h4>
                                     <form method="POST" class="js-drawing-compliance-form work-compliance-form">
                                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -692,9 +693,9 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                                         <input type="hidden" name="action" value="toggle_drawing_compliance">
                                         <input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>">
                                         <input type="hidden" name="ajax" value="1">
-                                        <label class="ios-toggle-wrap"><span class="ios-toggle-label">Соответствует условиям конкурса</span><span class="ios-toggle"><input type="checkbox" name="drawing_compliant" value="1" class="js-drawing-compliant-toggle" <?= isset($p['drawing_compliant']) && (int)$p['drawing_compliant'] === 1 ? 'checked' : '' ?>><span class="ios-toggle__slider"></span></span></label>
+                                        <label class="ios-toggle-wrap"><span class="ios-toggle-label">Соответствует условиям конкурса</span><span class="ios-toggle"><input type="checkbox" name="drawing_compliant" value="1" class="js-drawing-compliant-toggle" <?= isset($p['drawing_compliant']) && (int)$p['drawing_compliant'] === 1 ? 'checked' : '' ?> <?= $isComplianceLocked ? 'disabled aria-disabled="true"' : '' ?>><span class="ios-toggle__slider"></span></span></label>
                                         <label class="form-label mt-sm">Что исправить</label>
-                                        <textarea class="form-textarea js-drawing-comment" name="comment" rows="2" placeholder="Укажите, что нужно исправить"><?= e($p['drawing_comment'] ?? '') ?></textarea>
+                                        <textarea class="form-textarea js-drawing-comment" name="comment" rows="2" placeholder="Укажите, что нужно исправить" <?= $isComplianceLocked ? 'disabled aria-disabled="true"' : '' ?>><?= e($p['drawing_comment'] ?? '') ?></textarea>
                                     </form>
                                 </section>
                                 <section class="work-section"><h4>Действия по работе</h4>
@@ -736,8 +737,10 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                 <hr class="application-separator">
                 <h3 class="application-card-title">Действия с заявкой</h3>
                 <div class="application-sidebar-actions">
-                    <form method="POST" onsubmit="return confirm('Отправить заявку на корректировку?');"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning"><i class="fas fa-edit"></i> На корректировку</button></form>
-                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger"><i class="fas fa-times-circle"></i> Отклонить</button></form>
+                    <?php if (!$isApplicationApproved): ?>
+                    <form method="POST" class="js-application-secondary-action" onsubmit="return confirm('Отправить заявку на корректировку?');"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning"><i class="fas fa-edit"></i> На корректировку</button></form>
+                    <form method="POST" class="js-application-secondary-action"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger"><i class="fas fa-times-circle"></i> Отклонить</button></form>
+                    <?php endif; ?>
                     <form method="POST" id="approveApplicationForm">
                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -754,6 +757,9 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     >
                         <i class="fas <?= e($approveButtonIcon) ?>"></i> <?= e($approveButtonText) ?>
                     </button>
+                    <?php if ($isApplicationApproved): ?>
+                        <a href="/admin/applications" class="btn btn--ghost"><i class="fas fa-list"></i> Закрыть</a>
+                    <?php endif; ?>
                 </div>
                 <?php if ($hasNonCompliantDrawings): ?><p class="application-sidebar-hint">Недоступно: есть работы, не соответствующие условиям конкурса.</p><?php endif; ?>
             </div>
@@ -1064,6 +1070,11 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
       compliantToggle.checked = workStatus === 'accepted';
     }
     syncApproveApplicationButtonState();
+
+    if (workStatus === 'accepted') {
+      location.reload();
+      return;
+    }
    }
 
    if (action === 'download_participant_diploma' && data.download_url) {
@@ -1160,10 +1171,6 @@ function ensureComplianceFieldsAvailable() {
    section.style.removeProperty('display');
    section.style.removeProperty('visibility');
   }
-  form.querySelectorAll('input, textarea, select').forEach((field) => {
-   field.disabled = false;
-   field.removeAttribute('aria-disabled');
-  });
  });
 }
 
@@ -1247,16 +1254,9 @@ ensureComplianceFieldsAvailable();
         skipButton.addEventListener('click', closeModal);
     }
 
-    approveButton.addEventListener('click', async () => {
-        if (approveButton.disabled || !applicationId) {
+    const openPublishModal = async () => {
+        if (!applicationId) {
             return;
-        }
-        if (approveButton.dataset.approved !== '1') {
-            const approveForm = document.getElementById('approveApplicationForm');
-            if (approveForm) {
-                approveForm.submit();
-                return;
-            }
         }
         modal.classList.add('active');
         if (previewBox) {
@@ -1289,6 +1289,26 @@ ensureComplianceFieldsAvailable();
             }
             showStatus(error.message || 'Ошибка загрузки данных публикации.', 'error');
         }
+    };
+
+    approveButton.addEventListener('click', async () => {
+        if (approveButton.disabled || !applicationId) {
+            return;
+        }
+        if (approveButton.dataset.approved !== '1') {
+            approveButton.disabled = true;
+            approveButton.setAttribute('aria-disabled', 'true');
+            approveButton.setAttribute('tabindex', '-1');
+            document.querySelectorAll('.js-application-secondary-action').forEach((secondaryAction) => {
+                secondaryAction.style.display = 'none';
+            });
+            const approveForm = document.getElementById('approveApplicationForm');
+            if (approveForm) {
+                approveForm.submit();
+                return;
+            }
+        }
+        await openPublishModal();
     });
 
     if (publishButton) {
@@ -1338,7 +1358,7 @@ ensureComplianceFieldsAvailable();
     }
 
     if (<?= $showVkPublishPrompt ? 'true' : 'false' ?>) {
-        approveButton.click();
+        openPublishModal();
     }
 })();
 </script>

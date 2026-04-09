@@ -143,12 +143,8 @@ $filteredApplications = array_values(array_filter(
                         if (!$hasDiplomas && mapWorkStatusToDiplomaType((string)($work['status'] ?? 'pending')) !== null) {
                             $hasDiplomas = true;
                         }
-                        if ($imagePath === '/public/contest-hero-placeholder.svg') {
-                            if (!empty($work['image_path'])) {
-                                $imagePath = (string)$work['image_path'];
-                            } elseif (!empty($work['drawing_file'])) {
-                                $imagePath = (string)(getParticipantDrawingWebPath($user['email'] ?? '', $work['drawing_file']) ?? $imagePath);
-                            }
+                        if ($imagePath === '/public/contest-hero-placeholder.svg' && !empty($work['drawing_file'])) {
+                            $imagePath = (string)$work['drawing_file'];
                         }
                     }
 
