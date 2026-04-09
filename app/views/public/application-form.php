@@ -42,6 +42,22 @@ if ($editingApplicationId > 0) {
     $stmt = $pdo->prepare("SELECT * FROM participants WHERE application_id = ? ORDER BY id ASC");
     $stmt->execute([$editingApplicationId]);
     $editingParticipants = $stmt->fetchAll();
+
+    if (!empty($editingParticipants)) {
+        $workStmt = $pdo->prepare("SELECT participant_id, title FROM works WHERE application_id = ?");
+        $workStmt->execute([$editingApplicationId]);
+        $workTitles = [];
+        foreach ($workStmt->fetchAll() as $workRow) {
+            $workTitles[(int)($workRow['participant_id'] ?? 0)] = (string)($workRow['title'] ?? '');
+        }
+        foreach ($editingParticipants as &$editingParticipant) {
+            $participantId = (int)($editingParticipant['id'] ?? 0);
+            if ($participantId > 0) {
+                $editingParticipant['work_title'] = $workTitles[$participantId] ?? '';
+            }
+        }
+        unset($editingParticipant);
+    }
 }
 
 // Директория пользователя для рисунков
@@ -239,6 +255,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if (empty($fio)) continue;
                     
  $age = intval($participant['age'] ??0);
+ $workTitle = trim((string)($participant['work_title'] ?? ''));
                     
  // Обработка временного файла рисунка
  $drawing_file = null;
@@ -295,6 +312,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $org_email,
  $drawing_file
  ]);
+ $participant_id = (int)$pdo->lastInsertId();
+
+ if ($participant_id > 0) {
+ try {
+ $workStmt = $pdo->prepare("
+ INSERT INTO works (contest_id, application_id, participant_id, title, image_path, status, created_at, updated_at)
+ VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW())
+ ON DUPLICATE KEY UPDATE
+ title = COALESCE(NULLIF(VALUES(title), ''), works.title),
+ image_path = VALUES(image_path),
+ updated_at = NOW()
+ ");
+ $workStmt->execute([
+ (int)$contest_id,
+ (int)$application_id,
+ $participant_id,
+ $workTitle !== '' ? $workTitle : $fio,
+ (string)$drawing_file
+ ]);
+ } catch (Throwable $ignored) {
+ }
+ }
                     
  $participant_count++;
  }
@@ -540,6 +579,7 @@ generateCSRFToken();
          'name' => $parts[1] ?? '',
          'patronymic' => $parts[2] ?? '',
          'age' => $p['age'] ?? '',
+         'work_title' => $p['work_title'] ?? '',
          'temp_file' => '',
          'existing_drawing_file' => $p['drawing_file'] ?? '',
          'preview' => !empty($p['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $p['drawing_file']) : null,
@@ -607,6 +647,10 @@ generateCSRFToken();
 <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
 <div class="upload-area__title" id="upload_title_${index}">Нажмите или перетащите рисунок</div>
 <div class="upload-area__hint" id="upload_hint_${index}">JPG, PNG, GIF, WebP, TIF. Можно заменить позже.</div>
+</div>
+<div class="form-group">
+<label class="form-label">Название рисунка</label>
+<input type="text" name="participants[${index}][work_title]" class="form-input" value="${data?.work_title || ''}" placeholder="Например: «Моя любимая весна»">
 </div>
  <div class="drawing-preview-wrap">${previewHtml}</div>
 </div>
