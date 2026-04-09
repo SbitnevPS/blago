@@ -782,6 +782,7 @@ $currentPage = 'applications';
         <p class="participant-work-card__hint"><?= e(getWorkStatusHint($workStatus)) ?></p>
 
         <div class="participant-work-card__meta">
+            <span><strong>ID участника:</strong> #<?= (int) ($participant['participant_id'] ?? 0) ?></span>
             <span><strong>Возраст:</strong> <?= htmlspecialchars($participant['age'] ?? '—') ?></span>
             <span><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?? '—') ?></span>
             <span><strong>Организация:</strong> <?= htmlspecialchars($participant['organization_name'] ?? '—') ?></span>

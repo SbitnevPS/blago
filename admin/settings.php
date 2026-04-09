@@ -413,7 +413,7 @@ unset($_SESSION['success_message']);
                         <div class="form-group">
                             <label class="form-label">Шаблон подписи поста VK</label>
                             <textarea name="vk_publication_post_template" class="form-input" rows="8"><?= htmlspecialchars($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()) ?></textarea>
-                            <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {work_title}, {contest_title}, {nomination}, {age_category}</div>
+                            <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {work_title}, {contest_title}, {nomination}, {participant_age}, {age_category}</div>
                         </div>
                     </div>
                     <div class="settings-actions">

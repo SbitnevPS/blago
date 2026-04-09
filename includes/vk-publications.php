@@ -361,6 +361,7 @@ function defaultVkPostTemplate(): string
         . "🖼 {work_title}\n"
         . "🏆 {contest_title}\n"
         . "Номинация: {nomination}\n"
+        . "Возраст: {participant_age}\n"
         . "Возрастная категория: {age_category}";
 }
 
@@ -533,6 +534,7 @@ function buildVkPostText(array $workRow, string $template): string
         '{work_title}' => trim((string) ($workRow['work_title'] ?? '')),
         '{contest_title}' => trim((string) ($workRow['contest_title'] ?? '')),
         '{nomination}' => '',
+        '{participant_age}' => (int) ($workRow['participant_age'] ?? 0) > 0 ? (string) ((int) $workRow['participant_age']) : '',
         '{age_category}' => resolveAgeCategory((int) ($workRow['participant_age'] ?? 0)),
     ];
 

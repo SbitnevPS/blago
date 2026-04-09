@@ -30,8 +30,9 @@ if ($participantId > 0) {
     $where[] = 'p.id = ?';
     $params[] = $participantId;
 } elseif ($participantQuery !== '') {
-    $where[] = '(p.fio LIKE ? OR p.region LIKE ? OR u.email LIKE ?)';
+    $where[] = '(p.fio LIKE ? OR p.region LIKE ? OR u.email LIKE ? OR CAST(p.id AS CHAR) LIKE ?)';
     $searchTerm = '%' . $participantQuery . '%';
+    $params[] = $searchTerm;
     $params[] = $searchTerm;
     $params[] = $searchTerm;
     $params[] = $searchTerm;
@@ -79,7 +80,7 @@ require_once __DIR__ . '/includes/header.php';
                     name="participant_query"
                     id="participantSearchInput"
                     class="form-input"
-                    placeholder="ФИО участника, регион или email заявителя"
+                    placeholder="ID, ФИО участника, регион или email заявителя"
                     value="<?= htmlspecialchars($participantQuery) ?>"
                     autocomplete="off">
                 <input type="hidden" name="participant_id" id="participantId" value="<?= (int) $participantId ?>">
@@ -101,6 +102,7 @@ require_once __DIR__ . '/includes/header.php';
         <table class="table">
             <thead>
                 <tr>
+                    <th>ID участника</th>
                     <th>ФИО участника</th>
                     <th>Возраст</th>
                     <th>Email заявки</th>
@@ -117,6 +119,7 @@ require_once __DIR__ . '/includes/header.php';
                         $rowStyle = $isRevisionState ? 'background:#FEF9C3;' : ($statusMeta['row_style'] ?? '');
                     ?>
                     <tr style="<?= $rowStyle ?>">
+                        <td data-label="ID участника">#<?= (int) $participant['id'] ?></td>
                         <td data-label="ФИО участника"><?= htmlspecialchars($participant['fio'] ?: '—') ?></td>
                         <td data-label="Возраст"><?= (int) ($participant['age'] ?? 0) ?: '—' ?></td>
                         <td data-label="Email заявки"><?= htmlspecialchars($participant['applicant_email'] ?: ($participant['organization_email'] ?: '—')) ?></td>
@@ -136,7 +139,7 @@ require_once __DIR__ . '/includes/header.php';
 
                 <?php if (empty($participants)): ?>
                     <tr>
-                        <td colspan="6" class="text-center text-secondary" style="padding: 36px;">Участники не найдены.</td>
+                        <td colspan="7" class="text-center text-secondary" style="padding: 36px;">Участники не найдены.</td>
                     </tr>
                 <?php endif; ?>
             </tbody>
@@ -190,11 +193,13 @@ require_once __DIR__ . '/includes/header.php';
             const fullName = `${item.fio || ''}`.trim() || 'Без имени';
             const region = item.region ? `Регион: ${item.region}` : 'Регион: —';
             const email = item.email || 'Email не указан';
-            const safeName = escapeHtml(fullName);
+            const labelName = `#${item.id} · ${fullName}`;
+            const safeName = escapeHtml(labelName);
+            const safeValueName = escapeHtml(labelName);
             const safeRegion = escapeHtml(region);
             const safeEmail = escapeHtml(email);
             return `
-                <button type="button" class="user-results__item" data-id="${item.id}" data-name="${safeName}">
+                <button type="button" class="user-results__item" data-id="${item.id}" data-name="${safeValueName}">
                     <div class="user-results__name">${safeName}</div>
                     <div class="user-results__email">${safeRegion} · ${safeEmail}</div>
                 </button>
