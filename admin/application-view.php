@@ -500,258 +500,222 @@ $breadcrumb = 'Заявки / Просмотр';
 require_once __DIR__ . '/includes/header.php';
 ?>
 
-<div class="flex items-center gap-md mb-lg">
-    <a href="/admin/applications" class="btn btn--ghost">
-        <i class="fas fa-arrow-left"></i> Назад
-    </a>
-</div>
+<?php
+$statusMeta = getApplicationStatusMeta($application['status']);
+$submittedAt = !empty($application['created_at']) ? date('d.m.Y H:i', strtotime($application['created_at'])) : '—';
+$applicantName = trim((string) (($application['name'] ?? '') . ' ' . ($application['surname'] ?? ''))) ?: '—';
+$paymentReceipt = trim((string) ($application['payment_receipt'] ?? ''));
+$paymentReceiptName = $paymentReceipt !== '' ? basename($paymentReceipt) : '—';
+$workStats = ['total' => count($works), 'accepted' => 0, 'reviewed' => 0, 'rejected' => 0];
+$nonCompliantCount = 0;
+foreach ($works as $workRow) {
+    $status = (string) ($workRow['status'] ?? 'pending');
+    if ($status === 'accepted') {
+        $workStats['accepted']++;
+    } elseif ($status === 'reviewed') {
+        $workStats['reviewed']++;
+    } elseif ($status === 'rejected') {
+        $workStats['rejected']++;
+    }
+    if ($hasDrawingCompliantColumn && (int) ($workRow['drawing_compliant'] ?? 1) === 0) {
+        $nonCompliantCount++;
+    }
+}
+$latestMessageStmt = $pdo->prepare("
+    SELECT subject, priority, created_at
+    FROM admin_messages
+    WHERE user_id = ? AND admin_id = ?
+    ORDER BY created_at DESC
+    LIMIT 1
+");
+$latestMessageStmt->execute([(int) $application['user_id'], (int) $admin['id']]);
+$latestMessage = $latestMessageStmt->fetch() ?: null;
+?>
 
-<div class="application-top-actions mb-lg">
-    <button type="button" class="btn application-top-actions__btn application-top-actions__btn--message" onclick="openMessageModal()">
-        <i class="fas fa-envelope"></i> Сообщение
-    </button>
-    <form method="POST">
-        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-        <input type="hidden" name="action" value="cancel_application">
-        <button type="submit" class="btn application-top-actions__btn application-top-actions__btn--cancel">
-            <i class="fas fa-ban"></i> Отмена
-        </button>
-    </form>
-    <form method="POST" onsubmit="return confirm('Удалить заявку?');">
-        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-        <input type="hidden" name="action" value="delete">
-        <button type="submit" class="btn application-top-actions__btn application-top-actions__btn--delete">
-            <i class="fas fa-trash"></i> Удалить
-        </button>
-    </form>
-</div>
-
-<!-- Сообщения -->
-<?php if (isset($_SESSION['success_message'])): ?>
-<div class="alert alert--success alert--permanent mb-lg js-toast-alert">
-    <i class="fas fa-check-circle alert__icon"></i>
-    <div class="alert__content">
-        <div class="alert__message"><?= htmlspecialchars($_SESSION['success_message']) ?></div>
-    </div>
-    <button type="button" class="btn-close"></button>
-</div>
-<?php unset($_SESSION['success_message']); endif; ?>
-
-<!-- Информация о заявке -->
-<div class="card mb-lg">
-<div class="card__header application-header">
-<div class="flex justify-between items-center" style="flex-wrap: wrap; gap:16px;">
-<div>
-<h2 style="font-size:20px; margin-bottom:4px;">Заявка #<?= e($application_id) ?></h2>
-<p class="text-secondary"><?= htmlspecialchars($application['contest_title']) ?></p>
-</div>
-<div style="flex-shrink:0;">
-<?php $statusMeta = getApplicationStatusMeta($application['status']); ?>
-<span class="badge <?= $statusMeta['badge_class'] ?>" style="font-size:14px; padding:8px 12px;">
-    <?= htmlspecialchars($statusMeta['label']) ?>
-</span>
-</div>
-</div>
-</div>
+<section class="application-hero card mb-lg">
     <div class="card__body">
-<div class="form-row">
-<div class="form-group">
-<label class="form-label">Заявитель</label>
-<div class="flex items-center gap-md">
- <?php if (!empty($application['avatar_url'])): ?>
-<img src="<?= htmlspecialchars($application['avatar_url']) ?>" 
- style="width:40px; height:40px; border-radius:50%;">
- <?php else: ?>
-<div style="width:40px; height:40px; border-radius:50%; background: #EEF2FF; display: flex; align-items: center; justify-content: center; color: #6366F1;">
-<i class="fas fa-user"></i>
-</div>
- <?php endif; ?>
-<div>
-<p class="font-semibold"><?= htmlspecialchars(($application['name'] ?? '') . ' ' . ($application['surname'] ?? '')) ?></p>
-<p class="text-secondary" style="font-size:13px;"><?= htmlspecialchars($application['email'] ?: 'Email не указан') ?></p>
-</div>
-</div>
-</div>
-<div class="form-group">
-<label class="form-label">ФИО родителя/куратора</label>
-<p><?= htmlspecialchars($application['parent_fio'] ?: '—') ?></p>
-</div>
-<div class="form-group">
-<label class="form-label">Дата подачи</label>
-<p><?= date('d.m.Y H:i', strtotime($application['created_at'])) ?></p>
-</div>
-</div>
-        
- <!-- Данные организации заявителя -->
- <?php if ($application['organization_region'] || $application['organization_name'] || $application['organization_address']): ?>
-<div class="form-group mt-md">
-<label class="form-label">Место обучения</label>
- <?php if ($application['organization_region']): ?>
-<p><strong>Регион:</strong> <?= htmlspecialchars($application['organization_region']) ?></p>
- <?php endif; ?>
- <?php if ($application['organization_name']): ?>
-<p><strong>Организация:</strong> <?= htmlspecialchars($application['organization_name']) ?></p>
- <?php endif; ?>
- <?php if ($application['organization_address']): ?>
-<p><strong>Адрес:</strong> <?= htmlspecialchars($application['organization_address']) ?></p>
- <?php endif; ?>
-</div>
- <?php endif; ?>
-        
- <?php if ($application['source_info']): ?>
-<div class="form-group mt-md">
-<label class="form-label">Откуда узнал о конкурсе</label>
-<p><?= htmlspecialchars($application['source_info']) ?></p>
-</div>
- <?php endif; ?>
-
- <?php if ($application['colleagues_info']): ?>
-<div class="form-group mt-md">
-<label class="form-label">Информация о коллегах</label>
-<p><?= htmlspecialchars($application['colleagues_info']) ?></p>
-</div>
- <?php endif; ?>
-
- <?php if ($application['recommendations_wishes']): ?>
-<div class="form-group mt-md">
-<label class="form-label">Рекомендации и пожелания</label>
-<p><?= nl2br(htmlspecialchars($application['recommendations_wishes'])) ?></p>
-</div>
- <?php endif; ?>
-        
- <?php if ($application['payment_receipt']): ?>
-<div class="form-group mt-md">
-<label class="form-label">Квитанция об оплате</label>
-<a href="/uploads/documents/<?= htmlspecialchars($application['payment_receipt']) ?>" 
- target="_blank" class="btn btn--secondary btn--sm">
-<i class="fas fa-file-image"></i> Просмотреть
-</a>
-</div>
- <?php endif; ?>
-</div>
-</div>
-
-<!-- Участники -->
-<h4 class="mb-lg">Количество работ - <?= count($works) ?></h4>
-
-<?php foreach ($works as $i => $p): ?>
-<div class="card mb-lg">
-    <div class="card__header">
-        <div class="flex items-center w-100" style="justify-content: space-between; gap: 16px; flex-wrap: wrap;">
-            <h3>Работа #<?= $i + 1 ?></h3>
-            <div class="flex items-center" style="gap: 12px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end;">
-                <span class="badge <?= getWorkStatusBadgeClass((string)($p['status'] ?? 'pending')) ?>" data-work-status-badge>
-                    <?= e(getWorkStatusLabel((string)($p['status'] ?? 'pending'))) ?>
-                </span>
+        <div class="application-hero__head">
+            <div>
+                <h2 class="application-hero__title">Заявка #<?= e($application_id) ?></h2>
+                <p class="application-hero__subtitle"><?= e($application['contest_title']) ?></p>
             </div>
+            <span class="badge application-hero__status <?= $statusMeta['badge_class'] ?>"><?= e($statusMeta['label']) ?></span>
         </div>
-    </div>
-<div class="card__body">
-<div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;">
- <?php if ($p['drawing_file']): ?>
-        <div style="flex:0 0 360px; max-width:100%;">
-            <label class="form-label">Рисунок</label>
-            <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
-            <div style="max-width: 360px;">
-                <img src="<?= htmlspecialchars($drawingUrl) ?>" 
-                     data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>"
-                     class="js-admin-drawing"
-                     alt="Рисунок участника" 
-                     style="width: 100%; border-radius: var(--radius-lg); border: 2px solid var(--color-border);">
-            </div>
-            <div class="flex gap-sm mt-md" style="flex-wrap: wrap;">
-                <button type="button" class="btn btn--secondary js-open-editor" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" data-image-src="<?= htmlspecialchars($drawingUrl) ?>">
-                    <i class="fas fa-crop-alt"></i> Редактировать рисунок
-                </button>
-            </div>
+        <div class="application-hero__meta">
+            <span class="application-meta-chip"><i class="fas fa-calendar-alt"></i>Подана: <?= e($submittedAt) ?></span>
+            <span class="application-meta-chip"><i class="fas fa-user"></i><?= e($applicantName) ?></span>
+            <a class="application-meta-chip" href="mailto:<?= e($application['email'] ?? '') ?>"><i class="fas fa-envelope"></i><?= e($application['email'] ?: '—') ?></a>
+            <span class="application-meta-chip"><i class="fas fa-images"></i>Работ: <?= (int) $workStats['total'] ?></span>
         </div>
-        <?php else: ?>
-        <div style="flex:0 0 360px; max-width:100%;">
-            <label class="form-label">Рисунок</label>
-            <div class="drawing-empty-state">
-                <i class="fas fa-image"></i>
-                <strong>Рисунок отсутствует</strong>
-                <span>Участник ещё не загрузил файл рисунка.</span>
-            </div>
+        <div class="application-hero__actions">
+            <a href="/admin/applications" class="btn btn--ghost"><i class="fas fa-arrow-left"></i> К списку</a>
+            <a href="/admin/user/<?= (int) $application['user_id'] ?>" class="btn btn--secondary"><i class="fas fa-user-circle"></i> Профиль заявителя</a>
+            <button type="button" class="btn btn--primary" onclick="openMessageModal()"><i class="fas fa-paper-plane"></i> Связаться с заявителем</button>
+            <a href="#application-actions" class="btn btn--ghost"><i class="fas fa-bolt"></i> К действиям</a>
+            <form method="POST">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="cancel_application">
+                <button type="submit" class="btn application-btn application-btn--warning"><i class="fas fa-ban"></i> Отмена</button>
+            </form>
+            <form method="POST" onsubmit="return confirm('Удалить заявку?');">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="delete">
+                <button type="submit" class="btn application-btn application-btn--danger"><i class="fas fa-trash"></i> Удалить</button>
+            </form>
         </div>
+        <?php if ($latestMessage): ?>
+            <div class="application-message-status">
+                <i class="fas fa-check-circle"></i>
+                Последнее сообщение отправлено: <strong><?= e(date('d.m.Y H:i', strtotime((string) $latestMessage['created_at']))) ?></strong>,
+                «<?= e($latestMessage['subject']) ?>».
+            </div>
         <?php endif; ?>
-
-    <div style="flex:1; min-width:280px; max-width:680px;">
-        <div class="form-row" style="gap:20px;">
-            <div class="form-group">
-                <label class="form-label">ФИО участника</label>
-                <p class="font-semibold"><?= htmlspecialchars($p['fio']) ?></p>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Возраст</label>
-                <p><?= $p['age'] ?> лет</p>
-            </div>
-        </div>
-
-        <div class="form-group" style="margin-top:16px;">
-            <label class="form-label">Регион</label>
-            <p><?= htmlspecialchars($p['region'] ?? '—') ?></p>
-        </div>
-        <div class="form-group" style="margin-top:16px;">
-            <label class="form-label">Организация</label>
-            <p><?= htmlspecialchars($p['organization_name'] ?? '—') ?></p>
-        </div>
-        <div class="form-group" style="margin-top:16px;">
-            <label class="form-label">Адрес организации</label>
-            <p><?= htmlspecialchars($p['organization_address'] ?? '—') ?></p>
-        </div>
-
-        <div class="flex gap-sm mt-md" style="flex-wrap:wrap;" data-work-controls data-work-id="<?= (int) $p['id'] ?>">
-            <?php $canAcceptWork = !$isApplicationApproved && ((string) ($p['status'] ?? 'pending')) !== 'accepted'; ?>
-            <form method="POST" class="js-work-async-form" data-accept-work-form style="<?= $canAcceptWork ? '' : 'display:none;' ?>"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--primary btn--sm" type="submit">Принять к участию</button></form>
-            <div class="flex gap-sm" style="flex-wrap:wrap; display:<?= mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null ? 'flex' : 'none' ?>;" data-diploma-actions>
-                <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--primary btn--sm" type="submit">Скачать диплом</button></form>
-                <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--secondary btn--sm" type="submit">Отправить по почте</button></form>
-                <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="link_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--ghost btn--sm" type="submit">Получить ссылку</button></form>
-            </div>
-        </div>
-
-        <form method="POST" class="mt-md js-drawing-compliance-form" style="border:1px solid #E5E7EB; padding:16px; border-radius:12px; background:#F8FAFC;">
-            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-            <input type="hidden" name="action" value="toggle_drawing_compliance">
-            <input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>">
-            <input type="hidden" name="ajax" value="1">
-            <div class="flex gap-md items-center" style="flex-wrap:wrap;">
-                <label class="ios-toggle-wrap">
-                    <span class="ios-toggle-label">Соответствует условиям конкурса</span>
-                    <span class="ios-toggle">
-                        <input type="checkbox" name="drawing_compliant" value="1" class="js-drawing-compliant-toggle" <?= isset($p['drawing_compliant']) && (int)$p['drawing_compliant'] === 1 ? 'checked' : '' ?>>
-                        <span class="ios-toggle__slider"></span>
-                    </span>
-                </label>
-            </div>
-            <div class="mt-sm">
-                <label class="form-label">Что исправить (если не соответствует)</label>
-                <textarea class="form-textarea js-drawing-comment" name="comment" rows="2" placeholder="Укажите, что нужно исправить"><?= htmlspecialchars($p['drawing_comment'] ?? '') ?></textarea>
-            </div>
-        </form>
     </div>
-</div>
-    </div>
-</div>
-<?php endforeach; ?>
+</section>
 
-<?php if (empty($works)): ?>
-<div class="card">
-<div class="card__body text-center" style="padding:40px;">
-<p class="text-secondary">Нет участников</p>
-</div>
-</div>
+<nav class="application-anchor-nav mb-lg">
+    <a href="#application-overview">Общая информация</a>
+    <a href="#application-works">Работы</a>
+    <a href="#application-actions">Действия</a>
+</nav>
+
+<?php if (isset($_SESSION['success_message'])): ?>
+    <div class="alert alert--success mb-md"><i class="fas fa-check-circle alert__icon"></i><div class="alert__content"><div class="alert__message"><?= htmlspecialchars($_SESSION['success_message']) ?></div></div></div>
+<?php unset($_SESSION['success_message']); endif; ?>
+<?php if (isset($_SESSION['error_message'])): ?>
+    <div class="alert alert--error mb-md"><i class="fas fa-times-circle alert__icon"></i><div class="alert__content"><div class="alert__message"><?= htmlspecialchars($_SESSION['error_message']) ?></div></div></div>
+<?php unset($_SESSION['error_message']); endif; ?>
+<?php if ($hasNonCompliantDrawings): ?>
+    <div class="alert alert--warning mb-lg">
+        <i class="fas fa-exclamation-triangle alert__icon"></i>
+        <div class="alert__content"><div class="alert__message">Заявку нельзя принять: есть работы, отмеченные как несоответствующие условиям конкурса.</div></div>
+    </div>
 <?php endif; ?>
 
-<div class="card mb-lg">
-    <div class="card__body">
-        <div class="application-bottom-actions">
-            <div class="application-bottom-actions__panel application-bottom-actions__panel--diplomas">
-                <h4 class="application-bottom-actions__title">Дипломы</h4>
+<div class="application-layout">
+    <div class="application-main">
+        <section id="application-overview" class="application-section mb-lg">
+            <div class="application-info-grid">
+                <article class="card"><div class="card__body">
+                    <h3 class="application-card-title">Заявитель</h3>
+                    <div class="application-applicant">
+                        <?php if (!empty($application['avatar_url'])): ?>
+                            <img src="<?= e($application['avatar_url']) ?>" class="application-applicant__avatar" alt="Аватар заявителя">
+                        <?php else: ?>
+                            <div class="application-applicant__avatar application-applicant__avatar--empty"><i class="fas fa-user"></i></div>
+                        <?php endif; ?>
+                        <div><div class="font-semibold"><?= e($applicantName) ?></div><a href="mailto:<?= e($application['email'] ?? '') ?>" class="text-secondary"><?= e($application['email'] ?: '—') ?></a></div>
+                    </div>
+                    <dl class="application-kv-list"><dt>ФИО родителя/куратора</dt><dd><?= e($application['parent_fio'] ?: '—') ?></dd></dl>
+                </div></article>
+                <article class="card"><div class="card__body">
+                    <h3 class="application-card-title">Заявка</h3>
+                    <dl class="application-kv-list">
+                        <dt>Номер</dt><dd>#<?= (int) $application_id ?></dd>
+                        <dt>Конкурс</dt><dd><?= e($application['contest_title'] ?: '—') ?></dd>
+                        <dt>Статус</dt><dd><span class="badge <?= e($statusMeta['badge_class']) ?>"><?= e($statusMeta['label']) ?></span></dd>
+                        <dt>Дата подачи</dt><dd><?= e($submittedAt) ?></dd>
+                    </dl>
+                </div></article>
+                <article class="card"><div class="card__body">
+                    <h3 class="application-card-title">Организация</h3>
+                    <dl class="application-kv-list">
+                        <dt>Регион</dt><dd><?= e($application['organization_region'] ?: '—') ?></dd>
+                        <dt>Название</dt><dd><?= e($application['organization_name'] ?: '—') ?></dd>
+                        <dt>Адрес</dt><dd><?= e($application['organization_address'] ?: '—') ?></dd>
+                    </dl>
+                </div></article>
+                <article class="card"><div class="card__body">
+                    <h3 class="application-card-title">Дополнительная информация</h3>
+                    <dl class="application-kv-list">
+                        <dt>Источник</dt><dd><?= e($application['source_info'] ?: '—') ?></dd>
+                        <dt>Коллеги</dt><dd><?= e($application['colleagues_info'] ?: '—') ?></dd>
+                    </dl>
+                    <div class="application-file-block">
+                        <i class="fas fa-file-invoice"></i>
+                        <?php if ($paymentReceipt !== ''): ?>
+                            <div><strong><?= e($paymentReceiptName) ?></strong><a href="/uploads/documents/<?= e($paymentReceipt) ?>" target="_blank" class="application-file-block__link">Открыть квитанцию</a></div>
+                        <?php else: ?>
+                            <div><strong>Квитанция не приложена</strong></div>
+                        <?php endif; ?>
+                    </div>
+                </div></article>
+            </div>
+        </section>
+
+        <section id="application-works" class="application-section mb-lg">
+            <div class="card mb-lg"><div class="card__body">
+                <h3 class="application-card-title">Сводка по работам</h3>
+                <div class="application-work-summary">
+                    <div class="application-summary-item"><span>Всего</span><strong><?= (int) $workStats['total'] ?></strong></div>
+                    <div class="application-summary-item"><span>Принято</span><strong><?= (int) $workStats['accepted'] ?></strong></div>
+                    <div class="application-summary-item"><span>На корректировке</span><strong><?= (int) $workStats['reviewed'] ?></strong></div>
+                    <div class="application-summary-item"><span>Отклонено/не соответствует</span><strong><?= (int) ($workStats['rejected'] + $nonCompliantCount) ?></strong></div>
+                </div>
+                <?php if ($hasNonCompliantDrawings): ?><p class="application-summary-warning">Есть блокирующие причины для принятия всей заявки.</p><?php endif; ?>
+            </div></div>
+
+            <?php foreach ($works as $i => $p): ?>
+                <article class="card mb-lg work-card">
+                    <div class="card__header work-card__header">
+                        <div><h3>Работа #<?= $i + 1 ?></h3><p class="text-secondary"><?= e($p['fio'] ?: 'Участник не указан') ?></p></div>
+                        <div class="work-card__header-actions">
+                            <span class="badge <?= getWorkStatusBadgeClass((string)($p['status'] ?? 'pending')) ?>" data-work-status-badge><?= e(getWorkStatusLabel((string)($p['status'] ?? 'pending'))) ?></span>
+                            <?php if (!empty($p['participant_id'])): ?><a href="/admin/participant/<?= (int) $p['participant_id'] ?>" class="btn btn--ghost btn--sm"><i class="fas fa-user"></i> Профиль</a><?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="card__body">
+                        <div class="work-card__layout">
+                            <div class="work-card__preview">
+                                <?php if ($p['drawing_file']): ?>
+                                    <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
+                                    <img src="<?= e($drawingUrl) ?>" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" class="js-admin-drawing work-card__image" alt="Рисунок участника">
+                                    <button type="button" class="btn btn--secondary js-open-editor mt-sm" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" data-image-src="<?= e($drawingUrl) ?>"><i class="fas fa-crop-alt"></i> Редактировать</button>
+                                <?php else: ?>
+                                    <div class="drawing-empty-state"><i class="fas fa-image"></i><strong>Рисунок отсутствует</strong><span>Участник ещё не загрузил файл.</span></div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="work-card__details">
+                                <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd></dl></section>
+                                <section class="work-section"><h4>Организация</h4><dl class="application-kv-list"><dt>Организация</dt><dd><?= e($p['organization_name'] ?? '—') ?></dd><dt>Адрес</dt><dd><?= e($p['organization_address'] ?? '—') ?></dd></dl></section>
+                                <section class="work-section"><h4>Проверка работы</h4>
+                                    <form method="POST" class="js-drawing-compliance-form work-compliance-form">
+                                        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                                        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                                        <input type="hidden" name="action" value="toggle_drawing_compliance">
+                                        <input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>">
+                                        <input type="hidden" name="ajax" value="1">
+                                        <label class="ios-toggle-wrap"><span class="ios-toggle-label">Соответствует условиям конкурса</span><span class="ios-toggle"><input type="checkbox" name="drawing_compliant" value="1" class="js-drawing-compliant-toggle" <?= isset($p['drawing_compliant']) && (int)$p['drawing_compliant'] === 1 ? 'checked' : '' ?>><span class="ios-toggle__slider"></span></span></label>
+                                        <label class="form-label mt-sm">Что исправить</label>
+                                        <textarea class="form-textarea js-drawing-comment" name="comment" rows="2" placeholder="Укажите, что нужно исправить"><?= e($p['drawing_comment'] ?? '') ?></textarea>
+                                    </form>
+                                </section>
+                                <section class="work-section"><h4>Действия по работе</h4>
+                                    <div class="work-actions" data-work-controls data-work-id="<?= (int) $p['id'] ?>">
+                                        <?php $canAcceptWork = !$isApplicationApproved && ((string) ($p['status'] ?? 'pending')) !== 'accepted'; ?>
+                                        <form method="POST" class="js-work-async-form" data-accept-work-form style="<?= $canAcceptWork ? '' : 'display:none;' ?>"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--primary btn--sm" type="submit">Принять работу</button></form>
+                                        <div class="work-diploma-actions" style="display:<?= mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null ? 'flex' : 'none' ?>;" data-diploma-actions>
+                                            <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--primary btn--sm" type="submit">Скачать диплом</button></form>
+                                            <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--secondary btn--sm" type="submit">Отправить</button></form>
+                                            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="link_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--ghost btn--sm" type="submit">Ссылка</button></form>
+                                        </div>
+                                    </div>
+                                </section>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+            <?php if (empty($works)): ?><div class="card"><div class="card__body text-center"><div class="drawing-empty-state"><i class="fas fa-users-slash"></i><strong>Работ пока нет</strong><span>В заявке отсутствуют участники.</span></div></div></div><?php endif; ?>
+        </section>
+    </div>
+
+    <aside id="application-actions" class="application-sidebar">
+        <div class="card application-sticky-panel">
+            <div class="card__body">
+                <h3 class="application-card-title">Массовые действия по дипломам</h3>
                 <form method="POST" class="application-diploma-actions">
                     <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                     <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -760,52 +724,26 @@ require_once __DIR__ . '/includes/header.php';
                         <option value="generate_all_diplomas">Сформировать дипломы</option>
                         <option value="generate_and_send_all_diplomas">Сформировать и отправить</option>
                         <option value="collect_all_diploma_links">Получить ссылки</option>
-                        <option value="download_zip_diplomas">Скачать все дипломы (ZIP)</option>
+                        <option value="download_zip_diplomas">Скачать ZIP</option>
                     </select>
                     <button type="submit" class="btn btn--primary" id="bulkDiplomaActionRun">Выполнить</button>
                 </form>
-            </div>
-            <div class="application-bottom-actions__panel application-bottom-actions__panel--application">
-                <h4 class="application-bottom-actions__title">Действия с заявкой</h4>
-                <div class="flex gap-md" style="flex-wrap:wrap; justify-content:flex-end;">
-            <form method="POST" onsubmit="return confirm('Отправить заявку на корректировку?');">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="send_to_revision">
-                <button type="submit" class="btn" style="background:#FEF3C7; color:#92400E;">
-                    <i class="fas fa-edit"></i> Отправить на корректировку
-                </button>
-            </form>
-            <form method="POST">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="decline_application">
-                <button type="submit" class="btn" style="background:#FECACA; color:#991B1B;">
-                    <i class="fas fa-times-circle"></i> Заявка отклонена
-                </button>
-            </form>
-            <form method="POST">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="approve_application">
-                <button
-                    type="submit"
-                    class="btn"
-                    id="approveApplicationButton"
-                    style="background:#D1FAE5; color:#065F46;<?= $hasNonCompliantDrawings ? ' opacity:.55; cursor:not-allowed;' : '' ?>"
-                    <?= $hasNonCompliantDrawings ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>>
-                    <i class="fas fa-check"></i> Заявка принята
-                </button>
-            </form>
+                <hr class="application-separator">
+                <h3 class="application-card-title">Действия с заявкой</h3>
+                <div class="application-sidebar-actions">
+                    <form method="POST" onsubmit="return confirm('Отправить заявку на корректировку?');"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning"><i class="fas fa-edit"></i> На корректировку</button></form>
+                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger"><i class="fas fa-times-circle"></i> Отклонить</button></form>
+                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="approve_application"><button type="submit" class="btn application-btn application-btn--success" id="approveApplicationButton" <?= $hasNonCompliantDrawings ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>><i class="fas fa-check"></i> Принять заявку</button></form>
                 </div>
+                <?php if ($hasNonCompliantDrawings): ?><p class="application-sidebar-hint">Недоступно: есть работы, не соответствующие условиям конкурса.</p><?php endif; ?>
             </div>
         </div>
-    </div>
+    </aside>
 </div>
 
 <!-- Модальное окно отправки сообщения -->
 <div class="modal" id="messageModal">
-<div class="modal__content" style="max-width:550px;">
+<div class="modal__content application-message-modal">
 <div class="modal__header">
 <h3>Отправить сообщение пользователю</h3>
 <button type="button" class="modal__close" onclick="closeMessageModal()">&times;</button>
@@ -815,33 +753,38 @@ require_once __DIR__ . '/includes/header.php';
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
 <input type="hidden" name="action" value="send_message">
 <div class="modal__body">
-<div class="form-group">
-<label class="form-label">Пользователь</label>
-<p><strong><?= htmlspecialchars(($application['name'] ?? '') . ' ' . ($application['surname'] ?? '')) ?></strong> (<?= htmlspecialchars($application['email']) ?>)</p>
-</div>
+<div class="application-recipient-card"><i class="fas fa-user-circle"></i><div><strong><?= e($applicantName) ?></strong><span><?= e($application['email'] ?? '—') ?></span></div></div>
 <div class="form-group">
 <label class="form-label">Приоритет сообщения</label>
-<div class="priority-buttons" style="display:flex; gap:12px;">
-<label class="priority-btn priority-btn--normal" onclick="selectPriority('normal')" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; padding:14px10px; border-radius:10px; border:2px solid #E5E7EB; background:white; cursor:pointer;">
-<input type="radio" name="priority" value="normal" checked style="display:none;">
-<span style="color:#6B7280; font-size:20px;"><i class="fas fa-circle"></i></span>
-<span style="font-size:12px; font-weight:600;">Обычное</span>
+<div class="priority-buttons">
+<label class="priority-btn priority-btn--normal selected" onclick="selectPriority('normal')">
+<input type="radio" name="priority" value="normal" checked>
+<span class="priority-icon"><i class="fas fa-circle"></i></span>
+<span class="priority-text">Обычное</span>
 </label>
-<label class="priority-btn priority-btn--important" onclick="selectPriority('important')" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; padding:14px10px; border-radius:10px; border:2px solid #E5E7EB; background:white; cursor:pointer;">
-<input type="radio" name="priority" value="important" style="display:none;">
-<span style="color:#F59E0B; font-size:20px;"><i class="fas fa-exclamation-circle"></i></span>
-<span style="font-size:12px; font-weight:600;">Важное</span>
+<label class="priority-btn priority-btn--important" onclick="selectPriority('important')">
+<input type="radio" name="priority" value="important">
+<span class="priority-icon"><i class="fas fa-exclamation-circle"></i></span>
+<span class="priority-text">Важное</span>
 </label>
-<label class="priority-btn priority-btn--critical" onclick="selectPriority('critical')" style="flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; padding:14px10px; border-radius:10px; border:2px solid #E5E7EB; background:white; cursor:pointer;">
-<input type="radio" name="priority" value="critical" style="display:none;">
-<span style="color:#EF4444; font-size:20px;"><i class="fas fa-exclamation-triangle"></i></span>
-<span style="font-size:12px; font-weight:600;">Критическое</span>
+<label class="priority-btn priority-btn--critical" onclick="selectPriority('critical')">
+<input type="radio" name="priority" value="critical">
+<span class="priority-icon"><i class="fas fa-exclamation-triangle"></i></span>
+<span class="priority-text">Критическое</span>
 </label>
+</div>
+</div>
+<div class="form-group">
+<label class="form-label">Шаблон темы</label>
+<div class="application-subject-templates">
+    <button type="button" class="btn btn--ghost btn--sm js-subject-template" data-subject="Уточнение по заявке #<?= (int) $application_id ?>">Уточнение</button>
+    <button type="button" class="btn btn--ghost btn--sm js-subject-template" data-subject="Корректировка заявки #<?= (int) $application_id ?>">Корректировка</button>
+    <button type="button" class="btn btn--ghost btn--sm js-subject-template" data-subject="Статус заявки #<?= (int) $application_id ?>">Статус заявки</button>
 </div>
 </div>
 <div class="form-group">
 <label class="form-label">Тема сообщения</label>
-<input type="text" name="subject" class="form-input" required placeholder="Введите тему">
+<input type="text" name="subject" class="form-input" id="messageSubjectInput" required placeholder="Введите тему">
 </div>
 <div class="form-group">
 <label class="form-label">Текст сообщения</label>
@@ -1091,12 +1034,27 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
 });
 
 function selectPriority(value) {
- document.querySelectorAll('.priority-btn').forEach(btn => btn.style.borderColor = '#E5E7EB');
- document.querySelector(`.priority-btn--${value}`).style.borderColor = value === 'normal' ? '#6B7280' : value === 'important' ? '#F59E0B' : '#EF4444';
- document.querySelector(`input[value="${value}"]`).checked = true;
+ document.querySelectorAll('.priority-btn').forEach((btn) => btn.classList.remove('selected'));
+ const selectedBtn = document.querySelector(`.priority-btn--${value}`);
+ if (selectedBtn) {
+  selectedBtn.classList.add('selected');
+ }
+ const input = document.querySelector(`input[name="priority"][value="${value}"]`);
+ if (input) {
+  input.checked = true;
+ }
 }
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeMessageModal(); });
 document.getElementById('messageModal').addEventListener('click', function(e) { if (e.target === this) closeMessageModal(); });
+document.querySelectorAll('.js-subject-template').forEach((button) => {
+ button.addEventListener('click', () => {
+  const subjectInput = document.getElementById('messageSubjectInput');
+  if (subjectInput) {
+   subjectInput.value = button.dataset.subject || '';
+   subjectInput.focus();
+  }
+ });
+});
 
 async function saveDrawingCompliance(form) {
  const toggle = form.querySelector('.js-drawing-compliant-toggle');
@@ -1146,14 +1104,14 @@ function syncApproveApplicationButtonState() {
  const hasInvalid = toggles.some((toggle) => !toggle.checked);
  approveButton.disabled = hasInvalid;
  approveButton.setAttribute('aria-disabled', hasInvalid ? 'true' : 'false');
+ const hint = document.querySelector('.application-sidebar-hint');
+ if (hint) {
+  hint.style.display = hasInvalid ? 'block' : 'none';
+ }
  if (hasInvalid) {
   approveButton.setAttribute('tabindex', '-1');
-  approveButton.style.opacity = '0.55';
-  approveButton.style.cursor = 'not-allowed';
  } else {
   approveButton.removeAttribute('tabindex');
-  approveButton.style.opacity = '';
-  approveButton.style.cursor = '';
  }
 }
 
