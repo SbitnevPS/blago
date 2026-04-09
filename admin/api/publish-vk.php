@@ -18,7 +18,9 @@ if (!verifyCSRFToken($csrfToken)) {
 }
 
 $applicationId = max(0, (int) ($payload['application_id'] ?? 0));
-$donateIdRaw = (string) ($payload['donate_id'] ?? 'none');
+$vkDonutEnabled = (int) ($payload['vk_donut_enabled'] ?? 0) === 1;
+$vkDonutPaidDuration = isset($payload['vk_donut_paid_duration']) ? (int) $payload['vk_donut_paid_duration'] : 0;
+$vkDonutCanPublishFreeCopy = (int) ($payload['vk_donut_can_publish_free_copy'] ?? 0) === 1;
 if ($applicationId <= 0) {
     jsonResponse(['success' => false, 'error' => 'Некорректный идентификатор заявки.'], 422);
 }
@@ -44,32 +46,43 @@ if (empty($workIds)) {
     jsonResponse(['success' => false, 'error' => 'В заявке нет работ для публикации.'], 422);
 }
 
-$extraWallParams = [];
-if ($donateIdRaw !== 'none') {
-    $donateId = max(0, (int) $donateIdRaw);
-    if ($donateId <= 0) {
-        jsonResponse(['success' => false, 'error' => 'Некорректный донат.'], 422);
-    }
-
-    ensureVkDonatesSchema();
-
-    $donateStmt = $pdo->prepare("SELECT id, title, vk_donate_id FROM vk_donates WHERE id = ? AND is_active = 1 LIMIT 1");
-    $donateStmt->execute([$donateId]);
-    $donate = $donateStmt->fetch();
-
-    if (!$donate) {
-        jsonResponse(['success' => false, 'error' => 'Выбранный донат недоступен.'], 422);
-    }
-
-    $vkDonateId = trim((string) ($donate['vk_donate_id'] ?? ''));
-    if ($vkDonateId === '') {
-        jsonResponse(['success' => false, 'error' => 'У выбранного доната не задан vk_donate_id.'], 422);
-    }
-
-    $extraWallParams['donut'] = $vkDonateId;
+ensureVkPublicationSchema();
+$settings = getVkPublicationSettings();
+if ((int) ($settings['group_id'] ?? 0) <= 0) {
+    jsonResponse(['success' => false, 'error' => 'Не указан group_id сообщества VK. Проверьте настройки публикации.'], 422);
+}
+if (trim((string) ($settings['publication_token'] ?? '')) === '') {
+    jsonResponse(['success' => false, 'error' => 'Не задан токен публикации VK. Проверьте настройки публикации.'], 422);
 }
 
-ensureVkPublicationSchema();
+$allowedDonutDurations = [-1, 86400, 172800, 259200, 345600, 432000, 518400, 604800];
+$extraWallParams = [];
+$publicationMeta = [
+    'vk_donut_enabled' => 0,
+    'vk_donut_paid_duration' => null,
+    'vk_donut_can_publish_free_copy' => 0,
+    'vk_donut_settings_snapshot' => null,
+];
+
+if ($vkDonutEnabled) {
+    if (!in_array($vkDonutPaidDuration, $allowedDonutDurations, true)) {
+        jsonResponse(['success' => false, 'error' => 'Укажите корректный период платного доступа VK Donut.'], 422);
+    }
+
+    $donutPayload = [
+        'is_donut' => 1,
+        'paid_duration' => $vkDonutPaidDuration,
+        'can_publish_free_copy' => $vkDonutCanPublishFreeCopy ? 1 : 0,
+    ];
+    $extraWallParams['donut'] = $donutPayload;
+    $publicationMeta = [
+        'vk_donut_enabled' => 1,
+        'vk_donut_paid_duration' => $vkDonutPaidDuration,
+        'vk_donut_can_publish_free_copy' => $vkDonutCanPublishFreeCopy ? 1 : 0,
+        'vk_donut_settings_snapshot' => $donutPayload,
+    ];
+}
+
 $filters = normalizeVkTaskFilters([
     'application_status' => 'approved',
     'work_status' => 'accepted',
@@ -90,7 +103,8 @@ $taskId = createVkTaskFromPreview(
     'Публикация по заявке #' . $applicationId . ' от ' . date('d.m.Y H:i'),
     (int) getCurrentAdminId(),
     $preview,
-    'immediate'
+    'immediate',
+    $publicationMeta
 );
 
 $publishResult = publishVkTask($taskId, [
@@ -98,6 +112,13 @@ $publishResult = publishVkTask($taskId, [
 ]);
 
 if ((int) ($publishResult['failed'] ?? 0) > 0 || (int) ($publishResult['published'] ?? 0) <= 0) {
+    vkPublicationLog('application_publish_failed', [
+        'application_id' => $applicationId,
+        'task_id' => $taskId,
+        'error' => (string) ($publishResult['error'] ?? ''),
+        'failed' => (int) ($publishResult['failed'] ?? 0),
+        'published' => (int) ($publishResult['published'] ?? 0),
+    ]);
     jsonResponse([
         'success' => false,
         'error' => trim((string) ($publishResult['error'] ?? 'VK вернул ошибку при публикации.')),
@@ -111,6 +132,7 @@ $pdo->prepare("UPDATE applications SET status = 'approved', updated_at = NOW() W
 jsonResponse([
     'success' => true,
     'task_id' => $taskId,
+    'publication_type' => $vkDonutEnabled ? 'vk_donut' : 'regular',
     'published' => (int) ($publishResult['published'] ?? 0),
     'failed' => (int) ($publishResult['failed'] ?? 0),
     'total' => (int) ($publishResult['total'] ?? 0),

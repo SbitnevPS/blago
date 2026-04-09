@@ -59,6 +59,33 @@ if ($hasDrawingCompliantColumn) {
         }
     }
 }
+$vkPublicationInfo = null;
+try {
+    ensureVkPublicationSchema();
+    $vkPublicationStmt = $pdo->prepare("
+        SELECT
+            i.item_status,
+            i.vk_post_id,
+            i.vk_post_url,
+            i.error_message,
+            i.published_at,
+            i.vk_donut_enabled,
+            i.vk_donut_paid_duration,
+            i.vk_donut_can_publish_free_copy,
+            t.id AS task_id,
+            t.task_status,
+            t.created_at AS task_created_at
+        FROM vk_publication_task_items i
+        INNER JOIN vk_publication_tasks t ON t.id = i.task_id
+        WHERE i.application_id = ?
+        ORDER BY COALESCE(i.published_at, t.created_at) DESC, i.id DESC
+        LIMIT 1
+    ");
+    $vkPublicationStmt->execute([(int) $application_id]);
+    $vkPublicationInfo = $vkPublicationStmt->fetch() ?: null;
+} catch (Throwable $e) {
+    $vkPublicationInfo = null;
+}
 
 function scaleToMinSide($image, $minSide = 1500) {
     $srcW = imagesx($image);
@@ -736,6 +763,46 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                 </form>
                 <hr class="application-separator">
                 <h3 class="application-card-title">Действия с заявкой</h3>
+                <div class="card" style="margin-bottom: 14px;">
+                    <div class="card__body" style="padding: 12px;">
+                        <div style="font-weight: 600; margin-bottom: 6px;">Публикация в VK</div>
+                        <?php if ($vkPublicationInfo): ?>
+                            <?php $isDonutPublication = (int) ($vkPublicationInfo['vk_donut_enabled'] ?? 0) === 1; ?>
+                            <div class="flex items-center gap-sm" style="margin-bottom: 8px; flex-wrap: wrap;">
+                                <span class="badge <?= e(getVkItemStatusMeta((string) ($vkPublicationInfo['item_status'] ?? 'pending'))['badge_class']) ?>">
+                                    <?= e(getVkItemStatusMeta((string) ($vkPublicationInfo['item_status'] ?? 'pending'))['label']) ?>
+                                </span>
+                                <span class="badge <?= $isDonutPublication ? 'badge--warning' : 'badge--secondary' ?>">
+                                    <?= $isDonutPublication ? 'VK Donut' : 'Обычный пост' ?>
+                                </span>
+                            </div>
+                            <?php if ($isDonutPublication): ?>
+                                <div class="text-secondary" style="font-size: 13px; line-height: 1.35; margin-bottom: 6px;">
+                                    Платный доступ:
+                                    <?php if ((int) ($vkPublicationInfo['vk_donut_paid_duration'] ?? 0) === -1): ?>
+                                        без бесплатной копии
+                                    <?php else: ?>
+                                        <?= (int) max(0, ((int) ($vkPublicationInfo['vk_donut_paid_duration'] ?? 0) / 86400)) ?> дн.
+                                    <?php endif; ?>
+                                </div>
+                                <div class="text-secondary" style="font-size: 13px; line-height: 1.35; margin-bottom: 6px;">
+                                    Бесплатная копия: <?= (int) ($vkPublicationInfo['vk_donut_can_publish_free_copy'] ?? 0) === 1 ? 'разрешена' : 'не разрешена' ?>
+                                </div>
+                            <?php endif; ?>
+                            <?php if (!empty($vkPublicationInfo['vk_post_url'])): ?>
+                                <a class="btn btn--ghost btn--sm" href="<?= e((string) $vkPublicationInfo['vk_post_url']) ?>" target="_blank">
+                                    <i class="fas fa-up-right-from-square"></i> Открыть пост
+                                </a>
+                            <?php elseif (!empty($vkPublicationInfo['error_message'])): ?>
+                                <div class="text-secondary" style="font-size: 13px; line-height: 1.35;">
+                                    Ошибка: <?= e((string) $vkPublicationInfo['error_message']) ?>
+                                </div>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <div class="text-secondary" style="font-size: 13px;">Публикаций по заявке пока нет.</div>
+                        <?php endif; ?>
+                    </div>
+                </div>
                 <div class="application-sidebar-actions">
                     <?php if (!$isApplicationApproved): ?>
                     <form method="POST" class="js-application-secondary-action" onsubmit="return confirm('Отправить заявку на корректировку?');"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning"><i class="fas fa-edit"></i> На корректировку</button></form>
@@ -776,13 +843,31 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
             <div id="vkPublishPreview" style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;">
                 <div class="text-secondary">Загрузка превью...</div>
             </div>
-            <div style="margin-top: 14px;">
-                <div style="font-weight: 600; margin-bottom: 8px;">Донаты</div>
-                <label style="display:block; margin-bottom:8px;">
-                    <input type="radio" name="donate" value="none" checked>
-                    Без доната
-                </label>
-                <div id="vkDonateOptions" style="display:grid; gap:8px;"></div>
+            <div style="margin-top: 14px; border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px;">
+                <div style="font-weight: 600; margin-bottom: 8px;">Донаты / VK Donut</div>
+                <div style="display:grid; gap:8px;">
+                    <label style="display:block;">
+                        <input type="radio" name="vk_donut_mode" value="disabled" checked>
+                        Без доната
+                    </label>
+                    <label style="display:block;">
+                        <input type="radio" name="vk_donut_mode" value="enabled">
+                        Публиковать как VK Donut
+                    </label>
+                </div>
+                <div id="vkDonutFields" style="display:none; margin-top: 12px; padding-top: 12px; border-top: 1px dashed #E5E7EB;">
+                    <div class="form-group" style="margin-bottom: 8px;">
+                        <label class="form-label" for="vkDonutPaidDuration">Длительность платного доступа</label>
+                        <select class="form-select" id="vkDonutPaidDuration"></select>
+                    </div>
+                    <label style="display:block; margin-top: 8px;">
+                        <input type="checkbox" id="vkDonutCanPublishFreeCopy" value="1">
+                        Разрешить бесплатную копию после окончания периода
+                    </label>
+                </div>
+                <div class="text-secondary" style="margin-top: 8px; font-size: 13px; line-height: 1.35;">
+                    Цели и настройки VK Donut создаются в самом сообществе VK. Сайт только публикует пост в режиме доната.
+                </div>
             </div>
             <div id="vkPublishPromptStatus" class="alert" style="display:none; margin-top:12px;"></div>
         </div>
@@ -1211,7 +1296,10 @@ ensureComplianceFieldsAvailable();
     const skipButton = document.getElementById('vkPublishPromptSkip');
     const statusBox = document.getElementById('vkPublishPromptStatus');
     const previewBox = document.getElementById('vkPublishPreview');
-    const donateOptions = document.getElementById('vkDonateOptions');
+    const donutFields = document.getElementById('vkDonutFields');
+    const donutPaidDurationSelect = document.getElementById('vkDonutPaidDuration');
+    const donutCanPublishFreeCopyCheckbox = document.getElementById('vkDonutCanPublishFreeCopy');
+    const donutModeInputs = Array.from(document.querySelectorAll('input[name="vk_donut_mode"]'));
     const applicationId = Number(approveButton.dataset.id || 0);
     const csrfToken = approveButton.dataset.csrf || '';
     let publishInProgress = false;
@@ -1230,23 +1318,30 @@ ensureComplianceFieldsAvailable();
         modal.classList.remove('active');
     };
 
-    const renderDonates = (donates) => {
-        if (!donateOptions) return;
-        donateOptions.innerHTML = '';
+    const toggleDonutFields = () => {
+        const enabled = document.querySelector('input[name="vk_donut_mode"]:checked')?.value === 'enabled';
+        if (donutFields) {
+            donutFields.style.display = enabled ? 'block' : 'none';
+        }
+    };
 
-        if (!Array.isArray(donates) || donates.length === 0) {
-            donateOptions.innerHTML = '<div class="text-secondary">Нет активных донатов.</div>';
+    const renderDonutDurations = (durations) => {
+        if (!donutPaidDurationSelect) return;
+        donutPaidDurationSelect.innerHTML = '';
+        if (!Array.isArray(durations) || durations.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'Нет доступных периодов';
+            donutPaidDurationSelect.appendChild(option);
             return;
         }
 
-        donates.forEach((donate) => {
-            const label = document.createElement('label');
-            label.style.display = 'block';
-            label.innerHTML = `
-                <input type="radio" name="donate" value="${donate.id}">
-                ${donate.title}
-            `;
-            donateOptions.appendChild(label);
+        durations.forEach((item, index) => {
+            const option = document.createElement('option');
+            option.value = String(item.value ?? '');
+            option.textContent = String(item.label ?? '');
+            option.selected = index === 0;
+            donutPaidDurationSelect.appendChild(option);
         });
     };
 
@@ -1265,9 +1360,16 @@ ensureComplianceFieldsAvailable();
         if (statusBox) {
             statusBox.style.display = 'none';
         }
-        if (donateOptions) {
-            donateOptions.innerHTML = '';
+        if (donutPaidDurationSelect) {
+            donutPaidDurationSelect.innerHTML = '';
         }
+        donutModeInputs.forEach((input, index) => {
+            input.checked = index === 0;
+        });
+        if (donutCanPublishFreeCopyCheckbox) {
+            donutCanPublishFreeCopyCheckbox.checked = false;
+        }
+        toggleDonutFields();
 
         try {
             const response = await fetch(`/admin/api/get-publish-data.php?id=${applicationId}`);
@@ -1279,10 +1381,8 @@ ensureComplianceFieldsAvailable();
             if (previewBox) {
                 previewBox.innerHTML = data.preview_html || '<div class="text-secondary">Превью недоступно.</div>';
             }
-            renderDonates(data.donates || []);
-            document.querySelectorAll('input[name="donate"]').forEach((el, index) => {
-                el.checked = index === 0;
-            });
+            renderDonutDurations(data.donut_durations || []);
+            toggleDonutFields();
         } catch (error) {
             if (previewBox) {
                 previewBox.innerHTML = '<div class="text-secondary">Превью недоступно.</div>';
@@ -1290,6 +1390,10 @@ ensureComplianceFieldsAvailable();
             showStatus(error.message || 'Ошибка загрузки данных публикации.', 'error');
         }
     };
+
+    donutModeInputs.forEach((input) => {
+        input.addEventListener('change', toggleDonutFields);
+    });
 
     approveButton.addEventListener('click', async () => {
         if (approveButton.disabled || !applicationId) {
@@ -1316,8 +1420,14 @@ ensureComplianceFieldsAvailable();
             if (publishInProgress) {
                 return;
             }
-            const selectedDonate = document.querySelector('input[name="donate"]:checked');
-            const donateId = selectedDonate ? selectedDonate.value : 'none';
+            const donutMode = document.querySelector('input[name="vk_donut_mode"]:checked')?.value || 'disabled';
+            const vkDonutEnabled = donutMode === 'enabled';
+            const vkDonutPaidDuration = Number(donutPaidDurationSelect?.value || 0);
+            const vkDonutCanPublishFreeCopy = !!(donutCanPublishFreeCopyCheckbox && donutCanPublishFreeCopyCheckbox.checked);
+            if (vkDonutEnabled && !vkDonutPaidDuration) {
+                showStatus('Для VK Donut нужно выбрать длительность платного доступа.', 'error');
+                return;
+            }
             publishInProgress = true;
             publishButton.disabled = true;
             if (skipButton) {
@@ -1334,7 +1444,9 @@ ensureComplianceFieldsAvailable();
                     },
                     body: JSON.stringify({
                         application_id: applicationId,
-                        donate_id: donateId,
+                        vk_donut_enabled: vkDonutEnabled ? 1 : 0,
+                        vk_donut_paid_duration: vkDonutPaidDuration,
+                        vk_donut_can_publish_free_copy: vkDonutCanPublishFreeCopy ? 1 : 0,
                         csrf_token: csrfToken,
                     }),
                 });

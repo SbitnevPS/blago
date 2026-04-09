@@ -83,6 +83,38 @@ function ensureVkPublicationSchema(): void
         if (!in_array('technical_error', $itemColumns, true)) {
             $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN technical_error TEXT NULL AFTER error_message");
         }
+        if (!in_array('vk_donut_enabled', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_donut_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER vk_post_url");
+        }
+        if (!in_array('vk_donut_paid_duration', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_donut_paid_duration INT NULL AFTER vk_donut_enabled");
+        }
+        if (!in_array('vk_donut_can_publish_free_copy', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_donut_can_publish_free_copy TINYINT(1) NOT NULL DEFAULT 0 AFTER vk_donut_paid_duration");
+        }
+        if (!in_array('vk_donut_settings_snapshot', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_donut_settings_snapshot LONGTEXT NULL AFTER vk_donut_can_publish_free_copy");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $taskColumns = $pdo->query("SHOW COLUMNS FROM vk_publication_tasks")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('vk_donut_enabled', $taskColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_donut_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER vk_group_id");
+        }
+        if (!in_array('vk_donut_paid_duration', $taskColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_donut_paid_duration INT NULL AFTER vk_donut_enabled");
+        }
+        if (!in_array('vk_donut_can_publish_free_copy', $taskColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_donut_can_publish_free_copy TINYINT(1) NOT NULL DEFAULT 0 AFTER vk_donut_paid_duration");
+        }
+        if (!in_array('vk_donut_settings_snapshot', $taskColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_donut_settings_snapshot LONGTEXT NULL AFTER vk_donut_can_publish_free_copy");
+        }
+        if (!in_array('vk_post_url', $taskColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_post_url VARCHAR(255) NULL AFTER vk_donut_settings_snapshot");
+        }
     } catch (Throwable $e) {
     }
 }
@@ -662,7 +694,7 @@ function buildVkTaskPreview(array $filters, ?string $template = null): array
     ];
 }
 
-function createVkTaskFromPreview(string $title, int $createdBy, array $preview, string $publicationMode = 'manual'): int
+function createVkTaskFromPreview(string $title, int $createdBy, array $preview, string $publicationMode = 'manual', array $publicationMeta = []): int
 {
     global $pdo;
     ensureVkPublicationSchema();
@@ -672,10 +704,15 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
     $contestId = (int) ($filters['contest_id'] ?? 0);
     $status = $publicationMode === 'immediate' ? 'ready' : 'draft';
     $settings = getVkPublicationSettings();
+    $vkDonutEnabled = !empty($publicationMeta['vk_donut_enabled']) ? 1 : 0;
+    $vkDonutPaidDuration = isset($publicationMeta['vk_donut_paid_duration']) ? (int) $publicationMeta['vk_donut_paid_duration'] : null;
+    $vkDonutCanPublishFreeCopy = !empty($publicationMeta['vk_donut_can_publish_free_copy']) ? 1 : 0;
+    $vkDonutSnapshot = !empty($publicationMeta['vk_donut_settings_snapshot']) ? json_encode($publicationMeta['vk_donut_settings_snapshot'], JSON_UNESCAPED_UNICODE) : null;
 
     $stmt = $pdo->prepare("INSERT INTO vk_publication_tasks
-        (title, contest_id, created_by, task_status, publication_mode, filters_json, summary_json, total_items, ready_items, skipped_items, vk_group_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+        (title, contest_id, created_by, task_status, publication_mode, filters_json, summary_json, total_items, ready_items, skipped_items, vk_group_id,
+         vk_donut_enabled, vk_donut_paid_duration, vk_donut_can_publish_free_copy, vk_donut_settings_snapshot, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
     $stmt->execute([
         trim($title) !== '' ? trim($title) : 'Публикация от ' . date('d.m.Y H:i'),
         $contestId > 0 ? $contestId : null,
@@ -691,12 +728,17 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
         (int) ($preview['ready_items'] ?? 0),
         (int) ($preview['skipped_items'] ?? 0),
         $settings['group_id'] !== '' ? $settings['group_id'] : null,
+        $vkDonutEnabled,
+        $vkDonutEnabled ? $vkDonutPaidDuration : null,
+        $vkDonutEnabled ? $vkDonutCanPublishFreeCopy : 0,
+        $vkDonutEnabled ? $vkDonutSnapshot : null,
     ]);
     $taskId = (int) $pdo->lastInsertId();
 
     $ins = $pdo->prepare("INSERT INTO vk_publication_task_items
-        (task_id, work_id, application_id, participant_id, contest_id, work_image_path, post_text, item_status, skip_reason, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+        (task_id, work_id, application_id, participant_id, contest_id, work_image_path, post_text, item_status, skip_reason,
+         vk_donut_enabled, vk_donut_paid_duration, vk_donut_can_publish_free_copy, vk_donut_settings_snapshot, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
 
     foreach ($items as $item) {
         $ins->execute([
@@ -709,6 +751,10 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
             (string) ($item['post_text'] ?? ''),
             (string) ($item['item_status'] ?? 'pending'),
             $item['skip_reason'] ?? null,
+            $vkDonutEnabled,
+            $vkDonutEnabled ? $vkDonutPaidDuration : null,
+            $vkDonutEnabled ? $vkDonutCanPublishFreeCopy : 0,
+            $vkDonutEnabled ? $vkDonutSnapshot : null,
         ]);
     }
 
@@ -733,6 +779,9 @@ function getVkTaskById(int $taskId): ?array
 
     $row['filters'] = !empty($row['filters_json']) ? (json_decode((string) $row['filters_json'], true) ?: []) : [];
     $row['summary'] = !empty($row['summary_json']) ? (json_decode((string) $row['summary_json'], true) ?: []) : [];
+    $row['vk_donut_settings'] = !empty($row['vk_donut_settings_snapshot'])
+        ? (json_decode((string) $row['vk_donut_settings_snapshot'], true) ?: [])
+        : [];
 
     return $row;
 }
@@ -889,6 +938,11 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             WHERE id = ?")
             ->execute([(string) $published['post_id'], (string) $published['post_url'], (int) $item['id']]);
 
+        $pdo->prepare("UPDATE vk_publication_tasks
+            SET vk_post_url = COALESCE(vk_post_url, ?), updated_at = NOW()
+            WHERE id = ?")
+            ->execute([(string) $published['post_url'], (int) $item['task_id']]);
+
         $pdo->prepare("UPDATE works
             SET vk_published_at = NOW(), vk_post_id = ?, vk_post_url = ?, vk_publish_error = NULL, updated_at = NOW()
             WHERE id = ?")
@@ -966,6 +1020,19 @@ function publishVkTask(int $taskId, array $options = []): array
 {
     global $pdo;
 
+    $task = getVkTaskById($taskId);
+    if ($task && empty($options['wall_params']) && !empty($task['vk_donut_enabled'])) {
+        $options['wall_params'] = buildVkDonutWallParamsFromTask($task);
+        if (empty($options['wall_params'])) {
+            return [
+                'total' => 0,
+                'published' => 0,
+                'failed' => 0,
+                'error' => 'Некорректные параметры VK Donut: укажите paid_duration.',
+            ];
+        }
+    }
+
     $readiness = verifyVkPublicationReadiness(true);
     if (empty($readiness['ok'])) {
         return [
@@ -1001,6 +1068,26 @@ function publishVkTask(int $taskId, array $options = []): array
     return $result;
 }
 
+function buildVkDonutWallParamsFromTask(array $task): array
+{
+    if (empty($task['vk_donut_enabled'])) {
+        return [];
+    }
+
+    $paidDuration = (int) ($task['vk_donut_paid_duration'] ?? 0);
+    if ($paidDuration <= 0) {
+        return [];
+    }
+
+    $donut = [
+        'is_donut' => 1,
+        'paid_duration' => $paidDuration,
+        'can_publish_free_copy' => !empty($task['vk_donut_can_publish_free_copy']) ? 1 : 0,
+    ];
+
+    return ['donut' => $donut];
+}
+
 function retryFailedVkTaskItems(int $taskId): array
 {
     global $pdo;
@@ -1009,3 +1096,15 @@ function retryFailedVkTaskItems(int $taskId): array
 
     return publishVkTask($taskId);
 }
+    $task = getVkTaskById($taskId);
+    if ($task && empty($options['wall_params']) && !empty($task['vk_donut_enabled'])) {
+        $options['wall_params'] = buildVkDonutWallParamsFromTask($task);
+        if (empty($options['wall_params'])) {
+            return [
+                'total' => 0,
+                'published' => 0,
+                'failed' => 0,
+                'error' => 'Некорректные параметры VK Donut: укажите paid_duration.',
+            ];
+        }
+    }

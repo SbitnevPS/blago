@@ -66,17 +66,19 @@ if (!empty($workIds)) {
     }
 }
 
-$donates = [];
-try {
-    ensureVkDonatesSchema();
-    $donatesStmt = $pdo->query("SELECT id, title FROM vk_donates WHERE is_active = 1 ORDER BY id DESC");
-    $donates = $donatesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-} catch (Throwable $e) {
-    $donates = [];
-}
+$donutDurations = [
+    ['value' => -1, 'label' => 'Без бесплатной копии'],
+    ['value' => 86400, 'label' => '1 день'],
+    ['value' => 172800, 'label' => '2 дня'],
+    ['value' => 259200, 'label' => '3 дня'],
+    ['value' => 345600, 'label' => '4 дня'],
+    ['value' => 432000, 'label' => '5 дней'],
+    ['value' => 518400, 'label' => '6 дней'],
+    ['value' => 604800, 'label' => '7 дней'],
+];
 
 jsonResponse([
     'success' => true,
     'preview_html' => $previewHtml,
-    'donates' => $donates,
+    'donut_durations' => $donutDurations,
 ]);

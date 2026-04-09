@@ -82,6 +82,12 @@ require_once __DIR__ . '/includes/header.php';
             <div><strong>Создал:</strong> <?= e(trim(($task['creator_name'] ?? '') . ' ' . ($task['creator_surname'] ?? ''))) ?></div>
             <div><strong>Создано:</strong> <?= e(date('d.m.Y H:i', strtotime((string) $task['created_at']))) ?></div>
             <div><strong>Опубликовано:</strong> <?= $task['published_at'] ? e(date('d.m.Y H:i', strtotime((string) $task['published_at']))) : '—' ?></div>
+            <div>
+                <strong>Тип публикации:</strong>
+                <span class="badge <?= (int) ($task['vk_donut_enabled'] ?? 0) === 1 ? 'badge--warning' : 'badge--secondary' ?>">
+                    <?= (int) ($task['vk_donut_enabled'] ?? 0) === 1 ? 'VK Donut' : 'Обычный пост' ?>
+                </span>
+            </div>
         </div>
 
         <hr style="margin:14px 0; border:none; border-top:1px solid #E5E7EB;">
@@ -92,6 +98,16 @@ require_once __DIR__ . '/includes/header.php';
             <div><strong>Опубликовано:</strong> <?= (int) $task['published_items'] ?></div>
             <div><strong>Ошибки:</strong> <?= (int) $task['failed_items'] ?></div>
             <div><strong>Пропущено:</strong> <?= (int) $task['skipped_items'] ?></div>
+            <?php if ((int) ($task['vk_donut_enabled'] ?? 0) === 1): ?>
+                <div><strong>Платный доступ:</strong>
+                    <?php if ((int) ($task['vk_donut_paid_duration'] ?? 0) === -1): ?>
+                        без бесплатной копии
+                    <?php else: ?>
+                        <?= (int) max(0, ((int) ($task['vk_donut_paid_duration'] ?? 0) / 86400)) ?> дн.
+                    <?php endif; ?>
+                </div>
+                <div><strong>Бесплатная копия:</strong> <?= (int) ($task['vk_donut_can_publish_free_copy'] ?? 0) === 1 ? 'разрешена' : 'не разрешена' ?></div>
+            <?php endif; ?>
         </div>
 
         <div class="flex gap-md mt-lg" style="margin-top:16px; flex-wrap: wrap;">
