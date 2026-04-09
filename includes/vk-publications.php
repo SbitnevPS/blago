@@ -1186,15 +1186,3 @@ function retryFailedVkTaskItems(int $taskId): array
 
     return publishVkTask($taskId);
 }
-    $task = getVkTaskById($taskId);
-    if ($task && empty($options['wall_params']) && !empty($task['vk_donut_enabled'])) {
-        $options['wall_params'] = buildVkDonutWallParamsFromTask($task);
-        if (empty($options['wall_params'])) {
-            return [
-                'total' => 0,
-                'published' => 0,
-                'failed' => 0,
-                'error' => 'Некорректные параметры VK Donut: укажите paid_duration.',
-            ];
-        }
-    }
