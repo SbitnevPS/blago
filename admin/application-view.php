@@ -45,6 +45,8 @@ $stmt->execute([$application_id]);
 $participants = $stmt->fetchAll();
 $works = getApplicationWorks((int)$application_id);
 $isApplicationApproved = (string) ($application['status'] ?? '') === 'approved';
+$showVkPublishPrompt = max(0, (int) ($_SESSION['vk_publish_prompt_application_id'] ?? 0)) === (int) $application_id;
+unset($_SESSION['vk_publish_prompt_application_id']);
 $participantColumns = $pdo->query("DESCRIBE participants")->fetchAll(PDO::FETCH_COLUMN);
 $hasDrawingCompliantColumn = in_array('drawing_compliant', $participantColumns, true);
 $hasDrawingCommentColumn = in_array('drawing_comment', $participantColumns, true);
@@ -736,6 +738,11 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                 <div class="application-sidebar-actions">
                     <form method="POST" onsubmit="return confirm('Отправить заявку на корректировку?');"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning"><i class="fas fa-edit"></i> На корректировку</button></form>
                     <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger"><i class="fas fa-times-circle"></i> Отклонить</button></form>
+                    <form method="POST" id="approveApplicationForm">
+                        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                        <input type="hidden" name="action" value="approve_application">
+                    </form>
                     <button
                         type="button"
                         class="btn application-btn application-btn--success"
@@ -1244,6 +1251,13 @@ ensureComplianceFieldsAvailable();
         if (approveButton.disabled || !applicationId) {
             return;
         }
+        if (approveButton.dataset.approved !== '1') {
+            const approveForm = document.getElementById('approveApplicationForm');
+            if (approveForm) {
+                approveForm.submit();
+                return;
+            }
+        }
         modal.classList.add('active');
         if (previewBox) {
             previewBox.innerHTML = '<div class="text-secondary">Загрузка превью...</div>';
@@ -1321,6 +1335,10 @@ ensureComplianceFieldsAvailable();
                 }
             }
         });
+    }
+
+    if (<?= $showVkPublishPrompt ? 'true' : 'false' ?>) {
+        approveButton.click();
     }
 })();
 </script>
