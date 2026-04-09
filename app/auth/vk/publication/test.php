@@ -18,10 +18,10 @@ if (!verifyCSRFToken($csrfToken)) {
 $readiness = verifyVkPublicationReadiness(true);
 $status = !empty($readiness['ok']) ? 'ok' : 'error';
 $message = !empty($readiness['ok'])
-    ? 'Подключение VK прошло проверку. Публикация доступна.'
+    ? 'Публикационный токен VK прошёл проверку. Публикация доступна.'
     : implode('; ', $readiness['issues'] ?? ['Ошибка проверки VK']);
 $checks = $readiness['checks'] ?? [];
-vkPublicationLog('manual_test_completed', [
+vkPublicationLog('publication_token_test_completed', [
     'ok' => !empty($readiness['ok']),
     'issues' => $readiness['issues'] ?? [],
     'checks' => $checks,

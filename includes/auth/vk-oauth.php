@@ -64,7 +64,7 @@ function vk_log_attempt(string $flow, string $step, array $payload = [], ?string
 {
     $entry = [
         'timestamp' => gmdate('c'),
-        'flow_type' => $flow === 'user' ? 'vk_user_auth' : 'vk_admin_auth',
+        'flow_type' => $flow === 'user' ? 'vk_id_user_login' : 'vk_id_admin_login',
         'flow' => $flow,
         'step' => $step,
         'attempt_id' => $attemptId ?? '',
@@ -386,8 +386,8 @@ function vk_callback_handle(string $flow, PDO $pdo): void
         'redirect_uri' => vk_flow_redirect_uri($flow),
         'http_code' => $tokenResponse['http_code'],
         'curl_error' => $tokenResponse['curl_error'],
-        'raw_response' => $tokenResponse['raw'],
-        'json_response' => $tokenResponse['json'],
+        'has_json_response' => is_array($tokenResponse['json']),
+        'vk_error' => is_array($tokenResponse['json']) ? ($tokenResponse['json']['error'] ?? '') : '',
     ]);
     vk_log_attempt($flow, 'token_exchanged', [
         'http_status' => $tokenResponse['http_code'],
@@ -420,8 +420,7 @@ function vk_callback_handle(string $flow, PDO $pdo): void
         'flow' => $flow,
         'http_code' => $profileResponse['http_code'],
         'curl_error' => $profileResponse['curl_error'],
-        'raw_response' => $profileResponse['raw'],
-        'json_response' => $profileResponse['json'],
+        'has_json_response' => is_array($profileResponse['json']),
     ]);
     vk_log_attempt($flow, 'profile_loaded', [
         'request' => [
@@ -522,7 +521,7 @@ function vk_callback_handle(string $flow, PDO $pdo): void
         'flow' => $flow,
         'redirect_to' => $target,
         'vk_user_id' => $vkUserId,
-        'access_token' => $accessToken,
+        'access_token_masked' => vk_mask_secret($accessToken),
     ]);
 
     header('Location: ' . $target);

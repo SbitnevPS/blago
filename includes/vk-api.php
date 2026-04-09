@@ -18,18 +18,18 @@ class VkApiException extends RuntimeException
 
 class VkApiClient
 {
-    private string $userAccessToken;
+    private string $publicationAccessToken;
     private string $apiVersion;
     private int $groupId;
 
-    public function __construct(string $userAccessToken, int $groupId, string $apiVersion = '5.131')
+    public function __construct(string $publicationAccessToken, int $groupId, string $apiVersion = '5.131')
     {
-        $this->userAccessToken = trim($userAccessToken);
+        $this->publicationAccessToken = trim($publicationAccessToken);
         $this->groupId = $groupId;
         $this->apiVersion = trim($apiVersion) !== '' ? trim($apiVersion) : '5.131';
 
-        if ($this->userAccessToken === '') {
-            throw new VkApiException('Не задан пользовательский VK токен для публикации.');
+        if ($this->publicationAccessToken === '') {
+            throw new VkApiException('Не задан publication token VK для публикации.');
         }
 
         if ($this->groupId <= 0) {
@@ -131,6 +131,12 @@ class VkApiClient
         }
     }
 
+
+    public function apiRequestForDiagnostics(string $method, array $params): array
+    {
+        return $this->apiRequest($method, $params);
+    }
+
     private function assertUserTokenCanPublish(): void
     {
         $this->validatePublicationAccess();
@@ -182,7 +188,7 @@ class VkApiClient
 
     private function apiRequest(string $method, array $params): array
     {
-        $params['access_token'] = $this->userAccessToken;
+        $params['access_token'] = $this->publicationAccessToken;
         $params['v'] = $this->apiVersion;
 
         $url = 'https://api.vk.com/method/' . $method;
