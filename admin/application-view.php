@@ -1036,7 +1036,8 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
 
    const controls = form.closest('[data-work-controls]');
    if (action === 'set_work_status' && controls) {
-    const badge = controls.closest('.card')?.querySelector('[data-work-status-badge]');
+    const card = controls.closest('.card');
+    const badge = card?.querySelector('[data-work-status-badge]');
     if (badge) {
      badge.className = 'badge ' + (data.status_class || '');
      badge.textContent = data.status_label || badge.textContent;
@@ -1049,6 +1050,13 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
     if (acceptForm && formData.get('work_status') === 'accepted') {
       acceptForm.style.display = 'none';
     }
+
+    const workStatus = formData.get('work_status');
+    const compliantToggle = card?.querySelector('.js-drawing-compliant-toggle');
+    if (compliantToggle && (workStatus === 'accepted' || workStatus === 'reviewed' || workStatus === 'pending')) {
+      compliantToggle.checked = workStatus === 'accepted';
+    }
+    syncApproveApplicationButtonState();
    }
 
    if (action === 'download_participant_diploma' && data.download_url) {
