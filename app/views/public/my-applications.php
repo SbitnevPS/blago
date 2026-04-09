@@ -6,10 +6,74 @@ if (!isAuthenticated()) {
     redirect('/login?redirect=' . urlencode($_SERVER['REQUEST_URI'] ?? '/contests'));
 }
 
+/**
+ * Tailwind-классы для цветного статуса заявки.
+ */
+function getStatusClass(string $status): string {
+    return match ($status) {
+        'pending', 'review' => 'bg-yellow-100 text-yellow-700',
+        'revision', 'needs_revision', 'correction_required' => 'bg-blue-100 text-blue-700',
+        'accepted', 'approved' => 'bg-green-100 text-green-700',
+        'rejected', 'declined' => 'bg-red-100 text-red-700',
+        default => 'bg-gray-100 text-gray-700',
+    };
+}
+
+function getStatusLabel(string $status): string {
+    return match ($status) {
+        'pending', 'review' => 'На рассмотрении',
+        'revision', 'needs_revision', 'correction_required' => 'Исправить',
+        'accepted', 'approved' => 'Принята',
+        'rejected', 'declined' => 'Отклонена',
+        default => 'Неизвестно',
+    };
+}
+
+function getStatusGroup(string $status): string {
+    return match ($status) {
+        'pending', 'review' => 'pending',
+        'revision', 'needs_revision', 'correction_required' => 'revision',
+        'accepted', 'approved' => 'accepted',
+        'rejected', 'declined' => 'rejected',
+        default => 'other',
+    };
+}
+
 $user = getCurrentUser();
 $applications = getUserApplications($user['id']);
 $unreadByApplication = getUserUnreadCountsByApplication((int)$user['id']);
 $currentPage = 'applications';
+
+$stats = [
+    'total' => count($applications),
+    'pending' => 0,
+    'revision' => 0,
+    'accepted' => 0,
+    'rejected' => 0,
+];
+
+foreach ($applications as $application) {
+    $group = getStatusGroup((string)($application['status'] ?? 'pending'));
+    if (isset($stats[$group])) {
+        $stats[$group]++;
+    }
+}
+
+$activeFilter = (string)($_GET['status'] ?? 'all');
+$allowedFilters = ['all', 'pending', 'revision', 'accepted', 'rejected'];
+if (!in_array($activeFilter, $allowedFilters, true)) {
+    $activeFilter = 'all';
+}
+
+$filteredApplications = array_values(array_filter(
+    $applications,
+    static function (array $application) use ($activeFilter): bool {
+        if ($activeFilter === 'all') {
+            return true;
+        }
+        return getStatusGroup((string)($application['status'] ?? 'pending')) === $activeFilter;
+    }
+));
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -18,123 +82,128 @@ $currentPage = 'applications';
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Мои заявки - ДетскиеКонкурсы.рф</title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
+<script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body class="bg-gray-50">
 <?php include dirname(__DIR__) . '/partials/header.php'; ?>
 
-<main class="container page-section">
-<div class="page-header">
-    <div>
-        <h1>Мои заявки</h1>
-        <p class="text-secondary" style="margin-top:6px;">Здесь вы видите статус каждой заявки, работ, дипломов и сообщений.</p>
-    </div>
-    <a href="/contests" class="btn btn--primary">
-        <i class="fas fa-trophy"></i> Выбрать конкурс
-    </a>
-</div>
-
-<?php if (empty($applications)): ?>
-<div class="empty-state">
-    <div class="empty-state__icon">
-        <i class="fas fa-file-circle-plus"></i>
-    </div>
-    <h3 class="empty-state__title">Пока нет заявок</h3>
-    <p class="empty-state__text">Выберите конкурс и отправьте первую заявку — мы сразу покажем её статус и дальнейшие шаги.</p>
-    <a href="/contests" class="btn btn--primary">
-        <i class="fas fa-trophy"></i> Перейти к конкурсам
-    </a>
-</div>
-<?php else: ?>
-<div class="cards-grid">
-<?php foreach ($applications as $app): ?>
-<?php
-    $statusMeta = getApplicationStatusMeta($app['status']);
-    $works = getApplicationWorks((int)$app['id']);
-    $summary = buildApplicationWorkSummary($works);
-    $uiStatusMeta = getApplicationUiStatusMeta($summary);
-
-    $hasDiplomas = $summary['diplomas'] > 0;
-    $hasVkPublished = $summary['vk_published'] > 0;
-    $vkLinks = [];
-    foreach ($works as $work) {
-        if (!empty($work['vk_post_url'])) {
-            $vkLinks[] = (string)$work['vk_post_url'];
-        }
-    }
-    $vkLinks = array_values(array_unique($vkLinks));
-
-    $actionBase = '/application/' . (int)$app['id'];
-?>
-<div class="application-card application-card--dashboard">
-    <div class="application-card__header">
-        <div>
-            <div class="application-card__badges-row">
-                <span class="badge application-card__status <?= htmlspecialchars($statusMeta['badge_class']) ?>">
-                    <?= htmlspecialchars($statusMeta['label']) ?>
-                </span>
-                <span class="badge <?= htmlspecialchars($uiStatusMeta['badge_class']) ?>">
-                    <?= htmlspecialchars($uiStatusMeta['label']) ?>
-                </span>
-                <?php if (!empty($unreadByApplication[(int)$app['id']])): ?>
-                    <span class="badge badge--error">Новые сообщения: <?= (int)$unreadByApplication[(int)$app['id']] ?></span>
-                <?php endif; ?>
-            </div>
-            <h3 class="application-card__title">Заявка #<?= (int)$app['id'] ?></h3>
-            <div class="application-card__contest"><?= htmlspecialchars($app['contest_title']) ?></div>
-        </div>
-        <div class="application-card__info-item application-card__info-item--compact">
-            <span class="application-card__info-label">Подана</span>
-            <span class="application-card__info-value"><?= date('d.m.Y', strtotime($app['created_at'])) ?></span>
-        </div>
-    </div>
-
-    <div class="application-card__body">
-        <div class="application-card__metrics">
-            <span class="badge badge--secondary">Работ: <?= (int)$summary['total'] ?></span>
-            <span class="badge badge--success">Принято: <?= (int)$summary['accepted'] ?></span>
-            <span class="badge badge--reviewed">Рассмотрено: <?= (int)$summary['reviewed'] ?></span>
-            <span class="badge badge--warning">На рассмотрении: <?= (int)$summary['pending'] ?></span>
-            <span class="badge badge--info">Дипломы: <?= (int)$summary['diplomas'] ?></span>
-            <span class="badge <?= $hasVkPublished ? 'badge--primary' : 'badge--secondary' ?>">
-                ВК: <?= $hasVkPublished ? 'опубликовано' : 'не опубликовано' ?>
-            </span>
-        </div>
-    </div>
-
-    <div class="application-card__footer application-card__footer--actions">
-        <a href="<?= $actionBase ?>" class="btn btn--primary btn--sm btn--open-application">
-            <i class="fas fa-eye"></i> Открыть заявку
-        </a>
-
-        <?php if ($hasDiplomas): ?>
-            <form method="POST" action="<?= $actionBase ?>">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="diploma_download_all">
-                <button class="btn btn--ghost btn--sm" type="submit" title="Скачает все дипломы, которые уже доступны.">
-                    <i class="fas fa-file-archive"></i> Скачать дипломы
-                </button>
-            </form>
-            <form method="POST" action="<?= $actionBase ?>">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="diploma_links_all">
-                <button class="btn btn--ghost btn--sm" type="submit" title="Покажет ссылки на все доступные дипломы.">
-                    <i class="fas fa-link"></i> Получить ссылки
-                </button>
-            </form>
-        <?php endif; ?>
-
-        <?php if (!empty($vkLinks)): ?>
-            <a href="<?= htmlspecialchars($vkLinks[0]) ?>" target="_blank" rel="noopener" class="btn btn--secondary btn--sm" title="Открыть публикации работ в VK.">
-                <i class="fab fa-vk"></i> Открыть публикации
+<main>
+    <div class="max-w-6xl mx-auto px-4 py-6">
+        <div class="flex items-center justify-between gap-4 mb-6 flex-wrap">
+            <h1 class="text-2xl font-bold">Мои заявки</h1>
+            <a href="/contests" class="inline-flex items-center px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition">
+                Подать новую заявку
             </a>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white p-4 rounded-2xl shadow">
+                <p class="text-gray-500 text-sm">Всего</p>
+                <p class="text-2xl font-bold"><?= (int)$stats['total'] ?></p>
+            </div>
+
+            <div class="bg-yellow-50 p-4 rounded-2xl shadow">
+                <p class="text-sm">На рассмотрении</p>
+                <p class="text-2xl font-bold text-yellow-600"><?= (int)$stats['pending'] ?></p>
+            </div>
+
+            <div class="bg-blue-50 p-4 rounded-2xl shadow">
+                <p class="text-sm">Исправить</p>
+                <p class="text-2xl font-bold text-blue-600"><?= (int)$stats['revision'] ?></p>
+            </div>
+
+            <div class="bg-green-50 p-4 rounded-2xl shadow">
+                <p class="text-sm">Приняты</p>
+                <p class="text-2xl font-bold text-green-600"><?= (int)$stats['accepted'] ?></p>
+            </div>
+        </div>
+
+        <div class="flex gap-2 mb-6 flex-wrap">
+            <a href="/my-applications" class="px-4 py-2 rounded-full <?= $activeFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-200' ?>">Все</a>
+            <a href="/my-applications?status=pending" class="px-4 py-2 rounded-full <?= $activeFilter === 'pending' ? 'bg-yellow-600 text-white' : 'bg-yellow-100 text-yellow-700' ?>">На рассмотрении</a>
+            <a href="/my-applications?status=revision" class="px-4 py-2 rounded-full <?= $activeFilter === 'revision' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700' ?>">Исправить</a>
+            <a href="/my-applications?status=accepted" class="px-4 py-2 rounded-full <?= $activeFilter === 'accepted' ? 'bg-green-600 text-white' : 'bg-green-100 text-green-700' ?>">Приняты</a>
+            <a href="/my-applications?status=rejected" class="px-4 py-2 rounded-full <?= $activeFilter === 'rejected' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700' ?>">Отклонены</a>
+        </div>
+
+        <?php if (empty($filteredApplications)): ?>
+            <div class="text-center py-20 bg-white rounded-2xl shadow-sm">
+                <p class="text-gray-500 mb-4">У вас пока нет заявок</p>
+                <a href="/contests" class="inline-block px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition">Подать заявку</a>
+            </div>
+        <?php else: ?>
+            <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                <?php foreach ($filteredApplications as $app): ?>
+                    <?php
+                    $works = getApplicationWorks((int)$app['id']);
+                    $hasDiplomas = false;
+                    $imagePath = '/public/contest-hero-placeholder.svg';
+
+                    foreach ($works as $work) {
+                        if (!$hasDiplomas && mapWorkStatusToDiplomaType((string)($work['status'] ?? 'pending')) !== null) {
+                            $hasDiplomas = true;
+                        }
+                        if ($imagePath === '/public/contest-hero-placeholder.svg') {
+                            if (!empty($work['image_path'])) {
+                                $imagePath = (string)$work['image_path'];
+                            } elseif (!empty($work['drawing_file'])) {
+                                $imagePath = (string)(getParticipantDrawingWebPath($user['email'] ?? '', $work['drawing_file']) ?? $imagePath);
+                            }
+                        }
+                    }
+
+                    if (!empty($app['image'])) {
+                        $imagePath = (string)$app['image'];
+                    }
+
+                    $statusCode = (string)($app['status'] ?? 'pending');
+                    $statusLabel = getStatusLabel($statusCode);
+                    $statusClass = getStatusClass($statusCode);
+                    $isRevision = getStatusGroup($statusCode) === 'revision';
+                    ?>
+                    <div class="bg-white rounded-2xl shadow hover:shadow-lg transition overflow-hidden <?= $isRevision ? 'border-2 border-yellow-400 bg-yellow-50' : '' ?>">
+                        <img src="<?= htmlspecialchars($imagePath) ?>" alt="<?= htmlspecialchars((string)$app['contest_title']) ?>" class="w-full h-56 object-cover">
+
+                        <div class="p-4">
+                            <div class="flex justify-between items-start mb-2 gap-3">
+                                <h3 class="font-semibold text-lg leading-tight"><?= htmlspecialchars((string)$app['contest_title']) ?></h3>
+
+                                <span class="text-xs px-2 py-1 rounded-full whitespace-nowrap <?= htmlspecialchars($statusClass) ?>">
+                                    <?= htmlspecialchars($statusLabel) ?>
+                                </span>
+                            </div>
+
+                            <?php if ($isRevision): ?>
+                                <p class="text-sm text-yellow-700 mb-2">Требуется исправление</p>
+                            <?php endif; ?>
+
+                            <?php if (!empty($unreadByApplication[(int)$app['id']])): ?>
+                                <p class="text-sm text-red-600 mb-2">Новые сообщения: <?= (int)$unreadByApplication[(int)$app['id']] ?></p>
+                            <?php endif; ?>
+
+                            <p class="text-sm text-gray-500 mb-2">Участников: <?= (int)($app['participants_count'] ?? 0) ?></p>
+                            <p class="text-sm text-gray-500 mb-4"><?= date('d.m.Y', strtotime((string)$app['created_at'])) ?></p>
+
+                            <div class="flex gap-2">
+                                <a href="/application/<?= (int)$app['id'] ?>" class="flex-1 text-center px-3 py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200 transition">Просмотреть</a>
+
+                                <?php if ($hasDiplomas): ?>
+                                    <form method="POST" action="/application/<?= (int)$app['id'] ?>" class="flex-1">
+                                        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                                        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                                        <input type="hidden" name="action" value="diploma_links_all">
+                                        <button class="w-full px-3 py-2 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600 transition" type="submit">Диплом</button>
+                                    </form>
+                                <?php else: ?>
+                                    <button class="flex-1 px-3 py-2 bg-gray-200 text-gray-500 rounded-lg text-sm cursor-not-allowed" type="button" disabled>Диплом</button>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
         <?php endif; ?>
     </div>
-</div>
-<?php endforeach; ?>
-</div>
-<?php endif; ?>
 </main>
 
 <?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>
