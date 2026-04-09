@@ -147,6 +147,22 @@ class VkApiClient
         return $this->apiRequest($method, $params);
     }
 
+    public function getDonutGoals(): array
+    {
+        $response = $this->apiRequest('donut.getGoals', [
+            'owner_id' => -1 * $this->groupId,
+        ]);
+
+        if (isset($response['items']) && is_array($response['items'])) {
+            return $response['items'];
+        }
+        if (isset($response['goals']) && is_array($response['goals'])) {
+            return $response['goals'];
+        }
+
+        return array_values(array_filter($response, static fn($item) => is_array($item)));
+    }
+
     private function assertUserTokenCanPublish(): void
     {
         $this->validatePublicationAccess();

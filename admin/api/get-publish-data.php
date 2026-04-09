@@ -66,19 +66,17 @@ if (!empty($workIds)) {
     }
 }
 
-$donutDurations = [
-    ['value' => -1, 'label' => 'Без бесплатной копии'],
-    ['value' => 86400, 'label' => '1 день'],
-    ['value' => 172800, 'label' => '2 дня'],
-    ['value' => 259200, 'label' => '3 дня'],
-    ['value' => 345600, 'label' => '4 дня'],
-    ['value' => 432000, 'label' => '5 дней'],
-    ['value' => 518400, 'label' => '6 дней'],
-    ['value' => 604800, 'label' => '7 дней'],
-];
+$donationGoals = array_map(static function (array $row): array {
+    return [
+        'id' => (int) ($row['id'] ?? 0),
+        'title' => (string) ($row['title'] ?? ''),
+        'description' => (string) ($row['description'] ?? ''),
+        'vk_donate_id' => (string) ($row['vk_donate_id'] ?? ''),
+    ];
+}, getActiveVkDonates());
 
 jsonResponse([
     'success' => true,
     'preview_html' => $previewHtml,
-    'donut_durations' => $donutDurations,
+    'donation_goals' => $donationGoals,
 ]);
