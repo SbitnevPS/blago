@@ -737,8 +737,10 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                 <hr class="application-separator">
                 <h3 class="application-card-title">Действия с заявкой</h3>
                 <div class="application-sidebar-actions">
-                    <form method="POST" onsubmit="return confirm('Отправить заявку на корректировку?');"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning"><i class="fas fa-edit"></i> На корректировку</button></form>
-                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger"><i class="fas fa-times-circle"></i> Отклонить</button></form>
+                    <?php if (!$isApplicationApproved): ?>
+                    <form method="POST" class="js-application-secondary-action" onsubmit="return confirm('Отправить заявку на корректировку?');"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning"><i class="fas fa-edit"></i> На корректировку</button></form>
+                    <form method="POST" class="js-application-secondary-action"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger"><i class="fas fa-times-circle"></i> Отклонить</button></form>
+                    <?php endif; ?>
                     <form method="POST" id="approveApplicationForm">
                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -755,6 +757,9 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     >
                         <i class="fas <?= e($approveButtonIcon) ?>"></i> <?= e($approveButtonText) ?>
                     </button>
+                    <?php if ($isApplicationApproved): ?>
+                        <a href="/admin/applications" class="btn btn--ghost"><i class="fas fa-list"></i> Закрыть</a>
+                    <?php endif; ?>
                 </div>
                 <?php if ($hasNonCompliantDrawings): ?><p class="application-sidebar-hint">Недоступно: есть работы, не соответствующие условиям конкурса.</p><?php endif; ?>
             </div>
@@ -1291,6 +1296,12 @@ ensureComplianceFieldsAvailable();
             return;
         }
         if (approveButton.dataset.approved !== '1') {
+            approveButton.disabled = true;
+            approveButton.setAttribute('aria-disabled', 'true');
+            approveButton.setAttribute('tabindex', '-1');
+            document.querySelectorAll('.js-application-secondary-action').forEach((secondaryAction) => {
+                secondaryAction.style.display = 'none';
+            });
             const approveForm = document.getElementById('approveApplicationForm');
             if (approveForm) {
                 approveForm.submit();
