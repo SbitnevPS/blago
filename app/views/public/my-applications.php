@@ -1,5 +1,5 @@
 <?php
-// my-applications.php - Дашборд заявок пользователя
+// my-applications.php - Дашборд заявок пользователя!
 require_once dirname(__DIR__, 3) . '/config.php';
 
 if (!isAuthenticated()) {
