@@ -676,6 +676,10 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Название работы</label>
+            <p><?= htmlspecialchars(trim((string)($p['work_title'] ?? '')) ?: '—') ?></p>
+        </div>
+        <div class="form-group" style="margin-top:16px;">
             <label class="form-label">Регион</label>
             <p><?= htmlspecialchars($p['region'] ?? '—') ?></p>
         </div>

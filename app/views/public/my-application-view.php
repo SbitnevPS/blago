@@ -383,7 +383,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
             SET fio = ?, age = ?, drawing_file = ?
             WHERE id = ? AND application_id = ?
         ")->execute([$fio, $age, $drawingFile, $participantId, $applicationId]);
-        $pdo->prepare("UPDATE works SET work_title = ?, updated_at = NOW() WHERE id = ? AND application_id = ?")
+        $pdo->prepare("UPDATE works SET title = ?, updated_at = NOW() WHERE id = ? AND application_id = ?")
             ->execute([$workTitle, $workId, $applicationId]);
         $pdo->prepare("
             UPDATE application_corrections
@@ -938,7 +938,7 @@ foreach ($participants as $participant) {
     <div class="form-group"><label class="form-label">Возраст</label><input class="form-input" type="number" min="0" name="age" id="participantEditAge" required></div>
     <div class="form-group"><label class="form-label">Название работы</label><input class="form-input" type="text" name="work_title" id="participantEditWorkTitle"></div>
     <div class="form-group"><label class="form-label">Текущий рисунок</label><img id="participantEditPreview" src="" alt="Предпросмотр рисунка" style="max-width:100%; max-height:260px; border-radius:12px; border:1px solid #E5E7EB; display:none;"></div>
-    <div class="form-group"><label class="form-label">Заменить рисунок</label><input class="form-input" type="file" name="drawing_file" accept="image/*"></div>
+    <div class="form-group"><label class="form-label">Заменить рисунок</label><input class="form-input" type="file" name="drawing_file" id="participantEditDrawingFile" accept="image/*"></div>
 </div>
 <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:12px;">
     <button type="button" class="btn btn--ghost" onclick="closeParticipantEditModal()">Отмена</button>
@@ -1026,11 +1026,16 @@ document.getElementById('galleryModal').addEventListener('click', (event) => {
 function openParticipantEditModal(button) {
  const modal = document.getElementById('participantEditModal');
  const preview = document.getElementById('participantEditPreview');
+ const drawingInput = document.getElementById('participantEditDrawingFile');
  document.getElementById('participantEditWorkId').value = button.dataset.workId || '';
  document.getElementById('participantEditFio').value = button.dataset.fio || '';
  document.getElementById('participantEditAge').value = button.dataset.age || '';
  document.getElementById('participantEditWorkTitle').value = button.dataset.workTitle || '';
  const drawingUrl = button.dataset.drawingUrl || '';
+ if (drawingInput) {
+  drawingInput.value = '';
+  drawingInput.dataset.currentDrawingUrl = drawingUrl;
+ }
  if (drawingUrl) {
   preview.src = drawingUrl;
   preview.style.display = 'block';
@@ -1047,7 +1052,24 @@ function closeParticipantEditModal() {
  if (!modal) return;
  modal.classList.remove('active');
  document.body.style.overflow = '';
- document.getElementById('participantEditForm')?.reset();
+ const form = document.getElementById('participantEditForm');
+ if (form) {
+  form.reset();
+ }
+ const preview = document.getElementById('participantEditPreview');
+ const drawingInput = document.getElementById('participantEditDrawingFile');
+ if (preview) {
+  if (preview.dataset.objectUrl) {
+   URL.revokeObjectURL(preview.dataset.objectUrl);
+   delete preview.dataset.objectUrl;
+  }
+  preview.removeAttribute('src');
+  preview.style.display = 'none';
+ }
+ if (drawingInput) {
+  delete drawingInput.dataset.currentDrawingUrl;
+  drawingInput.value = '';
+ }
 }
 
 document.querySelectorAll('.js-open-participant-edit').forEach((button) => {
@@ -1059,6 +1081,39 @@ document.getElementById('participantEditModal')?.addEventListener('click', (even
   closeParticipantEditModal();
  }
 });
+
+const participantEditDrawingInput = document.getElementById('participantEditDrawingFile');
+if (participantEditDrawingInput) {
+ participantEditDrawingInput.addEventListener('change', () => {
+  const preview = document.getElementById('participantEditPreview');
+  if (!preview) return;
+  const [file] = participantEditDrawingInput.files || [];
+  if (file) {
+   if (preview.dataset.objectUrl) {
+    URL.revokeObjectURL(preview.dataset.objectUrl);
+   }
+   const objectUrl = URL.createObjectURL(file);
+   preview.dataset.objectUrl = objectUrl;
+   preview.src = objectUrl;
+   preview.style.display = 'block';
+   return;
+  }
+
+  if (preview.dataset.objectUrl) {
+   URL.revokeObjectURL(preview.dataset.objectUrl);
+   delete preview.dataset.objectUrl;
+  }
+
+  const currentUrl = participantEditDrawingInput.dataset.currentDrawingUrl || '';
+  if (currentUrl) {
+   preview.src = currentUrl;
+   preview.style.display = 'block';
+  } else {
+   preview.removeAttribute('src');
+   preview.style.display = 'none';
+  }
+ });
+}
 
 const participantEditForm = document.getElementById('participantEditForm');
 if (participantEditForm) {

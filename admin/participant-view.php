@@ -12,7 +12,7 @@ check_csrf();
 $admin = getCurrentUser();
 $participantId = (int) ($_GET['id'] ?? 0);
 
-$stmt = $pdo->prepare("\n    SELECT p.*,\n           a.id AS application_id, a.status AS application_status, a.parent_fio, a.source_info, a.colleagues_info,\n           c.id AS contest_id, c.title AS contest_title,\n           u.id AS user_id, u.name AS user_name, u.surname AS user_surname, u.patronymic AS user_patronymic, u.email AS user_email,\n           u.organization_region AS user_organization_region, u.organization_name AS user_organization_name, u.organization_address AS user_organization_address\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    WHERE p.id = ?\n");
+$stmt = $pdo->prepare("\n    SELECT p.*,\n           w.title AS work_title,\n           a.id AS application_id, a.status AS application_status, a.parent_fio, a.source_info, a.colleagues_info,\n           c.id AS contest_id, c.title AS contest_title,\n           u.id AS user_id, u.name AS user_name, u.surname AS user_surname, u.patronymic AS user_patronymic, u.email AS user_email,\n           u.organization_region AS user_organization_region, u.organization_name AS user_organization_name, u.organization_address AS user_organization_address\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    LEFT JOIN works w ON w.participant_id = p.id\n    WHERE p.id = ?\n");
 $stmt->execute([$participantId]);
 $participant = $stmt->fetch();
 
@@ -91,6 +91,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div><strong>ФИО участника:</strong> <?= htmlspecialchars($participant['fio'] ?: '—') ?></div>
                 <div><strong>ФИО заявителя:</strong> <?= htmlspecialchars(trim(($participant['user_surname'] ?? '') . ' ' . ($participant['user_name'] ?? '') . ' ' . ($participant['user_patronymic'] ?? '')) ?: '—') ?></div>
                 <div><strong>Возраст:</strong> <?= (int) ($participant['age'] ?? 0) ?: '—' ?></div>
+                <div><strong>Название работы:</strong> <?= htmlspecialchars(trim((string)($participant['work_title'] ?? '')) ?: '—') ?></div>
                 <div><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?: '—') ?></div>
                 <div><strong>Email заявителя:</strong> <?= htmlspecialchars($participant['user_email'] ?: ($participant['organization_email'] ?: '—')) ?></div>
                 <div><strong>Организация:</strong> <?= htmlspecialchars($participant['organization_name'] ?: ($participant['user_organization_name'] ?: '—')) ?></div>

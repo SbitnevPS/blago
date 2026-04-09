@@ -39,7 +39,13 @@ if ($editingApplicationId > 0) {
         redirect('/my-applications');
     }
 
-    $stmt = $pdo->prepare("SELECT * FROM participants WHERE application_id = ? ORDER BY id ASC");
+    $stmt = $pdo->prepare("
+        SELECT p.*, w.title AS work_title
+        FROM participants p
+        LEFT JOIN works w ON w.participant_id = p.id
+        WHERE p.application_id = ?
+        ORDER BY p.id ASC
+    ");
     $stmt->execute([$editingApplicationId]);
     $editingParticipants = $stmt->fetchAll();
 }
@@ -223,6 +229,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $participants = $_POST['participants'] ?? [];
  $participant_count =0;
                 
+ $hasWorksTable = false;
+ try {
+ $hasWorksTable = (bool) $pdo->query("SHOW TABLES LIKE 'works'")->fetchColumn();
+ } catch (Throwable $e) {
+ $hasWorksTable = false;
+ }
+
  foreach ($participants as $pIndex => $participant) {
  $surname = trim($participant['surname'] ?? '');
  $name = trim($participant['name'] ?? '');
@@ -239,6 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if (empty($fio)) continue;
                     
  $age = intval($participant['age'] ??0);
+ $workTitle = trim((string)($participant['work_title'] ?? ''));
                     
  // Обработка временного файла рисунка
  $drawing_file = null;
@@ -295,6 +309,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $org_email,
  $drawing_file
  ]);
+ $participantId = (int)$pdo->lastInsertId();
+
+ if ($hasWorksTable && $participantId > 0) {
+ $pdo->prepare("
+ INSERT INTO works (contest_id, application_id, participant_id, title, image_path, status, created_at, updated_at)
+ VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW())
+ ON DUPLICATE KEY UPDATE
+ title = VALUES(title),
+ image_path = VALUES(image_path),
+ updated_at = NOW()
+ ")->execute([
+ $contest_id,
+ $application_id,
+ $participantId,
+ $workTitle,
+ $drawing_file,
+ ]);
+ }
                     
  $participant_count++;
  }
@@ -540,6 +572,7 @@ generateCSRFToken();
          'name' => $parts[1] ?? '',
          'patronymic' => $parts[2] ?? '',
          'age' => $p['age'] ?? '',
+         'work_title' => $p['work_title'] ?? '',
          'temp_file' => '',
          'existing_drawing_file' => $p['drawing_file'] ?? '',
          'preview' => !empty($p['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $p['drawing_file']) : null,
@@ -593,6 +626,10 @@ generateCSRFToken();
 <div class="form-group">
 <label class="form-label form-label--required">Возраст</label>
 <input type="number" name="participants[${index}][age]" class="form-input" min="1" max="18" required value="${data?.age || ''}">
+</div>
+<div class="form-group">
+<label class="form-label">Название работы</label>
+<input type="text" name="participants[${index}][work_title]" class="form-input" value="${data?.work_title || ''}" placeholder="Необязательно">
 </div>
 </div>
 </div>

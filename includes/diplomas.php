@@ -229,6 +229,7 @@ function getApplicationWorks(int $applicationId): array {
 
     $stmt = $pdo->prepare("SELECT
             w.*,
+            w.title AS work_title,
             p.fio,
             p.age,
             p.region,
