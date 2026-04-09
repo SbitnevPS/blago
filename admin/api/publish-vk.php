@@ -51,10 +51,7 @@ if ($donateIdRaw !== 'none') {
         jsonResponse(['success' => false, 'error' => 'Некорректный донат.'], 422);
     }
 
-    $hasDonatesTable = (bool) $pdo->query("SHOW TABLES LIKE 'vk_donates'")->fetchColumn();
-    if (!$hasDonatesTable) {
-        jsonResponse(['success' => false, 'error' => 'Таблица донатов не найдена.'], 422);
-    }
+    ensureVkDonatesSchema();
 
     $donateStmt = $pdo->prepare("SELECT id, title, vk_donate_id FROM vk_donates WHERE id = ? AND is_active = 1 LIMIT 1");
     $donateStmt->execute([$donateId]);

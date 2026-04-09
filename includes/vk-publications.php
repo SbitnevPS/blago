@@ -87,6 +87,22 @@ function ensureVkPublicationSchema(): void
     }
 }
 
+function ensureVkDonatesSchema(): void
+{
+    global $pdo;
+
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS vk_donates (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            description TEXT NULL,
+            vk_donate_id VARCHAR(255) NOT NULL,
+            is_active TINYINT(1) NOT NULL DEFAULT 1
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Throwable $e) {
+    }
+}
+
 function getVkTaskStatusConfig(): array
 {
     return [
