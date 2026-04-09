@@ -44,6 +44,7 @@ $stmt = $pdo->prepare("SELECT * FROM participants WHERE application_id = ?");
 $stmt->execute([$application_id]);
 $participants = $stmt->fetchAll();
 $works = getApplicationWorks((int)$application_id);
+$isApplicationApproved = (string) ($application['status'] ?? '') === 'approved';
 $participantColumns = $pdo->query("DESCRIBE participants")->fetchAll(PDO::FETCH_COLUMN);
 $hasDrawingCompliantColumn = in_array('drawing_compliant', $participantColumns, true);
 $hasDrawingCommentColumn = in_array('drawing_comment', $participantColumns, true);
@@ -252,6 +253,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt = $pdo->prepare("UPDATE applications SET status = 'approved', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
         $application['status'] = 'approved';
+        $isApplicationApproved = true;
+
+        $workIdsStmt = $pdo->prepare("SELECT id FROM works WHERE application_id = ?");
+        $workIdsStmt->execute([$application_id]);
+        foreach ($workIdsStmt->fetchAll(PDO::FETCH_COLUMN) as $workId) {
+            updateWorkStatus((int) $workId, 'accepted');
+        }
 
         $declinedSubject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
         $pdo->prepare("
@@ -689,7 +697,8 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div class="flex gap-sm mt-md" style="flex-wrap:wrap;" data-work-controls data-work-id="<?= (int) $p['id'] ?>">
-            <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--primary btn--sm" type="submit">Принять к участию</button></form>
+            <?php $canAcceptWork = !$isApplicationApproved && ((string) ($p['status'] ?? 'pending')) !== 'accepted'; ?>
+            <form method="POST" class="js-work-async-form" data-accept-work-form style="<?= $canAcceptWork ? '' : 'display:none;' ?>"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--primary btn--sm" type="submit">Принять к участию</button></form>
             <div class="flex gap-sm" style="flex-wrap:wrap; display:<?= mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null ? 'flex' : 'none' ?>;" data-diploma-actions>
                 <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--primary btn--sm" type="submit">Скачать диплом</button></form>
                 <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--secondary btn--sm" type="submit">Отправить по почте</button></form>
@@ -1046,6 +1055,10 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
     const diplomaActions = controls.querySelector('[data-diploma-actions]');
     if (diplomaActions) {
       diplomaActions.style.display = data.diploma_available ? 'flex' : 'none';
+    }
+    const acceptForm = controls.querySelector('[data-accept-work-form]');
+    if (acceptForm && formData.get('work_status') === 'accepted') {
+      acceptForm.style.display = 'none';
     }
    }
 
