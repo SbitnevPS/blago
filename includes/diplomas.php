@@ -200,7 +200,10 @@ function ensureApplicationWorks(int $applicationId): void {
             ON DUPLICATE KEY UPDATE
                 contest_id = VALUES(contest_id),
                 application_id = VALUES(application_id),
-                title = COALESCE(NULLIF(VALUES(title), ''), works.title),
+                title = CASE
+                    WHEN works.title IS NULL OR TRIM(works.title) = '' THEN VALUES(title)
+                    ELSE works.title
+                END,
                 image_path = VALUES(image_path),
                 updated_at = NOW()");
         $ins->execute([
