@@ -33,7 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $task = getVkTaskById($taskId);
         if ($task) {
             $preview = buildVkTaskPreview((array) ($task['filters'] ?? []), (string) (($task['summary']['sample_post_text'] ?? '') !== '' ? ($task['summary']['sample_post_text']) : ''));
-            $newId = createVkTaskFromPreview('Копия: ' . $task['title'], (int) getCurrentAdminId(), $preview, 'manual');
+            $newId = createVkTaskFromPreview('Копия: ' . $task['title'], (int) getCurrentAdminId(), $preview, 'manual', [
+                'vk_donut_enabled' => (int) ($task['vk_donut_enabled'] ?? 0) === 1 ? 1 : 0,
+                'vk_donut_paid_duration' => isset($task['vk_donut_paid_duration']) ? (int) $task['vk_donut_paid_duration'] : null,
+                'vk_donut_can_publish_free_copy' => (int) ($task['vk_donut_can_publish_free_copy'] ?? 0) === 1 ? 1 : 0,
+                'vk_donut_settings_snapshot' => !empty($task['vk_donut_settings_snapshot'])
+                    ? (json_decode((string) $task['vk_donut_settings_snapshot'], true) ?: null)
+                    : null,
+            ]);
             $_SESSION['success_message'] = 'Создана копия задания #' . $newId;
         }
     } elseif ($taskId > 0 && $action === 'archive') {
@@ -234,6 +241,7 @@ require_once __DIR__ . '/includes/header.php';
                 <th>Опубликовано</th>
                 <th>Ошибки</th>
                 <th>Статус</th>
+                <th>Тип</th>
                 <th>Создано</th>
                 <th>Публикация</th>
                 <th></th>
@@ -254,6 +262,11 @@ require_once __DIR__ . '/includes/header.php';
                     <td data-label="Опубликовано"><?= (int) $task['published_items'] ?></td>
                     <td data-label="Ошибки"><?= (int) $task['failed_items'] ?></td>
                     <td data-label="Статус"><span class="badge <?= e($statusMeta['badge_class']) ?>"><?= e($statusMeta['label']) ?></span></td>
+                    <td data-label="Тип">
+                        <span class="badge <?= (int) ($task['vk_donut_enabled'] ?? 0) === 1 ? 'badge--warning' : 'badge--secondary' ?>">
+                            <?= (int) ($task['vk_donut_enabled'] ?? 0) === 1 ? 'VK Donut' : 'Обычный пост' ?>
+                        </span>
+                    </td>
                     <td data-label="Создано"><?= e(date('d.m.Y H:i', strtotime((string) $task['created_at']))) ?></td>
                     <td data-label="Публикация"><?= !empty($task['published_at']) ? e(date('d.m.Y H:i', strtotime((string) $task['published_at']))) : '—' ?></td>
                     <td data-label="Действия" style="display:flex; gap:6px; flex-wrap:wrap;">
