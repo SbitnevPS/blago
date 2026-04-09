@@ -15,7 +15,8 @@ if (!isAdmin()) {
 
 try {
     $query = trim((string) ($_GET['q'] ?? ''));
-    if (mb_strlen($query) < 2) {
+    $isNumericQuery = ctype_digit($query);
+    if (!$isNumericQuery && mb_strlen($query) < 2) {
         echo json_encode([]);
         exit;
     }
@@ -23,6 +24,7 @@ try {
     $limit = (int) ($_GET['limit'] ?? 8);
     $limit = max(1, min(12, $limit));
     $searchTerm = '%' . $query . '%';
+    $exactParticipantId = $isNumericQuery ? (int) $query : 0;
 
     $stmt = $pdo->prepare("
         SELECT
@@ -34,13 +36,15 @@ try {
         FROM participants p
         JOIN applications a ON a.id = p.application_id
         JOIN users u ON u.id = a.user_id
-        WHERE p.fio LIKE ?
+        WHERE (p.id = ? AND ? > 0)
+           OR p.fio LIKE ?
            OR p.region LIKE ?
            OR u.email LIKE ?
+           OR CAST(p.id AS CHAR) LIKE ?
         ORDER BY p.fio ASC, p.id ASC
         LIMIT $limit
     ");
-    $stmt->execute([$searchTerm, $searchTerm, $searchTerm]);
+    $stmt->execute([$exactParticipantId, $exactParticipantId, $searchTerm, $searchTerm, $searchTerm, $searchTerm]);
 
     echo json_encode($stmt->fetchAll(), JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {

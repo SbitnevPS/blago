@@ -184,9 +184,10 @@ if ($participantId > 0) {
         JOIN applications a2 ON a2.id = p.application_id
         JOIN users pu ON pu.id = a2.user_id
         WHERE p.application_id = a.id
-          AND (p.fio LIKE ? OR p.region LIKE ? OR pu.email LIKE ?)
+          AND (p.fio LIKE ? OR p.region LIKE ? OR pu.email LIKE ? OR CAST(p.id AS CHAR) LIKE ?)
     )';
     $participantTerm = '%' . $participantQuery . '%';
+    $params[] = $participantTerm;
     $params[] = $participantTerm;
     $params[] = $participantTerm;
     $params[] = $participantTerm;
@@ -270,7 +271,7 @@ require_once __DIR__ . '/includes/header.php';
                     name="participant_query"
                     id="participantSearchInput"
                     class="form-input"
-                    placeholder="ФИО участника, регион или email заявителя"
+                    placeholder="ID, ФИО участника, регион или email заявителя"
                     value="<?= htmlspecialchars($participantQuery) ?>"
                     autocomplete="off">
                 <input type="hidden" name="participant_id" id="participantId" value="<?= (int) $participantId ?>">
@@ -542,7 +543,8 @@ require_once __DIR__ . '/includes/header.php';
             const fullName = `${item.fio || ''}`.trim() || 'Без имени';
             const region = item.region ? `Регион: ${item.region}` : 'Регион: —';
             const email = item.email || 'Email не указан';
-            const safeName = escapeHtml(fullName);
+            const labelName = `#${item.id} · ${fullName}`;
+            const safeName = escapeHtml(labelName);
             const safeRegion = escapeHtml(region);
             const safeEmail = escapeHtml(email);
             return `

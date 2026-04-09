@@ -20,22 +20,6 @@ if (!$participant) {
     redirect('/admin/participants');
 }
 
-function splitFioString(?string $fio): array {
-    $raw = trim((string) $fio);
-    if ($raw === '') {
-        return ['surname' => '—', 'name' => '—', 'patronymic' => '—'];
-    }
-
-    $parts = preg_split('/\s+/u', $raw) ?: [];
-    return [
-        'surname' => $parts[0] ?? '—',
-        'name' => $parts[1] ?? '—',
-        'patronymic' => $parts[2] ?? '—',
-    ];
-}
-
-$parentFio = splitFioString($participant['parent_fio'] ?? '');
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $_SESSION['error_message'] = 'Ошибка безопасности';
@@ -88,55 +72,34 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card mb-lg">
     <div class="card__header"><h3>Данные участника</h3></div>
     <div class="card__body">
-        <div class="grid grid--2">
-            <div><strong>ФИО участника:</strong> <?= htmlspecialchars($participant['fio'] ?: '—') ?></div>
-            <div><strong>ФИО заявителя:</strong> <?= htmlspecialchars(trim(($participant['user_surname'] ?? '') . ' ' . ($participant['user_name'] ?? '') . ' ' . ($participant['user_patronymic'] ?? '')) ?: '—') ?></div>
-            <div><strong>Возраст:</strong> <?= (int) ($participant['age'] ?? 0) ?: '—' ?></div>
-            <div><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?: '—') ?></div>
-            <div><strong>Email заявки:</strong> <?= htmlspecialchars($participant['user_email'] ?: ($participant['organization_email'] ?: '—')) ?></div>
-            <div><strong>Email учреждения:</strong> <?= htmlspecialchars($participant['organization_email'] ?: '—') ?></div>
-            <div><strong>Организация:</strong> <?= htmlspecialchars($participant['organization_name'] ?: ($participant['user_organization_name'] ?: '—')) ?></div>
-            <div><strong>Адрес организации:</strong> <?= htmlspecialchars($participant['organization_address'] ?: ($participant['user_organization_address'] ?: '—')) ?></div>
-            <div><strong>Регион организации:</strong> <?= htmlspecialchars($participant['user_organization_region'] ?: '—') ?></div>
-            <div><strong>Конкурс:</strong> <?= htmlspecialchars($participant['contest_title'] ?: '—') ?></div>
-            <div><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $participant['application_id'] ?>">#<?= (int) $participant['application_id'] ?></a></div>
-        </div>
-    </div>
-</div>
-
-<div class="card mb-lg">
-    <div class="card__header"><h3>Данные куратора / родителя</h3></div>
-    <div class="card__body">
-        <div class="grid grid--2">
-            <div><strong>Родитель (Фамилия):</strong> <?= htmlspecialchars($parentFio['surname']) ?></div>
-            <div><strong>Родитель (Имя):</strong> <?= htmlspecialchars($parentFio['name']) ?></div>
-            <div><strong>Родитель (Отчество):</strong> <?= htmlspecialchars($parentFio['patronymic']) ?></div>
-            <div><strong>Родитель (ФИО):</strong> <?= htmlspecialchars($participant['parent_fio'] ?: '—') ?></div>
-            <div><strong>Куратор / педагог:</strong> <?= htmlspecialchars($participant['leader_fio'] ?: '—') ?></div>
-            <div><strong>Куратор 1:</strong> <?= htmlspecialchars($participant['curator_1_fio'] ?: '—') ?></div>
-            <div><strong>Куратор 2:</strong> <?= htmlspecialchars($participant['curator_2_fio'] ?: '—') ?></div>
-            <div><strong>Источник информации:</strong> <?= htmlspecialchars($participant['source_info'] ?: '—') ?></div>
-            <div><strong>Кто посоветовал:</strong> <?= htmlspecialchars($participant['colleagues_info'] ?: '—') ?></div>
-        </div>
-    </div>
-</div>
-
-<div class="card mb-lg">
-    <div class="card__header"><h3>Рисунок</h3></div>
-    <div class="card__body">
-        <?php if (!empty($participant['drawing_file'])): ?>
-            <?php $drawingUrl = getParticipantDrawingWebPath($participant['user_email'] ?? '', $participant['drawing_file']); ?>
-            <div style="max-width: 520px;">
-                <img
-                    src="<?= htmlspecialchars($drawingUrl) ?>"
-                    alt="Рисунок участника"
-                    id="participantDrawingPreview"
-                    style="max-width: 100%; border-radius: 12px; border:1px solid var(--color-border); cursor: zoom-in;">
+        <div style="display:grid; grid-template-columns:minmax(260px, 420px) minmax(0, 1fr); gap:18px; align-items:start;">
+            <div>
+                <?php if (!empty($participant['drawing_file'])): ?>
+                    <?php $drawingUrl = getParticipantDrawingWebPath($participant['user_email'] ?? '', $participant['drawing_file']); ?>
+                    <img
+                        src="<?= htmlspecialchars($drawingUrl) ?>"
+                        alt="Рисунок участника"
+                        id="participantDrawingPreview"
+                        style="width:100%; border-radius: 12px; border:1px solid var(--color-border); cursor: zoom-in;">
+                    <p class="text-secondary mt-sm">Нажмите на изображение, чтобы открыть просмотр в модальном окне.</p>
+                <?php else: ?>
+                    <p class="text-secondary">Файл рисунка не загружен.</p>
+                <?php endif; ?>
             </div>
-            <p class="text-secondary mt-sm">Нажмите на изображение, чтобы открыть просмотр в модальном окне.</p>
-        <?php else: ?>
-            <p class="text-secondary">Файл рисунка не загружен.</p>
-        <?php endif; ?>
+            <div class="grid grid--2">
+                <div><strong>ID участника:</strong> #<?= (int) $participant['id'] ?></div>
+                <div><strong>ФИО участника:</strong> <?= htmlspecialchars($participant['fio'] ?: '—') ?></div>
+                <div><strong>ФИО заявителя:</strong> <?= htmlspecialchars(trim(($participant['user_surname'] ?? '') . ' ' . ($participant['user_name'] ?? '') . ' ' . ($participant['user_patronymic'] ?? '')) ?: '—') ?></div>
+                <div><strong>Возраст:</strong> <?= (int) ($participant['age'] ?? 0) ?: '—' ?></div>
+                <div><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?: '—') ?></div>
+                <div><strong>Email заявителя:</strong> <?= htmlspecialchars($participant['user_email'] ?: ($participant['organization_email'] ?: '—')) ?></div>
+                <div><strong>Организация:</strong> <?= htmlspecialchars($participant['organization_name'] ?: ($participant['user_organization_name'] ?: '—')) ?></div>
+                <div><strong>Адрес организации:</strong> <?= htmlspecialchars($participant['organization_address'] ?: ($participant['user_organization_address'] ?: '—')) ?></div>
+                <div><strong>Регион организации:</strong> <?= htmlspecialchars($participant['user_organization_region'] ?: '—') ?></div>
+                <div><strong>Конкурс:</strong> <?= htmlspecialchars($participant['contest_title'] ?: '—') ?></div>
+                <div><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $participant['application_id'] ?>">#<?= (int) $participant['application_id'] ?></a></div>
+            </div>
+        </div>
     </div>
 </div>
 
