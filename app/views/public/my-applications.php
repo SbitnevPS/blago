@@ -91,7 +91,7 @@ $filteredApplications = array_values(array_filter(
     <div class="max-w-6xl mx-auto px-4 py-6">
         <div class="flex items-center justify-between gap-4 mb-6 flex-wrap">
             <h1 class="text-2xl font-bold">Мои заявки</h1>
-            <a href="/contests" class="inline-flex items-center px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition">
+            <a href="/contests" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
                 Подать новую заявку
             </a>
         </div>
@@ -112,9 +112,9 @@ $filteredApplications = array_values(array_filter(
                 <p class="text-2xl font-bold text-blue-600"><?= (int)$stats['revision'] ?></p>
             </div>
 
-            <div class="bg-green-50 p-4 rounded-2xl shadow">
+            <div class="bg-indigo-50 p-4 rounded-2xl shadow">
                 <p class="text-sm">Приняты</p>
-                <p class="text-2xl font-bold text-green-600"><?= (int)$stats['accepted'] ?></p>
+                <p class="text-2xl font-bold text-indigo-600"><?= (int)$stats['accepted'] ?></p>
             </div>
         </div>
 
@@ -122,34 +122,26 @@ $filteredApplications = array_values(array_filter(
             <a href="/my-applications" class="px-4 py-2 rounded-full <?= $activeFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-200' ?>">Все</a>
             <a href="/my-applications?status=pending" class="px-4 py-2 rounded-full <?= $activeFilter === 'pending' ? 'bg-yellow-600 text-white' : 'bg-yellow-100 text-yellow-700' ?>">На рассмотрении</a>
             <a href="/my-applications?status=revision" class="px-4 py-2 rounded-full <?= $activeFilter === 'revision' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700' ?>">Исправить</a>
-            <a href="/my-applications?status=accepted" class="px-4 py-2 rounded-full <?= $activeFilter === 'accepted' ? 'bg-green-600 text-white' : 'bg-green-100 text-green-700' ?>">Приняты</a>
+            <a href="/my-applications?status=accepted" class="px-4 py-2 rounded-full <?= $activeFilter === 'accepted' ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700' ?>">Приняты</a>
             <a href="/my-applications?status=rejected" class="px-4 py-2 rounded-full <?= $activeFilter === 'rejected' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700' ?>">Отклонены</a>
         </div>
 
         <?php if (empty($filteredApplications)): ?>
             <div class="text-center py-20 bg-white rounded-2xl shadow-sm">
                 <p class="text-gray-500 mb-4">У вас пока нет заявок</p>
-                <a href="/contests" class="inline-block px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition">Подать заявку</a>
+                <a href="/contests" class="inline-block px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Подать заявку</a>
             </div>
         <?php else: ?>
             <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 <?php foreach ($filteredApplications as $app): ?>
                     <?php
                     $works = getApplicationWorks((int)$app['id']);
-                    $hasDiplomas = false;
                     $imagePath = '/public/contest-hero-placeholder.svg';
 
                     foreach ($works as $work) {
-                        if (!$hasDiplomas && mapWorkStatusToDiplomaType((string)($work['status'] ?? 'pending')) !== null) {
-                            $hasDiplomas = true;
-                        }
                         if ($imagePath === '/public/contest-hero-placeholder.svg' && !empty($work['drawing_file'])) {
-                            $imagePath = (string)$work['drawing_file'];
+                            $imagePath = (string)(getParticipantDrawingWebPath($user['email'] ?? '', (string)$work['drawing_file']) ?? $imagePath);
                         }
-                    }
-
-                    if (!empty($app['image'])) {
-                        $imagePath = (string)$app['image'];
                     }
 
                     $statusCode = (string)($app['status'] ?? 'pending');
@@ -181,18 +173,7 @@ $filteredApplications = array_values(array_filter(
                             <p class="text-sm text-gray-500 mb-4"><?= date('d.m.Y', strtotime((string)$app['created_at'])) ?></p>
 
                             <div class="flex gap-2">
-                                <a href="/application/<?= (int)$app['id'] ?>" class="flex-1 text-center px-3 py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200 transition">Просмотреть</a>
-
-                                <?php if ($hasDiplomas): ?>
-                                    <form method="POST" action="/application/<?= (int)$app['id'] ?>" class="flex-1">
-                                        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                                        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                                        <input type="hidden" name="action" value="diploma_links_all">
-                                        <button class="w-full px-3 py-2 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600 transition" type="submit">Диплом</button>
-                                    </form>
-                                <?php else: ?>
-                                    <button class="flex-1 px-3 py-2 bg-gray-200 text-gray-500 rounded-lg text-sm cursor-not-allowed" type="button" disabled>Диплом</button>
-                                <?php endif; ?>
+                                <a href="/application/<?= (int)$app['id'] ?>" class="flex-1 text-center px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 transition">Просмотреть заявку</a>
                             </div>
                         </div>
                     </div>
