@@ -333,59 +333,51 @@
 }
 
 /* admin/settings.php */
-.settings-layout {
-  display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-}
-.settings-nav {
-  position: sticky;
-  top: 18px;
-}
-.settings-nav .card__body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.settings-nav__link {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  text-decoration: none;
-  color: var(--color-text-primary);
-  transition: all .2s ease;
-  background: #fff;
-}
-.settings-nav__link i {
-  font-size: 16px;
-  color: var(--color-primary);
-  margin-top: 2px;
-}
-.settings-nav__link span {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.settings-nav__link small {
-  color: var(--color-text-secondary);
-}
-.settings-nav__link:hover {
-  border-color: var(--color-primary);
-  transform: translateY(-1px);
-}
 .settings-content__subtitle {
   margin-top: 6px;
   color: var(--color-text-secondary);
   font-size: 14px;
 }
+.settings-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 12px;
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+}
+.settings-tabs__tab {
+  border: 1px solid var(--color-border);
+  background: #f8fafc;
+  color: var(--color-text-primary);
+  border-radius: 10px;
+  padding: 10px 14px;
+  white-space: nowrap;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s ease;
+}
+.settings-tabs__tab i {
+  margin-right: 6px;
+}
+.settings-tabs__tab:hover {
+  border-color: var(--color-primary);
+}
+.settings-tabs__tab.is-active {
+  background: #fff;
+  color: var(--color-primary);
+  border-color: #bfdbfe;
+  box-shadow: 0 4px 12px rgba(29, 78, 216, .12);
+}
 .settings-form {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 20px;
+}
+.settings-tab-panel {
+  display: none;
+}
+.settings-tab-panel.is-active {
+  display: block;
 }
 .settings-section {
   scroll-margin-top: 14px;
@@ -506,16 +498,22 @@
   padding-top: 8px;
   border-top: 1px solid var(--color-border);
 }
+.settings-toast {
+  position: fixed;
+  top: 18px;
+  right: 20px;
+  z-index: 1200;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity .2s ease, transform .2s ease;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, .15);
+}
+.settings-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
 
 @media (max-width: 1024px) {
-  .settings-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-nav {
-    position: static;
-  }
-
   .settings-messages-grid {
     grid-template-columns: 1fr;
   }

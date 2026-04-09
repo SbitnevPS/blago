@@ -35,6 +35,8 @@ $messageTemplates = [
     ],
 ];
 
+$settings = getSystemSettings();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['action'] ?? '') === 'upload_homepage_hero_async') {
         if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -66,46 +68,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $error = 'Ошибка безопасности';
     } else {
+        $section = (string) ($_POST['settings_section'] ?? 'notifications');
+        $allowedSections = ['notifications', 'email-delivery', 'vk-integration', 'homepage-banner'];
+        if (!in_array($section, $allowedSections, true)) {
+            $section = 'notifications';
+        }
+
         $payload = [
-            'application_approved_subject' => trim($_POST['application_approved_subject'] ?? ''),
-            'application_approved_message' => trim($_POST['application_approved_message'] ?? ''),
-            'application_cancelled_subject' => trim($_POST['application_cancelled_subject'] ?? ''),
-            'application_cancelled_message' => trim($_POST['application_cancelled_message'] ?? ''),
-            'application_declined_subject' => trim($_POST['application_declined_subject'] ?? ''),
-            'application_declined_message' => trim($_POST['application_declined_message'] ?? ''),
-            'application_revision_subject' => trim($_POST['application_revision_subject'] ?? ''),
-            'application_revision_message' => trim($_POST['application_revision_message'] ?? ''),
-            'vk_publication_group_id' => trim($_POST['vk_publication_group_id'] ?? ''),
-            'vk_publication_api_version' => trim($_POST['vk_publication_api_version'] ?? '5.131'),
-            'vk_publication_from_group' => isset($_POST['vk_publication_from_group']) ? 1 : 0,
-            'vk_publication_post_template' => trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate()),
-            'email_notifications_enabled' => isset($_POST['email_notifications_enabled']) ? 1 : 0,
-            'email_from_name' => trim($_POST['email_from_name'] ?? ''),
-            'email_from_address' => trim($_POST['email_from_address'] ?? ''),
-            'email_reply_to' => trim($_POST['email_reply_to'] ?? ''),
-            'homepage_hero_image' => trim($_POST['homepage_hero_image'] ?? ''),
+            'application_approved_subject' => (string) ($settings['application_approved_subject'] ?? ''),
+            'application_approved_message' => (string) ($settings['application_approved_message'] ?? ''),
+            'application_cancelled_subject' => (string) ($settings['application_cancelled_subject'] ?? ''),
+            'application_cancelled_message' => (string) ($settings['application_cancelled_message'] ?? ''),
+            'application_declined_subject' => (string) ($settings['application_declined_subject'] ?? ''),
+            'application_declined_message' => (string) ($settings['application_declined_message'] ?? ''),
+            'application_revision_subject' => (string) ($settings['application_revision_subject'] ?? ''),
+            'application_revision_message' => (string) ($settings['application_revision_message'] ?? ''),
+            'vk_publication_group_id' => (string) ($settings['vk_publication_group_id'] ?? ''),
+            'vk_publication_api_version' => (string) ($settings['vk_publication_api_version'] ?? '5.131'),
+            'vk_publication_from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1 ? 1 : 0,
+            'vk_publication_post_template' => (string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()),
+            'email_notifications_enabled' => (int) ($settings['email_notifications_enabled'] ?? 1) === 1 ? 1 : 0,
+            'email_from_name' => (string) ($settings['email_from_name'] ?? ''),
+            'email_from_address' => (string) ($settings['email_from_address'] ?? ''),
+            'email_reply_to' => (string) ($settings['email_reply_to'] ?? ''),
+            'homepage_hero_image' => (string) ($settings['homepage_hero_image'] ?? ''),
         ];
 
-        $newPublicationToken = trim((string) ($_POST['vk_publication_token_new'] ?? ''));
-        $resetPublicationToken = isset($_POST['vk_publication_token_reset']) && (string) $_POST['vk_publication_token_reset'] === '1';
-        if ($resetPublicationToken) {
-            $payload['vk_publication_manual_token'] = '';
-            $payload['vk_publication_status'] = 'disconnected';
-            $payload['vk_publication_last_error'] = '';
-            $payload['vk_publication_technical_diagnostics'] = '';
-            $payload['vk_publication_vk_user_id'] = '';
-            $payload['vk_publication_vk_user_name'] = '';
-            $payload['vk_publication_group_name'] = '';
-            $payload['vk_publication_token_scope'] = '';
-            $payload['vk_publication_confirmed_permissions'] = '';
-        } elseif ($newPublicationToken !== '') {
-            $payload['vk_publication_manual_token'] = $newPublicationToken;
-            $payload['vk_publication_status'] = 'attention';
+        if ($section === 'notifications') {
+            $payload['application_approved_subject'] = trim($_POST['application_approved_subject'] ?? '');
+            $payload['application_approved_message'] = trim($_POST['application_approved_message'] ?? '');
+            $payload['application_cancelled_subject'] = trim($_POST['application_cancelled_subject'] ?? '');
+            $payload['application_cancelled_message'] = trim($_POST['application_cancelled_message'] ?? '');
+            $payload['application_declined_subject'] = trim($_POST['application_declined_subject'] ?? '');
+            $payload['application_declined_message'] = trim($_POST['application_declined_message'] ?? '');
+            $payload['application_revision_subject'] = trim($_POST['application_revision_subject'] ?? '');
+            $payload['application_revision_message'] = trim($_POST['application_revision_message'] ?? '');
+        } elseif ($section === 'email-delivery') {
+            $payload['email_notifications_enabled'] = isset($_POST['email_notifications_enabled']) ? 1 : 0;
+            $payload['email_from_name'] = trim($_POST['email_from_name'] ?? '');
+            $payload['email_from_address'] = trim($_POST['email_from_address'] ?? '');
+            $payload['email_reply_to'] = trim($_POST['email_reply_to'] ?? '');
+        } elseif ($section === 'vk-integration') {
+            $payload['vk_publication_group_id'] = trim($_POST['vk_publication_group_id'] ?? '');
+            $payload['vk_publication_api_version'] = trim($_POST['vk_publication_api_version'] ?? '5.131');
+            $payload['vk_publication_from_group'] = isset($_POST['vk_publication_from_group']) ? 1 : 0;
+            $payload['vk_publication_post_template'] = trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate());
+
+            $newPublicationToken = trim((string) ($_POST['vk_publication_token_new'] ?? ''));
+            $resetPublicationToken = isset($_POST['vk_publication_token_reset']) && (string) $_POST['vk_publication_token_reset'] === '1';
+            if ($resetPublicationToken) {
+                $payload['vk_publication_manual_token'] = '';
+                $payload['vk_publication_status'] = 'disconnected';
+                $payload['vk_publication_last_error'] = '';
+                $payload['vk_publication_technical_diagnostics'] = '';
+                $payload['vk_publication_vk_user_id'] = '';
+                $payload['vk_publication_vk_user_name'] = '';
+                $payload['vk_publication_group_name'] = '';
+                $payload['vk_publication_token_scope'] = '';
+                $payload['vk_publication_confirmed_permissions'] = '';
+            } elseif ($newPublicationToken !== '') {
+                $payload['vk_publication_manual_token'] = $newPublicationToken;
+                $payload['vk_publication_status'] = 'attention';
+            }
+        } elseif ($section === 'homepage-banner') {
+            $payload['homepage_hero_image'] = trim($_POST['homepage_hero_image'] ?? '');
         }
 
         if (saveSystemSettings($payload)) {
             cleanupLegacyVkPublicationOauthData();
             $_SESSION['success_message'] = 'Настройки сохранены';
+            $_SESSION['settings_active_tab'] = $section;
             redirect('/admin/settings');
         }
 
@@ -113,7 +145,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$settings = getSystemSettings();
+$activeSettingsTab = (string) ($_SESSION['settings_active_tab'] ?? 'notifications');
+if (!in_array($activeSettingsTab, ['notifications', 'email-delivery', 'vk-integration', 'homepage-banner'], true)) {
+    $activeSettingsTab = 'notifications';
+}
+unset($_SESSION['settings_active_tab']);
 $vkPublicationSettings = getVkPublicationSettings();
 $vkReadiness = verifyVkPublicationReadiness(false);
 $vkStatus = !empty($vkReadiness['ok']) ? 'connected' : (($vkPublicationSettings['publication_token'] !== '') ? 'attention' : 'disconnected');
@@ -128,12 +164,10 @@ $vkTokenTypeLabel = $vkPublicationSettings['token_type'] === 'user' ? 'User toke
 require_once __DIR__ . '/includes/header.php';
 ?>
 
-<?php if (!empty($_SESSION['success_message'])): ?>
-    <div class="alert alert--success mb-lg">
-        <i class="fas fa-check-circle"></i> <?= htmlspecialchars($_SESSION['success_message']) ?>
-    </div>
-    <?php unset($_SESSION['success_message']); ?>
-<?php endif; ?>
+<?php
+$successMessage = (string) ($_SESSION['success_message'] ?? '');
+unset($_SESSION['success_message']);
+?>
 
 <?php if (!empty($_SESSION['flash_error'])): ?>
     <div class="alert alert--error mb-lg">
@@ -148,55 +182,33 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 <?php endif; ?>
 
-<div class="settings-layout">
-    <aside class="settings-nav card">
-        <div class="card__header">
-            <h3>Разделы настроек</h3>
-        </div>
-        <div class="card__body">
-            <a href="#notifications" class="settings-nav__link">
-                <i class="fas fa-bell"></i>
-                <span>
-                    <strong>Уведомления</strong>
-                    <small>Шаблоны автоматических сообщений</small>
-                </span>
-            </a>
-            <a href="#email-delivery" class="settings-nav__link">
-                <i class="fas fa-envelope"></i>
-                <span>
-                    <strong>Email-отправка</strong>
-                    <small>Параметры исходящих писем</small>
-                </span>
-            </a>
-            <a href="#vk-integration" class="settings-nav__link">
-                <i class="fab fa-vk"></i>
-                <span>
-                    <strong>Интеграция VK</strong>
-                    <small>Публикация работ в сообщество</small>
-                </span>
-            </a>
-            <a href="#homepage-banner" class="settings-nav__link">
-                <i class="fas fa-image"></i>
-                <span>
-                    <strong>Главная страница</strong>
-                    <small>Баннер 1500×400 px</small>
-                </span>
-            </a>
-        </div>
-    </aside>
+<div class="settings-content card">
+    <div class="card__header">
+        <h3>Настройки администратора</h3>
+        <p class="settings-content__subtitle">Настройки разделены по вкладкам, у каждой вкладки своя кнопка сохранения.</p>
+    </div>
 
-    <div class="settings-content card">
-        <div class="card__header">
-            <h3>Настройки администратора</h3>
-            <p class="settings-content__subtitle">Страница разделена по функциям, чтобы параметры было проще находить и редактировать.</p>
-        </div>
+    <div class="settings-tabs" role="tablist" aria-label="Разделы настроек">
+        <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'notifications' ? ' is-active' : '' ?>" data-settings-tab="notifications" role="tab">
+            <i class="fas fa-bell"></i> Уведомления
+        </button>
+        <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'email-delivery' ? ' is-active' : '' ?>" data-settings-tab="email-delivery" role="tab">
+            <i class="fas fa-envelope"></i> Email-отправка
+        </button>
+        <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'vk-integration' ? ' is-active' : '' ?>" data-settings-tab="vk-integration" role="tab">
+            <i class="fab fa-vk"></i> Интеграция VK
+        </button>
+        <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'homepage-banner' ? ' is-active' : '' ?>" data-settings-tab="homepage-banner" role="tab">
+            <i class="fas fa-image"></i> Главная страница
+        </button>
+    </div>
 
-        <div class="card__body">
+    <div class="card__body">
+        <section id="notifications" class="settings-tab-panel<?= $activeSettingsTab === 'notifications' ? ' is-active' : '' ?>" data-settings-panel="notifications">
             <form method="POST" class="settings-form">
                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-
-                <section id="notifications" class="settings-section">
+                <input type="hidden" name="settings_section" value="notifications">
                     <div class="settings-section__header">
                         <h4><i class="fas fa-bell"></i> Автоматические сообщения</h4>
                         <p>Шаблоны писем пользователю в зависимости от статуса заявки.</p>
@@ -231,9 +243,19 @@ require_once __DIR__ . '/includes/header.php';
                             </article>
                         <?php endforeach; ?>
                     </div>
-                </section>
+                <div class="settings-actions">
+                    <button type="submit" class="btn btn--primary">
+                        <i class="fas fa-save"></i> Сохранить
+                    </button>
+                </div>
+            </form>
+        </section>
 
-                <section id="email-delivery" class="settings-section">
+        <section id="email-delivery" class="settings-tab-panel<?= $activeSettingsTab === 'email-delivery' ? ' is-active' : '' ?>" data-settings-panel="email-delivery">
+            <form method="POST" class="settings-form">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="settings_section" value="email-delivery">
                     <div class="settings-section__header">
                         <h4><i class="fas fa-envelope"></i> Настройки отправки писем</h4>
                         <p>Эти параметры используются для отправки дипломов пользователям на электронную почту.</p>
@@ -283,9 +305,19 @@ require_once __DIR__ . '/includes/header.php';
                             <div class="form-hint">Если поле пустое, адрес Reply-To не добавляется.</div>
                         </div>
                     </div>
-                </section>
+                    <div class="settings-actions">
+                        <button type="submit" class="btn btn--primary">
+                            <i class="fas fa-save"></i> Сохранить
+                        </button>
+                    </div>
+            </form>
+        </section>
 
-                <section id="vk-integration" class="settings-section">
+        <section id="vk-integration" class="settings-tab-panel<?= $activeSettingsTab === 'vk-integration' ? ' is-active' : '' ?>" data-settings-panel="vk-integration">
+            <form method="POST" class="settings-form">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="settings_section" value="vk-integration">
                     <div class="settings-section__header">
                         <h4><i class="fab fa-vk"></i> Интеграция VK</h4>
                         <p>Два независимых контура: вход пользователей через VK ID и отдельная публикация работ в VK.</p>
@@ -384,9 +416,19 @@ require_once __DIR__ . '/includes/header.php';
                             <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {work_title}, {contest_title}, {nomination}, {age_category}</div>
                         </div>
                     </div>
-                </section>
+                    <div class="settings-actions">
+                        <button type="submit" class="btn btn--primary">
+                            <i class="fas fa-save"></i> Сохранить
+                        </button>
+                    </div>
+            </form>
+        </section>
 
-                <section id="homepage-banner" class="settings-section">
+        <section id="homepage-banner" class="settings-tab-panel<?= $activeSettingsTab === 'homepage-banner' ? ' is-active' : '' ?>" data-settings-panel="homepage-banner">
+            <form method="POST" class="settings-form" id="homepageBannerForm">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="settings_section" value="homepage-banner">
                     <div class="settings-section__header">
                         <h4><i class="fas fa-image"></i> Баннер главной страницы</h4>
                         <p>Изображение для верхнего блока на главной странице (рекомендуемый размер: 1500×400 px).</p>
@@ -409,20 +451,22 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
                     </div>
                     <div class="form-hint">Поддерживаются JPG, JPEG, PNG и WEBP. Для сохранения в настройках нажмите кнопку «Сохранить настройки».</div>
-                </section>
-
                 <div class="settings-actions">
                     <button type="submit" class="btn btn--primary">
-                        <i class="fas fa-save"></i> Сохранить настройки
+                        <i class="fas fa-save"></i> Сохранить
                     </button>
                 </div>
             </form>
-        </div>
+        </section>
     </div>
 </div>
 
 <script>
 (() => {
+    const activeTabFromServer = <?= json_encode($activeSettingsTab, JSON_UNESCAPED_UNICODE) ?>;
+    const successMessage = <?= json_encode($successMessage, JSON_UNESCAPED_UNICODE) ?>;
+    const tabs = Array.from(document.querySelectorAll('[data-settings-tab]'));
+    const panels = Array.from(document.querySelectorAll('[data-settings-panel]'));
     const uploadArea = document.getElementById('homepageHeroUploadArea');
     const input = document.getElementById('homepageHeroInput');
     const hiddenInput = document.getElementById('homepage_hero_image');
@@ -431,72 +475,107 @@ require_once __DIR__ . '/includes/header.php';
     const openPreviewBtn = document.getElementById('homepageHeroOpenPreview');
     const title = document.getElementById('homepageHeroUploadTitle');
     const hint = document.getElementById('homepageHeroUploadHint');
-    const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
+    const bannerForm = document.getElementById('homepageBannerForm');
+    const csrfToken = bannerForm?.querySelector('input[name="csrf_token"]')?.value || '';
     const vkCheckBtn = document.getElementById('vkCheckBtn');
 
-    if (!uploadArea || !input || !hiddenInput || !previewImage) return;
-
-    const uploadImage = async (file) => {
-        title.textContent = 'Загрузка...';
-        hint.textContent = 'Пожалуйста, подождите';
-
-        const formData = new FormData();
-        formData.append('action', 'upload_homepage_hero_async');
-        formData.append('csrf_token', csrfToken);
-        formData.append('homepage_hero_image', file);
-
-        const response = await fetch('/admin/settings', {
-            method: 'POST',
-            body: formData,
+    const setActiveTab = (tabName) => {
+        tabs.forEach((tab) => {
+            tab.classList.toggle('is-active', tab.dataset.settingsTab === tabName);
         });
-        const payload = await response.json();
-        if (!response.ok || !payload.success) {
-            throw new Error(payload.message || 'Не удалось загрузить файл');
-        }
-
-        hiddenInput.value = payload.filename || '';
-        previewImage.src = payload.url || '';
-        previewWrap?.classList.remove('is-hidden');
-        uploadArea.classList.add('has-file');
-        title.textContent = payload.original_name ? `Файл загружен: ${payload.original_name}` : 'Файл загружен';
-        hint.textContent = 'Можно загрузить другой файл для замены';
+        panels.forEach((panel) => {
+            panel.classList.toggle('is-active', panel.dataset.settingsPanel === tabName);
+        });
     };
 
-    if (openPreviewBtn) {
-        openPreviewBtn.addEventListener('click', () => {
-            if (!previewImage.src) return;
-            window.open(previewImage.src, '_blank', 'noopener');
+    tabs.forEach((tab) => {
+        tab.addEventListener('click', () => {
+            const tabName = tab.dataset.settingsTab || 'notifications';
+            setActiveTab(tabName);
         });
+    });
+    setActiveTab(activeTabFromServer || 'notifications');
+
+    const showToast = (message, type = 'success') => {
+        if (!message) return;
+        const toast = document.createElement('div');
+        toast.className = 'alert settings-toast ' + (type === 'success' ? 'alert--success' : 'alert--error');
+        toast.innerHTML = `<i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i> ${message}`;
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add('is-visible'));
+        setTimeout(() => {
+            toast.classList.remove('is-visible');
+            setTimeout(() => toast.remove(), 260);
+        }, 2800);
+    };
+
+    if (successMessage) {
+        showToast(successMessage, 'success');
     }
 
-    uploadArea.addEventListener('click', () => input.click());
-    uploadArea.addEventListener('dragover', (event) => {
-        event.preventDefault();
-        uploadArea.classList.add('dragover');
-    });
-    uploadArea.addEventListener('dragleave', (event) => {
-        event.preventDefault();
-        uploadArea.classList.remove('dragover');
-    });
-    uploadArea.addEventListener('drop', (event) => {
-        event.preventDefault();
-        uploadArea.classList.remove('dragover');
-        if (event.dataTransfer?.files?.length) {
-            uploadImage(event.dataTransfer.files[0]).catch((error) => {
-                title.textContent = error.message || 'Ошибка загрузки';
-                hint.textContent = 'Попробуйте снова';
+    if (uploadArea && input && hiddenInput && previewImage) {
+        const uploadImage = async (file) => {
+            title.textContent = 'Загрузка...';
+            hint.textContent = 'Пожалуйста, подождите';
+
+            const formData = new FormData();
+            formData.append('action', 'upload_homepage_hero_async');
+            formData.append('csrf_token', csrfToken);
+            formData.append('homepage_hero_image', file);
+
+            const response = await fetch('/admin/settings', {
+                method: 'POST',
+                body: formData,
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Не удалось загрузить файл');
+            }
+
+            hiddenInput.value = payload.filename || '';
+            previewImage.src = payload.url || '';
+            previewWrap?.classList.remove('is-hidden');
+            uploadArea.classList.add('has-file');
+            title.textContent = payload.original_name ? `Файл загружен: ${payload.original_name}` : 'Файл загружен';
+            hint.textContent = 'Можно загрузить другой файл для замены';
+        };
+
+        if (openPreviewBtn) {
+            openPreviewBtn.addEventListener('click', () => {
+                if (!previewImage.src) return;
+                window.open(previewImage.src, '_blank', 'noopener');
             });
         }
-    });
-    input.addEventListener('change', () => {
-        if (!input.files?.length) return;
-        uploadImage(input.files[0]).catch((error) => {
-            title.textContent = error.message || 'Ошибка загрузки';
-            hint.textContent = 'Попробуйте снова';
-        }).finally(() => {
-            input.value = '';
+
+        uploadArea.addEventListener('click', () => input.click());
+        uploadArea.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            uploadArea.classList.add('dragover');
         });
-    });
+        uploadArea.addEventListener('dragleave', (event) => {
+            event.preventDefault();
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (event) => {
+            event.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (event.dataTransfer?.files?.length) {
+                uploadImage(event.dataTransfer.files[0]).catch((error) => {
+                    title.textContent = error.message || 'Ошибка загрузки';
+                    hint.textContent = 'Попробуйте снова';
+                });
+            }
+        });
+        input.addEventListener('change', () => {
+            if (!input.files?.length) return;
+            uploadImage(input.files[0]).catch((error) => {
+                title.textContent = error.message || 'Ошибка загрузки';
+                hint.textContent = 'Попробуйте снова';
+            }).finally(() => {
+                input.value = '';
+            });
+        });
+    }
 
     const postJson = async (url) => {
         const response = await fetch(url, {
