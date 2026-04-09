@@ -358,7 +358,7 @@ function defaultVkPostTemplate(): string
     return "🎨 {participant_full_name}\n"
         . "🏫 {organization_name}\n"
         . "📍 {region_name}\n"
-        . "🖼 {work_title}\n"
+        . "🖼 {drawing_title}\n"
         . "🏆 {contest_title}\n"
         . "Номинация: {nomination}\n"
         . "Возраст: {participant_age}\n"
@@ -384,6 +384,7 @@ function normalizeVkTaskFilters(array $input): array
         'work_status' => trim((string) ($input['work_status'] ?? '')),
         'region' => trim((string) ($input['region'] ?? '')),
         'organization_name' => trim((string) ($input['organization_name'] ?? '')),
+        'drawing_title' => trim((string) ($input['drawing_title'] ?? '')),
         'submitted_from' => trim((string) ($input['submitted_from'] ?? '')),
         'submitted_to' => trim((string) ($input['submitted_to'] ?? '')),
         'reviewed_from' => trim((string) ($input['reviewed_from'] ?? '')),
@@ -427,6 +428,11 @@ function getVkWorksByFilters(array $filters): array
     if (($filters['organization_name'] ?? '') !== '') {
         $where[] = 'p.organization_name LIKE ?';
         $params[] = '%' . $filters['organization_name'] . '%';
+    }
+
+    if (($filters['drawing_title'] ?? '') !== '') {
+        $where[] = 'w.title LIKE ?';
+        $params[] = '%' . $filters['drawing_title'] . '%';
     }
 
     if (($filters['submitted_from'] ?? '') !== '') {
@@ -532,6 +538,7 @@ function buildVkPostText(array $workRow, string $template): string
         '{organization_name}' => trim((string) ($workRow['organization_name'] ?? '')),
         '{region_name}' => trim((string) ($workRow['region'] ?? '')),
         '{work_title}' => trim((string) ($workRow['work_title'] ?? '')),
+        '{drawing_title}' => trim((string) ($workRow['work_title'] ?? '')),
         '{contest_title}' => trim((string) ($workRow['contest_title'] ?? '')),
         '{nomination}' => '',
         '{participant_age}' => (int) ($workRow['participant_age'] ?? 0) > 0 ? (string) ((int) $workRow['participant_age']) : '',
