@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # deploy.sh — деплой проекта
+composer install --no-dev --optimize-autoloader
 
 echo "[deploy] Starting deploy..."
 
