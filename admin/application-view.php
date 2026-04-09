@@ -1103,6 +1103,18 @@ document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
  alertEl.remove();
 });
 
+async function parseJsonResponse(response) {
+ const rawBody = await response.text();
+ if (!rawBody) {
+  throw new Error('Сервер вернул пустой ответ. Проверьте логи PHP и повторите попытку.');
+ }
+ try {
+  return JSON.parse(rawBody);
+ } catch (error) {
+  throw new Error(`Сервер вернул некорректный ответ (HTTP ${response.status}).`);
+ }
+}
+
 document.querySelectorAll('.js-work-async-form').forEach((form) => {
  form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1123,7 +1135,7 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
     headers: { 'X-Requested-With': 'XMLHttpRequest' },
     body: formData,
    });
-   const data = await response.json();
+   const data = await parseJsonResponse(response);
    if (!response.ok || !data.success) {
     throw new Error(data.error || 'Операция не выполнена');
    }
@@ -1215,7 +1227,7 @@ async function saveDrawingCompliance(form) {
    headers: { 'X-Requested-With': 'XMLHttpRequest' },
    body: formData,
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!data.success) {
    alert(data.error || 'Не удалось сохранить проверку');
   }
