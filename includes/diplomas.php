@@ -873,55 +873,24 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
         return false;
     }
 
-    $settings = getSystemSettings();
-    if ((int)($settings['email_notifications_enabled'] ?? 1) !== 1) {
-        return false;
-    }
-
-    $fromName = trim((string)($settings['email_from_name'] ?? 'ДетскиеКонкурсы.рф'));
-    $fromAddress = trim((string)($settings['email_from_address'] ?? 'no-reply@kids-contests.ru'));
-    $replyTo = trim((string)($settings['email_reply_to'] ?? ''));
-
-    if (!filter_var($fromAddress, FILTER_VALIDATE_EMAIL)) {
-        $fromAddress = 'no-reply@kids-contests.ru';
-    }
-
-    if ($replyTo !== '' && !filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
-        $replyTo = '';
-    }
-
     $diplomaType = (string)($diploma['diploma_type'] ?? 'contest_participant');
     $subject = $diplomaType === 'encouragement'
         ? 'Ваш благодарственный диплом'
         : 'Ваш диплом участника конкурса';
-
-    $boundary = '==Multipart_Boundary_x' . md5((string)microtime()) . 'x';
-    $encodedFromName = '=?UTF-8?B?' . base64_encode($fromName) . '?=';
-    $headers = "From: {$encodedFromName} <{$fromAddress}>\r\n";
-    if ($replyTo !== '') {
-        $headers .= "Reply-To: {$replyTo}\r\n";
-    }
-    $headers .= "MIME-Version: 1.0\r\n";
-    $headers .= "Content-Type: multipart/mixed; boundary=\"{$boundary}\"\r\n";
-
-    $body = "--{$boundary}\r\n";
-    $body .= "Content-Type: text/plain; charset=UTF-8\r\n";
-    $body .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
+    $body = '<p>Здравствуйте!</p>';
     if ($diplomaType === 'encouragement') {
-        $body .= "Здравствуйте!\nРабота рассмотрена. Спасибо за участие! Для вас доступен благодарственный диплом: " . getPublicDiplomaUrl((string)$diploma['public_token']) . "\n\n";
+        $body .= '<p>Работа рассмотрена. Спасибо за участие! Для вас доступен благодарственный диплом: <a href="' . htmlspecialchars(getPublicDiplomaUrl((string)$diploma['public_token'])) . '">' . htmlspecialchars(getPublicDiplomaUrl((string)$diploma['public_token'])) . '</a></p>';
     } else {
-        $body .= "Здравствуйте!\nВаш диплом участника готов. Публичная ссылка: " . getPublicDiplomaUrl((string)$diploma['public_token']) . "\n\n";
+        $body .= '<p>Ваш диплом участника готов. Публичная ссылка: <a href="' . htmlspecialchars(getPublicDiplomaUrl((string)$diploma['public_token'])) . '">' . htmlspecialchars(getPublicDiplomaUrl((string)$diploma['public_token'])) . '</a></p>';
     }
-
-    $content = chunk_split(base64_encode((string)file_get_contents($file)));
-    $body .= "--{$boundary}\r\n";
-    $body .= "Content-Type: application/pdf; name=\"diploma.pdf\"\r\n";
-    $body .= "Content-Disposition: attachment; filename=\"diploma.pdf\"\r\n";
-    $body .= "Content-Transfer-Encoding: base64\r\n\r\n";
-    $body .= $content . "\r\n";
-    $body .= "--{$boundary}--";
-
-    $ok = mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, $headers);
+    $ok = sendEmail($to, $subject, $body, [
+        'attachments' => [
+            [
+                'path' => $file,
+                'name' => 'diploma.pdf',
+            ],
+        ],
+    ]);
     if ($ok) {
         $pdo->prepare('UPDATE participant_diplomas SET email_sent_at = NOW(), updated_at = NOW() WHERE id = ?')->execute([(int)$diploma['id']]);
     }

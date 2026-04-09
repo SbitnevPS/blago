@@ -36,6 +36,7 @@ $messageTemplates = [
 ];
 
 $settings = getSystemSettings();
+$maskedSmtpPasswordPlaceholder = '••••••••';
 ensureVkDonatesSchema();
 $vkDonates = [];
 try {
@@ -151,6 +152,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'email_from_name' => (string) ($settings['email_from_name'] ?? ''),
             'email_from_address' => (string) ($settings['email_from_address'] ?? ''),
             'email_reply_to' => (string) ($settings['email_reply_to'] ?? ''),
+            'email_use_smtp' => (int) ($settings['email_use_smtp'] ?? 0) === 1 ? 1 : 0,
+            'email_smtp_host' => (string) ($settings['email_smtp_host'] ?? ''),
+            'email_smtp_port' => (int) ($settings['email_smtp_port'] ?? 465),
+            'email_smtp_encryption' => (string) ($settings['email_smtp_encryption'] ?? 'ssl'),
+            'email_smtp_auth_enabled' => (int) ($settings['email_smtp_auth_enabled'] ?? 1) === 1 ? 1 : 0,
+            'email_smtp_username' => (string) ($settings['email_smtp_username'] ?? ''),
+            'email_smtp_password' => (string) ($settings['email_smtp_password'] ?? ''),
+            'email_smtp_timeout' => (int) ($settings['email_smtp_timeout'] ?? 15),
             'homepage_hero_image' => (string) ($settings['homepage_hero_image'] ?? ''),
         ];
 
@@ -168,6 +177,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['email_from_name'] = trim($_POST['email_from_name'] ?? '');
             $payload['email_from_address'] = trim($_POST['email_from_address'] ?? '');
             $payload['email_reply_to'] = trim($_POST['email_reply_to'] ?? '');
+            $payload['email_use_smtp'] = isset($_POST['email_use_smtp']) ? 1 : 0;
+            $payload['email_smtp_host'] = trim($_POST['email_smtp_host'] ?? '');
+            $payload['email_smtp_port'] = max(1, (int) ($_POST['email_smtp_port'] ?? 465));
+            $payload['email_smtp_encryption'] = trim($_POST['email_smtp_encryption'] ?? 'ssl');
+            $payload['email_smtp_auth_enabled'] = isset($_POST['email_smtp_auth_enabled']) ? 1 : 0;
+            $payload['email_smtp_username'] = trim($_POST['email_smtp_username'] ?? '');
+            $payload['email_smtp_timeout'] = max(1, (int) ($_POST['email_smtp_timeout'] ?? 15));
+
+            $smtpPasswordRaw = (string) ($_POST['email_smtp_password'] ?? '');
+            if ($smtpPasswordRaw !== '') {
+                $payload['email_smtp_password'] = $smtpPasswordRaw;
+            } else {
+                unset($payload['email_smtp_password']);
+            }
+
+            if (!filter_var($payload['email_from_address'], FILTER_VALIDATE_EMAIL)) {
+                $error = 'Укажите корректный Email отправителя (From).';
+            } elseif ($payload['email_reply_to'] !== '' && !filter_var($payload['email_reply_to'], FILTER_VALIDATE_EMAIL)) {
+                $error = 'Укажите корректный Email для ответа (Reply-To).';
+            } elseif (!in_array($payload['email_smtp_encryption'], ['none', 'ssl', 'tls'], true)) {
+                $error = 'Некорректный тип шифрования SMTP.';
+            } elseif ($payload['email_smtp_port'] <= 0) {
+                $error = 'SMTP порт должен быть числом больше нуля.';
+            } elseif ($payload['email_use_smtp'] === 1 && $payload['email_smtp_host'] === '') {
+                $error = 'Укажите SMTP host при включенном SMTP.';
+            } elseif ($payload['email_use_smtp'] === 1 && $payload['email_smtp_auth_enabled'] === 1 && $payload['email_smtp_username'] === '') {
+                $error = 'Укажите SMTP логин при включенной SMTP-авторизации.';
+            }
+
+            if (($_POST['action'] ?? '') === 'test_email_send') {
+                $testEmail = trim((string) ($_POST['test_email'] ?? ''));
+                if ($testEmail === '' || !filter_var($testEmail, FILTER_VALIDATE_EMAIL)) {
+                    $error = 'Укажите корректный email для тестовой отправки.';
+                }
+
+                if (empty($error)) {
+                    $testSettings = $payload;
+                    if (!array_key_exists('email_smtp_password', $testSettings)) {
+                        $testSettings['email_smtp_password'] = (string) ($settings['email_smtp_password'] ?? '');
+                    }
+
+                    $testBody = '<p>Это тестовое письмо из настроек админки.</p><p>Если вы получили его — SMTP настроен корректно.</p>';
+                    $testOk = sendEmail($testEmail, 'Тестовое письмо', $testBody, [
+                        'settings_override' => $testSettings,
+                    ]);
+
+                    if ($testOk) {
+                        $_SESSION['success_message'] = 'Тестовое письмо успешно отправлено на ' . $testEmail;
+                    } else {
+                        $error = 'Не удалось отправить тестовое письмо. Проверьте SMTP настройки и логи сервера.';
+                    }
+                }
+
+                $_SESSION['settings_active_tab'] = 'email-delivery';
+                if (empty($error)) {
+                    redirect('/admin/settings#email-delivery');
+                }
+            }
         } elseif ($section === 'vk-integration') {
             $payload['vk_publication_group_id'] = trim($_POST['vk_publication_group_id'] ?? '');
             $payload['vk_publication_api_version'] = trim($_POST['vk_publication_api_version'] ?? '5.131');
@@ -195,7 +262,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['homepage_hero_image'] = trim($_POST['homepage_hero_image'] ?? '');
         }
 
-        if (saveSystemSettings($payload)) {
+        if (empty($error) && saveSystemSettings($payload)) {
             cleanupLegacyVkPublicationOauthData();
             $_SESSION['success_message'] = 'Настройки сохранены';
             $_SESSION['settings_active_tab'] = $section;
@@ -370,6 +437,81 @@ unset($_SESSION['success_message']);
                                 placeholder="support@example.com"
                             >
                             <div class="form-hint">Если поле пустое, адрес Reply-To не добавляется.</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-checkbox">
+                                <input type="checkbox" name="email_use_smtp" id="email_use_smtp" value="1" <?= (int) ($settings['email_use_smtp'] ?? 0) === 1 ? 'checked' : '' ?>>
+                                <span class="form-checkbox__mark"></span>
+                                <span>Использовать SMTP для отправки писем</span>
+                            </label>
+                        </div>
+
+                        <div id="smtpFieldsWrap" class="<?= (int) ($settings['email_use_smtp'] ?? 0) === 1 ? '' : 'is-hidden' ?>">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">SMTP host</label>
+                                    <input type="text" name="email_smtp_host" class="form-input" value="<?= htmlspecialchars((string) ($settings['email_smtp_host'] ?? '')) ?>" placeholder="smtp.mail.ru">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">SMTP port</label>
+                                    <input type="number" min="1" name="email_smtp_port" class="form-input" value="<?= (int) ($settings['email_smtp_port'] ?? 465) ?>" placeholder="465">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Шифрование</label>
+                                    <select name="email_smtp_encryption" class="form-input">
+                                        <?php $smtpEncryption = (string) ($settings['email_smtp_encryption'] ?? 'ssl'); ?>
+                                        <option value="none" <?= $smtpEncryption === 'none' ? 'selected' : '' ?>>none</option>
+                                        <option value="ssl" <?= $smtpEncryption === 'ssl' ? 'selected' : '' ?>>ssl</option>
+                                        <option value="tls" <?= $smtpEncryption === 'tls' ? 'selected' : '' ?>>tls</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Таймаут (сек)</label>
+                                    <input type="number" min="1" name="email_smtp_timeout" class="form-input" value="<?= (int) ($settings['email_smtp_timeout'] ?? 15) ?>" placeholder="15">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-checkbox">
+                                    <input type="checkbox" name="email_smtp_auth_enabled" id="email_smtp_auth_enabled" value="1" <?= (int) ($settings['email_smtp_auth_enabled'] ?? 1) === 1 ? 'checked' : '' ?>>
+                                    <span class="form-checkbox__mark"></span>
+                                    <span>Включить SMTP авторизацию</span>
+                                </label>
+                            </div>
+
+                            <div id="smtpAuthWrap" class="<?= (int) ($settings['email_smtp_auth_enabled'] ?? 1) === 1 ? '' : 'is-hidden' ?>">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="form-label">SMTP логин</label>
+                                        <input type="text" name="email_smtp_username" class="form-input" value="<?= htmlspecialchars((string) ($settings['email_smtp_username'] ?? '')) ?>" placeholder="sbitnev.ps@bk.ru">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">SMTP пароль</label>
+                                        <input type="password" name="email_smtp_password" class="form-input" value="" placeholder="<?= htmlspecialchars($maskedSmtpPasswordPlaceholder) ?>" autocomplete="new-password">
+                                        <div class="form-hint">Пароль не отображается после сохранения. Оставьте пустым, чтобы сохранить текущий.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-hint">Для Mail.ru используйте email логина как From.</div>
+
+                        <div class="settings-email-test">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Тестовый email</label>
+                                    <input type="email" name="test_email" class="form-input" value="" placeholder="test@example.com">
+                                </div>
+                            </div>
+                            <div class="settings-actions settings-actions--inline">
+                                <button type="submit" name="action" value="test_email_send" class="btn btn--secondary">
+                                    <i class="fas fa-paper-plane"></i> Отправить тестовое письмо
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="settings-actions">
@@ -658,6 +800,10 @@ unset($_SESSION['success_message']);
     const bannerForm = document.getElementById('homepageBannerForm');
     const csrfToken = bannerForm?.querySelector('input[name="csrf_token"]')?.value || '';
     const vkCheckBtn = document.getElementById('vkCheckBtn');
+    const smtpEnabledInput = document.getElementById('email_use_smtp');
+    const smtpFieldsWrap = document.getElementById('smtpFieldsWrap');
+    const smtpAuthInput = document.getElementById('email_smtp_auth_enabled');
+    const smtpAuthWrap = document.getElementById('smtpAuthWrap');
 
     const setActiveTab = (tabName) => {
         tabs.forEach((tab) => {
@@ -692,6 +838,19 @@ unset($_SESSION['success_message']);
     if (successMessage) {
         showToast(successMessage, 'success');
     }
+
+    const syncEmailFieldsVisibility = () => {
+        if (smtpFieldsWrap && smtpEnabledInput) {
+            smtpFieldsWrap.classList.toggle('is-hidden', !smtpEnabledInput.checked);
+        }
+        if (smtpAuthWrap && smtpAuthInput) {
+            smtpAuthWrap.classList.toggle('is-hidden', !smtpAuthInput.checked);
+        }
+    };
+
+    smtpEnabledInput?.addEventListener('change', syncEmailFieldsVisibility);
+    smtpAuthInput?.addEventListener('change', syncEmailFieldsVisibility);
+    syncEmailFieldsVisibility();
 
     if (uploadArea && input && hiddenInput && previewImage) {
         const uploadImage = async (file) => {
