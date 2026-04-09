@@ -668,6 +668,7 @@ $currentPage = 'applications';
                                     <div><strong>Возраст:</strong> <?= e((string)($participant['age'] ?? '—')) ?></div>
                                     <div><strong>Регион:</strong> <?= e((string)($participant['region'] ?? '—')) ?></div>
                                     <div><strong>Организация:</strong> <?= e((string)($participant['organization_name'] ?? '—')) ?></div>
+                                    <div><strong>Название рисунка:</strong> <?= e($workTitle !== '' ? $workTitle : '—') ?></div>
                                     <div><strong>ID участника:</strong> #<?= (int) ($participant['participant_id'] ?? 0) ?></div>
                                 </div>
                                 <?php if ($hasParticipantCorrection): ?>
