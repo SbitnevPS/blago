@@ -577,6 +577,17 @@ generateCSRFToken();
 </div>
 </div>
 </div>
+<div class="modal" id="drawingPreviewModal" aria-hidden="true">
+<div class="modal__content" style="max-width: 1100px; width: 96%;">
+<div class="modal__header">
+<h3 class="modal__title">Просмотр рисунка</h3>
+<button type="button" class="modal__close" onclick="closeDrawingPreviewModal()" aria-label="Закрыть">&times;</button>
+</div>
+<div class="modal__body">
+<img id="drawingPreviewModalImage" src="" alt="Рисунок участника" style="width:100%; max-height:min(70vh, calc(100vh - 260px)); object-fit:contain; border-radius:12px; background:#111;">
+</div>
+</div>
+</div>
 
 <?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>
     
@@ -606,7 +617,7 @@ generateCSRFToken();
             
  const previewHtml = data && data.preview ? `
 <div class="drawing-preview visible" id="preview_${index}">
-<img src="${data.original_url || data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large" id="preview_img_${index}">
+<img src="${data.original_url || data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large drawing-preview__image--clickable" id="preview_img_${index}" onclick="viewDrawing(${index})">
 <div class="drawing-preview__info" id="preview_info_${index}">Файл загружен</div>
 <div class="drawing-preview__actions">
 <button type="button" class="drawing-preview__action" onclick="viewDrawing(${index})">Посмотреть</button>
@@ -744,7 +755,7 @@ function handleFileSelect(file, index) {
  previewContainer.className = 'drawing-preview visible';
  previewContainer.id = `preview_${index}`;
  previewContainer.innerHTML = `
-<img src="${data.original_url || data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large" id="preview_img_${index}">
+<img src="${data.original_url || data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large drawing-preview__image--clickable" id="preview_img_${index}" onclick="viewDrawing(${index})">
 <div class="drawing-preview__info" id="preview_info_${index}">Загружено</div>
 <div class="drawing-preview__actions">
 <button type="button" class="drawing-preview__action" onclick="viewDrawing(${index})">Посмотреть</button>
@@ -774,11 +785,27 @@ function handleFileSelect(file, index) {
  });
  }
         
- function viewDrawing(index) {
+function viewDrawing(index) {
  const previewImage = document.getElementById(`preview_img_${index}`);
  if (!previewImage || !previewImage.src) return;
- window.open(previewImage.src, '_blank', 'noopener');
- }
+ const modal = document.getElementById('drawingPreviewModal');
+ const modalImage = document.getElementById('drawingPreviewModalImage');
+ if (!modal || !modalImage) return;
+ modalImage.src = previewImage.src;
+ modal.classList.add('active');
+ modal.setAttribute('aria-hidden', 'false');
+ document.body.style.overflow = 'hidden';
+}
+
+function closeDrawingPreviewModal() {
+ const modal = document.getElementById('drawingPreviewModal');
+ const modalImage = document.getElementById('drawingPreviewModalImage');
+ if (!modal) return;
+ modal.classList.remove('active');
+ modal.setAttribute('aria-hidden', 'true');
+ if (modalImage) modalImage.src = '';
+ document.body.style.overflow = '';
+}
 
  function resetDrawingUi(index) {
  const area = document.getElementById(`drawingUpload_${index}`);
@@ -860,6 +887,19 @@ function goToMyApplications() {
  document.getElementById('successModal').classList.add('active');
  document.body.style.overflow = 'hidden';
  <?php endif; ?>
+
+ const drawingPreviewModal = document.getElementById('drawingPreviewModal');
+ if (drawingPreviewModal) {
+ drawingPreviewModal.addEventListener('click', function(event) {
+ if (event.target === drawingPreviewModal) closeDrawingPreviewModal();
+ });
+ }
+
+ document.addEventListener('keydown', function(event) {
+ if (event.key === 'Escape' && drawingPreviewModal && drawingPreviewModal.classList.contains('active')) {
+ closeDrawingPreviewModal();
+ }
+ });
  });
 </script>
 </body>
