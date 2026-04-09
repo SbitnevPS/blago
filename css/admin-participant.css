@@ -1,0 +1,297 @@
+.participant-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.participant-breadcrumbs a {
+  color: #4f46e5;
+}
+
+.participant-breadcrumbs a:hover {
+  text-decoration: underline;
+}
+
+.participant-hero {
+  margin-bottom: 18px;
+}
+
+.participant-hero__body {
+  padding: 24px;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.participant-hero__summary {
+  min-width: 0;
+}
+
+.participant-hero__eyebrow {
+  color: #6366f1;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.participant-hero__title {
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.1;
+  margin: 0;
+  color: #0f172a;
+}
+
+.participant-hero__meta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 12px 0 10px;
+  color: #475569;
+}
+
+.participant-hero__meta span,
+.participant-hero__contest {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.participant-hero__contest {
+  color: #1f2937;
+  font-weight: 500;
+  margin-bottom: 14px;
+}
+
+.participant-hero__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.participant-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.participant-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.participant-flash {
+  margin-bottom: 18px;
+}
+
+.participant-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 40%) minmax(0, 60%);
+  gap: 18px;
+  align-items: start;
+}
+
+.participant-layout__details {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.participant-section-title h3 {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.participant-section-title p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.participant-drawing-preview {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  cursor: zoom-in;
+  display: block;
+}
+
+.participant-drawing-panel {
+  margin-top: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.participant-drawing-panel__filename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  min-width: 0;
+  margin-bottom: 10px;
+}
+
+.participant-drawing-panel__filename span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.participant-drawing-panel__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.participant-empty-drawing {
+  min-height: 300px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 14px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  color: #475569;
+  padding: 18px;
+}
+
+.participant-empty-drawing i {
+  font-size: 28px;
+}
+
+.participant-empty-drawing p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.participant-empty-drawing span {
+  font-size: 13px;
+}
+
+.participant-detail-card {
+  margin-bottom: 0;
+}
+
+.participant-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.participant-detail-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  min-height: 84px;
+  background: #fff;
+}
+
+.participant-detail-item__label {
+  margin: 0 0 6px;
+  color: #64748b;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.participant-detail-item__value {
+  color: #0f172a;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.participant-card-link {
+  color: #4338ca;
+  font-weight: 600;
+}
+
+.participant-card-link:hover {
+  text-decoration: underline;
+}
+
+.participant-diploma-card {
+  margin-bottom: 0;
+}
+
+.participant-diploma-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.participant-diploma-actions form {
+  flex: 1 1 240px;
+}
+
+.participant-diploma-actions__btn {
+  width: 100%;
+  min-height: 44px;
+}
+
+.participant-diploma-card__hint {
+  margin: 10px 2px 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.participant-drawing-modal {
+  max-width: 1024px;
+  width: 96%;
+}
+
+.participant-drawing-modal__body {
+  text-align: center;
+}
+
+.participant-drawing-modal__image {
+  max-width: 100%;
+  max-height: 75vh;
+  border-radius: 10px;
+}
+
+@media (max-width: 1024px) {
+  .participant-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .participant-hero__body {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .participant-hero__actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .participant-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .participant-hero__body {
+    padding: 18px;
+  }
+}
