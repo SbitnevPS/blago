@@ -12,7 +12,7 @@ check_csrf();
 $admin = getCurrentUser();
 $participantId = (int) ($_GET['id'] ?? 0);
 
-$stmt = $pdo->prepare("\n    SELECT p.*,\n           a.id AS application_id, a.status AS application_status, a.parent_fio, a.source_info, a.colleagues_info,\n           c.id AS contest_id, c.title AS contest_title,\n           u.id AS user_id, u.name AS user_name, u.surname AS user_surname, u.patronymic AS user_patronymic, u.email AS user_email,\n           u.organization_region AS user_organization_region, u.organization_name AS user_organization_name, u.organization_address AS user_organization_address\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    WHERE p.id = ?\n");
+$stmt = $pdo->prepare("\n    SELECT p.*,\n           a.id AS application_id, a.status AS application_status, a.parent_fio, a.source_info, a.colleagues_info,\n           c.id AS contest_id, c.title AS contest_title,\n           u.id AS user_id, u.name AS user_name, u.surname AS user_surname, u.patronymic AS user_patronymic, u.email AS user_email,\n           u.organization_region AS user_organization_region, u.organization_name AS user_organization_name, u.organization_address AS user_organization_address,\n           w.title AS work_title\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    WHERE p.id = ?\n");
 $stmt->execute([$participantId]);
 $participant = $stmt->fetch();
 
@@ -68,6 +68,7 @@ $organizationAddress = trim((string) ($participant['organization_address'] ?: ($
 $organizationRegion = trim((string) ($participant['user_organization_region'] ?? '')) ?: '—';
 $participantRegion = trim((string) ($participant['region'] ?? '')) ?: '—';
 $participantAge = (int) ($participant['age'] ?? 0);
+$workTitle = trim((string) ($participant['work_title'] ?? ''));
 $drawingFileName = trim((string) ($participant['drawing_file'] ?? ''));
 $drawingUrl = $drawingFileName !== '' ? getParticipantDrawingWebPath($participant['user_email'] ?? '', $drawingFileName) : '';
 $emailHint = $participantEmail !== '' ? $participantEmail : null;
@@ -77,6 +78,7 @@ $detailsMap = [
         ['label' => 'ФИО участника', 'value' => $participantName],
         ['label' => 'Возраст', 'value' => $participantAge > 0 ? $participantAge . ' лет' : '—'],
         ['label' => 'Регион', 'value' => $participantRegion],
+        ['label' => 'Название рисунка', 'value' => $workTitle !== '' ? $workTitle : '—'],
     ],
     'Заявитель' => [
         ['label' => 'ФИО заявителя', 'value' => $applicantName],

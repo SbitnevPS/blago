@@ -678,7 +678,7 @@ $latestMessage = $latestMessageStmt->fetch() ?: null;
                                 <?php endif; ?>
                             </div>
                             <div class="work-card__details">
-                                <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd></dl></section>
+                                <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd><dt>Название рисунка</dt><dd><?= e(trim((string) ($p['title'] ?? '')) ?: '—') ?></dd></dl></section>
                                 <section class="work-section"><h4>Организация</h4><dl class="application-kv-list"><dt>Организация</dt><dd><?= e($p['organization_name'] ?? '—') ?></dd><dt>Адрес</dt><dd><?= e($p['organization_address'] ?? '—') ?></dd></dl></section>
                                 <section class="work-section"><h4>Проверка работы</h4>
                                     <form method="POST" class="js-drawing-compliance-form work-compliance-form">
