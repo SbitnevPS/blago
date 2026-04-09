@@ -68,11 +68,9 @@ if (!empty($workIds)) {
 
 $donates = [];
 try {
-    $hasDonatesTable = (bool) $pdo->query("SHOW TABLES LIKE 'vk_donates'")->fetchColumn();
-    if ($hasDonatesTable) {
-        $donatesStmt = $pdo->query("SELECT id, title FROM vk_donates WHERE is_active = 1 ORDER BY id DESC");
-        $donates = $donatesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    }
+    ensureVkDonatesSchema();
+    $donatesStmt = $pdo->query("SELECT id, title FROM vk_donates WHERE is_active = 1 ORDER BY id DESC");
+    $donates = $donatesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } catch (Throwable $e) {
     $donates = [];
 }
