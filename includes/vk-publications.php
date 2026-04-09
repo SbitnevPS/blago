@@ -806,7 +806,7 @@ function refreshVkTaskCounters(int $taskId): void
         ]);
 }
 
-function publishVkTaskItem(int $itemId): array
+function publishVkTaskItem(int $itemId, array $options = []): array
 {
     global $pdo;
 
@@ -855,8 +855,18 @@ function publishVkTaskItem(int $itemId): array
         return ['success' => false, 'error' => $error];
     }
 
+    $extraWallParams = [];
+    if (!empty($options['wall_params']) && is_array($options['wall_params'])) {
+        $extraWallParams = $options['wall_params'];
+    }
+
     try {
-        $published = $client->publishPhotoPost($imageFsPath, (string) ($item['post_text'] ?? ''), (bool) $settings['from_group']);
+        $published = $client->publishPhotoPost(
+            $imageFsPath,
+            (string) ($item['post_text'] ?? ''),
+            (bool) $settings['from_group'],
+            $extraWallParams
+        );
 
         $pdo->prepare("UPDATE vk_publication_task_items
             SET item_status = 'published', vk_post_id = ?, vk_post_url = ?, error_message = NULL, technical_error = NULL, published_at = NOW(), updated_at = NOW()
@@ -936,7 +946,7 @@ function normalizeVkPublicationError(Throwable $e): array
     ];
 }
 
-function publishVkTask(int $taskId): array
+function publishVkTask(int $taskId, array $options = []): array
 {
     global $pdo;
 
@@ -962,7 +972,7 @@ function publishVkTask(int $taskId): array
     $result = ['total' => count($itemIds), 'published' => 0, 'failed' => 0];
 
     foreach ($itemIds as $itemId) {
-        $itemResult = publishVkTaskItem($itemId);
+        $itemResult = publishVkTaskItem($itemId, $options);
         if (!empty($itemResult['success'])) {
             $result['published']++;
         } else {

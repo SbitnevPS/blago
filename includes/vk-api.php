@@ -37,7 +37,7 @@ class VkApiClient
         }
     }
 
-    public function publishPhotoPost(string $imageFsPath, string $message, bool $fromGroup = true): array
+    public function publishPhotoPost(string $imageFsPath, string $message, bool $fromGroup = true, array $extraWallParams = []): array
     {
         if (!is_file($imageFsPath) || !is_readable($imageFsPath)) {
             throw new VkApiException('Файл изображения недоступен для публикации.');
@@ -76,12 +76,22 @@ class VkApiClient
 
         $attachment = 'photo' . $ownerId . '_' . $photoId;
 
-        $post = $this->apiRequest('wall.post', [
+        $wallPostParams = [
             'owner_id' => -1 * $this->groupId,
             'from_group' => $fromGroup ? 1 : 0,
             'message' => $message,
             'attachments' => $attachment,
-        ]);
+        ];
+
+        foreach ($extraWallParams as $paramKey => $paramValue) {
+            $normalizedKey = trim((string) $paramKey);
+            if ($normalizedKey === '' || in_array($normalizedKey, ['access_token', 'v'], true)) {
+                continue;
+            }
+            $wallPostParams[$normalizedKey] = $paramValue;
+        }
+
+        $post = $this->apiRequest('wall.post', $wallPostParams);
 
         $postId = (int) ($post['post_id'] ?? 0);
         if ($postId <= 0) {

@@ -45,7 +45,6 @@ $stmt->execute([$application_id]);
 $participants = $stmt->fetchAll();
 $works = getApplicationWorks((int)$application_id);
 $isApplicationApproved = (string) ($application['status'] ?? '') === 'approved';
-$publishPromptData = null;
 $participantColumns = $pdo->query("DESCRIBE participants")->fetchAll(PDO::FETCH_COLUMN);
 $hasDrawingCompliantColumn = in_array('drawing_compliant', $participantColumns, true);
 $hasDrawingCommentColumn = in_array('drawing_comment', $participantColumns, true);
@@ -531,40 +530,6 @@ $latestMessageStmt = $pdo->prepare("
 ");
 $latestMessageStmt->execute([(int) $application['user_id'], (int) $admin['id']]);
 $latestMessage = $latestMessageStmt->fetch() ?: null;
-$publishPromptApplicationId = max(0, (int) ($_SESSION['vk_publish_prompt_application_id'] ?? 0));
-if ($publishPromptApplicationId === (int) $application_id) {
-    unset($_SESSION['vk_publish_prompt_application_id']);
-
-    $participantsStmt = $pdo->prepare("
-        SELECT p.id AS participant_id, p.fio, p.drawing_file, w.id AS work_id, w.image_path
-        FROM participants p
-        LEFT JOIN works w ON w.participant_id = p.id
-        WHERE p.application_id = ?
-        ORDER BY p.id ASC
-    ");
-    $participantsStmt->execute([(int) $application_id]);
-    $promptParticipants = $participantsStmt->fetchAll() ?: [];
-
-    $publishPromptData = [
-        'application_id' => (int) $application_id,
-        'participants' => [],
-    ];
-
-    foreach ($promptParticipants as $participantRow) {
-        $imageFile = trim((string) ($participantRow['image_path'] ?? ''));
-        if ($imageFile === '') {
-            $imageFile = trim((string) ($participantRow['drawing_file'] ?? ''));
-        }
-
-        $publishPromptData['participants'][] = [
-            'id' => (int) ($participantRow['participant_id'] ?? 0),
-            'fio' => trim((string) ($participantRow['fio'] ?? '')) ?: 'Без имени',
-            'preview_image' => $imageFile !== ''
-                ? getParticipantDrawingWebPath((string) ($application['email'] ?? ''), $imageFile)
-                : '',
-        ];
-    }
-}
 $approveButtonDisabled = $hasNonCompliantDrawings || $isApplicationApproved;
 $approveButtonIcon = $isApplicationApproved ? 'fa-check-double' : 'fa-check';
 $approveButtonText = $isApplicationApproved ? 'Заявка принята' : 'Принять заявку';
@@ -771,7 +736,17 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                 <div class="application-sidebar-actions">
                     <form method="POST" onsubmit="return confirm('Отправить заявку на корректировку?');"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning"><i class="fas fa-edit"></i> На корректировку</button></form>
                     <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger"><i class="fas fa-times-circle"></i> Отклонить</button></form>
-                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="approve_application"><button type="submit" class="btn application-btn application-btn--success" id="approveApplicationButton" data-approved="<?= $isApplicationApproved ? '1' : '0' ?>" <?= $approveButtonDisabled ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>><i class="fas <?= e($approveButtonIcon) ?>"></i> <?= e($approveButtonText) ?></button></form>
+                    <button
+                        type="button"
+                        class="btn application-btn application-btn--success"
+                        id="approveApplicationButton"
+                        data-id="<?= (int) $application_id ?>"
+                        data-approved="<?= $isApplicationApproved ? '1' : '0' ?>"
+                        data-csrf="<?= e(csrf_token()) ?>"
+                        <?= $approveButtonDisabled ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>
+                    >
+                        <i class="fas <?= e($approveButtonIcon) ?>"></i> <?= e($approveButtonText) ?>
+                    </button>
                 </div>
                 <?php if ($hasNonCompliantDrawings): ?><p class="application-sidebar-hint">Недоступно: есть работы, не соответствующие условиям конкурса.</p><?php endif; ?>
             </div>
@@ -779,42 +754,31 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
     </aside>
 </div>
 
-<?php if (!empty($publishPromptData)): ?>
-<div class="modal active" id="vkPublishPromptModal">
+<div class="modal" id="vkPublishPromptModal">
     <div class="modal__content" style="max-width:700px;">
         <div class="modal__header">
-            <h3 class="modal__title">Опубликовать работы в группе?</h3>
+            <h3 class="modal__title">Публикация в VK</h3>
         </div>
         <div class="modal__body">
-            <p class="text-secondary" style="margin-bottom:14px;">
-                Заявка #<?= (int) $publishPromptData['application_id'] ?> принята. Можно сразу отправить работы в VK-группу.
-            </p>
-            <div style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;">
-                <?php foreach ($publishPromptData['participants'] as $participant): ?>
-                    <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid #E5E7EB; border-radius:10px;">
-                        <?php if (!empty($participant['preview_image'])): ?>
-                            <img src="<?= e($participant['preview_image']) ?>" alt="<?= e($participant['fio']) ?>" style="width:44px; height:44px; border-radius:8px; object-fit:cover; background:#F8FAFC;">
-                        <?php else: ?>
-                            <div style="width:44px; height:44px; border-radius:8px; background:#EEF2FF; color:#6366F1; display:flex; align-items:center; justify-content:center;">
-                                <i class="fas fa-image"></i>
-                            </div>
-                        <?php endif; ?>
-                        <div style="font-weight:600;"><?= e($participant['fio']) ?></div>
-                    </div>
-                <?php endforeach; ?>
-                <?php if (empty($publishPromptData['participants'])): ?>
-                    <div class="text-secondary">В заявке нет участников.</div>
-                <?php endif; ?>
+            <div id="vkPublishPreview" style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;">
+                <div class="text-secondary">Загрузка превью...</div>
+            </div>
+            <div style="margin-top: 14px;">
+                <div style="font-weight: 600; margin-bottom: 8px;">Донаты</div>
+                <label style="display:block; margin-bottom:8px;">
+                    <input type="radio" name="donate" value="none" checked>
+                    Без доната
+                </label>
+                <div id="vkDonateOptions" style="display:grid; gap:8px;"></div>
             </div>
             <div id="vkPublishPromptStatus" class="alert" style="display:none; margin-top:12px;"></div>
         </div>
         <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
             <button type="button" class="btn btn--primary" id="vkPublishPromptRun">Опубликовать</button>
-            <button type="button" class="btn btn--secondary" id="vkPublishPromptSkip">Пока не публиковать</button>
+            <button type="button" class="btn btn--secondary" id="vkPublishPromptSkip">Отмена</button>
         </div>
     </div>
 </div>
-<?php endif; ?>
 
 <!-- Модальное окно отправки сообщения -->
 <div class="modal" id="messageModal">
@@ -1197,25 +1161,21 @@ function syncApproveApplicationButtonState() {
  }
 }
 
-document.getElementById('approveApplicationButton')?.closest('form')?.addEventListener('submit', (event) => {
- const button = document.getElementById('approveApplicationButton');
- if (button?.disabled) {
-  event.preventDefault();
-  showToast('Нельзя принять заявку: есть работы, не соответствующие условиям конкурса.', 'error');
- }
-});
-
 syncApproveApplicationButtonState();
 
 (() => {
     const modal = document.getElementById('vkPublishPromptModal');
-    if (!modal) return;
+    const approveButton = document.getElementById('approveApplicationButton');
+    if (!modal || !approveButton) return;
 
     const publishButton = document.getElementById('vkPublishPromptRun');
     const skipButton = document.getElementById('vkPublishPromptSkip');
     const statusBox = document.getElementById('vkPublishPromptStatus');
-    const applicationId = <?= (int) (($publishPromptData['application_id'] ?? 0)) ?>;
-    const csrfToken = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE) ?>;
+    const previewBox = document.getElementById('vkPublishPreview');
+    const donateOptions = document.getElementById('vkDonateOptions');
+    const applicationId = Number(approveButton.dataset.id || 0);
+    const csrfToken = approveButton.dataset.csrf || '';
+    let publishInProgress = false;
 
     const showStatus = (message, type = 'success') => {
         if (!statusBox) return;
@@ -1224,40 +1184,116 @@ syncApproveApplicationButtonState();
         statusBox.textContent = message;
     };
 
-    const closeModal = () => modal.classList.remove('active');
+    const closeModal = () => {
+        if (publishInProgress) {
+            return;
+        }
+        modal.classList.remove('active');
+    };
+
+    const renderDonates = (donates) => {
+        if (!donateOptions) return;
+        donateOptions.innerHTML = '';
+
+        if (!Array.isArray(donates) || donates.length === 0) {
+            donateOptions.innerHTML = '<div class="text-secondary">Нет активных донатов.</div>';
+            return;
+        }
+
+        donates.forEach((donate) => {
+            const label = document.createElement('label');
+            label.style.display = 'block';
+            label.innerHTML = `
+                <input type="radio" name="donate" value="${donate.id}">
+                ${donate.title}
+            `;
+            donateOptions.appendChild(label);
+        });
+    };
 
     if (skipButton) {
         skipButton.addEventListener('click', closeModal);
     }
 
+    approveButton.addEventListener('click', async () => {
+        if (approveButton.disabled || !applicationId) {
+            return;
+        }
+        modal.classList.add('active');
+        if (previewBox) {
+            previewBox.innerHTML = '<div class="text-secondary">Загрузка превью...</div>';
+        }
+        if (statusBox) {
+            statusBox.style.display = 'none';
+        }
+        if (donateOptions) {
+            donateOptions.innerHTML = '';
+        }
+
+        try {
+            const response = await fetch(`/admin/api/get-publish-data.php?id=${applicationId}`);
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Не удалось получить данные для публикации.');
+            }
+
+            if (previewBox) {
+                previewBox.innerHTML = data.preview_html || '<div class="text-secondary">Превью недоступно.</div>';
+            }
+            renderDonates(data.donates || []);
+            document.querySelectorAll('input[name="donate"]').forEach((el, index) => {
+                el.checked = index === 0;
+            });
+        } catch (error) {
+            if (previewBox) {
+                previewBox.innerHTML = '<div class="text-secondary">Превью недоступно.</div>';
+            }
+            showStatus(error.message || 'Ошибка загрузки данных публикации.', 'error');
+        }
+    });
+
     if (publishButton) {
         publishButton.addEventListener('click', async () => {
+            if (publishInProgress) {
+                return;
+            }
+            const selectedDonate = document.querySelector('input[name="donate"]:checked');
+            const donateId = selectedDonate ? selectedDonate.value : 'none';
+            publishInProgress = true;
             publishButton.disabled = true;
+            if (skipButton) {
+                skipButton.disabled = true;
+            }
             showStatus('Публикация запущена, подождите...', 'success');
 
             try {
-                const formData = new FormData();
-                formData.append('action', 'publish_application_works');
-                formData.append('application_id', String(applicationId));
-                formData.append('csrf_token', csrfToken);
-
-                const response = await fetch('/admin/applications.php', {
+                const response = await fetch('/admin/api/publish-vk.php', {
                     method: 'POST',
-                    body: formData,
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify({
+                        application_id: applicationId,
+                        donate_id: donateId,
+                        csrf_token: csrfToken,
+                    }),
                 });
                 const data = await response.json();
                 if (!response.ok || !data.success) {
                     showStatus(data.error || 'Не удалось выполнить публикацию.', 'error');
-                    publishButton.disabled = false;
                     return;
                 }
-
-                const summary = `Публикация завершена: опубликовано ${data.published}/${data.total}, ошибок: ${data.failed}.`;
-                showStatus(data.error ? `${summary} ${data.error}` : summary, data.failed > 0 ? 'error' : 'success');
+                showStatus('Публикация завершена успешно.', 'success');
+                location.reload();
             } catch (e) {
                 showStatus('Ошибка сети при публикации. Попробуйте ещё раз.', 'error');
+            } finally {
+                publishInProgress = false;
                 publishButton.disabled = false;
+                if (skipButton) {
+                    skipButton.disabled = false;
+                }
             }
         });
     }
