@@ -855,7 +855,15 @@ foreach ($participants as $participant) {
     <div class="form-group"><label class="form-label">Возраст</label><input class="form-input" type="number" min="0" name="age" id="participantEditAge" required></div>
     <div class="form-group"><label class="form-label">Название работы</label><input class="form-input" type="text" name="work_title" id="participantEditWorkTitle"></div>
     <div class="form-group"><label class="form-label">Текущий рисунок</label><img id="participantEditPreview" src="" alt="Предпросмотр рисунка" style="max-width:100%; max-height:260px; border-radius:12px; border:1px solid #E5E7EB; display:none;"></div>
-    <div class="form-group"><label class="form-label">Заменить рисунок</label><input class="form-input" type="file" name="drawing_file" accept="image/*"></div>
+    <div class="form-group">
+        <label class="form-label">Заменить рисунок</label>
+        <div class="upload-area" id="participantEditUploadArea" style="border:2px dashed #D1D5DB; border-radius:12px; padding:20px; text-align:center;">
+            <input class="file-upload__input" type="file" name="drawing_file" id="participantEditDrawingFile" accept="image/*">
+            <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
+            <div class="upload-area__title" id="participantEditUploadTitle">Нажмите или перетащите новый рисунок</div>
+            <div class="upload-area__hint" id="participantEditUploadHint">JPG, PNG, GIF, WebP, TIF</div>
+        </div>
+    </div>
 </div>
 <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:12px;">
     <button type="button" class="btn btn--ghost" onclick="closeParticipantEditModal()">Отмена</button>
@@ -954,10 +962,15 @@ window.addEventListener('load', () => {
 function openParticipantEditModal(button) {
  const modal = document.getElementById('participantEditModal');
  const preview = document.getElementById('participantEditPreview');
+ const uploadArea = document.getElementById('participantEditUploadArea');
+ const uploadTitle = document.getElementById('participantEditUploadTitle');
+ const uploadHint = document.getElementById('participantEditUploadHint');
+ const fileInput = document.getElementById('participantEditDrawingFile');
  document.getElementById('participantEditWorkId').value = button.dataset.workId || '';
  document.getElementById('participantEditFio').value = button.dataset.fio || '';
  document.getElementById('participantEditAge').value = button.dataset.age || '';
  document.getElementById('participantEditWorkTitle').value = button.dataset.workTitle || '';
+ clearParticipantDrawingObjectUrl();
  const drawingUrl = button.dataset.drawingUrl || '';
  if (drawingUrl) {
   preview.src = drawingUrl;
@@ -966,6 +979,18 @@ function openParticipantEditModal(button) {
   preview.removeAttribute('src');
   preview.style.display = 'none';
  }
+ if (uploadArea) {
+  uploadArea.classList.remove('has-file');
+ }
+ if (uploadTitle) {
+  uploadTitle.textContent = 'Нажмите или перетащите новый рисунок';
+ }
+ if (uploadHint) {
+  uploadHint.textContent = 'JPG, PNG, GIF, WebP, TIF';
+ }
+ if (fileInput) {
+  fileInput.value = '';
+ }
  modal.classList.add('active');
  document.body.style.overflow = 'hidden';
 }
@@ -973,9 +998,39 @@ function openParticipantEditModal(button) {
 function closeParticipantEditModal() {
  const modal = document.getElementById('participantEditModal');
  if (!modal) return;
+ clearParticipantDrawingObjectUrl();
  modal.classList.remove('active');
  document.body.style.overflow = '';
  document.getElementById('participantEditForm')?.reset();
+}
+
+function previewParticipantDrawingFile(file) {
+ const preview = document.getElementById('participantEditPreview');
+ const uploadArea = document.getElementById('participantEditUploadArea');
+ const uploadTitle = document.getElementById('participantEditUploadTitle');
+ const uploadHint = document.getElementById('participantEditUploadHint');
+ if (!preview || !file) return;
+
+ const objectUrl = URL.createObjectURL(file);
+ preview.dataset.objectUrl = objectUrl;
+ preview.src = objectUrl;
+ preview.style.display = 'block';
+ uploadArea?.classList.add('has-file');
+ if (uploadTitle) {
+  uploadTitle.textContent = file.name || 'Файл выбран';
+ }
+ if (uploadHint) {
+  uploadHint.textContent = 'Предпросмотр обновлён. Изменения сохранятся после отправки формы.';
+ }
+}
+
+function clearParticipantDrawingObjectUrl() {
+ const preview = document.getElementById('participantEditPreview');
+ const objectUrl = preview?.dataset?.objectUrl || '';
+ if (objectUrl) {
+  URL.revokeObjectURL(objectUrl);
+  delete preview.dataset.objectUrl;
+ }
 }
 
 document.querySelectorAll('.js-open-participant-edit').forEach((button) => {
@@ -987,6 +1042,55 @@ document.getElementById('participantEditModal')?.addEventListener('click', (even
   closeParticipantEditModal();
  }
 });
+
+const participantEditUploadArea = document.getElementById('participantEditUploadArea');
+const participantEditDrawingFileInput = document.getElementById('participantEditDrawingFile');
+if (participantEditUploadArea && participantEditDrawingFileInput) {
+ participantEditUploadArea.addEventListener('click', (event) => {
+  if (event.target !== participantEditDrawingFileInput) {
+   participantEditDrawingFileInput.click();
+  }
+ });
+
+ participantEditUploadArea.addEventListener('dragover', (event) => {
+  event.preventDefault();
+  participantEditUploadArea.classList.add('dragover');
+ });
+
+ participantEditUploadArea.addEventListener('dragleave', (event) => {
+  event.preventDefault();
+  participantEditUploadArea.classList.remove('dragover');
+ });
+
+ participantEditUploadArea.addEventListener('drop', (event) => {
+  event.preventDefault();
+  participantEditUploadArea.classList.remove('dragover');
+  const files = event.dataTransfer?.files;
+  if (!files || !files.length) return;
+  const file = files[0];
+  if (!file.type.startsWith('image/')) {
+   showToast('Можно загружать только изображения.', 'error');
+   return;
+  }
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  participantEditDrawingFileInput.files = transfer.files;
+  clearParticipantDrawingObjectUrl();
+  previewParticipantDrawingFile(file);
+ });
+
+ participantEditDrawingFileInput.addEventListener('change', () => {
+  const file = participantEditDrawingFileInput.files && participantEditDrawingFileInput.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+   showToast('Можно загружать только изображения.', 'error');
+   participantEditDrawingFileInput.value = '';
+   return;
+  }
+  clearParticipantDrawingObjectUrl();
+  previewParticipantDrawingFile(file);
+ });
+}
 
 const participantEditForm = document.getElementById('participantEditForm');
 if (participantEditForm) {
@@ -1013,6 +1117,7 @@ if (participantEditForm) {
    }
 
    showToast(data.message || 'Изменения сохранены', 'success');
+   clearParticipantDrawingObjectUrl();
    closeParticipantEditModal();
    window.location.reload();
   } catch (error) {
