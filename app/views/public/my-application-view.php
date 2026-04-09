@@ -377,6 +377,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
     }
 
     $pdo->beginTransaction();
+    $resubmittedForReview = false;
     try {
         $pdo->prepare("
             UPDATE participants
@@ -390,6 +391,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
             SET is_resolved = 1, resolved_at = NOW()
             WHERE application_id = ? AND participant_id = ? AND is_resolved = 0
         ")->execute([$applicationId, $participantId]);
+
+        $remainingCorrectionsStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM application_corrections
+            WHERE application_id = ? AND is_resolved = 0
+        ");
+        $remainingCorrectionsStmt->execute([$applicationId]);
+        $remainingCorrections = (int) $remainingCorrectionsStmt->fetchColumn();
+        if ($remainingCorrections === 0 && (int)($application['allow_edit'] ?? 0) === 1 && (string)($application['status'] ?? '') !== 'approved') {
+            $pdo->prepare("
+                UPDATE applications
+                SET status = 'submitted', allow_edit = 0, updated_at = NOW()
+                WHERE id = ? AND user_id = ?
+            ")->execute([$applicationId, $userId]);
+            $application['status'] = 'submitted';
+            $application['allow_edit'] = 0;
+            $resubmittedForReview = true;
+        }
+
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
@@ -413,10 +433,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
         $updatedDrawingUrl .= '?v=' . time();
     }
 
+    $successMessage = $resubmittedForReview
+        ? 'Исправления успешно сохранены. Заявка повторно отправлена на рассмотрение.'
+        : 'Изменения сохранены.';
+
     if ($isAjaxRequest) {
         jsonResponse([
             'success' => true,
-            'message' => 'Изменения сохранены.',
+            'message' => $successMessage,
             'participant' => [
                 'fio' => $fio,
                 'age' => $age > 0 ? $age : '—',
@@ -426,7 +450,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
         ]);
     }
 
-    $_SESSION['success_message'] = 'Изменения сохранены.';
+    $_SESSION['success_message'] = $successMessage;
     redirect('/application/' . $applicationId);
 }
 
