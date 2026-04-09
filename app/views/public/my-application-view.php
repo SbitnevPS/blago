@@ -383,7 +383,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
             SET fio = ?, age = ?, drawing_file = ?
             WHERE id = ? AND application_id = ?
         ")->execute([$fio, $age, $drawingFile, $participantId, $applicationId]);
-        $pdo->prepare("UPDATE works SET work_title = ?, updated_at = NOW() WHERE id = ? AND application_id = ?")
+        $pdo->prepare("UPDATE works SET title = ?, updated_at = NOW() WHERE id = ? AND application_id = ?")
             ->execute([$workTitle, $workId, $applicationId]);
         $pdo->prepare("
             UPDATE application_corrections
