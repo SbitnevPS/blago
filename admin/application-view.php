@@ -267,6 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         disallowApplicationEdit($application_id);
 
         $_SESSION['success_message'] = 'Заявка принята';
+        $_SESSION['vk_publish_prompt_application_id'] = (int) $application_id;
         redirect('/admin/applications');
     } elseif ($_POST['action'] === 'cancel_application') {
         $stmt = $pdo->prepare("UPDATE applications SET status = 'cancelled', updated_at = NOW() WHERE id = ?");

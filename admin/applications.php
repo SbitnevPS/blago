@@ -23,6 +23,120 @@ $searchUserId = max(0, (int) ($_GET['search_user_id'] ?? 0));
 $participantId = max(0, (int) ($_GET['participant_id'] ?? 0));
 $participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
 $queue = $_GET['queue'] ?? '';
+$publishPromptApplicationId = max(0, (int) ($_SESSION['vk_publish_prompt_application_id'] ?? 0));
+$publishPromptData = null;
+unset($_SESSION['vk_publish_prompt_application_id']);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') === 'publish_application_works') {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        jsonResponse(['success' => false, 'error' => 'Ошибка безопасности (CSRF).'], 403);
+    }
+
+    $applicationIdForPublish = max(0, (int) ($_POST['application_id'] ?? 0));
+    if ($applicationIdForPublish <= 0) {
+        jsonResponse(['success' => false, 'error' => 'Некорректный идентификатор заявки.'], 422);
+    }
+
+    $workIdsStmt = $pdo->prepare("
+        SELECT w.id
+        FROM works w
+        INNER JOIN participants p ON p.id = w.participant_id
+        WHERE p.application_id = ?
+        ORDER BY w.id ASC
+    ");
+    $workIdsStmt->execute([$applicationIdForPublish]);
+    $workIds = array_map('intval', array_column($workIdsStmt->fetchAll() ?: [], 'id'));
+
+    if (empty($workIds)) {
+        jsonResponse(['success' => false, 'error' => 'В заявке нет работ для публикации.'], 422);
+    }
+
+    ensureVkPublicationSchema();
+    $filters = normalizeVkTaskFilters([
+        'application_status' => 'approved',
+        'work_status' => 'accepted',
+        'exclude_vk_published' => 1,
+        'required_data_only' => 1,
+        'work_ids_raw' => implode(',', $workIds),
+    ]);
+
+    $preview = buildVkTaskPreview($filters, null);
+    if ((int) ($preview['ready_items'] ?? 0) <= 0) {
+        jsonResponse([
+            'success' => false,
+            'error' => 'Нет готовых работ для публикации. Проверьте изображения и данные участников.',
+            'summary' => [
+                'total' => (int) ($preview['total_items'] ?? 0),
+                'ready' => (int) ($preview['ready_items'] ?? 0),
+                'skipped' => (int) ($preview['skipped_items'] ?? 0),
+            ],
+        ], 422);
+    }
+
+    $taskId = createVkTaskFromPreview(
+        'Публикация по заявке #' . $applicationIdForPublish . ' от ' . date('d.m.Y H:i'),
+        (int) getCurrentAdminId(),
+        $preview,
+        'immediate'
+    );
+    $publishResult = publishVkTask($taskId);
+
+    jsonResponse([
+        'success' => true,
+        'task_id' => $taskId,
+        'published' => (int) ($publishResult['published'] ?? 0),
+        'failed' => (int) ($publishResult['failed'] ?? 0),
+        'total' => (int) ($publishResult['total'] ?? 0),
+        'error' => trim((string) ($publishResult['error'] ?? '')),
+        'task_url' => '/admin/vk-publication/' . $taskId,
+    ]);
+}
+
+if ($publishPromptApplicationId > 0) {
+    $promptStmt = $pdo->prepare("
+        SELECT a.id AS application_id, u.email AS applicant_email
+        FROM applications a
+        LEFT JOIN users u ON u.id = a.user_id
+        WHERE a.id = ?
+        LIMIT 1
+    ");
+    $promptStmt->execute([$publishPromptApplicationId]);
+    $promptApplication = $promptStmt->fetch();
+
+    if ($promptApplication) {
+        $participantsStmt = $pdo->prepare("
+            SELECT p.id AS participant_id, p.fio, p.drawing_file, w.id AS work_id, w.image_path
+            FROM participants p
+            LEFT JOIN works w ON w.participant_id = p.id
+            WHERE p.application_id = ?
+            ORDER BY p.id ASC
+        ");
+        $participantsStmt->execute([$publishPromptApplicationId]);
+        $promptParticipants = $participantsStmt->fetchAll() ?: [];
+
+        $publishPromptData = [
+            'application_id' => (int) $publishPromptApplicationId,
+            'participants' => [],
+        ];
+
+        foreach ($promptParticipants as $participantRow) {
+            $imageFile = trim((string) ($participantRow['image_path'] ?? ''));
+            if ($imageFile === '') {
+                $imageFile = trim((string) ($participantRow['drawing_file'] ?? ''));
+            }
+            $imagePath = '';
+            if ($imageFile !== '') {
+                $imagePath = getParticipantDrawingWebPath((string) ($promptApplication['applicant_email'] ?? ''), $imageFile);
+            }
+
+            $publishPromptData['participants'][] = [
+                'id' => (int) ($participantRow['participant_id'] ?? 0),
+                'fio' => trim((string) ($participantRow['fio'] ?? '')) ?: 'Без имени',
+                'preview_image' => (string) $imagePath,
+            ];
+        }
+    }
+}
 
 $hasOpenedByAdminColumn = false;
 try {
@@ -297,7 +411,106 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
+<?php if (!empty($publishPromptData)): ?>
+<div class="modal active" id="vkPublishPromptModal">
+    <div class="modal__content" style="max-width:700px;">
+        <div class="modal__header">
+            <h3 class="modal__title">Опубликовать работы в группе?</h3>
+        </div>
+        <div class="modal__body">
+            <p class="text-secondary" style="margin-bottom:14px;">
+                Заявка #<?= (int) $publishPromptData['application_id'] ?> принята. Можно сразу отправить работы в VK-группу.
+            </p>
+            <div style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;">
+                <?php foreach ($publishPromptData['participants'] as $participant): ?>
+                    <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid #E5E7EB; border-radius:10px;">
+                        <?php if (!empty($participant['preview_image'])): ?>
+                            <img src="<?= e($participant['preview_image']) ?>" alt="<?= e($participant['fio']) ?>" style="width:44px; height:44px; border-radius:8px; object-fit:cover; background:#F8FAFC;">
+                        <?php else: ?>
+                            <div style="width:44px; height:44px; border-radius:8px; background:#EEF2FF; color:#6366F1; display:flex; align-items:center; justify-content:center;">
+                                <i class="fas fa-image"></i>
+                            </div>
+                        <?php endif; ?>
+                        <div style="font-weight:600;"><?= e($participant['fio']) ?></div>
+                    </div>
+                <?php endforeach; ?>
+                <?php if (empty($publishPromptData['participants'])): ?>
+                    <div class="text-secondary">В заявке нет участников.</div>
+                <?php endif; ?>
+            </div>
+            <div id="vkPublishPromptStatus" class="alert" style="display:none; margin-top:12px;"></div>
+        </div>
+        <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
+            <button type="button" class="btn btn--primary" id="vkPublishPromptRun">Опубликовать</button>
+            <button type="button" class="btn btn--secondary" id="vkPublishPromptSkip">Пока не публиковать</button>
+            <a href="/admin/application/<?= (int) $publishPromptData['application_id'] ?>" class="btn btn--ghost">Отмена</a>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
+(() => {
+    const modal = document.getElementById('vkPublishPromptModal');
+    if (!modal) return;
+
+    const publishButton = document.getElementById('vkPublishPromptRun');
+    const skipButton = document.getElementById('vkPublishPromptSkip');
+    const statusBox = document.getElementById('vkPublishPromptStatus');
+    const applicationId = <?= (int) (($publishPromptData['application_id'] ?? 0)) ?>;
+    const csrfToken = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE) ?>;
+
+    const showStatus = (message, type = 'success') => {
+        if (!statusBox) return;
+        statusBox.className = `alert ${type === 'error' ? 'alert--error' : 'alert--success'}`;
+        statusBox.style.display = 'block';
+        statusBox.textContent = message;
+    };
+
+    const closeModal = () => {
+        modal.classList.remove('active');
+    };
+
+    if (skipButton) {
+        skipButton.addEventListener('click', closeModal);
+    }
+
+    if (publishButton) {
+        publishButton.addEventListener('click', async () => {
+            publishButton.disabled = true;
+            showStatus('Публикация запущена, подождите...', 'success');
+
+            try {
+                const formData = new FormData();
+                formData.append('action', 'publish_application_works');
+                formData.append('application_id', String(applicationId));
+                formData.append('csrf_token', csrfToken);
+
+                const response = await fetch('/admin/applications.php', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    showStatus(data.error || 'Не удалось выполнить публикацию.', 'error');
+                    publishButton.disabled = false;
+                    return;
+                }
+
+                const summary = `Публикация завершена: опубликовано ${data.published}/${data.total}, ошибок: ${data.failed}.`;
+                showStatus(data.error ? `${summary} ${data.error}` : summary, data.failed > 0 ? 'error' : 'success');
+                publishButton.disabled = true;
+            } catch (e) {
+                showStatus('Ошибка сети при публикации. Попробуйте ещё раз.', 'error');
+                publishButton.disabled = false;
+            }
+        });
+    }
+})();
+
 (() => {
     const input = document.getElementById('participantSearchInput');
     const hiddenInput = document.getElementById('participantId');
