@@ -194,6 +194,22 @@ function getVkDonateById(int $id): ?array
     return $row ?: null;
 }
 
+function getVkDonateByVkId(string $vkDonateId): ?array
+{
+    global $pdo;
+    ensureVkDonatesSchema();
+
+    $normalizedVkDonateId = trim($vkDonateId);
+    if ($normalizedVkDonateId === '') {
+        return null;
+    }
+
+    $stmt = $pdo->prepare("SELECT id, title, description, vk_donate_id, is_active FROM vk_donates WHERE vk_donate_id = ? LIMIT 1");
+    $stmt->execute([$normalizedVkDonateId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
 function upsertVkDonate(array $vkGoal): void
 {
     global $pdo;
