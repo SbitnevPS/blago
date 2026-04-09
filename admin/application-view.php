@@ -1247,16 +1247,9 @@ ensureComplianceFieldsAvailable();
         skipButton.addEventListener('click', closeModal);
     }
 
-    approveButton.addEventListener('click', async () => {
-        if (approveButton.disabled || !applicationId) {
+    const openPublishModal = async () => {
+        if (!applicationId) {
             return;
-        }
-        if (approveButton.dataset.approved !== '1') {
-            const approveForm = document.getElementById('approveApplicationForm');
-            if (approveForm) {
-                approveForm.submit();
-                return;
-            }
         }
         modal.classList.add('active');
         if (previewBox) {
@@ -1289,6 +1282,20 @@ ensureComplianceFieldsAvailable();
             }
             showStatus(error.message || 'Ошибка загрузки данных публикации.', 'error');
         }
+    };
+
+    approveButton.addEventListener('click', async () => {
+        if (approveButton.disabled || !applicationId) {
+            return;
+        }
+        if (approveButton.dataset.approved !== '1') {
+            const approveForm = document.getElementById('approveApplicationForm');
+            if (approveForm) {
+                approveForm.submit();
+                return;
+            }
+        }
+        await openPublishModal();
     });
 
     if (publishButton) {
@@ -1338,7 +1345,7 @@ ensureComplianceFieldsAvailable();
     }
 
     if (<?= $showVkPublishPrompt ? 'true' : 'false' ?>) {
-        approveButton.click();
+        openPublishModal();
     }
 })();
 </script>
