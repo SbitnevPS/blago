@@ -452,6 +452,11 @@ foreach ($unresolvedCorrections as $correction) {
 $workSummary = buildApplicationWorkSummary($participants);
 $allPending = $workSummary['total'] > 0 && $workSummary['pending'] === $workSummary['total'];
 $hasDiplomas = $workSummary['diplomas'] > 0;
+$participantsWithDiplomas = array_values(array_filter($participants, static function (array $participantRow): bool {
+    $workStatus = (string)($participantRow['status'] ?? 'pending');
+    return mapWorkStatusToDiplomaType($workStatus) !== null;
+}));
+$hasParticipantsWithDiplomas = count($participantsWithDiplomas) > 0;
 $hasVkPublished = $workSummary['vk_published'] > 0;
 $uiStatusMeta = getApplicationUiStatusMeta($workSummary);
 $vkPublicationLinks = [];
@@ -513,6 +518,12 @@ $currentPage = 'applications';
 .dispute-chat-message--user .dispute-chat-message__bubble {background:#EEF2FF;}
 .dispute-chat-message__meta {font-size:12px; color:#6B7280; margin-bottom:6px; display:flex; gap:8px; flex-wrap:wrap;}
 .dispute-chat-message__text {white-space:pre-wrap; line-height:1.5;}
+.compact-diploma-list {display:flex; flex-direction:column; gap:8px; max-height:260px; overflow:auto; padding-right:4px;}
+.compact-diploma-list__item {display:flex; justify-content:space-between; align-items:center; gap:12px; border:1px solid var(--border-color); border-radius:10px; padding:8px 10px; background:#fff;}
+.compact-diploma-list__name {font-size:14px; font-weight:600; line-height:1.2;}
+.compact-diploma-list__meta {font-size:12px; color:var(--text-muted); line-height:1.2; margin-top:2px;}
+.compact-diploma-list__actions {display:flex; align-items:center; gap:6px; flex-shrink:0;}
+.compact-diploma-list__btn {min-width:32px; min-height:32px; width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; padding:0;}
 </style>
 </head>
 <body>
@@ -881,32 +892,60 @@ $currentPage = 'applications';
 </div>
  <?php endif; ?>
         
+<?php if ($isApplicationAccepted && $hasDiplomas && $hasParticipantsWithDiplomas): ?>
 <div class="card mb-lg">
     <div class="card__header">
         <h3>Массовые действия</h3>
     </div>
     <div class="card__body">
-        <?php if ($isApplicationAccepted && $hasDiplomas): ?>
-            <p class="text-secondary" style="margin-top:0;">Будут включены только доступные дипломы.</p>
-            <div class="participant-work-card__actions">
-                <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-file-archive"></i> Скачать все дипломы</button></form>
-                <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_links_all"><button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-link"></i> Получить все ссылки</button></form>
-                <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_email_all"><button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-paper-plane"></i> Отправить все дипломы</button></form>
-                <?php if (!empty($vkPublicationLinks)): ?>
-                    <a class="btn btn--secondary btn--sm participant-work-card__action-btn" href="<?= e($vkPublicationLinks[0]) ?>" target="_blank" rel="noopener">
-                        <i class="fab fa-vk"></i> Открыть публикации
-                    </a>
-                <?php endif; ?>
-            </div>
-        <?php else: ?>
-            <div class="empty-state" style="padding:20px;">
-                <div class="empty-state__icon"><i class="fas fa-award"></i></div>
-                <h3 class="empty-state__title" style="font-size:18px;">Нет доступных дипломов</h3>
-                <p class="empty-state__text">Дипломы станут доступны после статуса «Принята к участию».</p>
-            </div>
-        <?php endif; ?>
+        <p class="text-secondary" style="margin-top:0;">Будут включены только доступные дипломы.</p>
+        <div class="participant-work-card__actions" style="margin-bottom:12px;">
+            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-file-archive"></i> Скачать все дипломы</button></form>
+            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_links_all"><button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-link"></i> Получить все ссылки</button></form>
+            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_email_all"><button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-paper-plane"></i> Отправить все дипломы</button></form>
+            <?php if (!empty($vkPublicationLinks)): ?>
+                <a class="btn btn--secondary btn--sm participant-work-card__action-btn" href="<?= e($vkPublicationLinks[0]) ?>" target="_blank" rel="noopener">
+                    <i class="fab fa-vk"></i> Открыть публикации
+                </a>
+            <?php endif; ?>
+        </div>
+        <div class="compact-diploma-list" aria-label="Список участников с доступными дипломами">
+            <?php foreach ($participantsWithDiplomas as $participantWithDiploma): ?>
+                <?php $compactWorkTitle = trim((string)($participantWithDiploma['work_title'] ?? '')); ?>
+                <div class="compact-diploma-list__item">
+                    <div>
+                        <div class="compact-diploma-list__name"><?= e((string)($participantWithDiploma['fio'] ?? 'Без имени')) ?></div>
+                        <div class="compact-diploma-list__meta"><?= $compactWorkTitle !== '' ? '«' . e($compactWorkTitle) . '»' : 'Работа #' . (int)($participantWithDiploma['id'] ?? 0) ?></div>
+                    </div>
+                    <div class="compact-diploma-list__actions">
+                        <form method="POST" title="Скачать диплом">
+                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                            <input type="hidden" name="action" value="diploma_download_one">
+                            <input type="hidden" name="work_id" value="<?= (int)$participantWithDiploma['id'] ?>">
+                            <button class="btn btn--primary btn--sm compact-diploma-list__btn" type="submit"><i class="fas fa-download"></i></button>
+                        </form>
+                        <form method="POST" title="Поделиться ссылкой">
+                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                            <input type="hidden" name="action" value="diploma_link_one">
+                            <input type="hidden" name="work_id" value="<?= (int)$participantWithDiploma['id'] ?>">
+                            <button class="btn btn--ghost btn--sm compact-diploma-list__btn" type="submit"><i class="fas fa-link"></i></button>
+                        </form>
+                        <form method="POST" title="Отправить по почте">
+                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                            <input type="hidden" name="action" value="diploma_email_one">
+                            <input type="hidden" name="work_id" value="<?= (int)$participantWithDiploma['id'] ?>">
+                            <button class="btn btn--ghost btn--sm compact-diploma-list__btn" type="submit"><i class="fas fa-paper-plane"></i></button>
+                        </form>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
     </div>
 </div>
+<?php endif; ?>
 
 <div class="mt-xl">
 <a href="/my-applications" class="btn btn--secondary">
