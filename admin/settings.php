@@ -69,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Ошибка безопасности';
     } else {
         $section = (string) ($_POST['settings_section'] ?? 'notifications');
-        $allowedSections = ['notifications', 'email-delivery', 'vk-integration', 'homepage-banner'];
+        $allowedSections = ['notifications', 'email-delivery', 'vk-integration', 'vk-publication', 'homepage-banner'];
         if (!in_array($section, $allowedSections, true)) {
             $section = 'notifications';
         }
@@ -112,7 +112,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['vk_publication_group_id'] = trim($_POST['vk_publication_group_id'] ?? '');
             $payload['vk_publication_api_version'] = trim($_POST['vk_publication_api_version'] ?? '5.131');
             $payload['vk_publication_from_group'] = isset($_POST['vk_publication_from_group']) ? 1 : 0;
-            $payload['vk_publication_post_template'] = trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate());
 
             $newPublicationToken = trim((string) ($_POST['vk_publication_token_new'] ?? ''));
             $resetPublicationToken = isset($_POST['vk_publication_token_reset']) && (string) $_POST['vk_publication_token_reset'] === '1';
@@ -130,6 +129,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $payload['vk_publication_manual_token'] = $newPublicationToken;
                 $payload['vk_publication_status'] = 'attention';
             }
+        } elseif ($section === 'vk-publication') {
+            $payload['vk_publication_post_template'] = trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate());
         } elseif ($section === 'homepage-banner') {
             $payload['homepage_hero_image'] = trim($_POST['homepage_hero_image'] ?? '');
         }
@@ -146,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $activeSettingsTab = (string) ($_SESSION['settings_active_tab'] ?? 'notifications');
-if (!in_array($activeSettingsTab, ['notifications', 'email-delivery', 'vk-integration', 'homepage-banner'], true)) {
+if (!in_array($activeSettingsTab, ['notifications', 'email-delivery', 'vk-integration', 'vk-publication', 'homepage-banner'], true)) {
     $activeSettingsTab = 'notifications';
 }
 unset($_SESSION['settings_active_tab']);
@@ -197,6 +198,9 @@ unset($_SESSION['success_message']);
         </button>
         <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'vk-integration' ? ' is-active' : '' ?>" data-settings-tab="vk-integration" role="tab">
             <i class="fab fa-vk"></i> Интеграция VK
+        </button>
+        <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'vk-publication' ? ' is-active' : '' ?>" data-settings-tab="vk-publication" role="tab">
+            <i class="fas fa-bullhorn"></i> Публикация в VK
         </button>
         <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'homepage-banner' ? ' is-active' : '' ?>" data-settings-tab="homepage-banner" role="tab">
             <i class="fas fa-image"></i> Главная страница
@@ -410,10 +414,30 @@ unset($_SESSION['success_message']);
                             </label>
                         </div>
 
+                    </div>
+                    <div class="settings-actions">
+                        <button type="submit" class="btn btn--primary">
+                            <i class="fas fa-save"></i> Сохранить
+                        </button>
+                    </div>
+            </form>
+        </section>
+
+        <section id="vk-publication" class="settings-tab-panel<?= $activeSettingsTab === 'vk-publication' ? ' is-active' : '' ?>" data-settings-panel="vk-publication">
+            <form method="POST" class="settings-form">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="settings_section" value="vk-publication">
+                    <div class="settings-section__header">
+                        <h4><i class="fas fa-bullhorn"></i> Публикация в VK</h4>
+                        <p>Настройка шаблона текста для автоматической публикации работ в сообществе VK.</p>
+                    </div>
+
+                    <div class="settings-vk-card">
                         <div class="form-group">
                             <label class="form-label">Шаблон подписи поста VK</label>
                             <textarea name="vk_publication_post_template" class="form-input" rows="8"><?= htmlspecialchars($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()) ?></textarea>
-                            <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {work_title}, {contest_title}, {nomination}, {participant_age}, {age_category}</div>
+                            <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {drawing_title}, {work_title}, {contest_title}, {nomination}, {participant_age}, {age_category}</div>
                         </div>
                     </div>
                     <div class="settings-actions">
