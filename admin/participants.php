@@ -49,7 +49,7 @@ $countStmt->execute($params);
 $totalParticipants = (int) $countStmt->fetchColumn();
 $totalPages = max(1, (int) ceil($totalParticipants / $perPage));
 
-$listStmt = $pdo->prepare("\n    SELECT p.id, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id,\n           a.status AS application_status, a.allow_edit,\n           c.title AS contest_title,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $whereClause\n    ORDER BY p.created_at DESC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
+$listStmt = $pdo->prepare("\n    SELECT p.id, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           a.status AS application_status, a.allow_edit,\n           c.title AS contest_title,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $whereClause\n    ORDER BY p.created_at DESC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
 $listStmt->execute($params);
 $participants = $listStmt->fetchAll();
 
@@ -104,6 +104,7 @@ require_once __DIR__ . '/includes/header.php';
                 <tr>
                     <th>ID участника</th>
                     <th>ФИО участника</th>
+                    <th>Рисунок</th>
                     <th>Возраст</th>
                     <th>Email заявки</th>
                     <th>Регион</th>
@@ -121,6 +122,20 @@ require_once __DIR__ . '/includes/header.php';
                     <tr style="<?= $rowStyle ?>">
                         <td data-label="ID участника">#<?= (int) $participant['id'] ?></td>
                         <td data-label="ФИО участника"><?= htmlspecialchars($participant['fio'] ?: '—') ?></td>
+                        <td data-label="Рисунок">
+                            <?php if (!empty($participant['drawing_file'])): ?>
+                                <?php $drawingUrl = getParticipantDrawingWebPath((string) ($participant['applicant_email'] ?? ''), (string) $participant['drawing_file']); ?>
+                                <a href="/admin/participant/<?= (int) $participant['id'] ?>" title="Открыть участника" style="display:inline-flex;">
+                                    <img
+                                        src="<?= htmlspecialchars($drawingUrl) ?>"
+                                        alt="Миниатюра рисунка участника"
+                                        loading="lazy"
+                                        style="width:46px; height:46px; object-fit:cover; border-radius:8px; border:1px solid var(--color-border);">
+                                </a>
+                            <?php else: ?>
+                                <span class="text-secondary">—</span>
+                            <?php endif; ?>
+                        </td>
                         <td data-label="Возраст"><?= (int) ($participant['age'] ?? 0) ?: '—' ?></td>
                         <td data-label="Email заявки"><?= htmlspecialchars($participant['applicant_email'] ?: ($participant['organization_email'] ?: '—')) ?></td>
                         <td data-label="Регион"><?= htmlspecialchars($participant['region'] ?: '—') ?></td>
@@ -139,7 +154,7 @@ require_once __DIR__ . '/includes/header.php';
 
                 <?php if (empty($participants)): ?>
                     <tr>
-                        <td colspan="7" class="text-center text-secondary" style="padding: 36px;">Участники не найдены.</td>
+                        <td colspan="8" class="text-center text-secondary" style="padding: 36px;">Участники не найдены.</td>
                     </tr>
                 <?php endif; ?>
             </tbody>
