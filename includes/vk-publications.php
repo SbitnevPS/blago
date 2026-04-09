@@ -135,6 +135,25 @@ function ensureVkDonatesSchema(): void
     }
 }
 
+function getTableColumnsCached(string $table): array
+{
+    static $cache = [];
+    global $pdo;
+
+    if (array_key_exists($table, $cache)) {
+        return $cache[$table];
+    }
+
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM `$table`");
+        $cache[$table] = $stmt ? ($stmt->fetchAll(PDO::FETCH_COLUMN) ?: []) : [];
+    } catch (Throwable $e) {
+        $cache[$table] = [];
+    }
+
+    return $cache[$table];
+}
+
 function getVkTaskStatusConfig(): array
 {
     return [
@@ -709,11 +728,23 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
     $vkDonutCanPublishFreeCopy = !empty($publicationMeta['vk_donut_can_publish_free_copy']) ? 1 : 0;
     $vkDonutSnapshot = !empty($publicationMeta['vk_donut_settings_snapshot']) ? json_encode($publicationMeta['vk_donut_settings_snapshot'], JSON_UNESCAPED_UNICODE) : null;
 
-    $stmt = $pdo->prepare("INSERT INTO vk_publication_tasks
-        (title, contest_id, created_by, task_status, publication_mode, filters_json, summary_json, total_items, ready_items, skipped_items, vk_group_id,
-         vk_donut_enabled, vk_donut_paid_duration, vk_donut_can_publish_free_copy, vk_donut_settings_snapshot, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-    $stmt->execute([
+    $taskColumns = getTableColumnsCached('vk_publication_tasks');
+    $itemColumns = getTableColumnsCached('vk_publication_task_items');
+
+    $taskInsertColumns = [
+        'title',
+        'contest_id',
+        'created_by',
+        'task_status',
+        'publication_mode',
+        'filters_json',
+        'summary_json',
+        'total_items',
+        'ready_items',
+        'skipped_items',
+        'vk_group_id',
+    ];
+    $taskInsertValues = [
         trim($title) !== '' ? trim($title) : 'Публикация от ' . date('d.m.Y H:i'),
         $contestId > 0 ? $contestId : null,
         $createdBy,
@@ -728,20 +759,70 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
         (int) ($preview['ready_items'] ?? 0),
         (int) ($preview['skipped_items'] ?? 0),
         $settings['group_id'] !== '' ? $settings['group_id'] : null,
-        $vkDonutEnabled,
-        $vkDonutEnabled ? $vkDonutPaidDuration : null,
-        $vkDonutEnabled ? $vkDonutCanPublishFreeCopy : 0,
-        $vkDonutEnabled ? $vkDonutSnapshot : null,
-    ]);
+    ];
+
+    if (in_array('vk_donut_enabled', $taskColumns, true)) {
+        $taskInsertColumns[] = 'vk_donut_enabled';
+        $taskInsertValues[] = $vkDonutEnabled;
+    }
+    if (in_array('vk_donut_paid_duration', $taskColumns, true)) {
+        $taskInsertColumns[] = 'vk_donut_paid_duration';
+        $taskInsertValues[] = $vkDonutEnabled ? $vkDonutPaidDuration : null;
+    }
+    if (in_array('vk_donut_can_publish_free_copy', $taskColumns, true)) {
+        $taskInsertColumns[] = 'vk_donut_can_publish_free_copy';
+        $taskInsertValues[] = $vkDonutEnabled ? $vkDonutCanPublishFreeCopy : 0;
+    }
+    if (in_array('vk_donut_settings_snapshot', $taskColumns, true)) {
+        $taskInsertColumns[] = 'vk_donut_settings_snapshot';
+        $taskInsertValues[] = $vkDonutEnabled ? $vkDonutSnapshot : null;
+    }
+
+    $taskInsertColumns[] = 'created_at';
+    $taskInsertColumns[] = 'updated_at';
+    $taskInsertSql = "INSERT INTO vk_publication_tasks (" . implode(', ', $taskInsertColumns) . ")
+        VALUES (" . implode(', ', array_fill(0, count($taskInsertColumns) - 2, '?')) . ", NOW(), NOW())";
+    $stmt = $pdo->prepare($taskInsertSql);
+    $stmt->execute($taskInsertValues);
     $taskId = (int) $pdo->lastInsertId();
 
-    $ins = $pdo->prepare("INSERT INTO vk_publication_task_items
-        (task_id, work_id, application_id, participant_id, contest_id, work_image_path, post_text, item_status, skip_reason,
-         vk_donut_enabled, vk_donut_paid_duration, vk_donut_can_publish_free_copy, vk_donut_settings_snapshot, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+    $itemInsertColumns = [
+        'task_id',
+        'work_id',
+        'application_id',
+        'participant_id',
+        'contest_id',
+        'work_image_path',
+        'post_text',
+        'item_status',
+        'skip_reason',
+    ];
+    $supportsItemDonutEnabled = in_array('vk_donut_enabled', $itemColumns, true);
+    $supportsItemDonutDuration = in_array('vk_donut_paid_duration', $itemColumns, true);
+    $supportsItemDonutFreeCopy = in_array('vk_donut_can_publish_free_copy', $itemColumns, true);
+    $supportsItemDonutSnapshot = in_array('vk_donut_settings_snapshot', $itemColumns, true);
+
+    if ($supportsItemDonutEnabled) {
+        $itemInsertColumns[] = 'vk_donut_enabled';
+    }
+    if ($supportsItemDonutDuration) {
+        $itemInsertColumns[] = 'vk_donut_paid_duration';
+    }
+    if ($supportsItemDonutFreeCopy) {
+        $itemInsertColumns[] = 'vk_donut_can_publish_free_copy';
+    }
+    if ($supportsItemDonutSnapshot) {
+        $itemInsertColumns[] = 'vk_donut_settings_snapshot';
+    }
+
+    $itemInsertColumns[] = 'created_at';
+    $itemInsertColumns[] = 'updated_at';
+    $itemInsertSql = "INSERT INTO vk_publication_task_items (" . implode(', ', $itemInsertColumns) . ")
+        VALUES (" . implode(', ', array_fill(0, count($itemInsertColumns) - 2, '?')) . ", NOW(), NOW())";
+    $ins = $pdo->prepare($itemInsertSql);
 
     foreach ($items as $item) {
-        $ins->execute([
+        $itemInsertValues = [
             $taskId,
             (int) ($item['work_id'] ?? 0),
             (int) ($item['application_id'] ?? 0),
@@ -751,11 +832,20 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
             (string) ($item['post_text'] ?? ''),
             (string) ($item['item_status'] ?? 'pending'),
             $item['skip_reason'] ?? null,
-            $vkDonutEnabled,
-            $vkDonutEnabled ? $vkDonutPaidDuration : null,
-            $vkDonutEnabled ? $vkDonutCanPublishFreeCopy : 0,
-            $vkDonutEnabled ? $vkDonutSnapshot : null,
-        ]);
+        ];
+        if ($supportsItemDonutEnabled) {
+            $itemInsertValues[] = $vkDonutEnabled;
+        }
+        if ($supportsItemDonutDuration) {
+            $itemInsertValues[] = $vkDonutEnabled ? $vkDonutPaidDuration : null;
+        }
+        if ($supportsItemDonutFreeCopy) {
+            $itemInsertValues[] = $vkDonutEnabled ? $vkDonutCanPublishFreeCopy : 0;
+        }
+        if ($supportsItemDonutSnapshot) {
+            $itemInsertValues[] = $vkDonutEnabled ? $vkDonutSnapshot : null;
+        }
+        $ins->execute($itemInsertValues);
     }
 
     refreshVkTaskCounters($taskId);
