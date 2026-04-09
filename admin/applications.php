@@ -17,6 +17,9 @@ $breadcrumb = 'Управление заявками';
 
 // Фильтры
 $status = $_GET['status'] ?? '';
+if ($status === 'draft') {
+    $status = 'revision';
+}
 $contest_id = $_GET['contest_id'] ?? '';
 $search = $_GET['search'] ?? '';
 $searchUserId = max(0, (int) ($_GET['search_user_id'] ?? 0));
@@ -195,8 +198,12 @@ $where = [];
 $params = [];
 
 if ($status) {
-    $where[] = 'a.status = ?';
-    $params[] = $status;
+    if ($status === 'revision') {
+        $where[] = "a.allow_edit = 1 AND a.status <> 'approved'";
+    } else {
+        $where[] = 'a.status = ?';
+        $params[] = $status;
+    }
 }
 
 if ($hasOpenedByAdminColumn) {
@@ -293,9 +300,8 @@ require_once __DIR__ . '/includes/header.php';
                 <label class="form-label">Статус</label>
                 <select name="status" class="form-select">
                     <option value="">Все статусы</option>
-                    <option value="draft" <?= $status === 'draft' ? 'selected' : '' ?>>Черновики</option>
+                    <option value="revision" <?= $status === 'revision' ? 'selected' : '' ?>>Требует исправлений</option>
                     <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>В работе</option>
-                    <option value="revision" <?= $status === 'revision' ? 'selected' : '' ?>>Требуют исправлений</option>
                     <option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Принятые</option>
                     <option value="declined" <?= $status === 'declined' ? 'selected' : '' ?>>Отклонённые</option>
                     <option value="cancelled" <?= $status === 'cancelled' ? 'selected' : '' ?>>Отменённые</option>
@@ -348,7 +354,7 @@ require_once __DIR__ . '/includes/header.php';
     $statCounts = [
         'all' => $pdo->query("SELECT COUNT(*) FROM applications")->fetchColumn(),
         'submitted' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted'")->fetchColumn(),
-        'draft' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'draft'")->fetchColumn()
+        'revision' => $pdo->query("SELECT COUNT(*) FROM applications WHERE allow_edit = 1 AND status <> 'approved'")->fetchColumn()
     ];
     if ($hasOpenedByAdminColumn) {
         $statCounts['new'] = $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted' AND opened_by_admin = 0")->fetchColumn();
@@ -370,8 +376,8 @@ require_once __DIR__ . '/includes/header.php';
         В работе <span class="stat-pill__count"><?= $statCounts['submitted'] ?></span>
     </a>
     <?php endif; ?>
-    <a href="?status=draft" class="stat-pill <?= $status === 'draft' ? 'stat-pill--active' : '' ?>">
-        Черновики <span class="stat-pill__count"><?= $statCounts['draft'] ?></span>
+    <a href="?status=revision" class="stat-pill <?= $status === 'revision' ? 'stat-pill--active' : '' ?>">
+        Требует исправлений <span class="stat-pill__count"><?= $statCounts['revision'] ?></span>
     </a>
 </div>
 
