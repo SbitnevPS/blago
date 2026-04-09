@@ -990,10 +990,10 @@ function getParticipantDrawingWebPath($userEmail, $drawingFile) {
     }
 
     $safeEmail = normalizeDrawingOwner($userEmail);
-    $encodedFile = rawurlencode($safeFile);
-    $encodedEmail = rawurlencode($safeEmail);
-    $userScopedPath = '/uploads/drawings/' . $encodedEmail . '/' . $encodedFile;
-    $legacyPath = '/uploads/drawings/' . $encodedFile;
+    // Формируем человекочитаемые ссылки (без percent-encoding в отображаемом URL),
+    // чтобы в интерфейсе не показывались «%D0%..» для кириллицы.
+    $userScopedPath = '/uploads/drawings/' . $safeEmail . '/' . $safeFile;
+    $legacyPath = '/uploads/drawings/' . $safeFile;
 
     $userScopedFs = DRAWINGS_PATH . '/' . $safeEmail . '/' . $safeFile;
     $legacyFs = DRAWINGS_PATH . '/' . $safeFile;
