@@ -102,10 +102,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <div class="login-form" id="form-vk">
 <div class="divider">или</div>
 <div id="vkid-onetap-container"></div>
-<button type="button" id="vk-login-button" class="btn-primary" style="width:100%;display:none;justify-content:center;gap:8px;">
-<i class="fab fa-vk"></i> Войти через VK (резервный способ)
-</button>
-<p style="font-size:14px;color:#666;margin-top:12px;">Используется официальная кнопка VK ID. Если виджет не загрузится, будет доступен резервный вход через OAuth.</p>
+<p style="font-size:14px;color:#666;margin-top:12px;">Используется официальная кнопка VK ID.</p>
 </div>
 
 <div class="login-card__footer">
@@ -121,11 +118,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 </div>
 
 <script>
-const VK_START_ENDPOINT = '/auth/vk/user/start';
 const VK_SDK_LOGIN_ENDPOINT = '/auth/vk/user/sdk-login';
 const VK_REDIRECT_TARGET = <?= json_encode($redirectAfterAuth, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const CSRF_TOKEN = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
-let vkStartInProgress = false;
 let vkSdkLoginInProgress = false;
 
 function setAuthError(message) {
@@ -142,44 +137,6 @@ function setAuthError(message) {
 
     errorEl.style.display = 'block';
     errorEl.textContent = message;
-}
-
-async function startVkLogin() {
-    if (vkStartInProgress) {
-        return;
-    }
-
-    vkStartInProgress = true;
-    const button = document.getElementById('vk-login-button');
-    if (button) {
-        button.disabled = true;
-    }
-
-    try {
-        const response = await fetch(VK_START_ENDPOINT, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-Token': CSRF_TOKEN,
-            },
-            credentials: 'same-origin',
-            body: JSON.stringify({ redirect: VK_REDIRECT_TARGET }),
-        });
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.success || !payload.auth_url) {
-            throw new Error(payload.error || 'Не удалось инициализировать вход через VK. Попробуйте снова.');
-        }
-
-        window.location.href = payload.auth_url;
-    } catch (error) {
-        setAuthError(error.message || 'Не удалось инициализировать вход через VK. Попробуйте снова.');
-        vkStartInProgress = false;
-        if (button) {
-            button.disabled = false;
-        }
-    }
 }
 
 function showTab(tab) {
@@ -230,7 +187,6 @@ async function finishVkLoginViaSdk(vkPayload) {
 }
 
 function initVkIdWidget() {
-    const fallbackButton = document.getElementById('vk-login-button');
     const widgetContainer = document.getElementById('vkid-onetap-container');
 
     if (!widgetContainer) {
@@ -238,9 +194,7 @@ function initVkIdWidget() {
     }
 
     if (!('VKIDSDK' in window)) {
-        if (fallbackButton) {
-            fallbackButton.style.display = 'flex';
-        }
+        setAuthError('Не удалось загрузить VK ID SDK. Попробуйте обновить страницу или войдите по email.');
         return;
     }
 
@@ -260,10 +214,7 @@ function initVkIdWidget() {
             showAlternativeLogin: true,
         })
         .on(VKID.WidgetEvents.ERROR, function () {
-            if (fallbackButton) {
-                fallbackButton.style.display = 'flex';
-            }
-            setAuthError('Не удалось загрузить VK ID. Попробуйте резервный вход.');
+            setAuthError('Не удалось загрузить VK ID. Попробуйте обновить страницу или войдите по email.');
         })
         .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
             const code = payload?.code || '';
@@ -276,9 +227,7 @@ function initVkIdWidget() {
                 });
         });
 }
-
-document.getElementById('vk-login-button')?.addEventListener('click', startVkLogin);
 </script>
-<script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js" defer onload="initVkIdWidget()" onerror="document.getElementById('vk-login-button').style.display='flex';setAuthError('Не удалось загрузить VK ID SDK. Используйте резервный вход.');"></script>
+<script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js" defer onload="initVkIdWidget()" onerror="setAuthError('Не удалось загрузить VK ID SDK. Попробуйте обновить страницу или войдите по email.');"></script>
 </body>
 </html>
