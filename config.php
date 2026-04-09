@@ -921,8 +921,10 @@ function getParticipantDrawingWebPath($userEmail, $drawingFile) {
     }
 
     $safeEmail = normalizeDrawingOwner($userEmail);
-    $userScopedPath = '/uploads/drawings/' . $safeEmail . '/' . $safeFile;
-    $legacyPath = '/uploads/drawings/' . $safeFile;
+    $encodedFile = rawurlencode($safeFile);
+    $encodedEmail = rawurlencode($safeEmail);
+    $userScopedPath = '/uploads/drawings/' . $encodedEmail . '/' . $encodedFile;
+    $legacyPath = '/uploads/drawings/' . $encodedFile;
 
     $userScopedFs = DRAWINGS_PATH . '/' . $safeEmail . '/' . $safeFile;
     $legacyFs = DRAWINGS_PATH . '/' . $safeFile;
