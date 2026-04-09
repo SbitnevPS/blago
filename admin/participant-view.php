@@ -63,6 +63,9 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="flex items-center gap-md mb-lg">
     <a href="/admin/participants" class="btn btn--ghost"><i class="fas fa-arrow-left"></i> Назад к списку</a>
+    <a href="/admin/application/<?= (int) $participant['application_id'] ?>" class="btn btn--secondary">
+        <i class="fas fa-file-alt"></i> Перейти к заявке #<?= (int) $participant['application_id'] ?>
+    </a>
     <?php $statusMeta = getApplicationStatusMeta($participant['application_status']); ?>
     <span class="badge <?= htmlspecialchars($statusMeta['badge_class']) ?>" style="font-size: 13px;">
         <?= htmlspecialchars($statusMeta['label']) ?>
