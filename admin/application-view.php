@@ -613,6 +613,13 @@ require_once __DIR__ . '/includes/header.php';
 <p><?= htmlspecialchars($application['colleagues_info']) ?></p>
 </div>
  <?php endif; ?>
+
+ <?php if ($application['recommendations_wishes']): ?>
+<div class="form-group mt-md">
+<label class="form-label">Рекомендации и пожелания</label>
+<p><?= nl2br(htmlspecialchars($application['recommendations_wishes'])) ?></p>
+</div>
+ <?php endif; ?>
         
  <?php if ($application['payment_receipt']): ?>
 <div class="form-group mt-md">

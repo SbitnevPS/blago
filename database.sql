@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS applications (
     parent_fio VARCHAR(255),
     source_info VARCHAR(255),
     colleagues_info VARCHAR(255),
+    recommendations_wishes TEXT,
     payment_receipt VARCHAR(255),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
