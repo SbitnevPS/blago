@@ -52,6 +52,7 @@
 | parent_fio | VARCHAR(255) | ФИО родителя/куратора |
 | source_info | VARCHAR(255) | Откуда узнали о конкурсе |
 | colleagues_info | VARCHAR(255) | Информация о коллегах |
+| recommendations_wishes | TEXT | Рекомендации и пожелания участника |
 | payment_receipt | VARCHAR(255) | Файл квитанции |
 | created_at | DATETIME | Дата создания |
 | updated_at | DATETIME | Дата обновления |

@@ -164,6 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 
  $source_info = trim($_POST['source_info'] ?? '');
  $colleagues_info = trim($_POST['colleagues_info'] ?? '');
+ $recommendations_wishes = trim($_POST['recommendations_wishes'] ?? '');
                 
  // Валидация ФИО
  if (empty($parent_name) || empty($parent_patronymic) || empty($parent_surname)) {
@@ -176,20 +177,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $application_id = $_POST['application_id'];
                     
  $stmt = $pdo->prepare("
- UPDATE applications SET 
- parent_fio = ?,
- source_info = ?,
- colleagues_info = ?,
- status = ?,
- allow_edit = ?,
- updated_at = NOW()
+	 UPDATE applications SET 
+	 parent_fio = ?,
+	 source_info = ?,
+	 colleagues_info = ?,
+	 recommendations_wishes = ?,
+	 status = ?,
+	 allow_edit = ?,
+	 updated_at = NOW()
  WHERE id = ? AND user_id = ?
  ");
  $stmt->execute([
- $parent_fio,
- $source_info,
- $colleagues_info,
- $action === 'submit' ? 'submitted' : 'draft',
+	 $parent_fio,
+	 $source_info,
+	 $colleagues_info,
+	 $recommendations_wishes,
+	 $action === 'submit' ? 'submitted' : 'draft',
  $action === 'submit' ? 0 : 1,
  $application_id,
  $user['id']
@@ -198,8 +201,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $pdo->prepare("DELETE FROM participants WHERE application_id = ?")->execute([$application_id]);
  } else {
                 $stmt = $pdo->prepare("
-                INSERT INTO applications (user_id, contest_id, parent_fio, source_info, colleagues_info, status, allow_edit)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO applications (user_id, contest_id, parent_fio, source_info, colleagues_info, recommendations_wishes, status, allow_edit)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                 $user['id'],
@@ -207,6 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $parent_fio,
                 $source_info,
                 $colleagues_info,
+                $recommendations_wishes,
                 $action === 'submit' ? 'submitted' : 'draft',
                 $action === 'submit' ? 0 : 1,
                 ]);
@@ -327,10 +331,11 @@ if ($editingApplication) {
         'organization_region' => $editingParticipants[0]['region'] ?? ($user['organization_region'] ?? ''),
         'organization_name' => $editingParticipants[0]['organization_name'] ?? ($user['organization_name'] ?? ''),
         'organization_address' => $editingParticipants[0]['organization_address'] ?? ($user['organization_address'] ?? ''),
-        'organization_email' => $editingParticipants[0]['organization_email'] ?? ($user['email'] ?? ''),
-        'source_info' => $editingApplication['source_info'] ?? '',
-        'colleagues_info' => $editingApplication['colleagues_info'] ?? '',
-    ];
+	        'organization_email' => $editingParticipants[0]['organization_email'] ?? ($user['email'] ?? ''),
+	        'source_info' => $editingApplication['source_info'] ?? '',
+	        'colleagues_info' => $editingApplication['colleagues_info'] ?? '',
+	        'recommendations_wishes' => $editingApplication['recommendations_wishes'] ?? '',
+	    ];
 } else {
     $initialFormData = [
         'parent_surname' => $user['surname'] ?? '',
@@ -339,10 +344,11 @@ if ($editingApplication) {
         'organization_region' => $user['organization_region'] ?? '',
         'organization_name' => $user['organization_name'] ?? '',
         'organization_address' => $user['organization_address'] ?? '',
-        'organization_email' => $user['email'] ?? '',
-        'source_info' => '',
-        'colleagues_info' => '',
-    ];
+	        'organization_email' => $user['email'] ?? '',
+	        'source_info' => '',
+	        'colleagues_info' => '',
+	        'recommendations_wishes' => '',
+	    ];
 }
 
 generateCSRFToken();
@@ -499,6 +505,10 @@ generateCSRFToken();
 <div class="form-group">
 <label class="form-label">Рассказали ли вы о конкурсе ещё кому-нибудь: друзьям, родственникам, коллегам?</label>
 <input type="text" name="colleagues_info" class="form-input" placeholder="Например: да, отправила ссылку друзьям и коллегам" value="<?= htmlspecialchars($initialFormData['colleagues_info']) ?>">
+</div>
+<div class="form-group">
+<label class="form-label">Ваши рекомендации и пожелания</label>
+<textarea name="recommendations_wishes" class="form-textarea" rows="3" placeholder="Поделитесь рекомендациями и пожеланиями по проведению конкурса"><?= htmlspecialchars($initialFormData['recommendations_wishes']) ?></textarea>
 </div>
 </div>
 </div>
