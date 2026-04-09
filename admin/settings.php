@@ -86,7 +86,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'homepage_hero_image' => trim($_POST['homepage_hero_image'] ?? ''),
         ];
 
+        $newPublicationToken = trim((string) ($_POST['vk_publication_token_new'] ?? ''));
+        $resetPublicationToken = isset($_POST['vk_publication_token_reset']) && (string) $_POST['vk_publication_token_reset'] === '1';
+        if ($resetPublicationToken) {
+            $payload['vk_publication_manual_token'] = '';
+            $payload['vk_publication_status'] = 'disconnected';
+            $payload['vk_publication_last_error'] = '';
+            $payload['vk_publication_technical_diagnostics'] = '';
+            $payload['vk_publication_vk_user_id'] = '';
+            $payload['vk_publication_vk_user_name'] = '';
+            $payload['vk_publication_group_name'] = '';
+            $payload['vk_publication_token_scope'] = '';
+            $payload['vk_publication_confirmed_permissions'] = '';
+        } elseif ($newPublicationToken !== '') {
+            $payload['vk_publication_manual_token'] = $newPublicationToken;
+            $payload['vk_publication_status'] = 'attention';
+        }
+
         if (saveSystemSettings($payload)) {
+            cleanupLegacyVkPublicationOauthData();
             $_SESSION['success_message'] = 'Настройки сохранены';
             redirect('/admin/settings');
         }
@@ -98,15 +116,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $settings = getSystemSettings();
 $vkPublicationSettings = getVkPublicationSettings();
 $vkReadiness = verifyVkPublicationReadiness(false);
-$vkStatus = !empty($vkReadiness['ok']) ? 'connected' : (($vkPublicationSettings['user_token'] !== '') ? 'attention' : 'disconnected');
+$vkStatus = !empty($vkReadiness['ok']) ? 'connected' : (($vkPublicationSettings['publication_token'] !== '') ? 'attention' : 'disconnected');
 $vkStatusLabel = $vkStatus === 'connected'
-    ? 'VK подключён'
-    : ($vkStatus === 'attention' ? 'Требуется внимание' : 'VK не подключён');
+    ? 'Публикационный токен готов'
+    : ($vkStatus === 'attention' ? 'Требуется внимание' : 'Публикационный токен не задан');
 $vkScopeDisplay = $vkPublicationSettings['token_scope'] !== '' ? $vkPublicationSettings['token_scope'] : 'не указан VK';
 $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== '' ? $vkPublicationSettings['confirmed_permissions'] : 'нет подтверждённых прав';
-$vkLastError = $vkPublicationSettings['oauth_last_error'] !== '' ? $vkPublicationSettings['oauth_last_error'] : '—';
-$vkTokenTypeLabel = $vkPublicationSettings['token_type'] === 'user' ? 'Пользовательский токен' : $vkPublicationSettings['token_type'];
-$vkOauthExpectedSetup = getVkPublicationOauthExpectedSetup();
+$vkLastError = $vkPublicationSettings['last_error'] !== '' ? $vkPublicationSettings['last_error'] : '—';
+$vkTokenTypeLabel = $vkPublicationSettings['token_type'] === 'user' ? 'User token' : $vkPublicationSettings['token_type'];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -270,39 +287,51 @@ require_once __DIR__ . '/includes/header.php';
 
                 <section id="vk-integration" class="settings-section">
                     <div class="settings-section__header">
-                        <h4><i class="fab fa-vk"></i> Интеграция ВКонтакте (публикация работ)</h4>
-                        <p>Подключение сообщества и настройка шаблона подписи к публикуемым работам.</p>
+                        <h4><i class="fab fa-vk"></i> Интеграция VK</h4>
+                        <p>Два независимых контура: вход пользователей через VK ID и отдельная публикация работ в VK.</p>
                     </div>
 
                     <div class="settings-vk-card">
+                        <div class="vk-connection-card" style="margin-bottom:16px;">
+                            <div class="vk-connection-card__header">
+                                <div>
+                                    <strong>Вход пользователей через VK ID</strong>
+                                    <div class="form-hint">Используется только для login/registration пользователей сайта (PKCE + state + callback).</div>
+                                </div>
+                                <span class="badge badge--secondary">VK ID Login</span>
+                            </div>
+                            <div class="vk-connection-card__meta">
+                                <div><strong>Start endpoint:</strong> <code>/auth/vk/user/start</code></div>
+                                <div><strong>Callback endpoint:</strong> <code>/auth/vk/user/callback</code></div>
+                                <div><strong>Назначение:</strong> вход пользователя на сайт, не используется для публикации.</div>
+                            </div>
+                        </div>
+
                         <div class="vk-connection-card">
                             <div class="vk-connection-card__header">
                                 <div>
-                                    <strong><?= htmlspecialchars($vkStatusLabel) ?></strong>
-                                    <div class="form-hint">
-                                        <?= htmlspecialchars($vkStatus === 'connected' ? 'Публикация рисунков в VK доступна.' : 'Перед публикацией выполните подключение VK OAuth.') ?>
-                                    </div>
+                                    <strong>Публикация работ в VK</strong>
+                                    <div class="form-hint">Для публикации используется только вручную заданный publication token.</div>
                                 </div>
                                 <span class="badge <?= $vkStatus === 'connected' ? 'badge--success' : ($vkStatus === 'attention' ? 'badge--warning' : 'badge--secondary') ?>">
-                                    <?= htmlspecialchars($vkStatus === 'connected' ? 'Connected' : ($vkStatus === 'attention' ? 'Warning' : 'Disconnected')) ?>
+                                    <?= htmlspecialchars($vkStatus === 'connected' ? 'Connected' : ($vkStatus === 'attention' ? 'Attention' : 'Disconnected')) ?>
                                 </span>
                             </div>
 
                             <div class="vk-connection-card__meta">
-                                <div><strong>Аккаунт:</strong> <?= htmlspecialchars($vkPublicationSettings['oauth_user_name'] !== '' ? $vkPublicationSettings['oauth_user_name'] : '—') ?></div>
-                                <div><strong>VK user ID:</strong> <?= htmlspecialchars($vkPublicationSettings['oauth_user_id'] !== '' ? $vkPublicationSettings['oauth_user_id'] : '—') ?></div>
+                                <div><strong>Статус:</strong> <?= htmlspecialchars($vkStatusLabel) ?></div>
+                                <div><strong>VK user ID владельца токена:</strong> <?= htmlspecialchars($vkPublicationSettings['vk_user_id'] !== '' ? $vkPublicationSettings['vk_user_id'] : '—') ?></div>
+                                <div><strong>Владелец токена:</strong> <?= htmlspecialchars($vkPublicationSettings['vk_user_name'] !== '' ? $vkPublicationSettings['vk_user_name'] : '—') ?></div>
                                 <div><strong>Тип токена:</strong> <?= htmlspecialchars($vkTokenTypeLabel) ?></div>
+                                <div><strong>Маска токена:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
                                 <div><strong>Scope токена:</strong> <?= htmlspecialchars($vkScopeDisplay) ?></div>
                                 <div><strong>Подтверждённые права:</strong> <?= htmlspecialchars($vkConfirmedPermissions) ?></div>
-                                <div><strong>Подключено:</strong> <?= htmlspecialchars($vkPublicationSettings['oauth_connected_at'] !== '' ? $vkPublicationSettings['oauth_connected_at'] : '—') ?></div>
-                                <div><strong>Токен истекает:</strong> <?= htmlspecialchars($vkPublicationSettings['token_expires_at'] !== '' ? $vkPublicationSettings['token_expires_at'] : 'не указан') ?></div>
-                                <div><strong>Маска токена:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
+                                <div><strong>ID сообщества:</strong> <?= htmlspecialchars($settings['vk_publication_group_id'] ?? '—') ?></div>
+                                <div><strong>Название сообщества:</strong> <?= htmlspecialchars(trim((string)($settings['vk_publication_group_name'] ?? '')) !== '' ? (string)$settings['vk_publication_group_name'] : '—') ?></div>
                                 <div><strong>Последняя проверка:</strong> <?= htmlspecialchars($vkPublicationSettings['last_checked_at'] !== '' ? $vkPublicationSettings['last_checked_at'] : '—') ?></div>
                                 <div><strong>Последняя успешная проверка:</strong> <?= htmlspecialchars($vkPublicationSettings['last_success_checked_at'] !== '' ? $vkPublicationSettings['last_success_checked_at'] : '—') ?></div>
-                                <div><strong>Статус последней проверки:</strong> <?= htmlspecialchars($vkPublicationSettings['last_check_status'] !== '' ? $vkPublicationSettings['last_check_status'] : '—') ?></div>
-                                <div><strong>Сообщение проверки:</strong> <?= htmlspecialchars($vkPublicationSettings['last_check_message'] !== '' ? $vkPublicationSettings['last_check_message'] : '—') ?></div>
                                 <div><strong>Последняя ошибка:</strong> <?= htmlspecialchars($vkLastError) ?></div>
-                                <div><strong>Техническая ошибка:</strong> <?= htmlspecialchars($vkPublicationSettings['oauth_last_error_technical'] !== '' ? $vkPublicationSettings['oauth_last_error_technical'] : '—') ?></div>
+                                <div><strong>Техническая диагностика:</strong> <?= htmlspecialchars($vkPublicationSettings['technical_diagnostics'] !== '' ? $vkPublicationSettings['technical_diagnostics'] : '—') ?></div>
                             </div>
 
                             <?php if (!empty($vkReadiness['issues'])): ?>
@@ -312,55 +341,32 @@ require_once __DIR__ . '/includes/header.php';
                                 </div>
                             <?php endif; ?>
 
-                            <div class="alert alert--warning">
-                                <i class="fas fa-circle-info"></i>
-                                Если на шаге <code>https://oauth.vk.com/authorize</code> появляется <strong>401 Unauthorized</strong>, проверьте настройки приложения VK: <strong>Authorized redirect URI</strong>, <strong>Website address</strong>, <strong>Base domain</strong>, пару <strong>client_id/client_secret</strong> от одного приложения, доступность приложения для всех и тип приложения (нужен legacy OAuth для <code>oauth.vk.com</code>, а не VK ID-only).
-                            </div>
-
                             <div class="vk-connection-card__actions">
-                                <button type="button" class="btn btn--primary btn--sm" id="vkConnectBtn">
-                                    <i class="fab fa-vk"></i> <?= $vkPublicationSettings['user_token'] !== '' ? 'Переподключить VK' : 'Подключить VK' ?>
-                                </button>
                                 <button type="button" class="btn btn--ghost btn--sm" id="vkCheckBtn">
-                                    <i class="fas fa-plug-circle-check"></i> Проверить подключение VK
-                                </button>
-                                <button type="button" class="btn btn--danger btn--sm" id="vkDisconnectBtn" <?= $vkPublicationSettings['user_token'] === '' ? 'disabled' : '' ?>>
-                                    <i class="fas fa-link-slash"></i> Отключить VK
+                                    <i class="fas fa-plug-circle-check"></i> Проверить токен VK
                                 </button>
                             </div>
                         </div>
 
-                        <div class="form-group">
-                            <label class="form-label">Статус OAuth-подключения</label>
-                            <input type="text" class="form-input" value="<?= htmlspecialchars($vkStatusLabel) ?>" readonly>
-                            <div class="form-hint">
-                                Используется единый OAuth authorization code flow VK: после возврата из VK токен валидируется через <code>users.get</code> и проверяется готовность к публикации (<code>groups.getById</code>, <code>photos.getWallUploadServer</code>).
-                            </div>
-                            <div class="form-hint" style="margin-top:8px;">
-                                Обязательные значения в кабинете VK приложения: <code>Authorized redirect URI = <?= htmlspecialchars($vkOauthExpectedSetup['authorized_redirect_uri']) ?></code>, <code>Website address = <?= htmlspecialchars($vkOauthExpectedSetup['website_address']) ?></code>, <code>Base domain = <?= htmlspecialchars($vkOauthExpectedSetup['base_domain']) ?></code>.
-                            </div>
+                        <div class="form-group" style="margin-top:12px;">
+                            <label class="form-label">Access token публикации (ввести новый)</label>
+                            <input type="password" name="vk_publication_token_new" class="form-input" value="" placeholder="vk1.a.... или service token" autocomplete="off">
+                            <div class="form-hint">Полный token не выводится в HTML. Оставьте пустым, чтобы сохранить текущий token без изменений.</div>
+                            <label class="form-checkbox" style="margin-top:8px;">
+                                <input type="checkbox" name="vk_publication_token_reset" value="1">
+                                <span class="form-checkbox__mark"></span>
+                                <span>Удалить сохранённый publication token</span>
+                            </label>
                         </div>
 
                         <div class="form-row">
                             <div class="form-group">
-                                <label class="form-label">ID группы VK</label>
-                                <input
-                                    type="text"
-                                    name="vk_publication_group_id"
-                                    class="form-input"
-                                    value="<?= htmlspecialchars($settings['vk_publication_group_id'] ?? '') ?>"
-                                    placeholder="123456789"
-                                >
+                                <label class="form-label">ID сообщества VK</label>
+                                <input type="text" name="vk_publication_group_id" class="form-input" value="<?= htmlspecialchars($settings['vk_publication_group_id'] ?? '') ?>" placeholder="123456789">
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Версия VK API</label>
-                                <input
-                                    type="text"
-                                    name="vk_publication_api_version"
-                                    class="form-input"
-                                    value="<?= htmlspecialchars($settings['vk_publication_api_version'] ?? '5.131') ?>"
-                                    placeholder="5.131"
-                                >
+                                <input type="text" name="vk_publication_api_version" class="form-input" value="<?= htmlspecialchars($settings['vk_publication_api_version'] ?? '5.131') ?>" placeholder="5.131">
                             </div>
                         </div>
 
@@ -370,16 +376,11 @@ require_once __DIR__ . '/includes/header.php';
                                 <span class="form-checkbox__mark"></span>
                                 <span>Публиковать от имени сообщества</span>
                             </label>
-                            <div class="form-hint">Если включено, пост публикуется на стене сообщества от имени сообщества (параметр <code>from_group=1</code>).</div>
                         </div>
 
                         <div class="form-group">
                             <label class="form-label">Шаблон подписи поста VK</label>
-                            <textarea
-                                name="vk_publication_post_template"
-                                class="form-input"
-                                rows="8"
-                            ><?= htmlspecialchars($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()) ?></textarea>
+                            <textarea name="vk_publication_post_template" class="form-input" rows="8"><?= htmlspecialchars($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()) ?></textarea>
                             <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {work_title}, {contest_title}, {nomination}, {age_category}</div>
                         </div>
                     </div>
@@ -431,9 +432,7 @@ require_once __DIR__ . '/includes/header.php';
     const title = document.getElementById('homepageHeroUploadTitle');
     const hint = document.getElementById('homepageHeroUploadHint');
     const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
-    const vkConnectBtn = document.getElementById('vkConnectBtn');
     const vkCheckBtn = document.getElementById('vkCheckBtn');
-    const vkDisconnectBtn = document.getElementById('vkDisconnectBtn');
 
     if (!uploadArea || !input || !hiddenInput || !previewImage) return;
 
@@ -515,16 +514,6 @@ require_once __DIR__ . '/includes/header.php';
         return payload;
     };
 
-    vkConnectBtn?.addEventListener('click', async () => {
-        try {
-            const payload = await postJson('/auth/vk/publication/start');
-            if (!payload.auth_url) throw new Error('VK не вернул ссылку авторизации');
-            window.location.href = payload.auth_url;
-        } catch (error) {
-            alert(error.message || 'Не удалось запустить подключение VK');
-        }
-    });
-
     vkCheckBtn?.addEventListener('click', async () => {
         try {
             const payload = await postJson('/auth/vk/publication/test');
@@ -536,16 +525,6 @@ require_once __DIR__ . '/includes/header.php';
         }
     });
 
-    vkDisconnectBtn?.addEventListener('click', async () => {
-        if (!confirm('Отключить VK-подключение для публикации?')) return;
-        try {
-            const payload = await postJson('/auth/vk/publication/disconnect');
-            alert(payload.message || 'VK отключен');
-            window.location.reload();
-        } catch (error) {
-            alert(error.message || 'Не удалось отключить VK');
-        }
-    });
 })();
 </script>
 

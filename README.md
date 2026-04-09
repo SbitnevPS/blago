@@ -20,19 +20,12 @@
 - `router.php` — маршрутизатор, который подключает соответствующие view-файлы.
 - `docs/vk-publications.md` — документация по модулю заданий публикации работ в VK.
 
-## VK OAuth для публикации работ (важно)
+## VK: два независимых сценария
 
-Модуль публикаций использует legacy OAuth authorize endpoint `https://oauth.vk.com/authorize` и callback:
+- Вход пользователей: `VK ID login` через `/auth/vk/user/start` и `/auth/vk/user/callback`.
+- Публикация работ: отдельный ручной `publication token` в `/admin/settings` + проверка через `/auth/vk/publication/test`.
 
-- `https://konkurs.tolkodobroe.info/auth/vk/publication/callback`
-
-Для корректной работы в кабинете VK приложения должны быть выставлены:
-
-- `Authorized redirect URI = https://konkurs.tolkodobroe.info/auth/vk/publication/callback`
-- `Website address = https://konkurs.tolkodobroe.info`
-- `Base domain = konkurs.tolkodobroe.info`
-
-Если на `oauth.vk.com/authorize` приходит `401 Unauthorized`, сначала проверьте эти поля, пару `client_id/client_secret` от одного приложения, доступность приложения и тип приложения (не VK ID-only для legacy authorize).
+Публикация не использует OAuth callback и не зависит от пользовательского VK ID login.
 
 ## Laravel Valet (если открывается 404)
 

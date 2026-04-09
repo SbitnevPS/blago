@@ -4,60 +4,25 @@
 
 Модуль позволяет администратору сформировать задание на публикацию работ участников и публиковать элементы по одному или всем пакетом в сообщество VK.
 
-## Авторизация VK OAuth (authorization_code, legacy oauth.vk.com)
+## Публикация работ в VK: только ручной publication token
 
-Для публикации поста с изображением используется **пользовательский токен** администратора сообщества VK, полученный через legacy OAuth на `oauth.vk.com` по схеме `authorization_code`.
-
-> Важно: токен сообщества (group token) для цепочки загрузки изображения на стену не подходит и приводит к ошибке `method is unavailable with group auth`.
-
-### Маршруты подключения
-
-- `POST /auth/vk/publication/start` — старт OAuth, генерация `state`, `code_verifier`, `code_challenge`;
-- `GET /auth/vk/publication/callback` — callback, валидация `state`, обмен `code` на токены, сохранение подключения;
-- `POST /auth/vk/publication/test` — проверка готовности подключения для публикации;
-- `POST /auth/vk/publication/disconnect` — отключение VK-подключения.
-
-На этапе `POST /auth/vk/publication/start` добавлен диагностический лог с полями:
-
-- `client_id`
-- `redirect_uri`
-- `authorize_endpoint`
-- `flow_mode`
-
-`client_secret` в лог не пишется.
-
-### Проверка настроек VK-приложения (критично при 401 на authorize)
-
-Если авторизация падает прямо на `https://oauth.vk.com/authorize` с `401 Unauthorized` (до callback), это означает, что VK отклоняет authorize-запрос. Проверьте:
-
-1. Приложение VK настроено под тот же сценарий, который использует сайт: **legacy OAuth на `oauth.vk.com`**, flow `authorization_code`.
-2. В настройках приложения VK заданы точные значения:
-   - `Authorized redirect URI = https://konkurs.tolkodobroe.info/auth/vk/publication/callback`
-   - `Website address = https://konkurs.tolkodobroe.info`
-   - `Base domain = konkurs.tolkodobroe.info`
-3. `client_id` и `client_secret` взяты из **одного и того же** VK-приложения.
-4. Приложение включено и доступно всем (не ограничено только владельцем/тестерами).
-5. Не используется неподходящий тип приложения (например, VK ID-only) при авторизации через legacy `oauth.vk.com`.
+Сценарий публикации **не использует OAuth callback**. Администратор вручную сохраняет token в `/admin/settings`, после чего система проверяет готовность публикации через `POST /auth/vk/publication/test`.
 
 ### Какие настройки используются
 
 В системных настройках (`storage/settings.json`) сохраняются:
 
-- `vk_publication_user_token` — пользовательский access token для публикации (маскируется в UI);
-- `vk_publication_refresh_token` — refresh token (если выдан);
+- `vk_publication_manual_token` — вручную сохранённый publication token (маскируется в UI);
 - `vk_publication_group_id` — ID сообщества VK;
 - `vk_publication_api_version` — версия VK API (по умолчанию `5.131`);
 - `vk_publication_from_group` — публиковать ли от имени сообщества;
 - `vk_publication_post_template` — шаблон текста публикации.
-- `vk_publication_oauth_user_id`, `vk_publication_oauth_user_name` — данные подключенного VK-аккаунта;
-- `vk_publication_token_obtained_at`, `vk_publication_token_expires_at` — сроки токена;
+- `vk_publication_vk_user_id`, `vk_publication_vk_user_name` — данные владельца token по результатам проверки `users.get`;
 - `vk_publication_last_checked_at`, `vk_publication_last_check_status`, `vk_publication_last_check_message` — результат последней проверки.
-
-Для обратной совместимости читается также старый ключ `vk_publication_access_token`.
 
 ### Требуемые права токена
 
-Минимальный набор: `wall`, `photos`, `groups`, `offline`.
+Минимальный набор: `wall`, `photos`, `groups`.
 
 ## Цепочка публикации изображения + текста
 
@@ -65,7 +30,7 @@
 
 1. подключен ли VK;
 2. не пустой ли токен;
-3. не истек ли токен (при наличии `refresh_token` выполняется попытка обновления);
+3. не истек ли токен (если VK вернул expiry);
 4. указан ли `group_id`;
 5. проходят ли базовые вызовы `users.get` и `groups.getById`.
 
