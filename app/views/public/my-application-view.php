@@ -853,7 +853,7 @@ $currentPage = 'applications';
 <?php endforeach; ?>
         
  <!-- Дополнительная информация -->
- <?php if (!empty($application['source_info']) || !empty($application['colleagues_info'])): ?>
+ <?php if (!empty($application['source_info']) || !empty($application['colleagues_info']) || !empty($application['recommendations_wishes'])): ?>
 <div class="card mb-lg">
 <div class="card__header"><h3>Дополнительная информация</h3></div>
 <div class="card__body">
@@ -868,6 +868,13 @@ $currentPage = 'applications';
 <div class="form-group">
 <div class="form-label">Проинформировали коллег</div>
 <div><?= htmlspecialchars($application['colleagues_info']) ?></div>
+</div>
+ <?php endif; ?>
+
+ <?php if (!empty($application['recommendations_wishes'])): ?>
+<div class="form-group">
+<div class="form-label">Рекомендации и пожелания</div>
+<div><?= nl2br(htmlspecialchars($application['recommendations_wishes'])) ?></div>
 </div>
  <?php endif; ?>
 </div>
