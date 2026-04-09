@@ -467,6 +467,23 @@ foreach ($participants as $participantRow) {
 }
 $vkPublicationLinks = array_values(array_unique($vkPublicationLinks));
 
+$statusColorMap = [
+    'pending' => ['label' => 'На рассмотрении', 'class' => 'status-pill--pending'],
+    'review' => ['label' => 'На рассмотрении', 'class' => 'status-pill--pending'],
+    'revision' => ['label' => 'Требует корректировки', 'class' => 'status-pill--revision'],
+    'accepted' => ['label' => 'Принята', 'class' => 'status-pill--accepted'],
+    'approved' => ['label' => 'Принята', 'class' => 'status-pill--accepted'],
+    'declined' => ['label' => 'Отклонена', 'class' => 'status-pill--declined'],
+    'rejected' => ['label' => 'Отклонена', 'class' => 'status-pill--declined'],
+];
+$statusCode = (string) ($application['status'] ?? 'pending');
+$statusDisplay = $statusColorMap[$statusCode] ?? ['label' => (string) ($statusMeta['label'] ?? 'На рассмотрении'), 'class' => 'status-pill--pending'];
+$applicationProgressStep = in_array($statusCode, ['accepted', 'approved'], true) ? 3 : (in_array($statusCode, ['declined', 'rejected'], true) ? 2 : 2);
+$userFullName = trim((string) (($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? '')));
+$userRegion = (string) ($user['region'] ?? $application['region'] ?? '—');
+$userOrganization = (string) ($user['organization_name'] ?? $application['organization_name'] ?? '');
+$applicationDateLabel = date('d.m.Y H:i', strtotime((string) $application['created_at']));
+
 $disputeChatMessages = [];
 if (in_array($application['status'], ['declined', 'rejected'], true)) {
     try {
@@ -507,7 +524,45 @@ $currentPage = 'applications';
 <title>Заявка #<?= $applicationId ?> - ДетскиеКонкурсы.рф</title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 <style>
-.dispute-chat-modal {max-width: 760px; width: calc(100% - 32px);}
+.application-page {max-width:1200px; margin:0 auto; display:flex; flex-direction:column; gap:16px;}
+.application-content {display:grid; grid-template-columns:1fr; gap:16px;}
+.app-card {background:#fff; border-radius:14px; box-shadow:0 8px 28px rgba(15,23,42,.06); border:1px solid #EEF2F7; padding:18px;}
+.app-card__title {margin:0 0 12px; font-size:20px;}
+.app-header {background:linear-gradient(145deg,#ffffff,#f8fbff);}
+.app-header__top {display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap;}
+.app-header__meta {display:flex; gap:14px; color:#64748B; font-size:14px; flex-wrap:wrap;}
+.status-pill {display:inline-flex; align-items:center; border-radius:999px; padding:6px 12px; font-size:13px; font-weight:700;}
+.status-pill--pending {background:#FEF3C7; color:#92400E;}
+.status-pill--revision {background:#DBEAFE; color:#1E40AF;}
+.status-pill--accepted {background:#DCFCE7; color:#166534;}
+.status-pill--declined {background:#FEE2E2; color:#991B1B;}
+.application-progress {display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:14px;}
+.application-progress__step {display:flex; align-items:center; gap:8px; color:#94A3B8; font-size:13px;}
+.application-progress__dot {width:22px; height:22px; border-radius:999px; border:2px solid #CBD5E1; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;}
+.application-progress__step.is-active {color:#0F172A;}
+.application-progress__step.is-active .application-progress__dot {border-color:#4CAF50; background:#ECFDF3; color:#166534;}
+.app-profile {display:flex; gap:12px; align-items:center;}
+.app-profile__avatar {width:52px; height:52px; border-radius:50%; background:#E2E8F0; display:flex; align-items:center; justify-content:center; color:#64748B; font-size:20px;}
+.app-profile__meta {display:grid; gap:4px;}
+.app-profile__name {font-weight:700;}
+.app-sidebar {display:flex; flex-direction:column; gap:16px;}
+.participants-grid {display:grid; grid-template-columns:1fr; gap:16px;}
+.participant-modern-card {overflow:hidden; padding:0; transition:transform .2s ease, box-shadow .2s ease;}
+.participant-modern-card:hover {transform:translateY(-2px); box-shadow:0 12px 32px rgba(15,23,42,.12);}
+.participant-modern-card__image-wrap {background:#F1F5F9;}
+.participant-modern-card__image {display:block; width:100%; height:min(48vw,360px); min-height:220px; object-fit:cover; cursor:zoom-in;}
+.participant-modern-card__body {padding:16px; display:grid; gap:10px;}
+.participant-modern-card__header {display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+.participant-modern-card__name {margin:0; font-size:20px; line-height:1.2;}
+.participant-modern-card__subtitle {color:#475569; font-size:14px;}
+.participant-modern-card__facts {display:grid; grid-template-columns:1fr; gap:6px; color:#334155; font-size:14px;}
+.participant-modern-card__actions {display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;}
+.app-highlight {background:#FEF9C3; border:1px solid #FDE68A; color:#92400E; border-radius:12px; padding:12px;}
+.app-empty {text-align:center; padding:30px 16px; color:#64748B;}
+.app-skeleton {display:grid; gap:12px;}
+.app-skeleton__item {height:96px; border-radius:14px; background:linear-gradient(90deg,#EDF2F7 25%,#E2E8F0 37%,#EDF2F7 63%); background-size:400% 100%; animation:appShimmer 1.2s ease infinite;}
+@keyframes appShimmer {0% {background-position:100% 50%;} 100% {background-position:0 50%;}}
+.dispute-chat-modal {max-width:760px; width:calc(100% - 32px);}
 .dispute-chat-modal__body {display:flex; flex-direction:column; gap:16px;}
 .dispute-chat-modal__messages {max-height:420px; overflow:auto; display:flex; flex-direction:column; gap:12px;}
 .dispute-chat-message {display:flex;}
@@ -518,19 +573,23 @@ $currentPage = 'applications';
 .dispute-chat-message--user .dispute-chat-message__bubble {background:#EEF2FF;}
 .dispute-chat-message__meta {font-size:12px; color:#6B7280; margin-bottom:6px; display:flex; gap:8px; flex-wrap:wrap;}
 .dispute-chat-message__text {white-space:pre-wrap; line-height:1.5;}
-.compact-diploma-list {display:flex; flex-direction:column; gap:8px; max-height:260px; overflow:auto; padding-right:4px;}
-.compact-diploma-list__item {display:flex; justify-content:space-between; align-items:center; gap:12px; border:1px solid var(--border-color); border-radius:10px; padding:8px 10px; background:#fff;}
-.compact-diploma-list__name {font-size:14px; font-weight:600; line-height:1.2;}
-.compact-diploma-list__meta {font-size:12px; color:var(--text-muted); line-height:1.2; margin-top:2px;}
-.compact-diploma-list__actions {display:flex; align-items:center; gap:6px; flex-shrink:0;}
-.compact-diploma-list__btn {min-width:32px; min-height:32px; width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; padding:0;}
+@media (min-width: 980px) {
+ .application-content {grid-template-columns:minmax(0,1.55fr) minmax(320px,1fr);}
+ .participant-modern-card__facts {grid-template-columns:repeat(2,minmax(0,1fr));}
+ .participant-modern-card__image {height:320px;}
+}
 </style>
 </head>
 <body>
 <?php include dirname(__DIR__) . '/partials/header.php'; ?>
 
-<main class="container" style="padding: var(--space-xl) var(--space-lg);">
-<div class="application-detail">
+<main class="container" style="padding: var(--space-xl) var(--space-lg); background:#f8f9fb;">
+<div id="applicationPageSkeleton" class="application-page app-skeleton" aria-hidden="true">
+    <div class="app-skeleton__item"></div>
+    <div class="app-skeleton__item"></div>
+    <div class="app-skeleton__item"></div>
+</div>
+<div class="application-page" id="applicationPageContent" style="display:none;">
 <?php if (!empty($_SESSION['success_message'])): ?>
 <div class="alert alert--success mb-lg js-toast-alert">
 <i class="fas fa-check-circle"></i> <?= htmlspecialchars($_SESSION['success_message']) ?>
@@ -543,69 +602,154 @@ $currentPage = 'applications';
 </div>
 <?php unset($_SESSION['error_message']); endif; ?>
 
-<?php if ($application['status'] === 'revision'): ?>
-<div class="alert mb-lg" style="background:#FEF9C3; border:1px solid #FDE68A; color:#92400E;">
-<i class="fas fa-tools"></i> Заявка отправлена на корректировку. Исправьте замечания и отправьте повторно.
-</div>
-<?php elseif ($application['status'] === 'cancelled'): ?>
-<div class="alert mb-lg" style="background:#FEE2E2; border:1px solid #FCA5A5; color:#991B1B;">
-<i class="fas fa-ban"></i> Заявка отменена.
-</div>
-<?php elseif (in_array($application['status'], ['declined', 'rejected'], true)): ?>
-<div class="alert mb-lg" style="background:#FEE2E2; border:1px solid #FCA5A5; color:#991B1B;">
-<i class="fas fa-times-circle"></i> Заявка отклонена.
-</div>
-<?php endif; ?>
+<section class="app-card app-header">
+    <div class="app-header__top">
+        <div>
+            <h1 class="app-card__title" style="margin-bottom:8px;"><?= htmlspecialchars($application['contest_title']) ?></h1>
+            <div class="app-header__meta">
+                <span><i class="fas fa-calendar"></i> Подана: <?= $applicationDateLabel ?></span>
+                <span>ID заявки: #<?= (int) $applicationId ?></span>
+            </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span class="status-pill <?= e($statusDisplay['class']) ?>"><?= e($statusDisplay['label']) ?></span>
+            <span class="badge <?= e($uiStatusMeta['badge_class']) ?>"><?= e($uiStatusMeta['label']) ?></span>
+        </div>
+    </div>
+    <div class="application-progress" aria-label="Прогресс заявки">
+        <div class="application-progress__step <?= $applicationProgressStep >= 1 ? 'is-active' : '' ?>"><span class="application-progress__dot">1</span>Подана</div>
+        <div class="application-progress__step <?= $applicationProgressStep >= 2 ? 'is-active' : '' ?>"><span class="application-progress__dot">2</span>Проверка</div>
+        <div class="application-progress__step <?= $applicationProgressStep >= 3 ? 'is-active' : '' ?>"><span class="application-progress__dot">3</span>Принята</div>
+    </div>
+</section>
 
- <!-- Корректировки -->
- <?php if (!empty($unresolvedCorrections)): ?>
-<div class="corrections-alert">
-<div class="corrections-alert__title">
-<i class="fas fa-exclamation-triangle"></i>
- Требуются исправления (<?= count($unresolvedCorrections) ?>)
-</div>
-<ul class="corrections-alert__list">
- <?php foreach ($unresolvedCorrections as $corr): ?>
-<li class="corrections-alert__item">
-<span class="corrections-alert__field"><?= htmlspecialchars($corr['field_name']) ?></span>
- <?php if (!empty($corr['comment'])): ?>
-<div class="corrections-alert__comment"><?= htmlspecialchars($corr['comment']) ?></div>
- <?php endif; ?>
-</li>
- <?php endforeach; ?>
-</ul>
-</div>
-<?php if ($canEdit): ?>
-<div class="mt-md">
-<a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary">
-<i class="fas fa-wrench"></i> Исправить замечания
-</a>
-</div>
-<?php endif; ?>
- <?php endif; ?>
-        
-<div class="application-detail__header">
-<div class="flex justify-between items-center">
-<div>
-<h1 class="application-detail__title">Заявка #<?= $applicationId ?></h1>
-<div class="application-detail__meta">
-<span><i class="fas fa-trophy"></i> <?= htmlspecialchars($application['contest_title']) ?></span>
-<span><i class="fas fa-calendar"></i> <?= date('d.m.Y H:i', strtotime($application['created_at'])) ?></span>
-<span class="badge badge--<?= $statusClass ?>">
- <?= htmlspecialchars($statusMeta['label']) ?>
-</span>
-<span class="badge <?= e($uiStatusMeta['badge_class']) ?>"><?= e($uiStatusMeta['label']) ?></span>
-</div>
-</div>
-<div class="participant-work-card__actions">
-    <?php if ($canEdit): ?>
-        <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary btn--sm">
-            <i class="fas fa-edit"></i> Редактировать
-        </a>
-    <?php endif; ?>
-    <a href="/messages" class="btn btn--ghost btn--sm"><i class="fas fa-envelope"></i> Сообщения</a>
-</div>
-</div>
+<div class="application-content">
+    <section>
+        <div class="app-card">
+            <h2 class="app-card__title" style="font-size:18px;">Участники заявки (<?= count($participants) ?>)</h2>
+            <?php if ($workSummary['total'] === 0): ?>
+                <div class="app-empty">
+                    <div style="font-size:36px; margin-bottom:8px;"><i class="fas fa-palette"></i></div>
+                    В заявке пока нет работ. Добавьте участника через редактирование заявки.
+                </div>
+            <?php else: ?>
+                <div class="participants-grid">
+                    <?php $galleryDisplayIndex = 0; ?>
+                    <?php foreach ($participants as $index => $participant): ?>
+                        <?php
+                            $hasParticipantCorrection = !empty($participantCorrections[(int) ($participant['participant_id'] ?? 0)]);
+                            $workStatus = (string)($participant['status'] ?? 'pending');
+                            $isDiplomaAvailable = mapWorkStatusToDiplomaType($workStatus) !== null;
+                            $workTitle = trim((string) ($participant['work_title'] ?? ''));
+                            $participantVkUrl = trim((string)($participant['vk_post_url'] ?? ''));
+                            $drawingSrc = !empty($participant['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
+                            $participantGalleryIndex = null;
+                            if ($drawingSrc !== '') {
+                                $participantGalleryIndex = $galleryDisplayIndex++;
+                            }
+                        ?>
+                        <article class="app-card participant-modern-card<?= $hasParticipantCorrection ? ' participant-card--needs-fix' : '' ?>">
+                            <div class="participant-modern-card__image-wrap">
+                                <?php if ($drawingSrc !== ''): ?>
+                                    <img src="<?= e($drawingSrc) ?>" alt="Рисунок участника <?= e((string)($participant['fio'] ?? '')) ?>" class="participant-modern-card__image js-gallery-image" data-gallery-index="<?= (int) $participantGalleryIndex ?>">
+                                <?php else: ?>
+                                    <div class="participant-modern-card__image" style="display:flex;align-items:center;justify-content:center;color:#94A3B8;background:#F1F5F9;"><i class="fas fa-image"></i></div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="participant-modern-card__body">
+                                <div class="participant-modern-card__header">
+                                    <div>
+                                        <h3 class="participant-modern-card__name"><?= e((string)($participant['fio'] ?? 'Без имени')) ?></h3>
+                                        <div class="participant-modern-card__subtitle"><?= $workTitle !== '' ? '«' . e($workTitle) . '»' : 'Работа #' . ($index + 1) ?></div>
+                                    </div>
+                                    <span class="badge <?= getWorkStatusBadgeClass($workStatus) ?>"><?= e(getWorkStatusLabel($workStatus)) ?></span>
+                                </div>
+                                <div class="participant-modern-card__facts">
+                                    <div><strong>Возраст:</strong> <?= e((string)($participant['age'] ?? '—')) ?></div>
+                                    <div><strong>Регион:</strong> <?= e((string)($participant['region'] ?? '—')) ?></div>
+                                    <div><strong>Организация:</strong> <?= e((string)($participant['organization_name'] ?? '—')) ?></div>
+                                    <div><strong>ID участника:</strong> #<?= (int) ($participant['participant_id'] ?? 0) ?></div>
+                                </div>
+                                <?php if ($hasParticipantCorrection): ?>
+                                    <div class="app-highlight">
+                                        <strong><i class="fas fa-tools"></i> Требует исправлений</strong>
+                                        <?php foreach ($participantCorrections[(int) ($participant['participant_id'] ?? 0)] as $participantCorrection): ?>
+                                            <div>• <?= htmlspecialchars($participantCorrection['field_name']) ?><?= !empty($participantCorrection['comment']) ? ': ' . htmlspecialchars($participantCorrection['comment']) : '' ?></div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                                <div class="participant-modern-card__actions">
+                                    <?php if ($drawingSrc !== ''): ?>
+                                        <button type="button" class="btn btn--ghost btn--sm js-gallery-open" data-gallery-index="<?= (int) $participantGalleryIndex ?>"><i class="fas fa-expand"></i> Увеличить</button>
+                                    <?php endif; ?>
+                                    <?php if ($hasParticipantCorrection): ?>
+                                        <button type="button" class="btn btn--primary btn--sm js-open-participant-edit" data-work-id="<?= (int)($participant['id'] ?? 0) ?>" data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>" data-age="<?= (int)($participant['age'] ?? 0) ?>" data-work-title="<?= htmlspecialchars($workTitle, ENT_QUOTES) ?>" data-drawing-url="<?= htmlspecialchars($drawingSrc, ENT_QUOTES) ?>"><i class="fas fa-pen"></i> Исправить</button>
+                                    <?php endif; ?>
+                                    <?php if ($isApplicationAccepted && $isDiplomaAvailable): ?>
+                                        <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_one"><input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>"><button class="btn btn--primary btn--sm" type="submit"><i class="fas fa-download"></i> Скачать диплом</button></form>
+                                    <?php endif; ?>
+                                    <?php if ($participantVkUrl !== ''): ?>
+                                        <a class="btn btn--secondary btn--sm" href="<?= e($participantVkUrl) ?>" target="_blank" rel="noopener"><i class="fab fa-vk"></i> Публикация</a>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    </section>
+
+    <aside class="app-sidebar">
+        <section class="app-card">
+            <h2 class="app-card__title" style="font-size:18px;">Информация о пользователе</h2>
+            <div class="app-profile">
+                <div class="app-profile__avatar"><i class="fas fa-user"></i></div>
+                <div class="app-profile__meta">
+                    <div class="app-profile__name"><?= e($userFullName !== '' ? $userFullName : 'Пользователь') ?></div>
+                    <div><?= !empty($user['email']) ? e((string) $user['email']) : 'Email не указан' ?></div>
+                    <div><?= e($userRegion !== '' ? $userRegion : 'Регион не указан') ?></div>
+                    <?php if ($userOrganization !== ''): ?><div><?= e($userOrganization) ?></div><?php endif; ?>
+                </div>
+            </div>
+        </section>
+
+        <?php if (!empty($unresolvedCorrections) || $application['status'] === 'revision'): ?>
+        <section class="app-card">
+            <h2 class="app-card__title" style="font-size:18px;">Статус и комментарии</h2>
+            <div class="app-highlight">
+                <div><strong>Требуются корректировки</strong></div>
+                <?php if (!empty($unresolvedCorrections)): ?>
+                    <?php foreach ($unresolvedCorrections as $corr): ?>
+                        <div>• <?= htmlspecialchars($corr['field_name']) ?><?= !empty($corr['comment']) ? ': ' . htmlspecialchars($corr['comment']) : '' ?></div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div>Администратор запросил внесение правок в заявку.</div>
+                <?php endif; ?>
+            </div>
+        </section>
+        <?php endif; ?>
+
+        <section class="app-card">
+            <h2 class="app-card__title" style="font-size:18px;">Действия</h2>
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                <?php if ($application['status'] === 'revision' && $canEdit): ?>
+                    <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary"><i class="fas fa-pen"></i> Исправить заявку</a>
+                <?php elseif ($isApplicationAccepted && $hasDiplomas): ?>
+                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать диплом</button></form>
+                <?php elseif (in_array($application['status'], ['declined', 'rejected'], true)): ?>
+                    <div class="app-highlight" style="width:100%;">
+                        <strong>Заявка отклонена.</strong>
+                        <div>Причина доступна в комментариях администратора и чате оспаривания.</div>
+                    </div>
+                <?php else: ?>
+                    <div style="color:#64748B;">Заявка находится на рассмотрении. Действия станут доступны после проверки.</div>
+                <?php endif; ?>
+                <a href="/messages" class="btn btn--ghost"><i class="fas fa-envelope"></i> Сообщения</a>
+                <a href="/my-applications" class="btn btn--secondary"><i class="fas fa-arrow-left"></i> К списку</a>
+            </div>
+        </section>
+    </aside>
 </div>
 
 <?php if (in_array($application['status'], ['declined', 'rejected'], true)): ?>
@@ -679,280 +823,6 @@ $currentPage = 'applications';
     </div>
 </div>
 <?php endif; ?>
-        
- <!-- Данные родителя -->
-<div class="card mb-lg">
-<div class="card__header"><h3>Данные родителя/куратора</h3></div>
-<div class="card__body">
-<div class="form-row">
-<div class="form-group">
-<div class="form-label">ФИО</div>
-<div class="form-value"><?= htmlspecialchars($application['parent_fio'] ?? '—') ?></div>
-</div>
-</div>
-</div>
-</div>
-        
-<div class="application-works-summary card mb-lg">
-    <div class="card__body">
-        <div class="application-works-summary__grid">
-            <div class="application-works-summary__item">
-                <span class="application-works-summary__dot"></span>
-                <span>Всего работ: <strong><?= (int) $workSummary['total'] ?></strong></span>
-            </div>
-            <div class="application-works-summary__item">
-                <span class="application-works-summary__dot application-works-summary__dot--accepted"></span>
-                <span>Принято: <strong><?= (int) $workSummary['accepted'] ?></strong></span>
-            </div>
-            <div class="application-works-summary__item">
-                <span class="application-works-summary__dot application-works-summary__dot--reviewed"></span>
-                <span>Рассмотрено: <strong><?= (int) $workSummary['reviewed'] ?></strong></span>
-            </div>
-            <div class="application-works-summary__item">
-                <span class="application-works-summary__dot application-works-summary__dot--pending"></span>
-                <span>На рассмотрении: <strong><?= (int) $workSummary['pending'] ?></strong></span>
-            </div>
-            <div class="application-works-summary__item">
-                <span class="application-works-summary__dot application-works-summary__dot--accepted"></span>
-                <span>Дипломов доступно: <strong><?= (int) $workSummary['diplomas'] ?></strong></span>
-            </div>
-            <div class="application-works-summary__item">
-                <span class="application-works-summary__dot application-works-summary__dot--reviewed"></span>
-                <span>Опубликовано в VK: <strong><?= (int) $workSummary['vk_published'] ?></strong></span>
-            </div>
-        </div>
-    </div>
-</div>
-
-<?php if ($workSummary['total'] === 0): ?>
-<div class="empty-state mb-lg">
-    <div class="empty-state__icon"><i class="fas fa-palette"></i></div>
-    <h3 class="empty-state__title">В заявке пока нет работ</h3>
-    <p class="empty-state__text">Добавьте работы через редактирование заявки, чтобы мы смогли их рассмотреть.</p>
-</div>
-<?php elseif ($allPending): ?>
-<div class="application-note mb-lg">
-    <strong><i class="fas fa-hourglass-half"></i> Ваши работы находятся на рассмотрении</strong>
-    <span>Дипломы появятся после рассмотрения.</span>
-</div>
-<?php elseif ($hasDiplomas): ?>
-<div class="application-note mb-lg" style="background:#ECFDF3; border-left-color:#10B981; color:#065F46;">
-    <strong><i class="fas fa-award"></i> Дипломы доступны</strong>
-    <span>Спасибо за участие! Вы можете посмотреть, скачать, отправить на почту или получить ссылку.</span>
-</div>
-<?php endif; ?>
-
-<h2 class="mb-lg">Работы (<?= count($participants) ?>)</h2>
-
-<?php $galleryDisplayIndex = 0; ?>
-<?php foreach ($participants as $index => $participant): ?>
-<?php
-    $hasParticipantCorrection = !empty($participantCorrections[(int) ($participant['participant_id'] ?? 0)]);
-    $workStatus = (string)($participant['status'] ?? 'pending');
-    $isDiplomaAvailable = mapWorkStatusToDiplomaType($workStatus) !== null;
-    $workTitle = trim((string) ($participant['work_title'] ?? ''));
-    $participantVkUrl = trim((string)($participant['vk_post_url'] ?? ''));
-    $participantGalleryIndex = null;
-    if (!empty($participant['drawing_file'])) {
-        $participantGalleryIndex = $galleryDisplayIndex;
-        $galleryDisplayIndex++;
-    }
-?>
-<div class="participant-card participant-work-card<?= $hasParticipantCorrection ? ' participant-card--needs-fix' : '' ?>">
-    <div class="participant-work-card__media">
-        <?php if (!empty($participant['drawing_file'])): ?>
-            <?php $drawingSrc = getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']); ?>
-            <img src="<?= htmlspecialchars($drawingSrc) ?>"
-                alt="Рисунок участника <?= htmlspecialchars((string)($participant['fio'] ?? '')) ?>"
-                class="participant-work-card__thumb js-gallery-image"
-                data-gallery-index="<?= (int) $participantGalleryIndex ?>">
-        <?php else: ?>
-            <div class="participant-work-card__thumb participant-work-card__thumb--placeholder">
-                <i class="fas fa-image"></i>
-            </div>
-        <?php endif; ?>
-    </div>
-    <div class="participant-work-card__content">
-        <div class="participant-work-card__head">
-            <div>
-                <div class="participant-work-card__title"><?= htmlspecialchars($participant['fio'] ?? 'Без имени') ?></div>
-                <div class="participant-work-card__subtitle"><?= $workTitle !== '' ? '«' . htmlspecialchars($workTitle) . '»' : 'Работа #' . ($index + 1) ?></div>
-            </div>
-            <span class="badge <?= getWorkStatusBadgeClass($workStatus) ?>"><?= e(getWorkStatusLabel($workStatus)) ?></span>
-        </div>
-
-        <?php if ($hasParticipantCorrection): ?>
-            <div class="application-note" style="margin-bottom:12px;">
-                <strong><i class="fas fa-tools"></i> Требует исправлений</strong>
-                <?php foreach ($participantCorrections[(int) ($participant['participant_id'] ?? 0)] as $participantCorrection): ?>
-                    <div>• <?= htmlspecialchars($participantCorrection['field_name']) ?><?= !empty($participantCorrection['comment']) ? ': ' . htmlspecialchars($participantCorrection['comment']) : '' ?></div>
-                <?php endforeach; ?>
-            </div>
-        <?php endif; ?>
-
-        <p class="participant-work-card__hint"><?= e(getWorkStatusHint($workStatus)) ?></p>
-
-        <div class="participant-work-card__meta">
-            <span><strong>ID участника:</strong> #<?= (int) ($participant['participant_id'] ?? 0) ?></span>
-            <span><strong>Возраст:</strong> <?= htmlspecialchars($participant['age'] ?? '—') ?></span>
-            <span><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?? '—') ?></span>
-            <span><strong>Название рисунка:</strong> <?= $workTitle !== '' ? htmlspecialchars($workTitle) : '—' ?></span>
-            <span><strong>Организация:</strong> <?= htmlspecialchars($participant['organization_name'] ?? '—') ?></span>
-            <?php if ($participantVkUrl !== ''): ?>
-                <span><strong>VK:</strong> Работа опубликована</span>
-            <?php endif; ?>
-        </div>
-
-        <div class="participant-work-card__actions">
-            <?php if (!empty($participant['drawing_file'])): ?>
-                <button
-                    type="button"
-                    class="btn btn--ghost btn--sm participant-work-card__action-btn js-gallery-open"
-                    data-gallery-index="<?= (int) $participantGalleryIndex ?>">
-                    <i class="fas fa-image"></i> Посмотреть рисунок
-                </button>
-            <?php endif; ?>
-            <?php if ($hasParticipantCorrection): ?>
-                <button
-                    type="button"
-                    class="btn btn--primary btn--sm participant-work-card__action-btn js-open-participant-edit"
-                    data-work-id="<?= (int)($participant['id'] ?? 0) ?>"
-                    data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>"
-                    data-age="<?= (int)($participant['age'] ?? 0) ?>"
-                    data-work-title="<?= htmlspecialchars($workTitle, ENT_QUOTES) ?>"
-                    data-drawing-url="<?= !empty($participant['drawing_file']) ? htmlspecialchars($drawingSrc, ENT_QUOTES) : '' ?>">
-                    <i class="fas fa-pen"></i> Исправить данные
-                </button>
-            <?php endif; ?>
-            <?php if ($isApplicationAccepted && $isDiplomaAvailable): ?>
-            <a class="btn btn--ghost btn--sm participant-work-card__action-btn" href="/application/<?= $applicationId ?>?action=diploma_preview_one&work_id=<?= (int)$participant['id'] ?>" target="_blank" rel="noopener">
-                <i class="fas fa-eye"></i> Посмотреть диплом
-            </a>
-            <form method="POST">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="diploma_download_one">
-                <input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>">
-                <button class="btn btn--primary btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-download"></i> Скачать диплом</button>
-            </form>
-            <form method="POST">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="diploma_link_one">
-                <input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>">
-                <button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-link"></i> Получить ссылку</button>
-            </form>
-            <form method="POST">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="diploma_email_one">
-                <input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>">
-                <button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-paper-plane"></i> Отправить на почту</button>
-            </form>
-            <?php else: ?>
-                <button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="button" disabled title="Дипломы доступны только после статуса «Принята к участию».">
-                    <i class="fas fa-award"></i> Диплом пока недоступен
-                </button>
-            <?php endif; ?>
-            <?php if ($participantVkUrl !== ''): ?>
-                <a class="btn btn--secondary btn--sm participant-work-card__action-btn" href="<?= e($participantVkUrl) ?>" target="_blank" rel="noopener">
-                    <i class="fab fa-vk"></i> Открыть публикацию
-                </a>
-            <?php endif; ?>
-        </div>
-    </div>
-</div>
-<?php endforeach; ?>
-        
- <!-- Дополнительная информация -->
- <?php if (!empty($application['source_info']) || !empty($application['colleagues_info']) || !empty($application['recommendations_wishes'])): ?>
-<div class="card mb-lg">
-<div class="card__header"><h3>Дополнительная информация</h3></div>
-<div class="card__body">
- <?php if (!empty($application['source_info'])): ?>
-<div class="form-group">
-<div class="form-label">Откуда узнали о конкурсе</div>
-<div><?= htmlspecialchars($application['source_info']) ?></div>
-</div>
- <?php endif; ?>
-            
- <?php if (!empty($application['colleagues_info'])): ?>
-<div class="form-group">
-<div class="form-label">Проинформировали коллег</div>
-<div><?= htmlspecialchars($application['colleagues_info']) ?></div>
-</div>
- <?php endif; ?>
-
- <?php if (!empty($application['recommendations_wishes'])): ?>
-<div class="form-group">
-<div class="form-label">Рекомендации и пожелания</div>
-<div><?= nl2br(htmlspecialchars($application['recommendations_wishes'])) ?></div>
-</div>
- <?php endif; ?>
-</div>
-</div>
- <?php endif; ?>
-        
-<?php if ($isApplicationAccepted && $hasDiplomas && $hasParticipantsWithDiplomas): ?>
-<div class="card mb-lg">
-    <div class="card__header">
-        <h3>Массовые действия</h3>
-    </div>
-    <div class="card__body">
-        <p class="text-secondary" style="margin-top:0;">Будут включены только доступные дипломы.</p>
-        <div class="participant-work-card__actions" style="margin-bottom:12px;">
-            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-file-archive"></i> Скачать все дипломы</button></form>
-            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_links_all"><button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-link"></i> Получить все ссылки</button></form>
-            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_email_all"><button class="btn btn--ghost btn--sm participant-work-card__action-btn" type="submit"><i class="fas fa-paper-plane"></i> Отправить все дипломы</button></form>
-            <?php if (!empty($vkPublicationLinks)): ?>
-                <a class="btn btn--secondary btn--sm participant-work-card__action-btn" href="<?= e($vkPublicationLinks[0]) ?>" target="_blank" rel="noopener">
-                    <i class="fab fa-vk"></i> Открыть публикации
-                </a>
-            <?php endif; ?>
-        </div>
-        <div class="compact-diploma-list" aria-label="Список участников с доступными дипломами">
-            <?php foreach ($participantsWithDiplomas as $participantWithDiploma): ?>
-                <?php $compactWorkTitle = trim((string)($participantWithDiploma['work_title'] ?? '')); ?>
-                <div class="compact-diploma-list__item">
-                    <div>
-                        <div class="compact-diploma-list__name"><?= e((string)($participantWithDiploma['fio'] ?? 'Без имени')) ?></div>
-                        <div class="compact-diploma-list__meta"><?= $compactWorkTitle !== '' ? '«' . e($compactWorkTitle) . '»' : 'Работа #' . (int)($participantWithDiploma['id'] ?? 0) ?></div>
-                    </div>
-                    <div class="compact-diploma-list__actions">
-                        <form method="POST" title="Скачать диплом">
-                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                            <input type="hidden" name="action" value="diploma_download_one">
-                            <input type="hidden" name="work_id" value="<?= (int)$participantWithDiploma['id'] ?>">
-                            <button class="btn btn--primary btn--sm compact-diploma-list__btn" type="submit"><i class="fas fa-download"></i></button>
-                        </form>
-                        <form method="POST" title="Поделиться ссылкой">
-                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                            <input type="hidden" name="action" value="diploma_link_one">
-                            <input type="hidden" name="work_id" value="<?= (int)$participantWithDiploma['id'] ?>">
-                            <button class="btn btn--ghost btn--sm compact-diploma-list__btn" type="submit"><i class="fas fa-link"></i></button>
-                        </form>
-                        <form method="POST" title="Отправить по почте">
-                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                            <input type="hidden" name="action" value="diploma_email_one">
-                            <input type="hidden" name="work_id" value="<?= (int)$participantWithDiploma['id'] ?>">
-                            <button class="btn btn--ghost btn--sm compact-diploma-list__btn" type="submit"><i class="fas fa-paper-plane"></i></button>
-                        </form>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
-
-<div class="mt-xl">
-<a href="/my-applications" class="btn btn--secondary">
-<i class="fas fa-arrow-left"></i> К списку заявок
-</a>
-</div>
 </div>
 </main>
 
@@ -1070,6 +940,17 @@ document.getElementById('galleryModal').addEventListener('click', (event) => {
 </script>
 <?php endif; ?>
 <script>
+window.addEventListener('load', () => {
+ const skeleton = document.getElementById('applicationPageSkeleton');
+ const content = document.getElementById('applicationPageContent');
+ if (content) {
+  content.style.display = '';
+ }
+ if (skeleton) {
+  skeleton.style.display = 'none';
+ }
+});
+
 function openParticipantEditModal(button) {
  const modal = document.getElementById('participantEditModal');
  const preview = document.getElementById('participantEditPreview');
