@@ -83,14 +83,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($section === 'vk-donates') {
-            $donateAction = (string) ($_POST['donate_action'] ?? '');
+            $donateAction = (string) ($_POST['donate_action'] ?? ($_POST['action'] ?? ''));
             $donateId = max(0, (int) ($_POST['donate_id'] ?? 0));
             $donateTitle = trim((string) ($_POST['donate_title'] ?? ''));
             $donateDescription = trim((string) ($_POST['donate_description'] ?? ''));
             $donateVkId = trim((string) ($_POST['donate_vk_id'] ?? ''));
 
             try {
-                if ($donateAction === 'create') {
+                if ($donateAction === 'sync_vk_donates') {
+                    $syncResult = syncVkDonatesFromVk();
+                    $_SESSION['success_message'] = 'Синхронизация завершена: получено целей — ' . (int) ($syncResult['fetched'] ?? 0) . ', активных — ' . (int) ($syncResult['active_count'] ?? 0);
+                    $_SESSION['settings_active_tab'] = 'vk-donates';
+                    redirect('/admin/settings#vk-donates');
+                } elseif ($donateAction === 'create') {
                     if ($donateTitle === '' || $donateVkId === '') {
                         throw new RuntimeException('Для доната нужно указать название и VK Donut ID.');
                     }
@@ -123,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $_SESSION['success_message'] = 'Настройки донатов сохранены';
                 $_SESSION['settings_active_tab'] = 'vk-donates';
-                redirect('/admin/settings');
+                redirect('/admin/settings#vk-donates');
             } catch (Throwable $e) {
                 $error = $e->getMessage() !== '' ? $e->getMessage() : 'Не удалось сохранить донат.';
             }
@@ -511,6 +516,18 @@ unset($_SESSION['success_message']);
                 <div class="settings-section__header">
                     <h4><i class="fas fa-hand-holding-heart"></i> Донаты VK для публикаций</h4>
                     <p>Здесь задаются варианты донатов, которые можно выбрать при публикации заявки в VK.</p>
+                </div>
+                <form method="POST" class="settings-actions" style="justify-content:flex-start; margin-bottom:10px;">
+                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                    <input type="hidden" name="settings_section" value="vk-donates">
+                    <input type="hidden" name="action" value="sync_vk_donates">
+                    <button type="submit" class="btn btn--secondary">
+                        <i class="fab fa-vk"></i> Синхронизировать цели из VK
+                    </button>
+                </form>
+                <div class="form-hint" style="margin-bottom:12px;">
+                    Цели, созданные непосредственно во VK, появляются здесь после синхронизации.
                 </div>
 
                 <div class="settings-vk-card" style="margin-bottom:14px;">
