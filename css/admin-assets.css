@@ -534,6 +534,16 @@
   padding-top: 8px;
   border-top: 1px solid var(--color-border);
 }
+.settings-actions--inline {
+  justify-content: flex-start;
+  border-top: 0;
+  padding-top: 0;
+}
+.settings-email-test {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #cbd5e1;
+}
 .settings-toast {
   position: fixed;
   top: 18px;

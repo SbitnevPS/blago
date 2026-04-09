@@ -405,6 +405,71 @@ function jsonResponse($payload, $statusCode = 200) {
     exit;
 }
 
+function ensureSystemSettingsTable(): bool {
+    static $initialized = false;
+    if ($initialized) {
+        return true;
+    }
+
+    global $pdo;
+    if (!($pdo instanceof PDO)) {
+        return false;
+    }
+
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS system_settings (
+            setting_key VARCHAR(190) NOT NULL PRIMARY KEY,
+            setting_value LONGTEXT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        $initialized = true;
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function loadLegacySystemSettingsFromFile(): array {
+    if (!is_file(SETTINGS_FILE)) {
+        return [];
+    }
+
+    $raw = @file_get_contents(SETTINGS_FILE);
+    if ($raw === false) {
+        return [];
+    }
+
+    $decoded = json_decode($raw, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function loadSystemSettingsFromDatabase(): array {
+    global $pdo;
+    if (!($pdo instanceof PDO) || !ensureSystemSettingsTable()) {
+        return [];
+    }
+
+    try {
+        $stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings");
+        $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+    } catch (Throwable $e) {
+        return [];
+    }
+
+    $settings = [];
+    foreach ($rows as $row) {
+        $key = (string)($row['setting_key'] ?? '');
+        if ($key === '') {
+            continue;
+        }
+        $valueRaw = (string)($row['setting_value'] ?? '');
+        $decoded = json_decode($valueRaw, true);
+        $settings[$key] = json_last_error() === JSON_ERROR_NONE ? $decoded : $valueRaw;
+    }
+
+    return $settings;
+}
+
 function getSystemSettings() {
     if (isset($GLOBALS['__system_settings_cache']) && is_array($GLOBALS['__system_settings_cache'])) {
         return $GLOBALS['__system_settings_cache'];
@@ -423,27 +488,21 @@ function getSystemSettings() {
         'email_from_name' => 'ДетскиеКонкурсы.рф',
         'email_from_address' => 'no-reply@kids-contests.ru',
         'email_reply_to' => '',
+        'email_use_smtp' => MAIL_HOST !== '' ? 1 : 0,
+        'email_smtp_host' => MAIL_HOST,
+        'email_smtp_port' => MAIL_PORT !== '' ? (int) MAIL_PORT : 465,
+        'email_smtp_encryption' => 'ssl',
+        'email_smtp_auth_enabled' => MAIL_USERNAME !== '' ? 1 : 0,
+        'email_smtp_username' => MAIL_USERNAME,
+        'email_smtp_password' => MAIL_PASSWORD,
+        'email_smtp_timeout' => 15,
         'homepage_hero_image' => '',
     ];
 
-    if (!is_file(SETTINGS_FILE)) {
-        $GLOBALS['__system_settings_cache'] = $defaults;
-        return $GLOBALS['__system_settings_cache'];
-    }
+    $legacySettings = loadLegacySystemSettingsFromFile();
+    $databaseSettings = loadSystemSettingsFromDatabase();
 
-    $raw = @file_get_contents(SETTINGS_FILE);
-    if ($raw === false) {
-        $GLOBALS['__system_settings_cache'] = $defaults;
-        return $GLOBALS['__system_settings_cache'];
-    }
-
-    $decoded = json_decode($raw, true);
-    if (!is_array($decoded)) {
-        $GLOBALS['__system_settings_cache'] = $defaults;
-        return $GLOBALS['__system_settings_cache'];
-    }
-
-    $GLOBALS['__system_settings_cache'] = array_merge($defaults, $decoded);
+    $GLOBALS['__system_settings_cache'] = array_merge($defaults, $legacySettings, $databaseSettings);
     return $GLOBALS['__system_settings_cache'];
 }
 
@@ -528,18 +587,28 @@ function getApplicationStatusMeta($status) {
 }
 
 function saveSystemSettings(array $newValues) {
-    $settings = array_merge(getSystemSettings(), $newValues);
-    $dir = dirname(SETTINGS_FILE);
-    if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+    global $pdo;
+    if (!($pdo instanceof PDO) || !ensureSystemSettingsTable()) {
         return false;
     }
 
-    $saved = file_put_contents(
-        SETTINGS_FILE,
-        json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
-    );
+    try {
+        $stmt = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value)
+            VALUES (:setting_key, :setting_value)
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = CURRENT_TIMESTAMP");
 
-    if ($saved === false) {
+        foreach ($newValues as $key => $value) {
+            $normalizedKey = trim((string)$key);
+            if ($normalizedKey === '') {
+                continue;
+            }
+
+            $stmt->execute([
+                'setting_key' => $normalizedKey,
+                'setting_value' => json_encode($value, JSON_UNESCAPED_UNICODE),
+            ]);
+        }
+    } catch (Throwable $e) {
         return false;
     }
 
