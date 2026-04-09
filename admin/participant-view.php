@@ -91,7 +91,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div><strong>ФИО участника:</strong> <?= htmlspecialchars($participant['fio'] ?: '—') ?></div>
                 <div><strong>ФИО заявителя:</strong> <?= htmlspecialchars(trim(($participant['user_surname'] ?? '') . ' ' . ($participant['user_name'] ?? '') . ' ' . ($participant['user_patronymic'] ?? '')) ?: '—') ?></div>
                 <div><strong>Возраст:</strong> <?= (int) ($participant['age'] ?? 0) ?: '—' ?></div>
-                <div><strong>Название работы:</strong> <?= htmlspecialchars(trim((string)($participant['work_title'] ?? '')) ?: '—') ?></div>
+                <div><strong>Название рисунка:</strong> <?= htmlspecialchars(trim((string)($participant['work_title'] ?? '')) ?: '—') ?></div>
                 <div><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?: '—') ?></div>
                 <div><strong>Email заявителя:</strong> <?= htmlspecialchars($participant['user_email'] ?: ($participant['organization_email'] ?: '—')) ?></div>
                 <div><strong>Организация:</strong> <?= htmlspecialchars($participant['organization_name'] ?: ($participant['user_organization_name'] ?: '—')) ?></div>

@@ -676,8 +676,18 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div class="form-group" style="margin-top:16px;">
-            <label class="form-label">Название работы</label>
+            <label class="form-label">Название рисунка</label>
             <p><?= htmlspecialchars(trim((string)($p['work_title'] ?? '')) ?: '—') ?></p>
+        </div>
+        <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Публикация в VK</label>
+            <p>
+                <?php if (!empty($p['vk_post_url'])): ?>
+                    <a href="<?= htmlspecialchars((string)$p['vk_post_url']) ?>" target="_blank" rel="noopener">Опубликовано (открыть пост)</a>
+                <?php else: ?>
+                    Ещё не опубликовано
+                <?php endif; ?>
+            </p>
         </div>
         <div class="form-group" style="margin-top:16px;">
             <label class="form-label">Регион</label>

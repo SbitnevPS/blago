@@ -105,7 +105,7 @@ require_once __DIR__ . '/includes/header.php';
                     <th>ID участника</th>
                     <th>ФИО участника</th>
                     <th>Возраст</th>
-                    <th>Название работы</th>
+                    <th>Название рисунка</th>
                     <th>Email заявки</th>
                     <th>Регион</th>
                     <th>Статус заявки</th>
@@ -123,7 +123,7 @@ require_once __DIR__ . '/includes/header.php';
                         <td data-label="ID участника">#<?= (int) $participant['id'] ?></td>
                         <td data-label="ФИО участника"><?= htmlspecialchars($participant['fio'] ?: '—') ?></td>
                         <td data-label="Возраст"><?= (int) ($participant['age'] ?? 0) ?: '—' ?></td>
-                        <td data-label="Название работы"><?= htmlspecialchars(trim((string)($participant['work_title'] ?? '')) ?: '—') ?></td>
+                        <td data-label="Название рисунка"><?= htmlspecialchars(trim((string)($participant['work_title'] ?? '')) ?: '—') ?></td>
                         <td data-label="Email заявки"><?= htmlspecialchars($participant['applicant_email'] ?: ($participant['organization_email'] ?: '—')) ?></td>
                         <td data-label="Регион"><?= htmlspecialchars($participant['region'] ?: '—') ?></td>
                         <td data-label="Статус заявки">

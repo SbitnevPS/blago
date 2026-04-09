@@ -628,7 +628,7 @@ generateCSRFToken();
 <input type="number" name="participants[${index}][age]" class="form-input" min="1" max="18" required value="${data?.age || ''}">
 </div>
 <div class="form-group">
-<label class="form-label">Название работы</label>
+<label class="form-label">Название рисунка</label>
 <input type="text" name="participants[${index}][work_title]" class="form-input" value="${data?.work_title || ''}" placeholder="Необязательно">
 </div>
 </div>

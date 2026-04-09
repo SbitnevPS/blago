@@ -196,7 +196,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="form-group">
                 <label class="form-label">Шаблон текста поста</label>
                 <textarea name="post_template" id="postTemplate" class="form-input" rows="8"><?= e($settings['post_template']) ?></textarea>
-                <div class="form-hint">Переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {work_title}, {contest_title}, {nomination}, {age_category}</div>
+                <div class="form-hint">Переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {work_title}, {drawing_title}, {contest_title}, {nomination}, {age_category}</div>
             </div>
 
             <div class="flex gap-md">

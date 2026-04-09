@@ -786,9 +786,7 @@ $currentPage = 'applications';
             <span><strong>Возраст:</strong> <?= htmlspecialchars($participant['age'] ?? '—') ?></span>
             <span><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?? '—') ?></span>
             <span><strong>Организация:</strong> <?= htmlspecialchars($participant['organization_name'] ?? '—') ?></span>
-            <?php if ($participantVkUrl !== ''): ?>
-                <span><strong>VK:</strong> Работа опубликована</span>
-            <?php endif; ?>
+            <span><strong>Публикация в VK:</strong> <?= $participantVkUrl !== '' ? 'Опубликовано' : 'Ещё не опубликовано' ?></span>
         </div>
 
         <div class="participant-work-card__actions">
@@ -936,7 +934,7 @@ foreach ($participants as $participant) {
 <div class="modal__body">
     <div class="form-group"><label class="form-label">ФИО участника</label><input class="form-input" type="text" name="fio" id="participantEditFio" required></div>
     <div class="form-group"><label class="form-label">Возраст</label><input class="form-input" type="number" min="0" name="age" id="participantEditAge" required></div>
-    <div class="form-group"><label class="form-label">Название работы</label><input class="form-input" type="text" name="work_title" id="participantEditWorkTitle"></div>
+    <div class="form-group"><label class="form-label">Название рисунка</label><input class="form-input" type="text" name="work_title" id="participantEditWorkTitle"></div>
     <div class="form-group"><label class="form-label">Текущий рисунок</label><img id="participantEditPreview" src="" alt="Предпросмотр рисунка" style="max-width:100%; max-height:260px; border-radius:12px; border:1px solid #E5E7EB; display:none;"></div>
     <div class="form-group"><label class="form-label">Заменить рисунок</label><input class="form-input" type="file" name="drawing_file" id="participantEditDrawingFile" accept="image/*"></div>
 </div>

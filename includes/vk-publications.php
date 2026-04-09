@@ -358,7 +358,7 @@ function defaultVkPostTemplate(): string
     return "🎨 {participant_full_name}\n"
         . "🏫 {organization_name}\n"
         . "📍 {region_name}\n"
-        . "🖼 {work_title}\n"
+        . "🖼 {drawing_title}\n"
         . "🏆 {contest_title}\n"
         . "Номинация: {nomination}\n"
         . "Возраст: {participant_age}\n"
@@ -532,6 +532,7 @@ function buildVkPostText(array $workRow, string $template): string
         '{organization_name}' => trim((string) ($workRow['organization_name'] ?? '')),
         '{region_name}' => trim((string) ($workRow['region'] ?? '')),
         '{work_title}' => trim((string) ($workRow['work_title'] ?? '')),
+        '{drawing_title}' => trim((string) ($workRow['work_title'] ?? '')),
         '{contest_title}' => trim((string) ($workRow['contest_title'] ?? '')),
         '{nomination}' => '',
         '{participant_age}' => (int) ($workRow['participant_age'] ?? 0) > 0 ? (string) ((int) $workRow['participant_age']) : '',
