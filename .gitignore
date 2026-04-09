@@ -20,6 +20,9 @@ storage/*
 !storage/.gitkeep
 !storage/private/
 
+vendor/
+composer.phar
+
 #######################################
 # Логи
 #######################################
