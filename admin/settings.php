@@ -269,7 +269,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('/admin/settings');
         }
 
-        $error = 'Не удалось сохранить настройки';
+        if (empty($error)) {
+            $error = 'Не удалось сохранить настройки';
+        }
     }
 }
 
