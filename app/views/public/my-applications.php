@@ -173,7 +173,7 @@ $filteredApplications = array_values(array_filter(
                             <p class="text-sm text-gray-500 mb-4"><?= date('d.m.Y', strtotime((string)$app['created_at'])) ?></p>
 
                             <div class="flex gap-2">
-                                <a href="/application/<?= (int)$app['id'] ?>" class="flex-1 text-center px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 transition">Просмотреть заявку</a>
+                                <a href="/application/<?= (int)$app['id'] ?>" class="flex-1 text-center px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 hover:text-white transition">Просмотреть заявку</a>
                             </div>
                         </div>
                     </div>
