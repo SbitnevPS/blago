@@ -27,69 +27,115 @@ $publishPromptApplicationId = max(0, (int) ($_SESSION['vk_publish_prompt_applica
 $publishPromptData = null;
 unset($_SESSION['vk_publish_prompt_application_id']);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') === 'publish_application_works') {
-    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
-        jsonResponse(['success' => false, 'error' => 'Ошибка безопасности (CSRF).'], 403);
-    }
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = (string) ($_POST['action'] ?? '');
 
-    $applicationIdForPublish = max(0, (int) ($_POST['application_id'] ?? 0));
-    if ($applicationIdForPublish <= 0) {
-        jsonResponse(['success' => false, 'error' => 'Некорректный идентификатор заявки.'], 422);
-    }
+    if ($action === 'publish_application_works') {
+        if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            jsonResponse(['success' => false, 'error' => 'Ошибка безопасности (CSRF).'], 403);
+        }
 
-    $workIdsStmt = $pdo->prepare("
-        SELECT w.id
-        FROM works w
-        INNER JOIN participants p ON p.id = w.participant_id
-        WHERE p.application_id = ?
-        ORDER BY w.id ASC
-    ");
-    $workIdsStmt->execute([$applicationIdForPublish]);
-    $workIds = array_map('intval', array_column($workIdsStmt->fetchAll() ?: [], 'id'));
+        $applicationIdForPublish = max(0, (int) ($_POST['application_id'] ?? 0));
+        if ($applicationIdForPublish <= 0) {
+            jsonResponse(['success' => false, 'error' => 'Некорректный идентификатор заявки.'], 422);
+        }
 
-    if (empty($workIds)) {
-        jsonResponse(['success' => false, 'error' => 'В заявке нет работ для публикации.'], 422);
-    }
+        $workIdsStmt = $pdo->prepare("
+            SELECT w.id
+            FROM works w
+            INNER JOIN participants p ON p.id = w.participant_id
+            WHERE p.application_id = ?
+            ORDER BY w.id ASC
+        ");
+        $workIdsStmt->execute([$applicationIdForPublish]);
+        $workIds = array_map('intval', array_column($workIdsStmt->fetchAll() ?: [], 'id'));
 
-    ensureVkPublicationSchema();
-    $filters = normalizeVkTaskFilters([
-        'application_status' => 'approved',
-        'work_status' => 'accepted',
-        'exclude_vk_published' => 1,
-        'required_data_only' => 1,
-        'work_ids_raw' => implode(',', $workIds),
-    ]);
+        if (empty($workIds)) {
+            jsonResponse(['success' => false, 'error' => 'В заявке нет работ для публикации.'], 422);
+        }
 
-    $preview = buildVkTaskPreview($filters, null);
-    if ((int) ($preview['ready_items'] ?? 0) <= 0) {
+        ensureVkPublicationSchema();
+        $filters = normalizeVkTaskFilters([
+            'application_status' => 'approved',
+            'work_status' => 'accepted',
+            'exclude_vk_published' => 1,
+            'required_data_only' => 1,
+            'work_ids_raw' => implode(',', $workIds),
+        ]);
+
+        $preview = buildVkTaskPreview($filters, null);
+        if ((int) ($preview['ready_items'] ?? 0) <= 0) {
+            jsonResponse([
+                'success' => false,
+                'error' => 'Нет готовых работ для публикации. Проверьте изображения и данные участников.',
+                'summary' => [
+                    'total' => (int) ($preview['total_items'] ?? 0),
+                    'ready' => (int) ($preview['ready_items'] ?? 0),
+                    'skipped' => (int) ($preview['skipped_items'] ?? 0),
+                ],
+            ], 422);
+        }
+
+        $taskId = createVkTaskFromPreview(
+            'Публикация по заявке #' . $applicationIdForPublish . ' от ' . date('d.m.Y H:i'),
+            (int) getCurrentAdminId(),
+            $preview,
+            'immediate'
+        );
+        $publishResult = publishVkTask($taskId);
+
         jsonResponse([
-            'success' => false,
-            'error' => 'Нет готовых работ для публикации. Проверьте изображения и данные участников.',
-            'summary' => [
-                'total' => (int) ($preview['total_items'] ?? 0),
-                'ready' => (int) ($preview['ready_items'] ?? 0),
-                'skipped' => (int) ($preview['skipped_items'] ?? 0),
-            ],
-        ], 422);
+            'success' => true,
+            'task_id' => $taskId,
+            'published' => (int) ($publishResult['published'] ?? 0),
+            'failed' => (int) ($publishResult['failed'] ?? 0),
+            'total' => (int) ($publishResult['total'] ?? 0),
+            'error' => trim((string) ($publishResult['error'] ?? '')),
+            'task_url' => '/admin/vk-publication/' . $taskId,
+        ]);
+    } elseif ($action === 'delete_selected') {
+        if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            $_SESSION['error_message'] = 'Ошибка безопасности (CSRF).';
+            redirect('/admin/applications');
+        }
+
+        $selectedRaw = $_POST['selected'] ?? [];
+        if (!is_array($selectedRaw) || empty($selectedRaw)) {
+            $_SESSION['error_message'] = 'Не выбраны заявки для удаления';
+            redirect('/admin/applications');
+        }
+
+        $selectedIds = [];
+        foreach ($selectedRaw as $selectedId) {
+            $id = (int) $selectedId;
+            if ($id > 0) {
+                $selectedIds[] = $id;
+            }
+        }
+        $selectedIds = array_values(array_unique($selectedIds));
+        if (empty($selectedIds)) {
+            $_SESSION['error_message'] = 'Не выбраны заявки для удаления';
+            redirect('/admin/applications');
+        }
+
+        $placeholders = implode(',', array_fill(0, count($selectedIds), '?'));
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("DELETE FROM participants WHERE application_id IN ($placeholders)")
+                ->execute($selectedIds);
+            $deleteStmt = $pdo->prepare("DELETE FROM applications WHERE id IN ($placeholders)");
+            $deleteStmt->execute($selectedIds);
+            $pdo->commit();
+            $_SESSION['success_message'] = 'Удалено заявок: ' . (int) $deleteStmt->rowCount();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $_SESSION['error_message'] = 'Не удалось удалить выбранные заявки.';
+        }
+
+        redirect('/admin/applications');
     }
-
-    $taskId = createVkTaskFromPreview(
-        'Публикация по заявке #' . $applicationIdForPublish . ' от ' . date('d.m.Y H:i'),
-        (int) getCurrentAdminId(),
-        $preview,
-        'immediate'
-    );
-    $publishResult = publishVkTask($taskId);
-
-    jsonResponse([
-        'success' => true,
-        'task_id' => $taskId,
-        'published' => (int) ($publishResult['published'] ?? 0),
-        'failed' => (int) ($publishResult['failed'] ?? 0),
-        'total' => (int) ($publishResult['total'] ?? 0),
-        'error' => trim((string) ($publishResult['error'] ?? '')),
-        'task_url' => '/admin/vk-publication/' . $taskId,
-    ]);
 }
 
 if ($publishPromptApplicationId > 0) {
@@ -226,6 +272,15 @@ $contests = $pdo->query("SELECT id, title FROM contests ORDER BY created_at DESC
 require_once __DIR__ . '/includes/header.php';
 ?>
 
+<?php if (!empty($_SESSION['success_message'])): ?>
+    <div class="alert alert--success mb-lg"><i class="fas fa-check-circle"></i> <?= e($_SESSION['success_message']) ?></div>
+    <?php unset($_SESSION['success_message']); ?>
+<?php endif; ?>
+<?php if (!empty($_SESSION['error_message'])): ?>
+    <div class="alert alert--error mb-lg"><i class="fas fa-exclamation-circle"></i> <?= e($_SESSION['error_message']) ?></div>
+    <?php unset($_SESSION['error_message']); ?>
+<?php endif; ?>
+
 <!-- Фильтры -->
 <div class="card card--allow-overflow mb-lg">
     <div class="card__body">
@@ -323,12 +378,27 @@ require_once __DIR__ . '/includes/header.php';
 <!-- Список заявок -->
 <div class="card">
     <div class="card__header">
-        <h3>Заявки (<?= e($totalApps) ?>)</h3>
+        <div class="flex justify-between items-center w-100">
+            <h3>Заявки (<?= e($totalApps) ?>)</h3>
+            <button type="button" class="btn btn--ghost" id="toggleSelectModeBtn">
+                <i class="fas fa-check-square"></i> Выбрать
+            </button>
+        </div>
+        <div class="flex items-center gap-md" id="bulkActionsBar" style="display:none; margin-top:12px; flex-wrap:nowrap;">
+            <div class="text-secondary" style="white-space:nowrap;">Выбрано: <strong id="selectedCountValue">0</strong></div>
+            <div class="flex gap-sm">
+                <button type="button" class="btn btn--ghost btn--sm" id="clearSelectedBtn">Сбросить</button>
+                <button type="button" class="btn btn--danger btn--sm" id="bulkDeleteBtn">
+                    <i class="fas fa-trash"></i> Удалить выбранные
+                </button>
+            </div>
+        </div>
     </div>
     <div class="card__body" style="padding: 0;">
         <table class="table">
             <thead>
                 <tr>
+                    <th class="select-col" style="display:none; width:54px;"></th>
                     <th>ID</th>
                     <th>Пользователь</th>
                     <th>Конкурс</th>
@@ -349,6 +419,9 @@ require_once __DIR__ . '/includes/header.php';
                     }
                 ?>
                 <tr style="<?= $rowStyle ?>">
+                    <td class="select-col" style="display:none;" data-label="Выбор">
+                        <input type="checkbox" class="application-select-checkbox" value="<?= (int) $app['id'] ?>">
+                    </td>
                     <td data-label="ID">#<?= $app['id'] ?></td>
                     <td data-label="Пользователь">
                         <div class="flex items-center gap-md">
@@ -381,7 +454,7 @@ require_once __DIR__ . '/includes/header.php';
                 
                 <?php if (empty($applications)): ?>
                 <tr>
-                    <td colspan="7" class="text-center text-secondary" style="padding: 40px;">
+                    <td colspan="8" class="text-center text-secondary" style="padding: 40px;">
                         Заявки не найдены
                     </td>
                 </tr>
@@ -451,6 +524,107 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <script>
+(() => {
+    const csrfTokenValue = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE) ?>;
+    let selectionModeEnabled = false;
+
+    const updateBulkSelectionState = () => {
+        const selected = Array.from(document.querySelectorAll('.application-select-checkbox:checked'));
+        const selectedCount = selected.length;
+        const selectedCounter = document.getElementById('selectedCountValue');
+        const deleteButton = document.getElementById('bulkDeleteBtn');
+        if (selectedCounter) {
+            selectedCounter.textContent = String(selectedCount);
+        }
+        if (deleteButton) {
+            deleteButton.disabled = selectedCount === 0;
+        }
+    };
+
+    const clearSelectedApplications = () => {
+        document.querySelectorAll('.application-select-checkbox').forEach((checkbox) => {
+            checkbox.checked = false;
+        });
+        updateBulkSelectionState();
+    };
+
+    const toggleSelectionMode = (forceState = null) => {
+        selectionModeEnabled = forceState === null ? !selectionModeEnabled : Boolean(forceState);
+        const selectCols = document.querySelectorAll('.select-col');
+        const bulkBar = document.getElementById('bulkActionsBar');
+        const toggleBtn = document.getElementById('toggleSelectModeBtn');
+
+        selectCols.forEach((col) => {
+            col.style.display = selectionModeEnabled ? '' : 'none';
+        });
+        if (bulkBar) {
+            bulkBar.style.display = selectionModeEnabled ? 'flex' : 'none';
+        }
+        if (toggleBtn) {
+            toggleBtn.innerHTML = selectionModeEnabled
+                ? '<i class="fas fa-times"></i> Отменить выбор'
+                : '<i class="fas fa-check-square"></i> Выбрать';
+        }
+
+        if (!selectionModeEnabled) {
+            clearSelectedApplications();
+        }
+        updateBulkSelectionState();
+    };
+
+    const deleteSelectedApplications = () => {
+        const selected = Array.from(document.querySelectorAll('.application-select-checkbox:checked')).map((item) => item.value);
+        if (!selected.length) {
+            alert('Выберите хотя бы одну заявку');
+            return;
+        }
+        if (!confirm('Удалить выбранные заявки? Это действие нельзя отменить.')) {
+            return;
+        }
+
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/admin/applications.php';
+
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = csrfTokenValue;
+        form.appendChild(csrfInput);
+
+        const actionInput = document.createElement('input');
+        actionInput.type = 'hidden';
+        actionInput.name = 'action';
+        actionInput.value = 'delete_selected';
+        form.appendChild(actionInput);
+
+        selected.forEach((id) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'selected[]';
+            input.value = id;
+            form.appendChild(input);
+        });
+
+        document.body.appendChild(form);
+        form.submit();
+    };
+
+    document.getElementById('toggleSelectModeBtn')?.addEventListener('click', () => {
+        toggleSelectionMode();
+    });
+    document.getElementById('clearSelectedBtn')?.addEventListener('click', () => {
+        clearSelectedApplications();
+    });
+    document.getElementById('bulkDeleteBtn')?.addEventListener('click', () => {
+        deleteSelectedApplications();
+    });
+    document.querySelectorAll('.application-select-checkbox').forEach((checkbox) => {
+        checkbox.addEventListener('change', updateBulkSelectionState);
+    });
+    updateBulkSelectionState();
+})();
+
 (() => {
     const modal = document.getElementById('vkPublishPromptModal');
     if (!modal) return;
