@@ -1144,6 +1144,22 @@ document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
  form.addEventListener('submit', (event) => event.preventDefault());
 });
 
+
+function ensureComplianceFieldsAvailable() {
+ document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
+  const section = form.closest('.work-section');
+  if (section) {
+   section.hidden = false;
+   section.style.removeProperty('display');
+   section.style.removeProperty('visibility');
+  }
+  form.querySelectorAll('input, textarea, select').forEach((field) => {
+   field.disabled = false;
+   field.removeAttribute('aria-disabled');
+  });
+ });
+}
+
 function syncApproveApplicationButtonState() {
  const approveButton = document.getElementById('approveApplicationButton');
  if (!approveButton) return;
@@ -1170,6 +1186,7 @@ function syncApproveApplicationButtonState() {
 }
 
 syncApproveApplicationButtonState();
+ensureComplianceFieldsAvailable();
 
 (() => {
     const modal = document.getElementById('vkPublishPromptModal');
