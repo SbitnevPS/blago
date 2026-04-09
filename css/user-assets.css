@@ -253,7 +253,7 @@
 .drawing-preview__image--large { width:100%; max-width:520px; height:auto; max-height:420px; object-fit:contain; background:#fff; }
 .drawing-preview__image--clickable { cursor:zoom-in; }
 .modal--success .modal__content { max-width:500px; text-align:center; }
-.modal--success .modal__icon { width:80px; height:80px; background:var(--color-success-light); border-radius:var(--radius-full); display:flex; align-items:center; justify-content:center; margin:0 auto var(--space-lg); font-size:36px; color:var(--color-success); }
+.modal--success .modal__icon { width:80px; height:80px; background:var(--color-success-light); border-radius:var(--radius-full); display:flex; align-items:center; justify-content:center; margin:28px auto var(--space-lg); font-size:36px; color:var(--color-success); }
 .modal--success .modal__body { padding:var(--space-xl); }
 .loading-spinner { display:inline-block; width:20px; height:20px; border:2px solid #f3f3f3; border-top:2px solid var(--color-primary); border-radius:50%; animation:spin 1s linear infinite; }
 @keyframes spin { 0% { transform:rotate(0deg); } 100% { transform:rotate(360deg); } }

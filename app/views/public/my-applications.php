@@ -91,7 +91,7 @@ $filteredApplications = array_values(array_filter(
     <div class="max-w-6xl mx-auto px-4 py-6">
         <div class="flex items-center justify-between gap-4 mb-6 flex-wrap">
             <h1 class="text-2xl font-bold">Мои заявки</h1>
-            <a href="/contests" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+            <a href="/contests" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 hover:text-white transition">
                 Подать новую заявку
             </a>
         </div>
