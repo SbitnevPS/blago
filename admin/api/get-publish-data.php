@@ -131,6 +131,16 @@ try {
     if (empty($seenVkDonateIds)) {
         $pdo->exec("UPDATE vk_donates SET is_active = 0");
     } else {
+        $localActiveStmt = $pdo->query("SELECT vk_donate_id FROM vk_donates WHERE is_active = 1");
+        $localActiveVkIds = array_map('strval', array_column($localActiveStmt ? ($localActiveStmt->fetchAll() ?: []) : [], 'vk_donate_id'));
+        $missingInVk = array_values(array_diff($localActiveVkIds, $seenVkDonateIds));
+        if (!empty($missingInVk)) {
+            vkPublicationLog('donation_goals_sync_mismatch', [
+                'application_id' => $applicationId,
+                'missing_in_vk' => $missingInVk,
+            ]);
+        }
+
         $placeholders = implode(',', array_fill(0, count($seenVkDonateIds), '?'));
         $stmt = $pdo->prepare("UPDATE vk_donates SET is_active = 0 WHERE vk_donate_id NOT IN ($placeholders)");
         $stmt->execute($seenVkDonateIds);
@@ -150,11 +160,15 @@ try {
     ");
 
     foreach ($localGoalsStmt->fetchAll() ?: [] as $goal) {
+        $goalVkDonateId = trim((string) ($goal['vk_donate_id'] ?? ''));
+        if ($goalVkDonateId === '') {
+            continue;
+        }
         $donationGoals[] = [
             'id' => (int) ($goal['id'] ?? 0),
-            'title' => trim((string) ($goal['title'] ?? '')) ?: ('Цель #' . (string) ($goal['vk_donate_id'] ?? '')),
+            'title' => trim((string) ($goal['title'] ?? '')) ?: ('Цель #' . $goalVkDonateId),
             'description' => trim((string) ($goal['description'] ?? '')),
-            'vk_donate_id' => trim((string) ($goal['vk_donate_id'] ?? '')),
+            'vk_donate_id' => $goalVkDonateId,
         ];
     }
 
