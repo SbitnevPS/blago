@@ -708,6 +708,13 @@ function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '',
         if ($email !== '') {
             $updates[] = 'email = ?';
             $params[] = $email;
+
+            if ($email !== (string) ($existingUser['email'] ?? '')) {
+                $updates[] = 'email_verified = 0';
+                $updates[] = 'email_verified_at = NULL';
+                $updates[] = 'email_verification_token = NULL';
+                $updates[] = 'email_verification_sent_at = NULL';
+            }
         }
 
         if ($avatarUrl !== '' && vk_is_valid_avatar_url($avatarUrl)) {

@@ -18,6 +18,7 @@ if (!$contest) {
 }
 
 $user = getCurrentUser();
+requireVerifiedEmailOrRedirect($user);
 $error = '';
 $editingApplicationId = intval($_GET['edit'] ?? 0);
 $editingApplication = null;

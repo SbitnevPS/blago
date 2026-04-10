@@ -57,6 +57,7 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
 <?php else: ?>
 <div class="contest-list-grid <?= $isSingleContest ? 'contest-list-grid--single' : '' ?>">
 <?php foreach ($contests as $contest): ?>
+<?php $applicationUrl = getApplicationAccessUrl((int) $contest['id']); ?>
 <?php
     $isApplied = isset($submittedContestIds[(int)$contest['id']]);
     $hasDates = !empty($contest['date_from']) || !empty($contest['date_to']);
@@ -107,7 +108,7 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
         </a>
         <?php if ($isGuest): ?>
             <a
-                href="/application-form?contest_id=<?= (int)$contest['id'] ?>"
+                href="<?= htmlspecialchars($applicationUrl) ?>"
                 class="btn btn--primary"
                 data-auth-required="1"
                 data-target-url="/application-form?contest_id=<?= (int)$contest['id'] ?>"
@@ -115,7 +116,7 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
                 <i class="fas fa-paper-plane"></i> Подать заявку
             </a>
         <?php else: ?>
-            <a href="/application-form?contest_id=<?= (int)$contest['id'] ?>" class="btn btn--primary">
+            <a href="<?= htmlspecialchars($applicationUrl) ?>" class="btn btn--primary">
                 <i class="fas fa-paper-plane"></i> Подать заявку
             </a>
         <?php endif; ?>

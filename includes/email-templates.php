@@ -136,3 +136,58 @@ function buildDiplomaEmailText(array $data): string {
         'Это автоматическое письмо, пожалуйста, не отвечайте на него напрямую.',
     ]);
 }
+
+/**
+ * @param array<string,mixed> $data
+ */
+function buildEmailVerificationTemplate(array $data): string {
+    $brandName = trim((string)($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $siteUrl = trim((string)($data['site_url'] ?? SITE_URL));
+    $userName = trim((string)($data['user_name'] ?? ''));
+    $verificationUrl = trim((string)($data['verification_url'] ?? ''));
+
+    $greeting = $userName !== '' ? 'Здравствуйте, ' . $userName . '!' : 'Здравствуйте!';
+
+    $safeBrandName = emailTemplateEscape($brandName);
+    $safeSiteUrl = emailTemplateEscape($siteUrl);
+    $safeGreeting = emailTemplateEscape($greeting);
+    $safeVerificationUrl = emailTemplateEscape($verificationUrl);
+
+    return '<!doctype html><html lang="ru"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Подтверждение email</title></head><body style="margin:0;padding:0;background:#f3f4f6;">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 12px;"><tr><td align="center">'
+        . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;">'
+        . '<tr><td style="padding:24px;font-family:Arial,sans-serif;">'
+        . '<div style="font-size:24px;font-weight:700;color:#111827;">' . $safeBrandName . '</div>'
+        . '<p style="font-size:16px;color:#111827;line-height:1.6;margin:20px 0 0;">' . $safeGreeting . '</p>'
+        . '<p style="font-size:15px;color:#374151;line-height:1.7;margin:12px 0 0;">Пожалуйста, подтвердите адрес электронной почты. После подтверждения вам станет доступна отправка заявок на участие в конкурсах.</p>'
+        . '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0 0;"><tr><td bgcolor="#16a34a" style="border-radius:10px;">'
+        . '<a href="' . $safeVerificationUrl . '" style="display:inline-block;padding:14px 24px;color:#ffffff;text-decoration:none;font-family:Arial,sans-serif;font-size:16px;font-weight:700;">Подтвердить электронную почту</a>'
+        . '</td></tr></table>'
+        . '<p style="font-size:13px;color:#4b5563;line-height:1.7;margin:18px 0 0;">Если кнопка не работает, перейдите по ссылке:<br><a href="' . $safeVerificationUrl . '" style="color:#2563eb;word-break:break-all;">' . $safeVerificationUrl . '</a></p>'
+        . '<p style="font-size:12px;color:#6b7280;line-height:1.6;margin:20px 0 0;">С уважением,<br>команда ' . $safeBrandName . '<br><a href="' . $safeSiteUrl . '" style="color:#2563eb;">' . $safeSiteUrl . '</a></p>'
+        . '</td></tr></table></td></tr></table></body></html>';
+}
+
+/**
+ * @param array<string,mixed> $data
+ */
+function buildEmailVerificationText(array $data): string {
+    $brandName = trim((string)($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $siteUrl = trim((string)($data['site_url'] ?? SITE_URL));
+    $userName = trim((string)($data['user_name'] ?? ''));
+    $verificationUrl = trim((string)($data['verification_url'] ?? ''));
+
+    $greeting = $userName !== '' ? 'Здравствуйте, ' . $userName . '!' : 'Здравствуйте!';
+
+    return implode("\n", [
+        $greeting,
+        '',
+        'Пожалуйста, подтвердите адрес электронной почты.',
+        'После подтверждения вам станет доступна отправка заявок на участие в конкурсах.',
+        '',
+        'Подтвердить электронную почту: ' . $verificationUrl,
+        '',
+        'С уважением, команда ' . $brandName,
+        $siteUrl,
+    ]);
+}
