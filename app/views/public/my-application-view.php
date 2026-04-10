@@ -434,7 +434,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
     }
 
     $successMessage = $resubmittedForReview
-        ? 'Исправления успешно сохранены. Заявка повторно отправлена на рассмотрение.'
+        ? 'Заявка исправлена и отправлена на повторную проверку, ждите ответа.'
         : 'Изменения сохранены.';
 
     if ($isAjaxRequest) {
@@ -442,11 +442,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
             'success' => true,
             'message' => $successMessage,
             'participant' => [
+                'work_id' => $workId,
                 'fio' => $fio,
                 'age' => $age > 0 ? $age : '—',
                 'work_title' => $workTitle,
                 'drawing_url' => $updatedDrawingUrl,
             ],
+            'resubmitted_for_review' => $resubmittedForReview,
         ]);
     }
 
@@ -597,10 +599,14 @@ $currentPage = 'applications';
 .dispute-chat-message--user .dispute-chat-message__bubble {background:#EEF2FF;}
 .dispute-chat-message__meta {font-size:12px; color:#6B7280; margin-bottom:6px; display:flex; gap:8px; flex-wrap:wrap;}
 .dispute-chat-message__text {white-space:pre-wrap; line-height:1.5;}
+.participant-edit-drawing-row {display:grid; grid-template-columns:1fr; gap:12px;}
+.participant-edit-drawing-box {display:flex; flex-direction:column; gap:8px;}
+.participant-edit-preview {max-width:100%; max-height:260px; border-radius:12px; border:1px solid #E5E7EB; display:none; object-fit:contain; background:#F8FAFC;}
 @media (min-width: 980px) {
  .application-content {grid-template-columns:minmax(0,1.55fr) minmax(320px,1fr);}
  .participant-modern-card__facts {grid-template-columns:repeat(2,minmax(0,1fr));}
  .participant-modern-card__image {height:320px;}
+ .participant-edit-drawing-row {grid-template-columns:1fr 1fr; align-items:start;}
 }
 </style>
 </head>
@@ -664,7 +670,7 @@ $currentPage = 'applications';
                             $hasParticipantCorrection = !empty($participantCorrections[(int) ($participant['participant_id'] ?? 0)]);
                             $workStatus = (string)($participant['status'] ?? 'pending');
                             $isDiplomaAvailable = mapWorkStatusToDiplomaType($workStatus) !== null;
-                            $workTitle = trim((string) ($participant['work_title'] ?? ''));
+                            $workTitle = trim((string) (($participant['work_title'] ?? $participant['title'] ?? '')));
                             $participantVkUrl = trim((string)($participant['vk_post_url'] ?? ''));
                             $drawingSrc = !empty($participant['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
                             $participantGalleryIndex = null;
@@ -672,7 +678,7 @@ $currentPage = 'applications';
                                 $participantGalleryIndex = $galleryDisplayIndex++;
                             }
                         ?>
-                        <article class="app-card participant-modern-card<?= $hasParticipantCorrection ? ' participant-card--needs-fix' : '' ?>">
+                        <article class="app-card participant-modern-card<?= $hasParticipantCorrection ? ' participant-card--needs-fix' : '' ?>" data-work-id="<?= (int)($participant['id'] ?? 0) ?>">
                             <div class="participant-modern-card__image-wrap">
                                 <?php if ($drawingSrc !== ''): ?>
                                     <img src="<?= e($drawingSrc) ?>" alt="Рисунок участника <?= e((string)($participant['fio'] ?? '')) ?>" class="participant-modern-card__image js-gallery-image" data-gallery-index="<?= (int) $participantGalleryIndex ?>">
@@ -684,15 +690,15 @@ $currentPage = 'applications';
                                 <div class="participant-modern-card__header">
                                     <div>
                                         <h3 class="participant-modern-card__name"><?= e((string)($participant['fio'] ?? 'Без имени')) ?></h3>
-                                        <div class="participant-modern-card__subtitle"><?= $workTitle !== '' ? '«' . e($workTitle) . '»' : 'Работа #' . ($index + 1) ?></div>
+                                        <div class="participant-modern-card__subtitle js-participant-work-subtitle"><?= $workTitle !== '' ? '«' . e($workTitle) . '»' : 'Работа #' . ($index + 1) ?></div>
                                     </div>
                                     <span class="badge <?= getWorkStatusBadgeClass($workStatus) ?>"><?= e(getWorkStatusLabel($workStatus)) ?></span>
                                 </div>
                                 <div class="participant-modern-card__facts">
-                                    <div><strong>Возраст:</strong> <?= e((string)($participant['age'] ?? '—')) ?></div>
+                                    <div><strong>Возраст:</strong> <span class="js-participant-age"><?= e((string)($participant['age'] ?? '—')) ?></span></div>
                                     <div><strong>Регион:</strong> <?= e((string)($participant['region'] ?? '—')) ?></div>
                                     <div><strong>Организация:</strong> <?= e((string)($participant['organization_name'] ?? '—')) ?></div>
-                                    <div><strong>Название рисунка:</strong> <?= e($workTitle !== '' ? $workTitle : '—') ?></div>
+                                    <div><strong>Название рисунка:</strong> <span class="js-participant-work-title"><?= e($workTitle !== '' ? $workTitle : '—') ?></span></div>
                                     <div><strong>ID участника:</strong> #<?= (int) ($participant['participant_id'] ?? 0) ?></div>
                                 </div>
                                 <?php if ($hasParticipantCorrection): ?>
@@ -856,9 +862,10 @@ $currentPage = 'applications';
 $galleryImages = [];
 foreach ($participants as $participant) {
     if (!empty($participant['drawing_file'])) {
+        $galleryWorkTitle = trim((string) ($participant['work_title'] ?? $participant['title'] ?? ''));
         $galleryImages[] = [
             'src' => getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']),
-            'title' => $participant['fio'] ?? 'Рисунок',
+            'title' => $galleryWorkTitle !== '' ? $galleryWorkTitle : ($participant['fio'] ?? 'Рисунок'),
         ];
     }
 }
@@ -879,14 +886,19 @@ foreach ($participants as $participant) {
     <div class="form-group"><label class="form-label">ФИО участника</label><input class="form-input" type="text" name="fio" id="participantEditFio" required></div>
     <div class="form-group"><label class="form-label">Возраст</label><input class="form-input" type="number" min="0" name="age" id="participantEditAge" required></div>
     <div class="form-group"><label class="form-label">Название работы</label><input class="form-input" type="text" name="work_title" id="participantEditWorkTitle"></div>
-    <div class="form-group"><label class="form-label">Текущий рисунок</label><img id="participantEditPreview" src="" alt="Предпросмотр рисунка" style="max-width:100%; max-height:260px; border-radius:12px; border:1px solid #E5E7EB; display:none;"></div>
-    <div class="form-group">
-        <label class="form-label">Заменить рисунок</label>
-        <div class="upload-area" id="participantEditUploadArea" style="border:2px dashed #D1D5DB; border-radius:12px; padding:20px; text-align:center;">
-            <input class="file-upload__input" type="file" name="drawing_file" id="participantEditDrawingFile" accept="image/*">
-            <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
-            <div class="upload-area__title" id="participantEditUploadTitle">Нажмите или перетащите новый рисунок</div>
-            <div class="upload-area__hint" id="participantEditUploadHint">JPG, PNG, GIF, WebP, TIF</div>
+    <div class="participant-edit-drawing-row">
+        <div class="participant-edit-drawing-box">
+            <label class="form-label">Рисунок</label>
+            <img id="participantEditPreview" src="" alt="Предпросмотр рисунка" class="participant-edit-preview">
+        </div>
+        <div class="participant-edit-drawing-box">
+            <label class="form-label">Заменить рисунок</label>
+            <div class="upload-area" id="participantEditUploadArea" style="border:2px dashed #D1D5DB; border-radius:12px; padding:20px; text-align:center;">
+                <input class="file-upload__input" type="file" name="drawing_file" id="participantEditDrawingFile" accept="image/*">
+                <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                <div class="upload-area__title" id="participantEditUploadTitle">Нажмите или перетащите новый рисунок</div>
+                <div class="upload-area__hint" id="participantEditUploadHint">JPG, PNG, GIF, WebP, TIF</div>
+            </div>
         </div>
     </div>
 </div>
@@ -1058,6 +1070,59 @@ function clearParticipantDrawingObjectUrl() {
  }
 }
 
+function updateParticipantCardAfterSave(participant) {
+ if (!participant || !participant.work_id) return;
+ const card = document.querySelector(`.participant-modern-card[data-work-id="${participant.work_id}"]`);
+ if (!card) return;
+
+ const fio = (participant.fio || '').trim();
+ const age = participant.age ?? '—';
+ const workTitle = (participant.work_title || '').trim();
+ const workTitleLabel = workTitle !== '' ? workTitle : '—';
+
+ const nameNode = card.querySelector('.participant-modern-card__name');
+ if (nameNode && fio !== '') {
+  nameNode.textContent = fio;
+ }
+
+ const subtitleNode = card.querySelector('.js-participant-work-subtitle');
+ if (subtitleNode) {
+  subtitleNode.textContent = workTitle !== '' ? `«${workTitle}»` : 'Работа';
+ }
+
+ const ageNode = card.querySelector('.js-participant-age');
+ if (ageNode) {
+  ageNode.textContent = String(age);
+ }
+
+ const workTitleNode = card.querySelector('.js-participant-work-title');
+ if (workTitleNode) {
+  workTitleNode.textContent = workTitleLabel;
+ }
+
+ if (participant.drawing_url) {
+  const imageNode = card.querySelector('.participant-modern-card__image');
+  if (imageNode) {
+   imageNode.src = participant.drawing_url;
+  }
+ }
+}
+
+function applyApplicationResubmittedState() {
+ document.querySelectorAll('.participant-card--needs-fix').forEach((card) => {
+  card.classList.remove('participant-card--needs-fix');
+  card.querySelectorAll('.app-highlight').forEach((node) => node.remove());
+ });
+
+ document.querySelectorAll('.js-open-participant-edit').forEach((button) => button.remove());
+
+ const statusPill = document.querySelector('.status-pill');
+ if (statusPill) {
+  statusPill.className = 'status-pill status-pill--pending';
+  statusPill.textContent = 'На рассмотрении';
+ }
+}
+
 document.querySelectorAll('.js-open-participant-edit').forEach((button) => {
  button.addEventListener('click', () => openParticipantEditModal(button));
 });
@@ -1141,10 +1206,13 @@ if (participantEditForm) {
     throw new Error(data.error || 'Не удалось сохранить изменения');
    }
 
+   updateParticipantCardAfterSave(data.participant || null);
+   if (data.resubmitted_for_review) {
+    applyApplicationResubmittedState();
+   }
    showToast(data.message || 'Изменения сохранены', 'success');
    clearParticipantDrawingObjectUrl();
    closeParticipantEditModal();
-   window.location.reload();
   } catch (error) {
    showToast(error.message || 'Ошибка сохранения', 'error');
   } finally {
