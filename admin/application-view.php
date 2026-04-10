@@ -1350,7 +1350,6 @@ ensureComplianceFieldsAvailable();
     const applicationId = Number(approveButton.dataset.id || 0);
     const csrfToken = approveButton.dataset.csrf || '';
     let publishInProgress = false;
-    let donationAttachmentSupported = true;
     let donationAttachmentMessage = '';
 
     const showStatus = (message, type = 'success') => {
@@ -1369,21 +1368,18 @@ ensureComplianceFieldsAvailable();
 
     const toggleDonationFields = () => {
         const enabled = !!(donationEnabledCheckbox && donationEnabledCheckbox.checked);
-        if (donationEnabledCheckbox && !donationAttachmentSupported) {
-            donationEnabledCheckbox.checked = false;
-            donationEnabledCheckbox.disabled = true;
-        } else if (donationEnabledCheckbox) {
+        if (donationEnabledCheckbox) {
             donationEnabledCheckbox.disabled = false;
         }
         if (donationGoalSelect) {
-            donationGoalSelect.disabled = !enabled || !donationAttachmentSupported;
+            donationGoalSelect.disabled = !enabled;
         }
         if (!enabled && donationGoalCard) {
             donationGoalCard.style.display = 'none';
         }
         if (donationSupportHint) {
-            donationSupportHint.style.display = donationAttachmentSupported ? 'none' : 'block';
-            donationSupportHint.textContent = donationAttachmentMessage || 'Публикация с целью доната сейчас недоступна.';
+            donationSupportHint.style.display = donationAttachmentMessage ? 'block' : 'none';
+            donationSupportHint.textContent = donationAttachmentMessage;
         }
     };
 
@@ -1447,7 +1443,6 @@ ensureComplianceFieldsAvailable();
         if (donationGoalSelect) {
             donationGoalSelect.innerHTML = '';
         }
-        donationAttachmentSupported = true;
         donationAttachmentMessage = '';
         toggleDonationFields();
         updateDonationGoalCard();
@@ -1488,7 +1483,6 @@ ensureComplianceFieldsAvailable();
             }
             renderDonationGoals(data.donation_goals || []);
             const support = data.donation_attachment_support || {};
-            donationAttachmentSupported = support.supported !== false;
             donationAttachmentMessage = String(support.message || '');
             toggleDonationFields();
             updateDonationGoalCard();
@@ -1538,10 +1532,6 @@ ensureComplianceFieldsAvailable();
             }
             const donationEnabled = !!(donationEnabledCheckbox && donationEnabledCheckbox.checked);
             const donationGoalId = Number(donationGoalSelect?.value || 0);
-            if (donationEnabled && !donationAttachmentSupported) {
-                showStatus(donationAttachmentMessage || 'Публикация с целью доната не поддерживается VK API.', 'error');
-                return;
-            }
             if (donationEnabled && !donationGoalId) {
                 showStatus('Нельзя включить донат без выбора цели.', 'error');
                 return;
