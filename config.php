@@ -99,6 +99,54 @@ try {
     die('Ошибка подключения к базе данных: ' . $e->getMessage());
 }
 
+function ensureEmailVerificationSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    $requiredColumns = [
+        'email_verified' => "ADD COLUMN email_verified TINYINT(1) NOT NULL DEFAULT 0 AFTER email",
+        'email_verified_at' => "ADD COLUMN email_verified_at DATETIME NULL AFTER email_verified",
+        'email_verification_token' => "ADD COLUMN email_verification_token VARCHAR(255) NULL AFTER email_verified_at",
+        'email_verification_sent_at' => "ADD COLUMN email_verification_sent_at DATETIME NULL AFTER email_verification_token",
+    ];
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT COLUMN_NAME
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'
+              AND COLUMN_NAME IN ('email_verified', 'email_verified_at', 'email_verification_token', 'email_verification_sent_at')
+        ");
+        $stmt->execute();
+        $existing = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $existing = array_fill_keys(array_map('strval', $existing), true);
+
+        foreach ($requiredColumns as $column => $definition) {
+            if (!isset($existing[$column])) {
+                $pdo->exec("ALTER TABLE users {$definition}");
+            }
+        }
+
+        $indexStmt = $pdo->prepare("
+            SELECT COUNT(*) FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND INDEX_NAME = 'idx_users_email_verification_token'
+        ");
+        $indexStmt->execute();
+        $indexExists = (int) $indexStmt->fetchColumn() > 0;
+        if (!$indexExists) {
+            $pdo->exec("CREATE INDEX idx_users_email_verification_token ON users (email_verification_token)");
+        }
+    } catch (Throwable $e) {
+        error_log('[SCHEMA] Email verification schema check failed: ' . $e->getMessage());
+    }
+}
+
+ensureEmailVerificationSchema($pdo);
+
 
 // Настройки сессии
 if (session_status() === PHP_SESSION_NONE) {
