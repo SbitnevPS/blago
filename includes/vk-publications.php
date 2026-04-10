@@ -364,6 +364,115 @@ function getVkItemStatusMeta(string $status): array
     return $map[$status] ?? ['label' => $status, 'badge_class' => 'badge--secondary'];
 }
 
+function getApplicationVkPublicationStatus(int $applicationId): array
+{
+    global $pdo;
+    ensureVkPublicationSchema();
+
+    $base = [
+        'status_code' => 'not_published',
+        'status_label' => 'Не опубликована',
+        'badge_class' => 'badge--secondary',
+        'published_count' => 0,
+        'failed_count' => 0,
+        'total_count' => 0,
+        'last_task_id' => null,
+        'last_post_url' => '',
+        'last_error' => '',
+        'last_attempt_at' => null,
+        'remaining_count' => 0,
+    ];
+
+    if ($applicationId <= 0) {
+        return $base;
+    }
+
+    $workStmt = $pdo->prepare("
+        SELECT
+            COUNT(*) AS total_works,
+            SUM(CASE WHEN w.status = 'accepted' THEN 1 ELSE 0 END) AS accepted_works,
+            SUM(CASE WHEN w.vk_published_at IS NOT NULL THEN 1 ELSE 0 END) AS published_works
+        FROM works w
+        WHERE w.application_id = ?
+    ");
+    $workStmt->execute([$applicationId]);
+    $workCounts = $workStmt->fetch() ?: [];
+
+    $totalWorks = (int) ($workCounts['total_works'] ?? 0);
+    $acceptedWorks = (int) ($workCounts['accepted_works'] ?? 0);
+    $publishedWorks = (int) ($workCounts['published_works'] ?? 0);
+    $readyTotal = $acceptedWorks > 0 ? $acceptedWorks : $totalWorks;
+
+    $taskStmt = $pdo->prepare("
+        SELECT
+            t.id AS task_id,
+            t.task_status,
+            t.vk_post_url,
+            t.created_at AS task_created_at,
+            t.updated_at AS task_updated_at,
+            MAX(i.published_at) AS item_published_at,
+            MAX(CASE WHEN i.item_status = 'failed' THEN i.error_message ELSE NULL END) AS last_error,
+            SUM(i.item_status = 'published') AS published_items,
+            SUM(i.item_status = 'failed') AS failed_items
+        FROM vk_publication_tasks t
+        INNER JOIN vk_publication_task_items i ON i.task_id = t.id
+        WHERE i.application_id = ?
+        GROUP BY t.id
+        ORDER BY COALESCE(MAX(i.published_at), t.updated_at, t.created_at) DESC, t.id DESC
+        LIMIT 1
+    ");
+    $taskStmt->execute([$applicationId]);
+    $lastTask = $taskStmt->fetch() ?: null;
+
+    $base['total_count'] = $readyTotal;
+    $base['published_count'] = $publishedWorks;
+    $base['remaining_count'] = max(0, $readyTotal - $publishedWorks);
+
+    if (!$lastTask) {
+        if ($publishedWorks > 0) {
+            $base['status_code'] = $publishedWorks >= $readyTotal && $readyTotal > 0 ? 'published' : 'partial';
+            $base['status_label'] = $base['status_code'] === 'published' ? 'Опубликована' : 'Частично опубликована';
+            $base['badge_class'] = $base['status_code'] === 'published' ? 'badge--success' : 'badge--warning';
+        }
+        return $base;
+    }
+
+    $base['last_task_id'] = (int) ($lastTask['task_id'] ?? 0) ?: null;
+    $base['last_post_url'] = trim((string) ($lastTask['vk_post_url'] ?? ''));
+    $base['last_error'] = trim((string) ($lastTask['last_error'] ?? ''));
+    $base['failed_count'] = max(0, (int) ($lastTask['failed_items'] ?? 0));
+    $base['last_attempt_at'] = (string) ($lastTask['item_published_at'] ?: ($lastTask['task_updated_at'] ?: $lastTask['task_created_at']));
+
+    if ($readyTotal <= 0) {
+        $base['status_code'] = 'not_published';
+        $base['status_label'] = 'Не опубликована';
+        return $base;
+    }
+
+    if ($publishedWorks >= $readyTotal && $readyTotal > 0) {
+        $base['status_code'] = 'published';
+        $base['status_label'] = 'Опубликована';
+        $base['badge_class'] = 'badge--success';
+    } elseif ($publishedWorks > 0) {
+        $base['status_code'] = 'partial';
+        $base['status_label'] = 'Частично опубликована';
+        $base['badge_class'] = 'badge--warning';
+    } else {
+        $taskStatus = (string) ($lastTask['task_status'] ?? '');
+        if (in_array($taskStatus, ['draft', 'ready', 'publishing'], true)) {
+            $base['status_code'] = 'pending_publish';
+            $base['status_label'] = 'Ожидает публикации';
+            $base['badge_class'] = 'badge--warning';
+        } else {
+            $base['status_code'] = 'failed';
+            $base['status_label'] = 'Ошибка публикации';
+            $base['badge_class'] = 'badge--error';
+        }
+    }
+
+    return $base;
+}
+
 function vkPublicationLog(string $event, array $context = []): void
 {
     $sanitize = static function ($value, ?string $key = null) use (&$sanitize) {
@@ -1244,40 +1353,12 @@ function publishVkTaskItem(int $itemId, array $options = []): array
     }
 
     try {
-        try {
-            $published = $client->publishPhotoPost(
-                $imageFsPath,
-                (string) ($item['post_text'] ?? ''),
-                (bool) $settings['from_group'],
-                $extraWallParams
-            );
-        } catch (Throwable $donationError) {
-            if (empty($donationParams) || !isVkDonationAttachmentError($donationError)) {
-                throw $donationError;
-            }
-
-            $donationNormalized = normalizeVkPublicationError($donationError);
-            vkPublicationLog('publish_item_donation_failed_retry', [
-                'item_id' => (int) $item['id'],
-                'task_id' => (int) $item['task_id'],
-                'donation_enabled' => (int) ($item['donation_enabled'] ?? 0),
-                'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
-                'vk_donate_id' => (string) ($item['vk_donate_id'] ?? ''),
-                'error' => $donationNormalized['message'],
-                'technical' => $donationNormalized['technical'],
-                'extra_wall_params' => sanitizeVkExtraWallParamsForLog($extraWallParams),
-            ]);
-
-            $published = $client->publishPhotoPost(
-                $imageFsPath,
-                (string) ($item['post_text'] ?? ''),
-                (bool) $settings['from_group'],
-                []
-            );
-
-            $publishWarningMessage = 'Пост опубликован, но донат не прикрепился';
-            $publishWarningTechnical = mb_substr($donationNormalized['technical'], 0, 4000);
-        }
+        $published = $client->publishPhotoPost(
+            $imageFsPath,
+            (string) ($item['post_text'] ?? ''),
+            (bool) $settings['from_group'],
+            $extraWallParams
+        );
 
         $pdo->prepare("UPDATE vk_publication_task_items
             SET item_status = 'published', vk_post_id = ?, vk_post_url = ?, error_message = ?, technical_error = ?, published_at = NOW(), updated_at = NOW()
@@ -1285,8 +1366,8 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             ->execute([
                 (string) $published['post_id'],
                 (string) $published['post_url'],
-                $publishWarningMessage,
-                $publishWarningTechnical,
+                null,
+                null,
                 (int) $item['id'],
             ]);
 
@@ -1319,19 +1400,33 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         ];
     } catch (Throwable $e) {
         $normalized = normalizeVkPublicationError($e);
+        $isDonationEnabled = (int) ($item['donation_enabled'] ?? 0) === 1;
+        $errorMessage = $normalized['message'];
+        if ($isDonationEnabled && isVkDonationAttachmentError($e)) {
+            $errorMessage = 'Пост не опубликован: не удалось прикрепить выбранный донат.';
+            vkPublicationLog('publish_item_donation_failed', [
+                'item_id' => (int) $item['id'],
+                'task_id' => (int) $item['task_id'],
+                'work_id' => (int) $item['work_id'],
+                'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
+                'vk_donate_id' => (string) ($item['vk_donate_id'] ?? ''),
+                'vk_error_text' => $normalized['message'],
+                'technical' => $normalized['technical'],
+            ]);
+        }
         vkPublicationLog('publish_item_failed', [
             'item_id' => (int) $item['id'],
             'task_id' => (int) $item['task_id'],
             'work_id' => (int) $item['work_id'],
-            'error' => $normalized['message'],
+            'error' => $errorMessage,
             'technical' => $normalized['technical'],
             'donation_enabled' => (int) ($item['donation_enabled'] ?? 0),
             'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
             'vk_donate_id' => (string) ($item['vk_donate_id'] ?? ''),
             'extra_wall_params' => sanitizeVkExtraWallParamsForLog($extraWallParams),
         ]);
-        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $normalized['message'], $normalized['technical']);
-        return ['success' => false, 'error' => $normalized['message']];
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $errorMessage, $normalized['technical']);
+        return ['success' => false, 'error' => $errorMessage];
     }
 }
 

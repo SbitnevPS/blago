@@ -136,6 +136,17 @@ $admins = $pdo->query('SELECT id, name, surname FROM users WHERE is_admin = 1 OR
 
 require_once __DIR__ . '/includes/header.php';
 ?>
+<style>
+.vk-publications-mobile { display:none; }
+@media (max-width: 900px) {
+    .vk-publications-table-wrap { display:none; }
+    .vk-publications-mobile { display:grid; gap:12px; padding:12px; }
+    .vk-task-card { border:1px solid #E5E7EB; border-radius:12px; padding:12px; display:grid; gap:8px; }
+    .vk-task-card__row { display:flex; justify-content:space-between; gap:10px; font-size:13px; }
+    .vk-task-card__label { color:#6B7280; }
+    .vk-task-card__actions { display:flex; flex-wrap:wrap; gap:6px; }
+}
+</style>
 
 <?php if (!empty($_SESSION['success_message'])): ?>
     <div class="alert alert--success mb-lg"><i class="fas fa-check-circle"></i> <?= e($_SESSION['success_message']) ?></div>
@@ -229,6 +240,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
     <div class="card__body" style="padding: 0;">
+        <div class="vk-publications-table-wrap">
         <table class="table">
             <thead>
             <tr>
@@ -307,6 +319,52 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
             </tbody>
         </table>
+        </div>
+        <div class="vk-publications-mobile">
+            <?php foreach ($tasks as $task): ?>
+                <?php $statusMeta = getVkTaskStatusMeta((string) $task['task_status']); ?>
+                <div class="vk-task-card">
+                    <div class="vk-task-card__row"><span class="vk-task-card__label">ID</span><strong>#<?= (int) $task['id'] ?></strong></div>
+                    <div class="vk-task-card__row"><span class="vk-task-card__label">Название</span><span><?= e($task['title']) ?></span></div>
+                    <div class="vk-task-card__row"><span class="vk-task-card__label">Конкурс</span><span><?= e($task['contest_title'] ?: 'Все конкурсы') ?></span></div>
+                    <div class="vk-task-card__row"><span class="vk-task-card__label">Автор</span><span><?= e(trim(($task['creator_name'] ?? '') . ' ' . ($task['creator_surname'] ?? ''))) ?></span></div>
+                    <div class="vk-task-card__row"><span class="vk-task-card__label">Работ</span><span><?= (int) $task['total_items'] ?></span></div>
+                    <div class="vk-task-card__row"><span class="vk-task-card__label">Опубликовано</span><span><?= (int) $task['published_items'] ?></span></div>
+                    <div class="vk-task-card__row"><span class="vk-task-card__label">Ошибки</span><span><?= (int) $task['failed_items'] ?></span></div>
+                    <div class="vk-task-card__row"><span class="vk-task-card__label">Статус</span><span class="badge <?= e($statusMeta['badge_class']) ?>"><?= e($statusMeta['label']) ?></span></div>
+                    <div class="vk-task-card__row"><span class="vk-task-card__label">Тип</span><span><?= (int) ($task['vk_donut_enabled'] ?? 0) === 1 ? 'VK Donut' : 'Обычный пост' ?></span></div>
+                    <div class="vk-task-card__row"><span class="vk-task-card__label">Создано</span><span><?= e(date('d.m.Y H:i', strtotime((string) $task['created_at']))) ?></span></div>
+                    <div class="vk-task-card__row"><span class="vk-task-card__label">Публикация</span><span><?= !empty($task['published_at']) ? e(date('d.m.Y H:i', strtotime((string) $task['published_at']))) : '—' ?></span></div>
+                    <div class="vk-task-card__actions">
+                        <a href="/admin/vk-publication/<?= (int) $task['id'] ?>" class="btn btn--ghost btn--sm">Открыть</a>
+                        <form method="POST" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="task_id" value="<?= (int) $task['id'] ?>">
+                            <input type="hidden" name="action" value="publish">
+                            <button type="submit" class="btn btn--primary btn--sm">Опубликовать</button>
+                        </form>
+                        <form method="POST" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="task_id" value="<?= (int) $task['id'] ?>">
+                            <input type="hidden" name="action" value="retry_failed">
+                            <button type="submit" class="btn btn--secondary btn--sm">Повторить ошибки</button>
+                        </form>
+                        <form method="POST" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="task_id" value="<?= (int) $task['id'] ?>">
+                            <input type="hidden" name="action" value="duplicate">
+                            <button type="submit" class="btn btn--ghost btn--sm">Дублировать</button>
+                        </form>
+                        <form method="POST" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="task_id" value="<?= (int) $task['id'] ?>">
+                            <input type="hidden" name="action" value="archive">
+                            <button type="submit" class="btn btn--ghost btn--sm">Архивировать</button>
+                        </form>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
     </div>
 </div>
 

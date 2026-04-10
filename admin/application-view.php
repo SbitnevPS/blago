@@ -60,6 +60,7 @@ if ($hasDrawingCompliantColumn) {
     }
 }
 $vkPublicationInfo = null;
+$applicationVkStatus = getApplicationVkPublicationStatus((int) $application_id);
 try {
     ensureVkPublicationSchema();
     $vkPublicationStmt = $pdo->prepare("
@@ -771,39 +772,43 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                 <div class="card" style="margin-bottom: 14px;">
                     <div class="card__body" style="padding: 12px;">
                         <div style="font-weight: 600; margin-bottom: 6px;">Публикация в VK</div>
-                        <?php if ($vkPublicationInfo): ?>
-                            <?php $isDonationPublication = (int) ($vkPublicationInfo['donation_enabled'] ?? 0) === 1; ?>
-                            <div class="flex items-center gap-sm" style="margin-bottom: 8px; flex-wrap: wrap;">
-                                <span class="badge <?= e(getVkItemStatusMeta((string) ($vkPublicationInfo['item_status'] ?? 'pending'))['badge_class']) ?>">
-                                    <?= e(getVkItemStatusMeta((string) ($vkPublicationInfo['item_status'] ?? 'pending'))['label']) ?>
-                                </span>
-                                <span class="badge <?= $isDonationPublication ? 'badge--warning' : 'badge--secondary' ?>">
-                                    <?= $isDonationPublication ? 'С донатом' : 'Без доната' ?>
-                                </span>
-                            </div>
+                        <div class="flex items-center gap-sm" style="margin-bottom:8px; flex-wrap:wrap;">
+                            <span class="badge <?= e((string) ($applicationVkStatus['badge_class'] ?? 'badge--secondary')) ?>">
+                                <?= e((string) ($applicationVkStatus['status_label'] ?? 'Не опубликована')) ?>
+                            </span>
+                            <span class="text-secondary" style="font-size:12px;">
+                                Опубликовано <?= (int) ($applicationVkStatus['published_count'] ?? 0) ?> из <?= (int) ($applicationVkStatus['total_count'] ?? 0) ?>
+                            </span>
+                        </div>
+                        <?php if (!empty($applicationVkStatus['last_attempt_at'])): ?>
                             <div class="text-secondary" style="font-size: 13px; line-height: 1.35; margin-bottom: 6px;">
-                                Донат: <?= $isDonationPublication ? 'включён' : 'выключен' ?>
+                                Последняя попытка: <?= e(date('d.m.Y H:i', strtotime((string) $applicationVkStatus['last_attempt_at']))) ?>
                             </div>
-                            <?php if ($isDonationPublication): ?>
-                                <div class="text-secondary" style="font-size: 13px; line-height: 1.35; margin-bottom: 6px;">
-                                    Цель: <?= e((string) ($vkPublicationInfo['donation_goal_title'] ?? '—')) ?>
-                                </div>
-                                <div class="text-secondary" style="font-size: 13px; line-height: 1.35; margin-bottom: 6px;">
-                                    VK Donut ID: <?= e((string) ($vkPublicationInfo['vk_donate_id'] ?? '—')) ?>
-                                </div>
-                            <?php endif; ?>
-                            <?php if (!empty($vkPublicationInfo['vk_post_url'])): ?>
-                                <a class="btn btn--ghost btn--sm" href="<?= e((string) $vkPublicationInfo['vk_post_url']) ?>" target="_blank">
-                                    <i class="fas fa-up-right-from-square"></i> Открыть пост
-                                </a>
-                            <?php elseif (!empty($vkPublicationInfo['error_message'])): ?>
-                                <div class="text-secondary" style="font-size: 13px; line-height: 1.35;">
-                                    Ошибка: <?= e((string) $vkPublicationInfo['error_message']) ?>
-                                </div>
-                            <?php endif; ?>
-                        <?php else: ?>
-                            <div class="text-secondary" style="font-size: 13px;">Публикаций по заявке пока нет.</div>
                         <?php endif; ?>
+                        <?php if (!empty($applicationVkStatus['last_error'])): ?>
+                            <div class="text-secondary" style="font-size: 13px; line-height: 1.35; margin-bottom: 6px;">
+                                Ошибка: <?= e((string) $applicationVkStatus['last_error']) ?>
+                            </div>
+                        <?php endif; ?>
+                        <?php if (!empty($applicationVkStatus['last_post_url'])): ?>
+                            <a class="btn btn--ghost btn--sm" href="<?= e((string) $applicationVkStatus['last_post_url']) ?>" target="_blank" style="margin-bottom:8px;">
+                                <i class="fas fa-up-right-from-square"></i> Открыть пост
+                            </a>
+                        <?php endif; ?>
+                        <button
+                            type="button"
+                            class="btn btn--secondary btn--sm"
+                            id="openVkPublishModalBtn"
+                            data-application-id="<?= (int) $application_id ?>"
+                        >
+                            <?php if (($applicationVkStatus['status_code'] ?? '') === 'published'): ?>
+                                Опубликовать повторно
+                            <?php elseif (($applicationVkStatus['status_code'] ?? '') === 'partial'): ?>
+                                Опубликовать оставшиеся
+                            <?php else: ?>
+                                Опубликовать в VK
+                            <?php endif; ?>
+                        </button>
                     </div>
                 </div>
                 <div class="application-sidebar-actions">
@@ -843,9 +848,8 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
             <h3 class="modal__title">Публикация в VK</h3>
         </div>
         <div class="modal__body">
-            <div id="vkPublishPreview" style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;">
-                <div class="text-secondary">Загрузка превью...</div>
-            </div>
+            <div id="vkPublishModalSummary" class="text-secondary" style="margin-bottom:10px;"></div>
+            <div id="vkPublishPreview" style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;"></div>
             <div style="margin-top: 14px; border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px;">
                 <div style="font-weight: 600; margin-bottom: 8px;">Донаты VK</div>
                 <label class="form-checkbox" style="margin-bottom:8px;">
@@ -1304,6 +1308,8 @@ ensureComplianceFieldsAvailable();
     const skipButton = document.getElementById('vkPublishPromptSkip');
     const statusBox = document.getElementById('vkPublishPromptStatus');
     const previewBox = document.getElementById('vkPublishPreview');
+    const summaryBox = document.getElementById('vkPublishModalSummary');
+    const openModalButton = document.getElementById('openVkPublishModalBtn');
     const donationEnabledCheckbox = document.getElementById('vkDonationEnabled');
     const donationGoalSelect = document.getElementById('vkDonationGoalSelect');
     const donationGoalCard = document.getElementById('vkDonationGoalCard');
@@ -1387,7 +1393,7 @@ ensureComplianceFieldsAvailable();
         }
         modal.classList.add('active');
         if (previewBox) {
-            previewBox.innerHTML = '<div class="text-secondary">Загрузка превью...</div>';
+            previewBox.innerHTML = '<div class="text-secondary">Загрузка списка участников...</div>';
         }
         if (statusBox) {
             statusBox.style.display = 'none';
@@ -1408,15 +1414,39 @@ ensureComplianceFieldsAvailable();
                 throw new Error(data.error || 'Не удалось получить данные для публикации.');
             }
 
+            const participants = Array.isArray(data.participants) ? data.participants : [];
+            const summary = data.summary || {};
+            const vkStatus = data.application_vk_status || {};
+            if (summaryBox) {
+                let summaryText = `Всего участников: ${summary.total_items || 0} · Готово к публикации: ${summary.ready_items || 0} · Не готово: ${summary.skipped_items || 0}`;
+                if (vkStatus.status_code && vkStatus.status_code !== 'not_published') {
+                    summaryText += `. Ранее опубликовано: ${vkStatus.published_count || 0}, осталось: ${vkStatus.remaining_count || 0}.`;
+                }
+                summaryBox.textContent = summaryText;
+            }
             if (previewBox) {
-                previewBox.innerHTML = data.preview_html || '<div class="text-secondary">Превью недоступно.</div>';
+                if (!participants.length) {
+                    previewBox.innerHTML = '<div class="text-secondary">Нет работ для публикации.</div>';
+                } else {
+                    previewBox.innerHTML = participants.map((item) => `
+                        <div style="display:flex; gap:10px; align-items:flex-start; border:1px solid #E5E7EB; border-radius:10px; padding:8px;">
+                            ${item.preview_image ? `<img src="${item.preview_image}" style="width:52px;height:52px;border-radius:8px;object-fit:cover;">` : '<div style="width:52px;height:52px;border-radius:8px;background:#EEF2FF;display:flex;align-items:center;justify-content:center;"><i class="fas fa-image"></i></div>'}
+                            <div style="display:grid; gap:4px;">
+                                <strong>${item.fio || 'Без имени'}</strong>
+                                <div>${item.work_title || 'Без названия'}</div>
+                                <span class="badge ${item.is_ready_for_publish ? 'badge--success' : 'badge--warning'}">${item.is_ready_for_publish ? 'Готово к публикации' : 'Не готово'}</span>
+                                ${item.skip_reason ? `<div class="text-secondary" style="font-size:12px;">${item.skip_reason}</div>` : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                }
             }
             renderDonationGoals(data.donation_goals || []);
             toggleDonationFields();
             updateDonationGoalCard();
         } catch (error) {
             if (previewBox) {
-                previewBox.innerHTML = '<div class="text-secondary">Превью недоступно.</div>';
+                previewBox.innerHTML = '<div class="text-secondary">Данные недоступны.</div>';
             }
             showStatus(error.message || 'Ошибка загрузки данных публикации.', 'error');
         }
@@ -1451,6 +1481,7 @@ ensureComplianceFieldsAvailable();
         }
         await openPublishModal();
     });
+    openModalButton?.addEventListener('click', openPublishModal);
 
     if (publishButton) {
         publishButton.addEventListener('click', async () => {
@@ -1489,14 +1520,8 @@ ensureComplianceFieldsAvailable();
                     showStatus(data.error || 'Не удалось выполнить публикацию.', 'error');
                     return;
                 }
-                const donationTitle = String(data.donation_title || '').trim();
-                if (data.publication_type === 'with_donation' && donationTitle !== '') {
-                    showStatus(`Опубликовано с донатом: ${donationTitle}`, 'success');
-                } else if (data.publication_type === 'with_donation') {
-                    showStatus('Пост опубликован, но донат не прикрепился', 'error');
-                } else {
-                    showStatus('Опубликовано без доната', 'success');
-                }
+                const donationMode = data.publication_type === 'with_donation' ? 'с донатом' : 'без доната';
+                showStatus(`Итог: опубликовано ${data.published || 0} из ${data.total || 0} (${donationMode}).`, 'success');
                 location.reload();
             } catch (e) {
                 showStatus('Ошибка сети при публикации. Попробуйте ещё раз.', 'error');

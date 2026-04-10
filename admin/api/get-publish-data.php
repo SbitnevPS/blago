@@ -29,7 +29,13 @@ $worksStmt = $pdo->prepare("
 $worksStmt->execute([$applicationId]);
 $workIds = array_map('intval', array_column($worksStmt->fetchAll() ?: [], 'work_id'));
 
-$previewHtml = '<div class="text-secondary">В заявке нет работ для публикации.</div>';
+$participants = [];
+$summary = [
+    'total_items' => 0,
+    'ready_items' => 0,
+    'skipped_items' => 0,
+];
+$publicationStatus = getApplicationVkPublicationStatus($applicationId);
 
 if (!empty($workIds)) {
     ensureVkPublicationSchema();
@@ -42,27 +48,28 @@ if (!empty($workIds)) {
     ]);
 
     $preview = buildVkTaskPreview($filters, null);
-    $firstReady = null;
+    $summary = [
+        'total_items' => (int) ($preview['total_items'] ?? 0),
+        'ready_items' => (int) ($preview['ready_items'] ?? 0),
+        'skipped_items' => (int) ($preview['skipped_items'] ?? 0),
+    ];
+
     foreach (($preview['items'] ?? []) as $item) {
-        if (($item['item_status'] ?? '') === 'ready') {
-            $firstReady = $item;
-            break;
-        }
-    }
-
-    if ($firstReady) {
-        $postText = nl2br(htmlspecialchars((string) ($firstReady['post_text'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
-        $imagePath = trim((string) ($firstReady['work_image_path'] ?? ''));
-        $imageWebPath = $imagePath !== ''
-            ? getParticipantDrawingWebPath((string) ($application['applicant_email'] ?? ''), $imagePath)
-            : '';
-
-        $previewHtml = '<div style="display:grid; gap:10px;">';
-        if ($imageWebPath !== '') {
-            $previewHtml .= '<img src="' . htmlspecialchars($imageWebPath, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '" alt="Превью" style="width:100%; max-height:260px; object-fit:cover; border-radius:10px;">';
-        }
-        $previewHtml .= '<div style="white-space:normal; line-height:1.45;">' . $postText . '</div>';
-        $previewHtml .= '</div>';
+        $source = (array) ($item['source'] ?? []);
+        $imagePath = trim((string) ($item['work_image_path'] ?? ''));
+        $participants[] = [
+            'participant_id' => (int) ($item['participant_id'] ?? 0),
+            'work_id' => (int) ($item['work_id'] ?? 0),
+            'fio' => trim((string) ($source['participant_fio'] ?? '')) ?: 'Без имени',
+            'work_title' => trim((string) ($source['work_title'] ?? '')) ?: 'Без названия',
+            'preview_image' => $imagePath !== ''
+                ? getParticipantDrawingWebPath((string) ($application['applicant_email'] ?? ''), $imagePath)
+                : '',
+            'item_status' => (string) ($item['item_status'] ?? 'pending'),
+            'skip_reason' => (string) ($item['skip_reason'] ?? ''),
+            'is_ready_for_publish' => (string) ($item['item_status'] ?? '') === 'ready',
+            'already_published' => !empty($source['vk_published_at']),
+        ];
     }
 }
 
@@ -137,6 +144,8 @@ try {
 
 jsonResponse([
     'success' => true,
-    'preview_html' => $previewHtml,
+    'participants' => $participants,
+    'summary' => $summary,
     'donation_goals' => $donationGoals,
+    'application_vk_status' => $publicationStatus,
 ]);

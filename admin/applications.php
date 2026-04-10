@@ -273,6 +273,11 @@ $stmt = $pdo->prepare("
 $stmt->execute($params);
 $applications = $stmt->fetchAll();
 
+$applicationVkStatuses = [];
+foreach ($applications as $appRow) {
+    $applicationVkStatuses[(int) $appRow['id']] = getApplicationVkPublicationStatus((int) $appRow['id']);
+}
+
 // Список конкурсов для фильтра
 $contests = $pdo->query("SELECT id, title FROM contests ORDER BY created_at DESC")->fetchAll();
 
@@ -410,6 +415,7 @@ require_once __DIR__ . '/includes/header.php';
                     <th>Конкурс</th>
                     <th>Участников</th>
                     <th>Статус</th>
+                    <th>Публикация VK</th>
                     <th>Дата</th>
                     <th></th>
                 </tr>
@@ -425,6 +431,7 @@ require_once __DIR__ . '/includes/header.php';
                     }
                 ?>
                 <tr style="<?= $rowStyle ?>">
+                    <?php $vkStatus = $applicationVkStatuses[(int) $app['id']] ?? getApplicationVkPublicationStatus((int) $app['id']); ?>
                     <td class="select-col" style="display:none;" data-label="Выбор">
                         <input type="checkbox" class="application-select-checkbox" value="<?= (int) $app['id'] ?>">
                     </td>
@@ -454,18 +461,38 @@ require_once __DIR__ . '/includes/header.php';
                             <?= htmlspecialchars($isRevisionState ? 'Требует исправлений' : $statusMeta['label']) ?>
                         </span>
                     </td>
+                    <td data-label="Публикация VK">
+                        <div style="display:grid; gap:6px;">
+                            <span class="badge <?= e((string) ($vkStatus['badge_class'] ?? 'badge--secondary')) ?>">
+                                <?= e((string) ($vkStatus['status_label'] ?? 'Не опубликована')) ?>
+                            </span>
+                            <div class="text-secondary" style="font-size:12px;">
+                                <?= (int) ($vkStatus['published_count'] ?? 0) ?>/<?= (int) ($vkStatus['total_count'] ?? 0) ?>
+                            </div>
+                        </div>
+                    </td>
                     <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></td>
                     <td data-label="Действия">
+                        <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+                        <button
+                            type="button"
+                            class="btn btn--secondary btn--sm js-open-vk-publish-modal"
+                            data-application-id="<?= (int) $app['id'] ?>"
+                            data-has-publications="<?= ((int) ($vkStatus['published_count'] ?? 0) > 0 || (int) ($vkStatus['failed_count'] ?? 0) > 0) ? '1' : '0' ?>"
+                        >
+                            <?= (int) ($vkStatus['published_count'] ?? 0) > 0 ? 'Повторить публикацию' : 'Опубликовать' ?>
+                        </button>
                         <a href="/admin/application/<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
                             <i class="fas fa-eye"></i>
                         </a>
+                        </div>
                     </td>
                 </tr>
                 <?php endforeach; ?>
                 
                 <?php if (empty($applications)): ?>
                 <tr>
-                    <td colspan="8" class="text-center text-secondary" style="padding: 40px;">
+                    <td colspan="9" class="text-center text-secondary" style="padding: 40px;">
                         Заявки не найдены
                     </td>
                 </tr>
@@ -496,43 +523,36 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
-<?php if (!empty($publishPromptData)): ?>
-<div class="modal active" id="vkPublishPromptModal">
+<div class="modal <?= $publishPromptApplicationId > 0 ? 'active' : '' ?>" id="vkPublishPromptModal">
     <div class="modal__content" style="max-width:700px;">
         <div class="modal__header">
-            <h3 class="modal__title">Опубликовать работы в группе?</h3>
+            <h3 class="modal__title">Публикация в VK</h3>
         </div>
         <div class="modal__body">
-            <p class="text-secondary" style="margin-bottom:14px;">
-                Заявка #<?= (int) $publishPromptData['application_id'] ?> принята. Можно сразу отправить работы в VK-группу.
-            </p>
-            <div style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;">
-                <?php foreach ($publishPromptData['participants'] as $participant): ?>
-                    <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid #E5E7EB; border-radius:10px;">
-                        <?php if (!empty($participant['preview_image'])): ?>
-                            <img src="<?= e($participant['preview_image']) ?>" alt="<?= e($participant['fio']) ?>" style="width:44px; height:44px; border-radius:8px; object-fit:cover; background:#F8FAFC;">
-                        <?php else: ?>
-                            <div style="width:44px; height:44px; border-radius:8px; background:#EEF2FF; color:#6366F1; display:flex; align-items:center; justify-content:center;">
-                                <i class="fas fa-image"></i>
-                            </div>
-                        <?php endif; ?>
-                        <div style="font-weight:600;"><?= e($participant['fio']) ?></div>
-                    </div>
-                <?php endforeach; ?>
-                <?php if (empty($publishPromptData['participants'])): ?>
-                    <div class="text-secondary">В заявке нет участников.</div>
-                <?php endif; ?>
+            <div id="vkPublishModalSummary" class="text-secondary" style="margin-bottom:10px;"></div>
+            <div id="vkPublishPreview" style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;"></div>
+            <div style="margin-top: 14px; border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px;">
+                <div style="font-weight: 600; margin-bottom: 8px;">Донаты VK</div>
+                <label class="form-checkbox" style="margin-bottom:8px;">
+                    <input type="checkbox" id="vkDonationEnabled" value="1">
+                    <span class="form-checkbox__mark"></span>
+                    <span>Прикрепить донат</span>
+                </label>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label class="form-label" for="vkDonationGoalSelect">Цель доната</label>
+                    <select class="form-select" id="vkDonationGoalSelect" disabled>
+                        <option value="">Выберите цель доната</option>
+                    </select>
+                </div>
             </div>
             <div id="vkPublishPromptStatus" class="alert" style="display:none; margin-top:12px;"></div>
         </div>
         <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
             <button type="button" class="btn btn--primary" id="vkPublishPromptRun">Опубликовать</button>
-            <button type="button" class="btn btn--secondary" id="vkPublishPromptSkip">Пока не публиковать</button>
-            <a href="/admin/application/<?= (int) $publishPromptData['application_id'] ?>" class="btn btn--ghost">Отмена</a>
+            <button type="button" class="btn btn--secondary" id="vkPublishPromptSkip">Отмена</button>
         </div>
     </div>
 </div>
-<?php endif; ?>
 
 <script>
 (() => {
@@ -643,8 +663,13 @@ require_once __DIR__ . '/includes/header.php';
     const publishButton = document.getElementById('vkPublishPromptRun');
     const skipButton = document.getElementById('vkPublishPromptSkip');
     const statusBox = document.getElementById('vkPublishPromptStatus');
-    const applicationId = <?= (int) (($publishPromptData['application_id'] ?? 0)) ?>;
+    const previewBox = document.getElementById('vkPublishPreview');
+    const summaryBox = document.getElementById('vkPublishModalSummary');
+    const donationEnabledCheckbox = document.getElementById('vkDonationEnabled');
+    const donationGoalSelect = document.getElementById('vkDonationGoalSelect');
+    let applicationId = <?= (int) $publishPromptApplicationId ?>;
     const csrfToken = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE) ?>;
+    let publishInProgress = false;
 
     const showStatus = (message, type = 'success') => {
         if (!statusBox) return;
@@ -654,6 +679,7 @@ require_once __DIR__ . '/includes/header.php';
     };
 
     const closeModal = () => {
+        if (publishInProgress) return;
         modal.classList.remove('active');
     };
 
@@ -661,23 +687,98 @@ require_once __DIR__ . '/includes/header.php';
         skipButton.addEventListener('click', closeModal);
     }
 
+    const renderParticipants = (items) => {
+        if (!previewBox) return;
+        if (!Array.isArray(items) || items.length === 0) {
+            previewBox.innerHTML = '<div class="text-secondary">Нет работ для публикации.</div>';
+            return;
+        }
+        previewBox.innerHTML = items.map((item) => `
+            <div style="display:flex; gap:10px; align-items:flex-start; border:1px solid #E5E7EB; border-radius:10px; padding:8px;">
+                ${item.preview_image ? `<img src="${item.preview_image}" style="width:52px;height:52px;border-radius:8px;object-fit:cover;">` : '<div style="width:52px;height:52px;border-radius:8px;background:#EEF2FF;display:flex;align-items:center;justify-content:center;"><i class="fas fa-image"></i></div>'}
+                <div style="display:grid; gap:4px;">
+                    <strong>${item.fio || 'Без имени'}</strong>
+                    <div>${item.work_title || 'Без названия'}</div>
+                    <span class="badge ${item.is_ready_for_publish ? 'badge--success' : 'badge--warning'}">${item.is_ready_for_publish ? 'Готово к публикации' : 'Не готово'}</span>
+                    ${item.skip_reason ? `<div class="text-secondary" style="font-size:12px;">${item.skip_reason}</div>` : ''}
+                </div>
+            </div>
+        `).join('');
+    };
+
+    const loadPublishData = async () => {
+        if (!applicationId) return;
+        previewBox.innerHTML = '<div class="text-secondary">Загрузка...</div>';
+        const response = await fetch(`/admin/api/get-publish-data.php?id=${applicationId}`);
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Ошибка загрузки данных публикации.');
+        }
+        renderParticipants(data.participants || []);
+        const sum = data.summary || {};
+        const vkStatus = data.application_vk_status || {};
+        if (summaryBox) {
+            let txt = `Всего участников: ${sum.total_items || 0} · Готово к публикации: ${sum.ready_items || 0} · Не готово: ${sum.skipped_items || 0}`;
+            if (vkStatus.status_code && vkStatus.status_code !== 'not_published') {
+                txt += `. Уже опубликовано: ${vkStatus.published_count || 0}, осталось: ${vkStatus.remaining_count || 0}.`;
+            }
+            summaryBox.textContent = txt;
+        }
+        donationGoalSelect.innerHTML = '<option value="">Выберите цель доната</option>';
+        (data.donation_goals || []).forEach((goal) => {
+            const option = document.createElement('option');
+            option.value = String(goal.id || '');
+            option.textContent = String(goal.title || '');
+            donationGoalSelect.appendChild(option);
+        });
+    };
+
+    document.querySelectorAll('.js-open-vk-publish-modal').forEach((button) => {
+        button.addEventListener('click', async () => {
+            applicationId = Number(button.dataset.applicationId || 0);
+            modal.classList.add('active');
+            if (statusBox) statusBox.style.display = 'none';
+            if (donationEnabledCheckbox) donationEnabledCheckbox.checked = false;
+            donationGoalSelect.disabled = true;
+            try {
+                await loadPublishData();
+            } catch (error) {
+                showStatus(error.message, 'error');
+            }
+        });
+    });
+
+    donationEnabledCheckbox?.addEventListener('change', () => {
+        donationGoalSelect.disabled = !donationEnabledCheckbox.checked;
+    });
+
     if (publishButton) {
         publishButton.addEventListener('click', async () => {
+            if (publishInProgress || !applicationId) return;
+            const donationEnabled = !!donationEnabledCheckbox?.checked;
+            const donationGoalId = Number(donationGoalSelect?.value || 0);
+            if (donationEnabled && !donationGoalId) {
+                showStatus('Выберите цель доната.', 'error');
+                return;
+            }
+            publishInProgress = true;
             publishButton.disabled = true;
+            if (skipButton) skipButton.disabled = true;
             showStatus('Публикация запущена, подождите...', 'success');
 
             try {
-                const formData = new FormData();
-                formData.append('action', 'publish_application_works');
-                formData.append('application_id', String(applicationId));
-                formData.append('csrf_token', csrfToken);
-
-                const response = await fetch('/admin/applications.php', {
+                const response = await fetch('/admin/api/publish-vk.php', {
                     method: 'POST',
-                    body: formData,
                     headers: {
+                        'Content-Type': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest',
                     },
+                    body: JSON.stringify({
+                        application_id: applicationId,
+                        donation_enabled: donationEnabled ? 1 : 0,
+                        donation_goal_id: donationGoalId,
+                        csrf_token: csrfToken,
+                    }),
                 });
                 const data = await response.json();
                 if (!response.ok || !data.success) {
@@ -686,14 +787,21 @@ require_once __DIR__ . '/includes/header.php';
                     return;
                 }
 
-                const summary = `Публикация завершена: опубликовано ${data.published}/${data.total}, ошибок: ${data.failed}.`;
-                showStatus(data.error ? `${summary} ${data.error}` : summary, data.failed > 0 ? 'error' : 'success');
-                publishButton.disabled = true;
+                showStatus(`Публикация завершена: опубликовано ${data.published}/${data.total}.`, 'success');
+                location.reload();
             } catch (e) {
                 showStatus('Ошибка сети при публикации. Попробуйте ещё раз.', 'error');
+            } finally {
+                publishInProgress = false;
                 publishButton.disabled = false;
+                if (skipButton) skipButton.disabled = false;
             }
         });
+    }
+
+    if (applicationId > 0) {
+        modal.classList.add('active');
+        loadPublishData().catch((error) => showStatus(error.message, 'error'));
     }
 })();
 
