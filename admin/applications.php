@@ -312,7 +312,7 @@ require_once __DIR__ . '/includes/header.php';
                 <select name="status" class="form-select">
                     <option value="">Все статусы</option>
                     <option value="revision" <?= $status === 'revision' ? 'selected' : '' ?>>Требует исправлений</option>
-                    <option value="corrected" <?= $status === 'corrected' ? 'selected' : '' ?>>Исправленные</option>
+                    <option value="corrected" <?= $status === 'corrected' ? 'selected' : '' ?>>Исправлена, и отправлена на проверку</option>
                     <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>В работе</option>
                     <option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Принятые</option>
                     <option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Отклонённые</option>
@@ -393,7 +393,7 @@ require_once __DIR__ . '/includes/header.php';
         Требует исправлений <span class="stat-pill__count"><?= $statCounts['revision'] ?></span>
     </a>
     <a href="?status=corrected" class="stat-pill <?= $status === 'corrected' ? 'stat-pill--active' : '' ?>">
-        Исправленные <span class="stat-pill__count"><?= $statCounts['corrected'] ?></span>
+        Исправлена, и отправлена на проверку <span class="stat-pill__count"><?= $statCounts['corrected'] ?></span>
     </a>
 </div>
 
@@ -425,8 +425,9 @@ require_once __DIR__ . '/includes/header.php';
                 <?php
                     $statusMeta = getApplicationDisplayMeta($app);
                     $vkStatus = $applicationVkStatuses[(int) $app['id']] ?? getApplicationVkPublicationStatus((int) $app['id']);
+                    $isCorrected = (string) ($statusMeta['status_code'] ?? '') === 'corrected';
                 ?>
-                <article class="admin-list-card admin-list-card--application">
+                <article class="admin-list-card admin-list-card--application <?= $isCorrected ? 'admin-list-card--corrected' : '' ?>">
                     <div class="admin-list-card__accent <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>"></div>
                     <div class="admin-list-card__header">
                         <div class="admin-list-card__title-wrap">
@@ -448,6 +449,9 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
                     </div>
                     <div class="admin-list-card__meta">
+                        <?php if ($isCorrected): ?>
+                            <span style="color:#0369A1;"><strong>Повторная проверка:</strong> после исправлений пользователя</span>
+                        <?php endif; ?>
                         <span><strong>Конкурс:</strong> <?= htmlspecialchars($app['contest_title'] ?? '—') ?></span>
                         <span><strong>Участников:</strong> <?= (int) $app['participants_count'] ?></span>
                         <span><strong>VK:</strong> <?= (int) ($vkStatus['published_count'] ?? 0) ?>/<?= (int) ($vkStatus['total_count'] ?? 0) ?></span>
