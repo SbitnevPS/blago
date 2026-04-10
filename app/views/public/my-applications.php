@@ -10,6 +10,7 @@ function getStatusClassByAdminStatus(string $status): string {
     return match ($status) {
         'draft' => 'bg-gray-100 text-gray-700',
         'submitted' => 'bg-emerald-100 text-emerald-700',
+        'corrected' => 'bg-sky-100 text-sky-800',
         'revision' => 'bg-yellow-100 text-yellow-700',
         'approved' => 'bg-green-600 text-white',
         'declined', 'rejected', 'cancelled' => 'bg-red-100 text-red-700',
@@ -151,8 +152,9 @@ $filteredApplications = array_values(array_filter(
                     $statusLabel = (string) ($statusMeta['status_label'] ?? '—');
                     $statusClass = (string) ($statusMeta['status_class'] ?? 'bg-gray-100 text-gray-700');
                     $isRevision = getStatusGroup($app) === 'revision';
+                    $isCorrected = (string) ($statusMeta['status_code'] ?? '') === 'corrected';
                     ?>
-                    <div class="bg-white rounded-2xl shadow hover:shadow-lg transition overflow-hidden <?= $isRevision ? 'border-2 border-yellow-400 bg-yellow-50' : '' ?>">
+                    <div class="bg-white rounded-2xl shadow hover:shadow-lg transition overflow-hidden <?= $isRevision ? 'border-2 border-yellow-400 bg-yellow-50' : '' ?> <?= $isCorrected ? 'border border-sky-300 bg-sky-50/60' : '' ?>">
                         <img src="<?= htmlspecialchars($imagePath) ?>" alt="<?= htmlspecialchars((string)$app['contest_title']) ?>" class="w-full h-56 object-cover">
 
                         <div class="p-4">
@@ -166,6 +168,9 @@ $filteredApplications = array_values(array_filter(
 
                             <?php if ($isRevision): ?>
                                 <p class="text-sm text-yellow-700 mb-2">Требует исправлений</p>
+                            <?php endif; ?>
+                            <?php if ($isCorrected): ?>
+                                <p class="text-sm text-sky-700 mb-2">Повторно отправлена на проверку после исправлений</p>
                             <?php endif; ?>
 
                             <?php if (!empty($unreadByApplication[(int)$app['id']])): ?>

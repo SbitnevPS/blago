@@ -522,7 +522,7 @@ $vkPublicationLinks = array_values(array_unique($vkPublicationLinks));
 $statusColorMap = [
     'draft' => ['class' => 'status-pill--draft'],
     'submitted' => ['class' => 'status-pill--submitted'],
-    'corrected' => ['class' => 'status-pill--revision'],
+    'corrected' => ['class' => 'status-pill--corrected'],
     'pending' => ['class' => 'status-pill--pending'],
     'partial_reviewed' => ['class' => 'status-pill--pending'],
     'reviewed' => ['class' => 'status-pill--reviewed'],
@@ -594,6 +594,7 @@ $currentPage = 'applications';
 .status-pill--draft {background:#F3F4F6; color:#374151;}
 .status-pill--submitted {background:#D1FAE5; color:#065F46;}
 .status-pill--revision {background:#DBEAFE; color:#1E40AF;}
+.status-pill--corrected {background:#E0F2FE; color:#0C4A6E;}
 .status-pill--accepted {background:#16A34A; color:#FFFFFF;}
 .status-pill--reviewed {background:#E2E8F0; color:#334155;}
 .status-pill--declined {background:#FEE2E2; color:#991B1B;}
@@ -1162,8 +1163,8 @@ function applyApplicationResubmittedState() {
 
  const statusPill = document.querySelector('.status-pill');
  if (statusPill) {
-  statusPill.className = 'status-pill status-pill--revision';
-  statusPill.textContent = 'Исправлена';
+  statusPill.className = 'status-pill status-pill--corrected';
+  statusPill.textContent = 'Исправлена, и отправлена на проверку';
  }
 }
 
