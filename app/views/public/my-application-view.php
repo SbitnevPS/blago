@@ -26,7 +26,7 @@ if (!$application) {
  redirect('/my-applications');
 }
 
-$isApplicationAccepted = in_array((string)($application['status'] ?? ''), ['accepted', 'approved'], true);
+$isApplicationAccepted = getApplicationCanonicalStatus($application) === 'approved';
 
 $disputeChatSubject = 'Оспаривание решения по заявке #' . $applicationId;
 $isDisputeChatClosed = false;
@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
         }
     } else {
         $reason = trim($_POST['dispute_reason'] ?? '');
-        if (!in_array($application['status'], ['declined', 'rejected'], true)) {
+        if (getApplicationCanonicalStatus($application) !== 'rejected') {
             $_SESSION['error_message'] = 'Оспорить можно только отклонённую заявку.';
             if ($isAjaxRequest) {
                 jsonResponse(['success' => false, 'error' => $_SESSION['error_message']], 422);
@@ -165,25 +165,33 @@ foreach ($participants as $participantRow) {
 
 $workSummary = buildApplicationWorkSummary($participants);
 $uiStatusMeta = getApplicationUiStatusMeta($workSummary);
-$isEncouragementDiplomasForAllWorks = ((string) ($uiStatusMeta['label'] ?? '') === 'Благодарственные дипломы доступны для всех работ');
-$isAnyWorkAccepted = (int) ($workSummary['accepted'] ?? 0) > 0;
-$canUseDiplomaActions = $isApplicationAccepted || $isAnyWorkAccepted || $isEncouragementDiplomasForAllWorks;
+$displayPermissions = getApplicationDisplayPermissions($application, $participants);
+$canShowBulkDiplomaActions = (bool) ($displayPermissions['can_show_bulk_diplomas'] ?? false);
 
-$ensureDiplomaActionsAllowed = static function () use ($canUseDiplomaActions, $applicationId) {
-    if ($canUseDiplomaActions) {
+$ensureIndividualDiplomaActionsAllowed = static function (int $workId) use ($participantByWorkId, $applicationId) {
+    $workRow = $participantByWorkId[$workId] ?? null;
+    if ($workRow && canShowIndividualDiplomaActions($workRow)) {
         return;
     }
-    $_SESSION['error_message'] = 'Действия с дипломами доступны после принятия заявки, принятия хотя бы одной работы или открытия благодарственных дипломов для всех работ.';
+    $_SESSION['error_message'] = 'Для выбранной работы диплом пока недоступен.';
+    redirect('/application/' . $applicationId);
+};
+
+$ensureBulkDiplomaActionsAllowed = static function () use ($canShowBulkDiplomaActions, $applicationId) {
+    if ($canShowBulkDiplomaActions) {
+        return;
+    }
+    $_SESSION['error_message'] = 'Массовые действия с дипломами доступны только после принятия заявки.';
     redirect('/application/' . $applicationId);
 };
 
 if (($_GET['action'] ?? '') === 'diploma_preview_one') {
-    $ensureDiplomaActionsAllowed();
     $workId = (int) ($_GET['work_id'] ?? 0);
     if (!isset($participantByWorkId[$workId])) {
         $_SESSION['error_message'] = 'Работа не найдена.';
         redirect('/application/' . $applicationId);
     }
+    $ensureIndividualDiplomaActionsAllowed($workId);
     try {
         $diploma = generateWorkDiploma($workId, false);
         redirect(getPublicDiplomaUrl((string) ($diploma['public_token'] ?? '')));
@@ -194,7 +202,6 @@ if (($_GET['action'] ?? '') === 'diploma_preview_one') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && str_starts_with((string)$_POST['action'], 'diploma_')) {
-    $ensureDiplomaActionsAllowed();
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $_SESSION['error_message'] = 'Ошибка безопасности.';
         redirect('/application/' . $applicationId);
@@ -204,6 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && str_star
         if ($_POST['action'] === 'diploma_download_one') {
             $workId = (int)($_POST['work_id'] ?? 0);
             if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
+            $ensureIndividualDiplomaActionsAllowed($workId);
             $diploma = generateWorkDiploma($workId, false);
             header('Content-Type: application/pdf');
             header('Content-Disposition: attachment; filename="diploma_work_' . $workId . '.pdf"');
@@ -213,6 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && str_star
         if ($_POST['action'] === 'diploma_link_one') {
             $workId = (int)($_POST['work_id'] ?? 0);
             if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
+            $ensureIndividualDiplomaActionsAllowed($workId);
             $diploma = generateWorkDiploma($workId, false);
             $_SESSION['success_message'] = 'Ссылка скопирована: ' . getPublicDiplomaUrl((string)($diploma['public_token'] ?? ''));
             redirect('/application/' . $applicationId);
@@ -220,6 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && str_star
         if ($_POST['action'] === 'diploma_email_one') {
             $workId = (int)($_POST['work_id'] ?? 0);
             if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
+            $ensureIndividualDiplomaActionsAllowed($workId);
             $diploma = generateWorkDiploma($workId, false);
             $ctx = getWorkDiplomaContext($workId);
             if (!$ctx || !sendDiplomaByEmail($ctx, $diploma)) {
@@ -229,6 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && str_star
             redirect('/application/' . $applicationId);
         }
         if ($_POST['action'] === 'diploma_download_all') {
+            $ensureBulkDiplomaActionsAllowed();
             foreach ($participants as $participantRow) {
                 if (mapWorkStatusToDiplomaType((string)($participantRow['status'] ?? 'pending')) === null) {
                     continue;
@@ -243,6 +254,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && str_star
             exit;
         }
         if ($_POST['action'] === 'diploma_links_all') {
+            $ensureBulkDiplomaActionsAllowed();
             foreach ($participants as $participantRow) {
                 if (mapWorkStatusToDiplomaType((string)($participantRow['status'] ?? 'pending')) === null) {
                     continue;
@@ -254,6 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && str_star
             redirect('/application/' . $applicationId);
         }
         if ($_POST['action'] === 'diploma_email_all') {
+            $ensureBulkDiplomaActionsAllowed();
             $sent = 0;
             foreach ($participants as $participantRow) {
                 $status = (string)($participantRow['status'] ?? 'pending');
@@ -478,12 +491,9 @@ $unresolvedCorrections = array_filter($corrections, function($c) {
 });
 
 // Проверяем, разрешено ли редактирование
-$canEdit = $application['status'] === 'draft'
-    || ($application['allow_edit'] ==1 && $application['status'] !== 'approved');
-$effectiveApplicationStatus = ((int) ($application['allow_edit'] ?? 0) === 1 && (string) ($application['status'] ?? '') !== 'approved')
-    ? 'revision'
-    : (string) ($application['status'] ?? 'draft');
-$statusMeta = getApplicationStatusMeta($effectiveApplicationStatus);
+$canEdit = (bool) ($displayPermissions['can_edit_application'] ?? false);
+$statusMeta = getApplicationDisplayMeta($application, $workSummary);
+$effectiveApplicationStatus = (string) ($statusMeta['status_code'] ?? 'draft');
 $statusClass = str_replace('badge--', '', $statusMeta['badge_class']);
 $participantCorrections = [];
 foreach ($unresolvedCorrections as $correction) {
@@ -518,7 +528,6 @@ $statusColorMap = [
     'reviewed' => ['class' => 'status-pill--reviewed'],
     'revision' => ['class' => 'status-pill--revision'],
     'approved' => ['class' => 'status-pill--accepted'],
-    'declined' => ['class' => 'status-pill--declined'],
     'rejected' => ['class' => 'status-pill--declined'],
     'cancelled' => ['class' => 'status-pill--declined'],
 ];
@@ -527,14 +536,14 @@ $statusDisplay = [
     'label' => (string) ($statusMeta['label'] ?? 'На рассмотрении'),
     'class' => (string) ($statusColorMap[$statusCode]['class'] ?? 'status-pill--pending'),
 ];
-$applicationProgressStep = in_array($statusCode, ['accepted', 'approved'], true) ? 3 : (in_array($statusCode, ['declined', 'rejected'], true) ? 2 : 2);
+$applicationProgressStep = $statusCode === 'approved' ? 3 : 2;
 $userFullName = trim((string) (($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? '')));
 $userRegion = (string) ($user['region'] ?? $application['region'] ?? '—');
 $userOrganization = (string) ($user['organization_name'] ?? $application['organization_name'] ?? '');
 $applicationDateLabel = date('d.m.Y H:i', strtotime((string) $application['created_at']));
 
 $disputeChatMessages = [];
-if (in_array($application['status'], ['declined', 'rejected'], true)) {
+if (getApplicationCanonicalStatus($application) === 'rejected') {
     try {
         $stmt = $pdo->prepare("
         SELECT m.*, u.name, u.surname, u.patronymic, u.is_admin
@@ -743,7 +752,7 @@ $currentPage = 'applications';
                                     <?php if ($hasParticipantCorrection): ?>
                                         <button type="button" class="btn btn--primary btn--sm js-open-participant-edit" data-work-id="<?= (int)($participant['id'] ?? 0) ?>" data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>" data-age="<?= (int)($participant['age'] ?? 0) ?>" data-work-title="<?= htmlspecialchars($workTitle, ENT_QUOTES) ?>" data-drawing-url="<?= htmlspecialchars($drawingSrc, ENT_QUOTES) ?>"><i class="fas fa-pen"></i> Исправить</button>
                                     <?php endif; ?>
-                                    <?php if ($canUseDiplomaActions && $isDiplomaAvailable): ?>
+                                    <?php if ($isDiplomaAvailable): ?>
                                         <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_one"><input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>"><button class="btn btn--primary btn--sm" type="submit"><i class="fas fa-download"></i> Скачать диплом</button></form>
                                     <?php endif; ?>
                                     <?php if ($participantVkUrl !== ''): ?>
@@ -791,11 +800,11 @@ $currentPage = 'applications';
         <section class="app-card">
             <h2 class="app-card__title" style="font-size:18px;">Действия</h2>
             <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                <?php if ($application['status'] === 'revision' && $canEdit): ?>
+                <?php if ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
                     <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary"><i class="fas fa-pen"></i> Исправить заявку</a>
-                <?php elseif ($canUseDiplomaActions && $hasDiplomas): ?>
-                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать диплом</button></form>
-                <?php elseif (in_array($application['status'], ['declined', 'rejected'], true)): ?>
+                <?php elseif ($canShowBulkDiplomaActions && $hasDiplomas): ?>
+                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать все дипломы</button></form>
+                <?php elseif (getApplicationCanonicalStatus($application) === 'rejected'): ?>
                     <div class="app-highlight" style="width:100%;">
                         <strong>Заявка отклонена.</strong>
                         <div>Причина доступна в комментариях администратора и чате оспаривания.</div>
@@ -810,7 +819,7 @@ $currentPage = 'applications';
     </aside>
 </div>
 
-<?php if (in_array($application['status'], ['declined', 'rejected'], true)): ?>
+<?php if (getApplicationCanonicalStatus($application) === 'rejected'): ?>
 <div class="card mb-lg" id="dispute-chat">
     <div class="card__header flex justify-between items-center">
         <h3>Оспаривание решения по заявке</h3>
@@ -1470,7 +1479,7 @@ document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
  alertEl.remove();
 });
 
-if (['declined', 'rejected'].includes(currentApplicationStatus)) {
+if (['rejected'].includes(currentApplicationStatus)) {
  const declineToastStorageKey = 'decline_toast_seen_' + currentApplicationId;
  if (!localStorage.getItem(declineToastStorageKey)) {
   showToast('Заявка отклонена.', 'error');

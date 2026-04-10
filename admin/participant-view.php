@@ -12,7 +12,7 @@ check_csrf();
 $admin = getCurrentUser();
 $participantId = (int) ($_GET['id'] ?? 0);
 
-$stmt = $pdo->prepare("\n    SELECT p.*,\n           a.id AS application_id, a.status AS application_status, a.parent_fio, a.source_info, a.colleagues_info,\n           c.id AS contest_id, c.title AS contest_title,\n           u.id AS user_id, u.name AS user_name, u.surname AS user_surname, u.patronymic AS user_patronymic, u.email AS user_email,\n           u.organization_region AS user_organization_region, u.organization_name AS user_organization_name, u.organization_address AS user_organization_address,\n           w.title AS work_title\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    WHERE p.id = ?\n");
+$stmt = $pdo->prepare("\n    SELECT p.*,\n           a.id AS application_id, a.status AS application_status, a.allow_edit, a.parent_fio, a.source_info, a.colleagues_info,\n           c.id AS contest_id, c.title AS contest_title,\n           u.id AS user_id, u.name AS user_name, u.surname AS user_surname, u.patronymic AS user_patronymic, u.email AS user_email,\n           u.organization_region AS user_organization_region, u.organization_name AS user_organization_name, u.organization_address AS user_organization_address,\n           w.id AS work_id, w.status AS work_status, w.title AS work_title\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    WHERE p.id = ?\n");
 $stmt->execute([$participantId]);
 $participant = $stmt->fetch();
 
@@ -28,7 +28,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     try {
         if ($_POST['action'] === 'download_diploma') {
-            $diploma = generateParticipantDiploma($participantId, false);
+            if (!canShowIndividualDiplomaActions(['status' => (string) ($participant['work_status'] ?? 'pending')])) {
+                throw new RuntimeException('Для этой работы диплом недоступен.');
+            }
+            $diploma = generateWorkDiploma((int) ($participant['work_id'] ?? 0), false);
             $file = ROOT_PATH . '/' . $diploma['file_path'];
             header('Content-Type: application/pdf');
             header('Content-Disposition: attachment; filename="diploma_participant_' . $participantId . '.pdf"');
@@ -37,14 +40,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
         if ($_POST['action'] === 'send_diploma_email') {
-            $diploma = generateParticipantDiploma($participantId, false);
-            $ok = sendDiplomaByEmail($participant, $diploma);
+            if (!canShowIndividualDiplomaActions(['status' => (string) ($participant['work_status'] ?? 'pending')])) {
+                throw new RuntimeException('Для этой работы диплом недоступен.');
+            }
+            $diploma = generateWorkDiploma((int) ($participant['work_id'] ?? 0), false);
+            $ctx = getWorkDiplomaContext((int) ($participant['work_id'] ?? 0));
+            $ok = $ctx && sendDiplomaByEmail($ctx, $diploma);
             $_SESSION['success_message'] = $ok ? 'Диплом отправлен по почте' : 'Не удалось отправить диплом';
             redirect('/admin/participant/' . $participantId);
         }
 
         if ($_POST['action'] === 'get_diploma_link') {
-            $diploma = generateParticipantDiploma($participantId, false);
+            if (!canShowIndividualDiplomaActions(['status' => (string) ($participant['work_status'] ?? 'pending')])) {
+                throw new RuntimeException('Для этой работы диплом недоступен.');
+            }
+            $diploma = generateWorkDiploma((int) ($participant['work_id'] ?? 0), false);
             $_SESSION['success_message'] = 'Публичная ссылка: ' . getPublicDiplomaUrl($diploma['public_token']);
             redirect('/admin/participant/' . $participantId);
         }
@@ -59,7 +69,10 @@ $pageTitle = 'Участник #' . $participantId;
 $breadcrumb = 'Участники / Просмотр';
 $pageStyles = ['admin-participant.css'];
 
-$statusMeta = getApplicationStatusMeta($participant['application_status']);
+$statusMeta = getApplicationDisplayMeta([
+    'status' => (string) ($participant['application_status'] ?? 'draft'),
+    'allow_edit' => (int) ($participant['allow_edit'] ?? 0),
+]);
 $participantName = trim((string) ($participant['fio'] ?? '')) ?: '—';
 $applicantName = trim((($participant['user_surname'] ?? '') . ' ' . ($participant['user_name'] ?? '') . ' ' . ($participant['user_patronymic'] ?? ''))) ?: '—';
 $participantEmail = trim((string) ($participant['user_email'] ?: ($participant['organization_email'] ?? '')));
@@ -72,6 +85,7 @@ $workTitle = trim((string) ($participant['work_title'] ?? ''));
 $drawingFileName = trim((string) ($participant['drawing_file'] ?? ''));
 $drawingUrl = $drawingFileName !== '' ? getParticipantDrawingWebPath($participant['user_email'] ?? '', $drawingFileName) : '';
 $emailHint = $participantEmail !== '' ? $participantEmail : null;
+$canShowDiplomaActions = canShowIndividualDiplomaActions(['status' => (string) ($participant['work_status'] ?? 'pending')]);
 
 $detailsMap = [
     'Участник' => [
@@ -196,6 +210,7 @@ require_once __DIR__ . '/includes/header.php';
                 <p>Управляйте дипломом участника: скачивайте, отправляйте на почту или получайте публичную ссылку.</p>
             </div>
             <div class="card__body">
+                <?php if ($canShowDiplomaActions): ?>
                 <div class="participant-diploma-actions">
                     <form method="POST">
                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -216,6 +231,9 @@ require_once __DIR__ . '/includes/header.php';
                         <button class="btn btn--ghost participant-diploma-actions__btn" type="submit"><i class="fas fa-link"></i> Получить публичную ссылку</button>
                     </form>
                 </div>
+                <?php else: ?>
+                    <p class="text-secondary">Дипломные действия станут доступны после рассмотрения этой работы.</p>
+                <?php endif; ?>
                 <?php if ($emailHint): ?>
                     <p class="participant-diploma-card__hint">Диплом будет отправлен на email: <a href="mailto:<?= e($emailHint) ?>"><?= e($emailHint) ?></a></p>
                 <?php endif; ?>

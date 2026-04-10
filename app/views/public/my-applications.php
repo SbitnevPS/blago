@@ -20,16 +20,8 @@ function getStatusClassByAdminStatus(string $status): string {
 }
 
 function getApplicationCardStatusMeta(array $application): array {
-    $statusCode = (string) ($application['status'] ?? 'draft');
-    $isRevisionState = isset($application['allow_edit'])
-        && (int) $application['allow_edit'] === 1
-        && $statusCode !== 'approved';
-
-    if ($isRevisionState) {
-        $statusCode = 'revision';
-    }
-
-    $statusMeta = getApplicationStatusMeta($statusCode);
+    $statusMeta = getApplicationDisplayMeta($application);
+    $statusCode = (string) ($statusMeta['status_code'] ?? 'draft');
 
     return [
         'status_code' => $statusCode,
@@ -42,10 +34,10 @@ function getStatusGroup(array $application): string {
     $statusCode = (string) (getApplicationCardStatusMeta($application)['status_code'] ?? 'draft');
 
     return match ($statusCode) {
-        'submitted', 'pending', 'partial_reviewed', 'reviewed' => 'pending',
+        'submitted', 'partial_reviewed', 'reviewed', 'corrected' => 'pending',
         'revision' => 'revision',
         'approved' => 'accepted',
-        'declined', 'rejected', 'cancelled' => 'rejected',
+        'rejected', 'cancelled' => 'rejected',
         default => 'other',
     };
 }
@@ -119,7 +111,7 @@ $filteredApplications = array_values(array_filter(
             </div>
 
             <div class="bg-blue-50 p-4 rounded-2xl shadow">
-                <p class="text-sm">Исправить</p>
+                <p class="text-sm">Требуют исправлений</p>
                 <p class="text-2xl font-bold text-blue-600"><?= (int)$stats['revision'] ?></p>
             </div>
 
@@ -132,7 +124,7 @@ $filteredApplications = array_values(array_filter(
         <div class="flex gap-2 mb-6 flex-wrap">
             <a href="/my-applications" class="px-4 py-2 rounded-full <?= $activeFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-200' ?>">Все</a>
             <a href="/my-applications?status=pending" class="px-4 py-2 rounded-full <?= $activeFilter === 'pending' ? 'bg-yellow-600 text-white' : 'bg-yellow-100 text-yellow-700' ?>">На рассмотрении</a>
-            <a href="/my-applications?status=revision" class="px-4 py-2 rounded-full <?= $activeFilter === 'revision' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700' ?>">Исправить</a>
+            <a href="/my-applications?status=revision" class="px-4 py-2 rounded-full <?= $activeFilter === 'revision' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700' ?>">Требует исправлений</a>
             <a href="/my-applications?status=accepted" class="px-4 py-2 rounded-full <?= $activeFilter === 'accepted' ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700' ?>">Приняты</a>
             <a href="/my-applications?status=rejected" class="px-4 py-2 rounded-full <?= $activeFilter === 'rejected' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700' ?>">Отклонены</a>
         </div>
@@ -173,7 +165,7 @@ $filteredApplications = array_values(array_filter(
                             </div>
 
                             <?php if ($isRevision): ?>
-                                <p class="text-sm text-yellow-700 mb-2">Требуется исправление</p>
+                                <p class="text-sm text-yellow-700 mb-2">Требует исправлений</p>
                             <?php endif; ?>
 
                             <?php if (!empty($unreadByApplication[(int)$app['id']])): ?>

@@ -282,6 +282,15 @@ function getWorkStatusBadgeClass(string $status): string {
     return $map[$status] ?? 'badge--secondary';
 }
 
+function getWorkUiStatusMeta(string $status): array {
+    return [
+        'status_code' => $status,
+        'label' => getWorkStatusLabel($status),
+        'hint' => getWorkStatusHint($status),
+        'badge_class' => getWorkStatusBadgeClass($status),
+    ];
+}
+
 function buildApplicationWorkSummary(array $works): array {
     $summary = [
         'total' => count($works),
@@ -359,6 +368,31 @@ function mapWorkStatusToDiplomaType(string $status): ?string {
         return 'encouragement';
     }
     return null;
+}
+
+function canShowIndividualDiplomaActions(array $work): bool {
+    return mapWorkStatusToDiplomaType((string)($work['status'] ?? 'pending')) !== null;
+}
+
+function canShowBulkDiplomaActions(array $application, array $works = []): bool {
+    return getApplicationCanonicalStatus($application) === 'approved';
+}
+
+function getApplicationDisplayPermissions(array $application, array $works): array {
+    $summary = buildApplicationWorkSummary($works);
+    $individual = false;
+    foreach ($works as $work) {
+        if (canShowIndividualDiplomaActions($work)) {
+            $individual = true;
+            break;
+        }
+    }
+
+    return [
+        'can_show_bulk_diplomas' => canShowBulkDiplomaActions($application, $works),
+        'has_individual_diplomas' => $individual,
+        'can_edit_application' => getApplicationUiStatus($application, $summary) === 'revision' || getApplicationCanonicalStatus($application) === 'draft',
+    ];
 }
 
 function updateWorkStatus(int $workId, string $status): bool {

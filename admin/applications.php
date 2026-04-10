@@ -198,6 +198,9 @@ $where = [];
 $params = [];
 
 if ($status) {
+    if ($status === 'declined') {
+        $status = 'rejected';
+    }
     if ($status === 'revision') {
         $where[] = "a.allow_edit = 1 AND a.status <> 'approved'";
     } else {
@@ -309,7 +312,7 @@ require_once __DIR__ . '/includes/header.php';
                     <option value="corrected" <?= $status === 'corrected' ? 'selected' : '' ?>>Исправленные</option>
                     <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>В работе</option>
                     <option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Принятые</option>
-                    <option value="declined" <?= $status === 'declined' ? 'selected' : '' ?>>Отклонённые</option>
+                    <option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Отклонённые</option>
                     <option value="cancelled" <?= $status === 'cancelled' ? 'selected' : '' ?>>Отменённые</option>
                 </select>
             </div>
@@ -428,12 +431,8 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
                 <?php foreach ($applications as $app): ?>
                 <?php
-                    $statusMeta = getApplicationStatusMeta($app['status']);
-                    $rowStyle = $statusMeta['row_style'];
-                    $isRevisionState = isset($app['allow_edit']) && (int) $app['allow_edit'] === 1 && $app['status'] !== 'approved';
-                    if ($isRevisionState) {
-                        $rowStyle = 'background:#FEF9C3;';
-                    }
+                    $statusMeta = getApplicationDisplayMeta($app);
+                    $rowStyle = (string) ($statusMeta['row_style'] ?? '');
                 ?>
                 <tr style="<?= $rowStyle ?>">
                     <?php $vkStatus = $applicationVkStatuses[(int) $app['id']] ?? getApplicationVkPublicationStatus((int) $app['id']); ?>
@@ -462,8 +461,8 @@ require_once __DIR__ . '/includes/header.php';
                     <td data-label="Конкурс"><?= htmlspecialchars($app['contest_title'] ?? '—') ?></td>
                     <td data-label="Участников"><?= $app['participants_count'] ?></td>
                     <td data-label="Статус">
-                        <span class="badge <?= $isRevisionState ? 'badge--warning' : $statusMeta['badge_class'] ?>">
-                            <?= htmlspecialchars($isRevisionState ? 'Требует исправлений' : $statusMeta['label']) ?>
+                        <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
+                            <?= e((string) ($statusMeta['label'] ?? '—')) ?>
                         </span>
                     </td>
                     <td data-label="Публикация VK">
