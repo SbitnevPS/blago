@@ -875,15 +875,24 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
 
     $diplomaType = (string)($diploma['diploma_type'] ?? 'contest_participant');
     $subject = $diplomaType === 'encouragement'
-        ? 'Ваш благодарственный диплом'
-        : 'Ваш диплом участника конкурса';
-    $body = '<p>Здравствуйте!</p>';
-    if ($diplomaType === 'encouragement') {
-        $body .= '<p>Работа рассмотрена. Спасибо за участие! Для вас доступен благодарственный диплом: <a href="' . htmlspecialchars(getPublicDiplomaUrl((string)$diploma['public_token'])) . '">' . htmlspecialchars(getPublicDiplomaUrl((string)$diploma['public_token'])) . '</a></p>';
-    } else {
-        $body .= '<p>Ваш диплом участника готов. Публичная ссылка: <a href="' . htmlspecialchars(getPublicDiplomaUrl((string)$diploma['public_token'])) . '">' . htmlspecialchars(getPublicDiplomaUrl((string)$diploma['public_token'])) . '</a></p>';
-    }
-    $ok = sendEmail($to, $subject, $body, [
+        ? 'Ваш благодарственный диплом готов'
+        : 'Ваш диплом участника готов';
+
+    $publicUrl = getPublicDiplomaUrl((string)($diploma['public_token'] ?? ''));
+    $emailData = [
+        'diploma_type' => $diplomaType,
+        'user_name' => trim((string)($ctx['user_name'] ?? '')),
+        'participant_name' => trim((string)($ctx['participant_full_name'] ?? ($ctx['fio'] ?? ''))),
+        'contest_title' => trim((string)($ctx['contest_title'] ?? '')),
+        'diploma_number' => trim((string)($diploma['diploma_number'] ?? '')),
+        'diploma_url' => $publicUrl,
+        'site_url' => SITE_URL,
+        'brand_name' => 'ДетскиеКонкурсы.рф',
+        'brand_subtitle' => 'Всероссийские конкурсы детского творчества',
+    ];
+
+    $ok = sendEmail($to, $subject, buildDiplomaEmailTemplate($emailData), [
+        'text' => buildDiplomaEmailText($emailData),
         'attachments' => [
             [
                 'path' => $file,
