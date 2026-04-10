@@ -19,15 +19,15 @@ if (!verifyCSRFToken($csrfToken)) {
 
 $applicationId = max(0, (int) ($payload['application_id'] ?? 0));
 $publicationType = trim((string) ($payload['publication_type'] ?? 'standard'));
-$allowedTypes = ['standard', 'donation_goal'];
+$allowedTypes = ['standard', 'vk_donut', 'donation_goal'];
 if (!in_array($publicationType, $allowedTypes, true)) {
-    if ($publicationType === 'vk_donut') {
-        jsonResponse(['success' => false, 'error' => 'Режим VK Donut paywall больше не поддерживается в этом окне публикации.'], 422);
-    }
-    jsonResponse(['success' => false, 'error' => 'Некорректный тип публикации. Допустимо: standard или donation_goal.'], 422);
+    jsonResponse(['success' => false, 'error' => 'Некорректный тип публикации. Допустимо: standard, vk_donut или donation_goal.'], 422);
 }
 $donationEnabled = (int) ($payload['donation_enabled'] ?? 0) === 1;
 $donationGoalId = max(0, (int) ($payload['donation_goal_id'] ?? 0));
+$vkDonutEnabled = (int) ($payload['vk_donut_enabled'] ?? 0) === 1;
+$vkDonutPaidDuration = max(0, (int) ($payload['vk_donut_paid_duration'] ?? 0));
+$vkDonutCanPublishFreeCopy = (int) ($payload['vk_donut_can_publish_free_copy'] ?? 0) === 1;
 if ($applicationId <= 0) {
     jsonResponse(['success' => false, 'error' => 'Некорректный идентификатор заявки.'], 422);
 }
@@ -97,6 +97,27 @@ if ($publicationType === 'donation_goal' || $donationEnabled) {
         'donation_enabled' => 1,
         'donation_goal_id' => $donationGoalId,
         'vk_donate_id' => $vkDonateId,
+    ];
+}
+$vkDonutSnapshot = null;
+if ($publicationType === 'vk_donut' || $vkDonutEnabled) {
+    if ($vkDonutPaidDuration <= 0) {
+        jsonResponse(['success' => false, 'error' => 'Для режима VK Donut paywall укажите paid_duration > 0.'], 422);
+    }
+    $vkDonutSnapshot = [
+        'is_donut' => 1,
+        'paid_duration' => $vkDonutPaidDuration,
+        'can_publish_free_copy' => $vkDonutCanPublishFreeCopy ? 1 : 0,
+    ];
+    $publicationMeta = [
+        'publication_type' => 'vk_donut',
+        'vk_donut_enabled' => 1,
+        'vk_donut_paid_duration' => $vkDonutPaidDuration,
+        'vk_donut_can_publish_free_copy' => $vkDonutCanPublishFreeCopy ? 1 : 0,
+        'vk_donut_settings_snapshot' => $vkDonutSnapshot,
+        'donation_enabled' => 0,
+        'donation_goal_id' => null,
+        'vk_donate_id' => null,
     ];
 }
 $donationEnabled = ($publicationMeta['publication_type'] ?? 'standard') === 'donation_goal';
