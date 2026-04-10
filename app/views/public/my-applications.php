@@ -6,35 +6,46 @@ if (!isAuthenticated()) {
     redirect('/login?redirect=' . urlencode($_SERVER['REQUEST_URI'] ?? '/contests'));
 }
 
-/**
- * Tailwind-классы для цветного статуса заявки.
- */
-function getStatusClass(string $status): string {
+function getStatusClassByAdminStatus(string $status): string {
     return match ($status) {
-        'pending', 'review' => 'bg-yellow-100 text-yellow-700',
-        'revision', 'needs_revision', 'correction_required' => 'bg-blue-100 text-blue-700',
-        'accepted', 'approved' => 'bg-green-100 text-green-700',
-        'rejected', 'declined' => 'bg-red-100 text-red-700',
+        'draft' => 'bg-gray-100 text-gray-700',
+        'submitted' => 'bg-emerald-100 text-emerald-700',
+        'revision' => 'bg-yellow-100 text-yellow-700',
+        'approved' => 'bg-green-100 text-green-700',
+        'declined', 'rejected', 'cancelled' => 'bg-red-100 text-red-700',
+        'pending', 'partial_reviewed' => 'bg-amber-100 text-amber-700',
+        'reviewed' => 'bg-slate-100 text-slate-700',
         default => 'bg-gray-100 text-gray-700',
     };
 }
 
-function getStatusLabel(string $status): string {
-    return match ($status) {
-        'pending', 'review' => 'На рассмотрении',
-        'revision', 'needs_revision', 'correction_required' => 'Исправить',
-        'accepted', 'approved' => 'Принята',
-        'rejected', 'declined' => 'Отклонена',
-        default => 'Неизвестно',
-    };
+function getApplicationCardStatusMeta(array $application): array {
+    $statusCode = (string) ($application['status'] ?? 'draft');
+    $isRevisionState = isset($application['allow_edit'])
+        && (int) $application['allow_edit'] === 1
+        && $statusCode !== 'approved';
+
+    if ($isRevisionState) {
+        $statusCode = 'revision';
+    }
+
+    $statusMeta = getApplicationStatusMeta($statusCode);
+
+    return [
+        'status_code' => $statusCode,
+        'status_label' => (string) ($statusMeta['label'] ?? $statusCode),
+        'status_class' => getStatusClassByAdminStatus($statusCode),
+    ];
 }
 
-function getStatusGroup(string $status): string {
-    return match ($status) {
-        'pending', 'review' => 'pending',
-        'revision', 'needs_revision', 'correction_required' => 'revision',
-        'accepted', 'approved' => 'accepted',
-        'rejected', 'declined' => 'rejected',
+function getStatusGroup(array $application): string {
+    $statusCode = (string) (getApplicationCardStatusMeta($application)['status_code'] ?? 'draft');
+
+    return match ($statusCode) {
+        'submitted', 'pending', 'partial_reviewed', 'reviewed' => 'pending',
+        'revision' => 'revision',
+        'approved' => 'accepted',
+        'declined', 'rejected', 'cancelled' => 'rejected',
         default => 'other',
     };
 }
@@ -53,7 +64,7 @@ $stats = [
 ];
 
 foreach ($applications as $application) {
-    $group = getStatusGroup((string)($application['status'] ?? 'pending'));
+    $group = getStatusGroup($application);
     if (isset($stats[$group])) {
         $stats[$group]++;
     }
@@ -71,7 +82,7 @@ $filteredApplications = array_values(array_filter(
         if ($activeFilter === 'all') {
             return true;
         }
-        return getStatusGroup((string)($application['status'] ?? 'pending')) === $activeFilter;
+        return getStatusGroup($application) === $activeFilter;
     }
 ));
 ?>
@@ -144,10 +155,10 @@ $filteredApplications = array_values(array_filter(
                         }
                     }
 
-                    $statusCode = (string)($app['status'] ?? 'pending');
-                    $statusLabel = getStatusLabel($statusCode);
-                    $statusClass = getStatusClass($statusCode);
-                    $isRevision = getStatusGroup($statusCode) === 'revision';
+                    $statusMeta = getApplicationCardStatusMeta($app);
+                    $statusLabel = (string) ($statusMeta['status_label'] ?? '—');
+                    $statusClass = (string) ($statusMeta['status_class'] ?? 'bg-gray-100 text-gray-700');
+                    $isRevision = getStatusGroup($app) === 'revision';
                     ?>
                     <div class="bg-white rounded-2xl shadow hover:shadow-lg transition overflow-hidden <?= $isRevision ? 'border-2 border-yellow-400 bg-yellow-50' : '' ?>">
                         <img src="<?= htmlspecialchars($imagePath) ?>" alt="<?= htmlspecialchars((string)$app['contest_title']) ?>" class="w-full h-56 object-cover">

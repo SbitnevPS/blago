@@ -463,7 +463,10 @@ $unresolvedCorrections = array_filter($corrections, function($c) {
 // Проверяем, разрешено ли редактирование
 $canEdit = $application['status'] === 'draft'
     || ($application['allow_edit'] ==1 && $application['status'] !== 'approved');
-$statusMeta = getApplicationStatusMeta($application['status']);
+$effectiveApplicationStatus = ((int) ($application['allow_edit'] ?? 0) === 1 && (string) ($application['status'] ?? '') !== 'approved')
+    ? 'revision'
+    : (string) ($application['status'] ?? 'draft');
+$statusMeta = getApplicationStatusMeta($effectiveApplicationStatus);
 $statusClass = str_replace('badge--', '', $statusMeta['badge_class']);
 $participantCorrections = [];
 foreach ($unresolvedCorrections as $correction) {
@@ -492,16 +495,22 @@ foreach ($participants as $participantRow) {
 $vkPublicationLinks = array_values(array_unique($vkPublicationLinks));
 
 $statusColorMap = [
-    'pending' => ['label' => 'На рассмотрении', 'class' => 'status-pill--pending'],
-    'review' => ['label' => 'На рассмотрении', 'class' => 'status-pill--pending'],
-    'revision' => ['label' => 'Требует корректировки', 'class' => 'status-pill--revision'],
-    'accepted' => ['label' => 'Принята', 'class' => 'status-pill--accepted'],
-    'approved' => ['label' => 'Принята', 'class' => 'status-pill--accepted'],
-    'declined' => ['label' => 'Отклонена', 'class' => 'status-pill--declined'],
-    'rejected' => ['label' => 'Отклонена', 'class' => 'status-pill--declined'],
+    'draft' => ['class' => 'status-pill--draft'],
+    'submitted' => ['class' => 'status-pill--submitted'],
+    'pending' => ['class' => 'status-pill--pending'],
+    'partial_reviewed' => ['class' => 'status-pill--pending'],
+    'reviewed' => ['class' => 'status-pill--reviewed'],
+    'revision' => ['class' => 'status-pill--revision'],
+    'approved' => ['class' => 'status-pill--accepted'],
+    'declined' => ['class' => 'status-pill--declined'],
+    'rejected' => ['class' => 'status-pill--declined'],
+    'cancelled' => ['class' => 'status-pill--declined'],
 ];
-$statusCode = (string) ($application['status'] ?? 'pending');
-$statusDisplay = $statusColorMap[$statusCode] ?? ['label' => (string) ($statusMeta['label'] ?? 'На рассмотрении'), 'class' => 'status-pill--pending'];
+$statusCode = $effectiveApplicationStatus;
+$statusDisplay = [
+    'label' => (string) ($statusMeta['label'] ?? 'На рассмотрении'),
+    'class' => (string) ($statusColorMap[$statusCode]['class'] ?? 'status-pill--pending'),
+];
 $applicationProgressStep = in_array($statusCode, ['accepted', 'approved'], true) ? 3 : (in_array($statusCode, ['declined', 'rejected'], true) ? 2 : 2);
 $userFullName = trim((string) (($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? '')));
 $userRegion = (string) ($user['region'] ?? $application['region'] ?? '—');
@@ -557,8 +566,11 @@ $currentPage = 'applications';
 .app-header__meta {display:flex; gap:14px; color:#64748B; font-size:14px; flex-wrap:wrap;}
 .status-pill {display:inline-flex; align-items:center; border-radius:999px; padding:6px 12px; font-size:13px; font-weight:700;}
 .status-pill--pending {background:#FEF3C7; color:#92400E;}
+.status-pill--draft {background:#F3F4F6; color:#374151;}
+.status-pill--submitted {background:#D1FAE5; color:#065F46;}
 .status-pill--revision {background:#DBEAFE; color:#1E40AF;}
 .status-pill--accepted {background:#DCFCE7; color:#166534;}
+.status-pill--reviewed {background:#E2E8F0; color:#334155;}
 .status-pill--declined {background:#FEE2E2; color:#991B1B;}
 .application-progress {display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:14px;}
 .application-progress__step {display:flex; align-items:center; gap:8px; color:#94A3B8; font-size:13px;}
