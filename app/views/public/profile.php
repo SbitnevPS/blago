@@ -10,6 +10,7 @@ if (!isAuthenticated()) {
 
 $user = getCurrentUser();
 $avatar = getUserAvatarData($user ?? []);
+$emailVerified = isUserEmailVerified($user);
 $error = '';
 $success = '';
 $missingRequiredFields = [];
@@ -100,17 +101,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
  if (empty($error)) {
  // Обновляем данные
+ $emailChanged = $email !== (string) ($user['email'] ?? '');
+ $verificationUpdateSql = $emailChanged
+ ? ', email_verified = 0, email_verified_at = NULL, email_verification_token = NULL, email_verification_sent_at = NULL'
+ : '';
+
  if ($newPassword !== '') {
  $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
- $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, password = ?, updated_at = NOW() WHERE id = ?');
+ $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, password = ?, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
  $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $passwordHash, $user['id']]);
  } else {
- $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, updated_at = NOW() WHERE id = ?');
+ $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
  $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $user['id']]);
  }
 
  // Обновляем сессию
  $user = getCurrentUser();
+ $emailVerified = isUserEmailVerified($user);
  $success = 'Данные успешно сохранены';
  }
  }
@@ -150,6 +157,15 @@ generateCSRFToken();
 
 <main class="container" style="padding: var(--space-xl) var(--space-lg);">
 <h1 class="mb-lg text-center">Мой профиль</h1>
+
+<?php if (!$emailVerified): ?>
+<div class="alert mb-lg" style="max-width:600px; margin:0 auto var(--space-lg); background:#fff7ed; border:1px solid #fdba74; color:#7c2d12;">
+    <i class="fas fa-exclamation-triangle alert__icon"></i>
+    <div class="alert__content">
+        <div class="alert__message">Ваш адрес электронной почты не подтверждён. Пока адрес не будет подтверждён, отправка заявок на участие в конкурсах недоступна.</div>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="application-note" style="max-width:600px; margin:0 auto var(--space-lg);">
     <strong>Профиль ускоряет подачу заявок</strong>
@@ -213,6 +229,21 @@ generateCSRFToken();
 Вы авторизованы через VK. Для смены email введите текущий пароль ниже.
 </div>
  <?php endif; ?>
+
+<div id="email-verification-block" style="margin-top:12px;">
+    <?php if ($emailVerified): ?>
+        <div id="email-verified-status" style="display:inline-flex; align-items:center; gap:8px; background:#dcfce7; color:#166534; border:1px solid #86efac; padding:10px 14px; border-radius:10px; font-weight:600;">
+            <i class="fas fa-check-circle"></i>
+            <span>Адрес подтверждён</span>
+        </div>
+    <?php else: ?>
+        <button type="button" id="send-verification-btn" class="btn btn--secondary">
+            <i class="fas fa-envelope"></i> Подтвердить адрес электронной почты
+        </button>
+        <div class="form-hint" style="margin-top:8px;">На указанный адрес будет отправлено письмо со ссылкой для подтверждения электронной почты.</div>
+    <?php endif; ?>
+</div>
+<div id="email-verification-message" class="form-hint" style="display:none; margin-top:8px; color:#166534;"></div>
 </div>
 </div>
 
@@ -279,5 +310,73 @@ generateCSRFToken();
 </main>
 
 <?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>
+<script>
+(function () {
+    const emailVerified = <?= $emailVerified ? 'true' : 'false' ?>;
+    const csrfToken = <?= json_encode(generateCSRFToken()) ?>;
+    const sendButton = document.getElementById('send-verification-btn');
+    const messageEl = document.getElementById('email-verification-message');
+    const blockEl = document.getElementById('email-verification-block');
+
+    function showMessage(message, isError = false) {
+        if (!messageEl) return;
+        messageEl.style.display = 'block';
+        messageEl.style.color = isError ? '#b91c1c' : '#166534';
+        messageEl.textContent = message;
+    }
+
+    function renderVerifiedState() {
+        if (!blockEl) return;
+        blockEl.innerHTML = '<div id="email-verified-status" style="display:inline-flex; align-items:center; gap:8px; background:#dcfce7; color:#166534; border:1px solid #86efac; padding:10px 14px; border-radius:10px; font-weight:600;"><i class="fas fa-check-circle"></i><span>Адрес подтверждён</span></div>';
+        const warning = document.querySelector('.alert[style*="#fff7ed"]');
+        if (warning) {
+            warning.remove();
+        }
+    }
+
+    async function checkVerificationStatus() {
+        try {
+            const response = await fetch('/email/verification-status', { credentials: 'same-origin' });
+            if (!response.ok) return;
+            const data = await response.json();
+            if (data && data.email_verified) {
+                renderVerifiedState();
+            }
+        } catch (e) {}
+    }
+
+    if (sendButton) {
+        sendButton.addEventListener('click', async function () {
+            sendButton.disabled = true;
+            try {
+                const formData = new FormData();
+                formData.append('csrf_token', csrfToken);
+                const response = await fetch('/email/send-verification', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin'
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.message || 'Не удалось отправить письмо.');
+                }
+                showMessage(data.message || 'Письмо отправлено.');
+            } catch (error) {
+                showMessage(error.message || 'Не удалось отправить письмо.', true);
+            } finally {
+                sendButton.disabled = false;
+            }
+        });
+    }
+
+    if (!emailVerified) {
+        setInterval(checkVerificationStatus, 8000);
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) checkVerificationStatus();
+        });
+        window.addEventListener('focus', checkVerificationStatus);
+    }
+})();
+</script>
 </body>
 </html>

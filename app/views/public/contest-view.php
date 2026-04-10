@@ -11,6 +11,7 @@ if (!$contest || (int)($contest['is_published'] ?? 0) !== 1) {
 }
 
 $currentPage = 'contests';
+$applicationUrl = getApplicationAccessUrl((int) $contest['id']);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -36,7 +37,7 @@ $currentPage = 'contests';
             <h1 style="margin:0;"><?= htmlspecialchars($contest['title']) ?></h1>
             <?php if ($isGuest): ?>
                 <a
-                    href="/application-form?contest_id=<?= (int)$contest['id'] ?>"
+                    href="<?= htmlspecialchars($applicationUrl) ?>"
                     class="btn btn--primary btn--lg"
                     data-auth-required="1"
                     data-target-url="/application-form?contest_id=<?= (int)$contest['id'] ?>"
@@ -44,7 +45,7 @@ $currentPage = 'contests';
                     <i class="fas fa-paper-plane"></i> Подать заявку
                 </a>
             <?php else: ?>
-                <a href="/application-form?contest_id=<?= (int)$contest['id'] ?>" class="btn btn--primary btn--lg">
+                <a href="<?= htmlspecialchars($applicationUrl) ?>" class="btn btn--primary btn--lg">
                     <i class="fas fa-paper-plane"></i> Подать заявку
                 </a>
             <?php endif; ?>
@@ -144,7 +145,7 @@ $currentPage = 'contests';
 <div class="flex gap-md mt-lg" style="flex-wrap:wrap;">
     <?php if ($isGuest): ?>
         <a
-            href="/application-form?contest_id=<?= (int)$contest['id'] ?>"
+            href="<?= htmlspecialchars($applicationUrl) ?>"
             class="btn btn--primary btn--lg"
             style="flex:1; min-width:240px;"
             data-auth-required="1"
@@ -153,7 +154,7 @@ $currentPage = 'contests';
             <i class="fas fa-paper-plane"></i> Отправить заявку на участие
         </a>
     <?php else: ?>
-        <a href="/application-form?contest_id=<?= (int)$contest['id'] ?>" class="btn btn--primary btn--lg" style="flex:1; min-width:240px;">
+        <a href="<?= htmlspecialchars($applicationUrl) ?>" class="btn btn--primary btn--lg" style="flex:1; min-width:240px;">
             <i class="fas fa-paper-plane"></i> Отправить заявку на участие
         </a>
     <?php endif; ?>

@@ -227,6 +227,47 @@ function getCurrentUser() {
     return resolveSessionUser((int) $sessionUserId);
 }
 
+function isUserEmailVerified($user = null): bool
+{
+    if (!is_array($user)) {
+        return false;
+    }
+
+    return (int) ($user['email_verified'] ?? 0) === 1;
+}
+
+function buildEmailVerificationUrl(string $token, int $userId): string
+{
+    $baseUrl = rtrim((string) SITE_URL, '/');
+    return $baseUrl . '/email/verify?token=' . urlencode($token) . '&uid=' . $userId;
+}
+
+function requireVerifiedEmailOrRedirect($user = null): void
+{
+    if (!is_array($user) || isUserEmailVerified($user)) {
+        return;
+    }
+
+    $target = sanitize_internal_redirect((string) ($_SERVER['REQUEST_URI'] ?? '/application-form'), '/application-form');
+    redirect('/email-verification-required?redirect=' . urlencode($target));
+}
+
+function getApplicationAccessUrl(int $contestId): string
+{
+    $targetUrl = '/application-form?contest_id=' . $contestId;
+
+    if (!isAuthenticated()) {
+        return $targetUrl;
+    }
+
+    $user = getCurrentUser();
+    if (!isUserEmailVerified($user)) {
+        return '/email-verification-required?redirect=' . urlencode($targetUrl);
+    }
+
+    return $targetUrl;
+}
+
 function getCurrentAdmin() {
     $adminId = getCurrentAdminId();
     if (!$adminId) {
