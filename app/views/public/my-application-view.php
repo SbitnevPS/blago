@@ -715,6 +715,7 @@ $currentPage = 'applications';
                                     </div>
                                     <span class="badge <?= getWorkStatusBadgeClass($workStatus) ?>"><?= e(getWorkStatusLabel($workStatus)) ?></span>
                                 </div>
+                                <div class="participant-modern-card__subtitle"><?= e(getWorkStatusHint($workStatus)) ?></div>
                                 <div class="participant-modern-card__facts">
                                     <div><strong>Возраст:</strong> <span class="js-participant-age"><?= e((string)($participant['age'] ?? '—')) ?></span></div>
                                     <div><strong>Регион:</strong> <?= e((string)($participant['region'] ?? '—')) ?></div>
