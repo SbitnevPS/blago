@@ -306,6 +306,7 @@ require_once __DIR__ . '/includes/header.php';
                 <select name="status" class="form-select">
                     <option value="">Все статусы</option>
                     <option value="revision" <?= $status === 'revision' ? 'selected' : '' ?>>Требует исправлений</option>
+                    <option value="corrected" <?= $status === 'corrected' ? 'selected' : '' ?>>Исправленные</option>
                     <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>В работе</option>
                     <option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Принятые</option>
                     <option value="declined" <?= $status === 'declined' ? 'selected' : '' ?>>Отклонённые</option>
@@ -359,7 +360,8 @@ require_once __DIR__ . '/includes/header.php';
     $statCounts = [
         'all' => $pdo->query("SELECT COUNT(*) FROM applications")->fetchColumn(),
         'submitted' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted'")->fetchColumn(),
-        'revision' => $pdo->query("SELECT COUNT(*) FROM applications WHERE allow_edit = 1 AND status <> 'approved'")->fetchColumn()
+        'revision' => $pdo->query("SELECT COUNT(*) FROM applications WHERE allow_edit = 1 AND status <> 'approved'")->fetchColumn(),
+        'corrected' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'corrected'")->fetchColumn(),
     ];
     if ($hasOpenedByAdminColumn) {
         $statCounts['new'] = $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted' AND opened_by_admin = 0")->fetchColumn();
@@ -383,6 +385,9 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
     <a href="?status=revision" class="stat-pill <?= $status === 'revision' ? 'stat-pill--active' : '' ?>">
         Требует исправлений <span class="stat-pill__count"><?= $statCounts['revision'] ?></span>
+    </a>
+    <a href="?status=corrected" class="stat-pill <?= $status === 'corrected' ? 'stat-pill--active' : '' ?>">
+        Исправленные <span class="stat-pill__count"><?= $statCounts['corrected'] ?></span>
     </a>
 </div>
 

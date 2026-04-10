@@ -411,10 +411,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
         if ($remainingCorrections === 0 && (int)($application['allow_edit'] ?? 0) === 1 && (string)($application['status'] ?? '') !== 'approved') {
             $pdo->prepare("
                 UPDATE applications
-                SET status = 'submitted', allow_edit = 0, updated_at = NOW()
+                SET status = 'corrected', allow_edit = 0, updated_at = NOW()
                 WHERE id = ? AND user_id = ?
             ")->execute([$applicationId, $userId]);
-            $application['status'] = 'submitted';
+            $application['status'] = 'corrected';
             $application['allow_edit'] = 0;
             $resubmittedForReview = true;
         }
@@ -508,6 +508,7 @@ $vkPublicationLinks = array_values(array_unique($vkPublicationLinks));
 $statusColorMap = [
     'draft' => ['class' => 'status-pill--draft'],
     'submitted' => ['class' => 'status-pill--submitted'],
+    'corrected' => ['class' => 'status-pill--revision'],
     'pending' => ['class' => 'status-pill--pending'],
     'partial_reviewed' => ['class' => 'status-pill--pending'],
     'reviewed' => ['class' => 'status-pill--reviewed'],

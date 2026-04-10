@@ -620,6 +620,12 @@ function getApplicationStatusConfig() {
             'row_style' => 'background:#FEF9C3;',
             'message_priority' => 'important',
         ],
+        'corrected' => [
+            'label' => 'Исправленная',
+            'badge_class' => 'badge--primary',
+            'row_style' => 'background:#DBEAFE;',
+            'message_priority' => 'important',
+        ],
         'approved' => [
             'label' => 'Заявка принята',
             'badge_class' => 'badge--success',
