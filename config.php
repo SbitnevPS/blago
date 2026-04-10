@@ -618,7 +618,7 @@ function normalizeApplicationStoredStatus(?string $status): string {
 function getApplicationUiStatusConfig(): array {
     return [
         'draft' => ['label' => 'Черновик', 'badge_class' => 'badge--secondary', 'row_style' => '', 'message_priority' => 'normal'],
-        'submitted' => ['label' => 'Новая заявка', 'badge_class' => 'badge--primary', 'row_style' => '', 'message_priority' => 'normal'],
+        'submitted' => ['label' => 'Новая заявка на проверке', 'badge_class' => 'badge--primary', 'row_style' => '', 'message_priority' => 'normal'],
         'revision' => ['label' => 'Требует исправлений', 'badge_class' => 'badge--warning', 'row_style' => 'background:#FEF9C3;', 'message_priority' => 'important'],
         'corrected' => ['label' => 'Исправлена', 'badge_class' => 'badge--primary', 'row_style' => 'background:#DBEAFE;', 'message_priority' => 'important'],
         'partial_reviewed' => ['label' => 'Частично рассмотрена', 'badge_class' => 'badge--warning', 'row_style' => '', 'message_priority' => 'normal'],
