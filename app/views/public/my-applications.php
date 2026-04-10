@@ -158,12 +158,14 @@ $filteredApplications = array_values(array_filter(
                         <img src="<?= htmlspecialchars($imagePath) ?>" alt="<?= htmlspecialchars((string)$app['contest_title']) ?>" class="w-full h-56 object-cover">
 
                         <div class="p-4">
-                            <div class="flex justify-between items-start mb-2 gap-3">
-                                <h3 class="font-semibold text-lg leading-tight"><?= htmlspecialchars((string)$app['contest_title']) ?></h3>
+                            <div class="mb-2">
+                                <div class="mb-2">
+                                    <span class="text-xs px-2 py-1 rounded-full inline-flex <?= htmlspecialchars($statusClass) ?>">
+                                        <?= htmlspecialchars($statusLabel) ?>
+                                    </span>
+                                </div>
 
-                                <span class="text-xs px-2 py-1 rounded-full whitespace-nowrap <?= htmlspecialchars($statusClass) ?>">
-                                    <?= htmlspecialchars($statusLabel) ?>
-                                </span>
+                                <h3 class="font-semibold text-lg leading-tight"><?= htmlspecialchars((string)$app['contest_title']) ?></h3>
                             </div>
 
                             <?php if ($isRevision): ?>
