@@ -91,7 +91,21 @@ class VkApiClient
             $wallPostParams[$normalizedKey] = $paramValue;
         }
 
+        if (function_exists('vkPublicationLog')) {
+            vkPublicationLog('vk_wall_post_request', [
+                'owner_id' => $wallPostParams['owner_id'] ?? null,
+                'from_group' => $wallPostParams['from_group'] ?? null,
+                'extra_wall_params' => $this->sanitizeParamsForLog($extraWallParams),
+                'wall_post_params' => $this->sanitizeParamsForLog($wallPostParams),
+            ]);
+        }
+
         $post = $this->apiRequest('wall.post', $wallPostParams);
+        if (function_exists('vkPublicationLog')) {
+            vkPublicationLog('vk_wall_post_response', [
+                'response' => $post,
+            ]);
+        }
 
         $postId = (int) ($post['post_id'] ?? 0);
         if ($postId <= 0) {
@@ -284,5 +298,18 @@ class VkApiClient
         }
 
         return 'Ошибка VK API: ' . $errorMessage;
+    }
+
+    private function sanitizeParamsForLog(array $params): array
+    {
+        $sanitized = [];
+        foreach ($params as $key => $value) {
+            $paramKey = trim((string) $key);
+            if ($paramKey === '' || in_array($paramKey, ['access_token', 'token', 'v'], true)) {
+                continue;
+            }
+            $sanitized[$paramKey] = $value;
+        }
+        return $sanitized;
     }
 }

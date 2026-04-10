@@ -73,7 +73,21 @@ if (!empty($workIds)) {
     }
 }
 
+$donationAttachmentSupport = getVkDonationAttachmentSupport();
+$donationGoals = [];
+
 try {
+    if (empty($donationAttachmentSupport['supported'])) {
+        jsonResponse([
+            'success' => true,
+            'participants' => $participants,
+            'summary' => $summary,
+            'donation_goals' => [],
+            'donation_attachment_support' => $donationAttachmentSupport,
+            'application_vk_status' => $publicationStatus,
+        ]);
+    }
+
     $readiness = verifyVkPublicationReadiness(true);
     if (empty($readiness['ok'])) {
         throw new RuntimeException((string) ($readiness['issues'][0] ?? 'VK не готов к загрузке целей донатов.'));
@@ -83,7 +97,6 @@ try {
     $client = new VkApiClient((string) $settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version']);
     $vkGoals = $client->getDonutGoals();
 
-    $donationGoals = [];
     $seenVkDonateIds = [];
 
     foreach ($vkGoals as $goal) {
@@ -147,5 +160,6 @@ jsonResponse([
     'participants' => $participants,
     'summary' => $summary,
     'donation_goals' => $donationGoals,
+    'donation_attachment_support' => $donationAttachmentSupport,
     'application_vk_status' => $publicationStatus,
 ]);
