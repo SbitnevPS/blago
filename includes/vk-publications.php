@@ -106,6 +106,24 @@ function ensureVkPublicationSchema(): void
         if (!in_array('vk_donate_id', $itemColumns, true)) {
             $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_donate_id VARCHAR(64) NULL AFTER donation_goal_id");
         }
+        if (!in_array('publication_type', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN publication_type VARCHAR(32) NOT NULL DEFAULT 'standard' AFTER vk_donate_id");
+        }
+        if (!in_array('resolved_mode', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN resolved_mode VARCHAR(32) NULL AFTER publication_type");
+        }
+        if (!in_array('capability_status', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN capability_status VARCHAR(32) NULL AFTER resolved_mode");
+        }
+        if (!in_array('failure_stage', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN failure_stage VARCHAR(64) NULL AFTER capability_status");
+        }
+        if (!in_array('request_payload_json', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN request_payload_json LONGTEXT NULL AFTER failure_stage");
+        }
+        if (!in_array('response_payload_json', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN response_payload_json LONGTEXT NULL AFTER request_payload_json");
+        }
         try {
             $pdo->exec("ALTER TABLE vk_publication_task_items ADD INDEX idx_donation_goal_id (donation_goal_id)");
         } catch (Throwable $e) {
@@ -142,6 +160,24 @@ function ensureVkPublicationSchema(): void
         }
         if (!in_array('vk_donate_id', $taskColumns, true)) {
             $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_donate_id VARCHAR(64) NULL AFTER donation_goal_id");
+        }
+        if (!in_array('publication_type', $taskColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN publication_type VARCHAR(32) NOT NULL DEFAULT 'standard' AFTER vk_donate_id");
+        }
+        if (!in_array('resolved_mode', $taskColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN resolved_mode VARCHAR(32) NULL AFTER publication_type");
+        }
+        if (!in_array('capability_status', $taskColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN capability_status VARCHAR(32) NULL AFTER resolved_mode");
+        }
+        if (!in_array('failure_stage', $taskColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN failure_stage VARCHAR(64) NULL AFTER capability_status");
+        }
+        if (!in_array('request_payload_json', $taskColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN request_payload_json LONGTEXT NULL AFTER failure_stage");
+        }
+        if (!in_array('response_payload_json', $taskColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN response_payload_json LONGTEXT NULL AFTER request_payload_json");
         }
         try {
             $pdo->exec("ALTER TABLE vk_publication_tasks ADD INDEX idx_donation_goal_id (donation_goal_id)");
@@ -1017,6 +1053,10 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
     $donationEnabled = !empty($publicationMeta['donation_enabled']) ? 1 : 0;
     $donationGoalId = isset($publicationMeta['donation_goal_id']) ? (int) $publicationMeta['donation_goal_id'] : null;
     $vkDonateId = trim((string) ($publicationMeta['vk_donate_id'] ?? ''));
+    $publicationType = trim((string) ($publicationMeta['publication_type'] ?? ''));
+    if (!in_array($publicationType, ['standard', 'vk_donut', 'donation_goal'], true)) {
+        $publicationType = $vkDonutEnabled ? 'vk_donut' : ($donationEnabled ? 'donation_goal' : 'standard');
+    }
 
     $taskColumns = getTableColumnsCached('vk_publication_tasks');
     $itemColumns = getTableColumnsCached('vk_publication_task_items');
@@ -1079,6 +1119,18 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
         $taskInsertColumns[] = 'vk_donate_id';
         $taskInsertValues[] = $donationEnabled && $vkDonateId !== '' ? $vkDonateId : null;
     }
+    if (in_array('publication_type', $taskColumns, true)) {
+        $taskInsertColumns[] = 'publication_type';
+        $taskInsertValues[] = $publicationType;
+    }
+    if (in_array('resolved_mode', $taskColumns, true)) {
+        $taskInsertColumns[] = 'resolved_mode';
+        $taskInsertValues[] = $publicationType;
+    }
+    if (in_array('capability_status', $taskColumns, true)) {
+        $taskInsertColumns[] = 'capability_status';
+        $taskInsertValues[] = 'not_checked';
+    }
 
     $taskInsertColumns[] = 'created_at';
     $taskInsertColumns[] = 'updated_at';
@@ -1106,6 +1158,9 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
     $supportsItemDonationEnabled = in_array('donation_enabled', $itemColumns, true);
     $supportsItemDonationGoal = in_array('donation_goal_id', $itemColumns, true);
     $supportsItemVkDonateId = in_array('vk_donate_id', $itemColumns, true);
+    $supportsItemPublicationType = in_array('publication_type', $itemColumns, true);
+    $supportsItemResolvedMode = in_array('resolved_mode', $itemColumns, true);
+    $supportsItemCapabilityStatus = in_array('capability_status', $itemColumns, true);
 
     if ($supportsItemDonutEnabled) {
         $itemInsertColumns[] = 'vk_donut_enabled';
@@ -1127,6 +1182,15 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
     }
     if ($supportsItemVkDonateId) {
         $itemInsertColumns[] = 'vk_donate_id';
+    }
+    if ($supportsItemPublicationType) {
+        $itemInsertColumns[] = 'publication_type';
+    }
+    if ($supportsItemResolvedMode) {
+        $itemInsertColumns[] = 'resolved_mode';
+    }
+    if ($supportsItemCapabilityStatus) {
+        $itemInsertColumns[] = 'capability_status';
     }
 
     $itemInsertColumns[] = 'created_at';
@@ -1167,6 +1231,15 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
         }
         if ($supportsItemVkDonateId) {
             $itemInsertValues[] = $donationEnabled && $vkDonateId !== '' ? $vkDonateId : null;
+        }
+        if ($supportsItemPublicationType) {
+            $itemInsertValues[] = $publicationType;
+        }
+        if ($supportsItemResolvedMode) {
+            $itemInsertValues[] = $publicationType;
+        }
+        if ($supportsItemCapabilityStatus) {
+            $itemInsertValues[] = 'not_checked';
         }
         $ins->execute($itemInsertValues);
     }
@@ -1286,6 +1359,131 @@ function refreshVkTaskCounters(int $taskId): void
         ]);
 }
 
+function resolveVkPublicationType(array $source): string
+{
+    $explicitType = trim((string) ($source['publication_type'] ?? ''));
+    if (in_array($explicitType, ['standard', 'vk_donut', 'donation_goal'], true)) {
+        return $explicitType;
+    }
+
+    if (!empty($source['vk_donut_enabled'])) {
+        return 'vk_donut';
+    }
+
+    if (!empty($source['donation_enabled'])) {
+        return 'donation_goal';
+    }
+
+    return 'standard';
+}
+
+function buildVkPublicationCapabilities(array $readiness): array
+{
+    $base = [
+        'standard' => ['status' => 'not_checked', 'message' => 'Проверка ещё не выполнялась.'],
+        'vk_donut' => ['status' => 'not_checked', 'message' => 'Проверка ещё не выполнялась.'],
+        'donation_goal' => ['status' => 'not_checked', 'message' => 'Проверка ещё не выполнялась.'],
+    ];
+
+    if (empty($readiness['ok'])) {
+        $message = implode('; ', $readiness['issues'] ?? ['VK не готов к публикации.']);
+        foreach ($base as $mode => $meta) {
+            $base[$mode] = ['status' => 'unsupported', 'message' => $message];
+        }
+        return $base;
+    }
+
+    $base['standard'] = ['status' => 'supported', 'message' => 'Базовая публикация доступна.'];
+    $base['vk_donut'] = ['status' => 'not_checked', 'message' => 'Требуется тест публикации с donut-параметрами.'];
+    $base['donation_goal'] = ['status' => 'not_checked', 'message' => 'Требуется тест публикации с donation_goal_id.'];
+
+    return $base;
+}
+
+function getVkPublicationCapabilities(): array
+{
+    $readiness = verifyVkPublicationReadiness(true);
+    $capabilities = buildVkPublicationCapabilities($readiness);
+
+    $settings = getSystemSettings();
+    $cached = json_decode((string) ($settings['vk_publication_capabilities_json'] ?? ''), true);
+    if (is_array($cached)) {
+        foreach (['standard', 'vk_donut', 'donation_goal'] as $mode) {
+            if (!empty($cached[$mode]) && is_array($cached[$mode])) {
+                $capabilities[$mode] = array_merge($capabilities[$mode], $cached[$mode]);
+            }
+        }
+    }
+
+    return $capabilities;
+}
+
+function updateVkCapabilityFromError(string $mode, Throwable $error): void
+{
+    if (!in_array($mode, ['standard', 'vk_donut', 'donation_goal'], true)) {
+        return;
+    }
+
+    $settings = getSystemSettings();
+    $cached = json_decode((string) ($settings['vk_publication_capabilities_json'] ?? ''), true);
+    if (!is_array($cached)) {
+        $cached = [];
+    }
+
+    $normalized = normalizeVkPublicationError($error);
+    $cached[$mode] = [
+        'status' => 'unsupported',
+        'message' => $normalized['message'],
+        'technical' => $normalized['technical'],
+        'checked_at' => date('c'),
+    ];
+
+    saveSystemSettings([
+        'vk_publication_capabilities_json' => json_encode($cached, JSON_UNESCAPED_UNICODE),
+    ]);
+}
+
+function markVkCapabilitySupported(string $mode, string $message): void
+{
+    if (!in_array($mode, ['standard', 'vk_donut', 'donation_goal'], true)) {
+        return;
+    }
+
+    $settings = getSystemSettings();
+    $cached = json_decode((string) ($settings['vk_publication_capabilities_json'] ?? ''), true);
+    if (!is_array($cached)) {
+        $cached = [];
+    }
+
+    $cached[$mode] = [
+        'status' => 'supported',
+        'message' => $message,
+        'checked_at' => date('c'),
+    ];
+
+    saveSystemSettings([
+        'vk_publication_capabilities_json' => json_encode($cached, JSON_UNESCAPED_UNICODE),
+    ]);
+}
+
+function buildVkWallParamsByMode(array $item, array $options = []): array
+{
+    $type = resolveVkPublicationType($item);
+    if (!empty($options['wall_params']) && is_array($options['wall_params'])) {
+        return $options['wall_params'];
+    }
+
+    if ($type === 'vk_donut') {
+        return buildVkDonutWallParamsFromTask($item);
+    }
+
+    if ($type === 'donation_goal') {
+        return buildVkDonateWallParamsFromItem($item);
+    }
+
+    return [];
+}
+
 function publishVkTaskItem(int $itemId, array $options = []): array
 {
     global $pdo;
@@ -1306,10 +1504,19 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         return ['success' => true, 'already' => true, 'post_url' => $item['vk_post_url']];
     }
 
+    $publicationType = resolveVkPublicationType($item);
+    $failureStage = null;
+    $requestPayload = [];
+    $responsePayload = [];
+    $capabilities = getVkPublicationCapabilities();
+    $capabilityMeta = $capabilities[$publicationType] ?? ['status' => 'not_checked', 'message' => ''];
+
     vkPublicationLog('publish_item_attempt', [
         'item_id' => (int) $item['id'],
         'task_id' => (int) $item['task_id'],
         'work_id' => (int) $item['work_id'],
+        'publication_type' => $publicationType,
+        'capability_status' => $capabilityMeta['status'] ?? 'not_checked',
         'donation_enabled' => (int) ($item['donation_enabled'] ?? 0),
         'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
         'vk_donate_id' => (string) ($item['vk_donate_id'] ?? ''),
@@ -1317,6 +1524,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
 
     $readiness = verifyVkPublicationReadiness(true);
     if (empty($readiness['ok'])) {
+        $failureStage = 'validation';
         $error = (string) ($readiness['issues'][0] ?? 'VK не готов к публикации');
         markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, implode('; ', $readiness['issues'] ?? []));
         return ['success' => false, 'error' => $error];
@@ -1326,6 +1534,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
     try {
         $client = new VkApiClient($settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version']);
     } catch (Throwable $e) {
+        $failureStage = 'validation';
         $normalized = normalizeVkPublicationError($e);
         markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $normalized['message'], $normalized['technical']);
         return ['success' => false, 'error' => $normalized['message']];
@@ -1333,17 +1542,16 @@ function publishVkTaskItem(int $itemId, array $options = []): array
 
     $imageFsPath = getParticipantDrawingFsPath((string) ($item['applicant_email'] ?? ''), (string) ($item['work_image_path'] ?? ''));
     if (!$imageFsPath || !is_file($imageFsPath)) {
+        $failureStage = 'validation';
         $error = 'Изображение для публикации не найдено';
         markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
         return ['success' => false, 'error' => $error];
     }
 
-    $extraWallParams = [];
-    if (!empty($options['wall_params']) && is_array($options['wall_params'])) {
-        $extraWallParams = $options['wall_params'];
-    }
-    $donationParams = buildVkDonateWallParamsFromItem($item);
-    if ((int) ($item['donation_enabled'] ?? 0) === 1 && empty($donationParams)) {
+    $extraWallParams = buildVkWallParamsByMode($item, $options);
+
+    if ($publicationType === 'donation_goal' && empty($extraWallParams)) {
+        $failureStage = 'validation';
         $support = getVkDonationAttachmentSupport();
         $vkDonateId = trim((string) ($item['vk_donate_id'] ?? ''));
         $error = empty($support['supported'])
@@ -1358,26 +1566,39 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $technical);
         return ['success' => false, 'error' => $error];
     }
-    if (!empty($donationParams)) {
-        $extraWallParams = array_merge($extraWallParams, $donationParams);
-    }
+
+    $requestPayload = [
+        'item_id' => (int) $item['id'],
+        'task_id' => (int) $item['task_id'],
+        'publication_type' => $publicationType,
+        'message' => (string) ($item['post_text'] ?? ''),
+        'image_path' => (string) ($item['work_image_path'] ?? ''),
+        'extra_wall_params' => sanitizeVkExtraWallParamsForLog($extraWallParams),
+    ];
 
     try {
+        $failureStage = 'wall_post';
         $published = $client->publishPhotoPost(
             $imageFsPath,
             (string) ($item['post_text'] ?? ''),
             (bool) $settings['from_group'],
             $extraWallParams
         );
+        $responsePayload = $published;
 
         $pdo->prepare("UPDATE vk_publication_task_items
-            SET item_status = 'published', vk_post_id = ?, vk_post_url = ?, error_message = ?, technical_error = ?, published_at = NOW(), updated_at = NOW()
+            SET item_status = 'published', vk_post_id = ?, vk_post_url = ?, error_message = ?, technical_error = ?, published_at = NOW(), updated_at = NOW(),
+                resolved_mode = ?, capability_status = ?, failure_stage = NULL, request_payload_json = ?, response_payload_json = ?
             WHERE id = ?")
             ->execute([
                 (string) $published['post_id'],
                 (string) $published['post_url'],
                 null,
                 null,
+                $publicationType,
+                'supported',
+                json_encode($requestPayload, JSON_UNESCAPED_UNICODE),
+                json_encode($responsePayload, JSON_UNESCAPED_UNICODE),
                 (int) $item['id'],
             ]);
 
@@ -1392,10 +1613,12 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             ->execute([(string) $published['post_id'], (string) $published['post_url'], (int) $item['work_id']]);
 
         refreshVkTaskCounters((int) $item['task_id']);
+        markVkCapabilitySupported($publicationType, 'Публикация успешно прошла.');
         vkPublicationLog('publish_item_success', [
             'item_id' => (int) $item['id'],
             'task_id' => (int) $item['task_id'],
             'work_id' => (int) $item['work_id'],
+            'publication_type' => $publicationType,
             'post_id' => (string) $published['post_id'],
             'donation_enabled' => (int) ($item['donation_enabled'] ?? 0),
             'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
@@ -1410,6 +1633,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         ];
     } catch (Throwable $e) {
         $normalized = normalizeVkPublicationError($e);
+        updateVkCapabilityFromError($publicationType, $e);
         $isDonationEnabled = (int) ($item['donation_enabled'] ?? 0) === 1;
         $errorMessage = $normalized['message'];
         if ($isDonationEnabled && isVkDonationAttachmentError($e)) {
@@ -1428,6 +1652,8 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             'item_id' => (int) $item['id'],
             'task_id' => (int) $item['task_id'],
             'work_id' => (int) $item['work_id'],
+            'publication_type' => $publicationType,
+            'failure_stage' => $failureStage ?? 'wall_post',
             'error' => $errorMessage,
             'technical' => $normalized['technical'],
             'donation_enabled' => (int) ($item['donation_enabled'] ?? 0),
@@ -1436,6 +1662,20 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             'extra_wall_params' => sanitizeVkExtraWallParamsForLog($extraWallParams),
         ]);
         markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $errorMessage, $normalized['technical']);
+        $pdo->prepare("UPDATE vk_publication_task_items
+            SET resolved_mode = ?, capability_status = ?, failure_stage = ?, request_payload_json = ?, response_payload_json = ?, updated_at = NOW()
+            WHERE id = ?")
+            ->execute([
+                $publicationType,
+                'unsupported',
+                $failureStage ?? 'wall_post',
+                json_encode($requestPayload, JSON_UNESCAPED_UNICODE),
+                json_encode([
+                    'error' => $errorMessage,
+                    'technical' => $normalized['technical'],
+                ], JSON_UNESCAPED_UNICODE),
+                (int) $item['id'],
+            ]);
         return ['success' => false, 'error' => $errorMessage];
     }
 }
@@ -1486,7 +1726,9 @@ function publishVkTask(int $taskId, array $options = []): array
     global $pdo;
 
     $task = getVkTaskById($taskId);
-    if ($task && empty($options['wall_params']) && !empty($task['vk_donut_enabled'])) {
+    $taskType = $task ? resolveVkPublicationType($task) : 'standard';
+
+    if ($task && $taskType === 'vk_donut' && empty($options['wall_params']) && !empty($task['vk_donut_enabled'])) {
         $options['wall_params'] = buildVkDonutWallParamsFromTask($task);
         if (empty($options['wall_params'])) {
             return [
@@ -1496,6 +1738,14 @@ function publishVkTask(int $taskId, array $options = []): array
                 'error' => 'Некорректные параметры VK Donut: укажите paid_duration.',
             ];
         }
+    }
+    if ($task && $taskType === 'donation_goal' && empty($task['vk_donate_id'])) {
+        return [
+            'total' => 0,
+            'published' => 0,
+            'failed' => 0,
+            'error' => 'Некорректные параметры публикации donation goal: отсутствует vk_donate_id.',
+        ];
     }
 
     $readiness = verifyVkPublicationReadiness(true);
@@ -1508,8 +1758,8 @@ function publishVkTask(int $taskId, array $options = []): array
         ];
     }
 
-    $pdo->prepare("UPDATE vk_publication_tasks SET task_status = 'publishing', updated_at = NOW() WHERE id = ?")
-        ->execute([$taskId]);
+    $pdo->prepare("UPDATE vk_publication_tasks SET task_status = 'publishing', resolved_mode = ?, capability_status = 'not_checked', updated_at = NOW() WHERE id = ?")
+        ->execute([$taskType, $taskId]);
 
     $stmt = $pdo->prepare("SELECT id FROM vk_publication_task_items
         WHERE task_id = ? AND item_status IN ('ready','failed','pending')
@@ -1529,6 +1779,15 @@ function publishVkTask(int $taskId, array $options = []): array
     }
 
     refreshVkTaskCounters($taskId);
+    $pdo->prepare("UPDATE vk_publication_tasks
+        SET capability_status = ?, failure_stage = ?, response_payload_json = ?, updated_at = NOW()
+        WHERE id = ?")
+        ->execute([
+            $result['failed'] > 0 ? 'unsupported' : 'supported',
+            $result['failed'] > 0 ? 'wall_post' : null,
+            json_encode($result, JSON_UNESCAPED_UNICODE),
+            $taskId,
+        ]);
 
     return $result;
 }
@@ -1566,10 +1825,33 @@ function buildVkDonateWallParamsFromItem(array $item): array
 
 function getVkDonationAttachmentSupport(): array
 {
+    $capabilities = getVkPublicationCapabilities();
+    $donation = $capabilities['donation_goal'] ?? [];
+    $status = (string) ($donation['status'] ?? 'not_checked');
+
+    if ($status === 'supported') {
+        return [
+            'supported' => true,
+            'code' => 'supported',
+            'status' => $status,
+            'message' => (string) ($donation['message'] ?? ''),
+        ];
+    }
+
+    if ($status === 'unsupported') {
+        return [
+            'supported' => false,
+            'code' => 'unsupported',
+            'status' => $status,
+            'message' => (string) ($donation['message'] ?? 'Режим donation goal подтверждён как нерабочий по ответу VK API.'),
+        ];
+    }
+
     return [
         'supported' => true,
-        'code' => 'enabled',
-        'message' => '',
+        'code' => 'not_checked',
+        'status' => 'not_checked',
+        'message' => (string) ($donation['message'] ?? 'Поддержка donation goal ещё не подтверждена: доступен диагностический запуск.'),
     ];
 }
 

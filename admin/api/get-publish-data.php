@@ -74,6 +74,7 @@ if (!empty($workIds)) {
 }
 
 $donationAttachmentSupport = getVkDonationAttachmentSupport();
+$publicationCapabilities = getVkPublicationCapabilities();
 $donationGoals = [];
 $donationGoalsSyncWarning = '';
 
@@ -170,5 +171,6 @@ jsonResponse([
     'summary' => $summary,
     'donation_goals' => $donationGoals,
     'donation_attachment_support' => $donationAttachmentSupport,
+    'publication_capabilities' => $publicationCapabilities,
     'application_vk_status' => $publicationStatus,
 ]);
