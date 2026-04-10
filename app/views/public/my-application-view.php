@@ -315,7 +315,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
 
     $fio = trim((string)($_POST['fio'] ?? ''));
     $age = max(0, (int)($_POST['age'] ?? 0));
-    $workTitle = trim((string)($_POST['work_title'] ?? ''));
     if ($fio === '') {
         $message = 'Укажите ФИО участника.';
         if ($isAjaxRequest) {
@@ -325,6 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
         redirect('/application/' . $applicationId);
     }
 
+    $workTitle = $fio;
     $drawingFile = trim((string)($workRow['drawing_file'] ?? ''));
     $oldDrawingPath = $drawingFile !== '' ? getParticipantDrawingFsPath($user['email'] ?? '', $drawingFile) : null;
     $newDrawingPath = null;
@@ -445,7 +445,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
                 'work_id' => $workId,
                 'fio' => $fio,
                 'age' => $age > 0 ? $age : '—',
-                'work_title' => $workTitle,
+                'work_title' => $fio,
                 'drawing_url' => $updatedDrawingUrl,
             ],
             'resubmitted_for_review' => $resubmittedForReview,
@@ -897,7 +897,6 @@ foreach ($participants as $participant) {
 <div class="modal__body">
     <div class="form-group"><label class="form-label">ФИО участника</label><input class="form-input" type="text" name="fio" id="participantEditFio" required></div>
     <div class="form-group"><label class="form-label">Возраст</label><input class="form-input" type="number" min="0" name="age" id="participantEditAge" required></div>
-    <div class="form-group"><label class="form-label">Название работы</label><input class="form-input" type="text" name="work_title" id="participantEditWorkTitle"></div>
     <div class="participant-edit-drawing-row">
         <div class="participant-edit-drawing-box">
             <label class="form-label">Рисунок</label>
@@ -1018,7 +1017,6 @@ function openParticipantEditModal(button) {
  document.getElementById('participantEditWorkId').value = button.dataset.workId || '';
  document.getElementById('participantEditFio').value = button.dataset.fio || '';
  document.getElementById('participantEditAge').value = button.dataset.age || '';
- document.getElementById('participantEditWorkTitle').value = button.dataset.workTitle || '';
  clearParticipantDrawingObjectUrl();
  const drawingUrl = button.dataset.drawingUrl || '';
  if (drawingUrl) {
