@@ -21,7 +21,7 @@ if (!$contest) {
 
 // Получаем заявки
 $stmt = $pdo->prepare("
- SELECT a.*, u.name, u.surname, u.avatar_url,
+ SELECT a.*, u.name, u.surname, u.email, u.avatar_url,
  (SELECT COUNT(*) FROM participants WHERE application_id = a.id) as participants_count
  FROM applications a
  LEFT JOIN users u ON a.user_id = u.id
@@ -90,7 +90,12 @@ require_once __DIR__ . '/includes/header.php';
 <i class="fas fa-user" style="font-size:12px;"></i>
 </div>
  <?php endif; ?>
-<span><?= htmlspecialchars(($app['name'] ?? '') . ' ' . ($app['surname'] ?? '')) ?></span>
+<div>
+<div><?= htmlspecialchars(trim(($app['name'] ?? '') . ' ' . ($app['surname'] ?? '')) ?: 'Без имени') ?></div>
+ <?php if (!empty($app['email'])): ?>
+<div class="text-secondary" style="font-size:12px; margin-top:2px;"><?= htmlspecialchars($app['email']) ?></div>
+ <?php endif; ?>
+</div>
 </div>
 </td>
 <td data-label="Участников"><?= $app['participants_count'] ?></td>
