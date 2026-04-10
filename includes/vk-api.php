@@ -112,10 +112,37 @@ class VkApiClient
             throw new VkApiException('VK не вернул post_id опубликованной записи.');
         }
 
+        $ownerId = (int) ($wallPostParams['owner_id'] ?? (-1 * $this->groupId));
+        $expectedDonationGoalId = trim((string) ($wallPostParams['donation_goal_id'] ?? ''));
+        $postData = null;
+        if ($expectedDonationGoalId !== '') {
+            $postData = $this->getWallPostById($ownerId, $postId);
+            $hasDonationAttachment = $this->hasDonationGoalAttachment($postData, $expectedDonationGoalId);
+            if (function_exists('vkPublicationLog')) {
+                vkPublicationLog('vk_wall_post_donation_verification', [
+                    'owner_id' => $ownerId,
+                    'post_id' => $postId,
+                    'expected_donation_goal_id' => $expectedDonationGoalId,
+                    'donation_found' => $hasDonationAttachment ? 1 : 0,
+                    'post_excerpt' => $this->extractPostVerificationExcerpt($postData),
+                ]);
+            }
+            if (!$hasDonationAttachment) {
+                throw new VkApiException(
+                    'Пост создан, но цель доната к записи не прикрепилась. Публикация считается неуспешной.',
+                    'donation verification failed: donation_goal_id=' . $expectedDonationGoalId . ', owner_id=' . $ownerId . ', post_id=' . $postId
+                );
+            }
+        }
+
         return [
             'post_id' => $postId,
             'post_url' => 'https://vk.com/wall-' . $this->groupId . '_' . $postId,
             'attachment' => $attachment,
+            'owner_id' => $ownerId,
+            'expected_donation_goal_id' => $expectedDonationGoalId,
+            'donation_verified' => $expectedDonationGoalId !== '' ? 1 : 0,
+            'post_data_excerpt' => is_array($postData) ? $this->extractPostVerificationExcerpt($postData) : [],
         ];
     }
 
@@ -175,6 +202,40 @@ class VkApiClient
         }
 
         return array_values(array_filter($response, static fn($item) => is_array($item)));
+    }
+
+    public function getWallPostById(int $ownerId, int $postId): array
+    {
+        $response = $this->apiRequest('wall.getById', [
+            'posts' => $ownerId . '_' . $postId,
+            'extended' => 0,
+        ]);
+
+        $items = $response['items'] ?? $response;
+        if (!is_array($items)) {
+            throw new VkApiException('VK не вернул данные опубликованной записи для проверки доната.');
+        }
+
+        $post = null;
+        if (isset($items[0]) && is_array($items[0])) {
+            $post = $items[0];
+        } elseif (isset($items['id'])) {
+            $post = $items;
+        }
+
+        if (!is_array($post)) {
+            throw new VkApiException('VK вернул пустые данные записи при пост-проверке доната.');
+        }
+
+        if (function_exists('vkPublicationLog')) {
+            vkPublicationLog('vk_wall_get_by_id_response', [
+                'owner_id' => $ownerId,
+                'post_id' => $postId,
+                'post_excerpt' => $this->extractPostVerificationExcerpt($post),
+            ]);
+        }
+
+        return $post;
     }
 
     private function assertUserTokenCanPublish(): void
@@ -311,5 +372,62 @@ class VkApiClient
             $sanitized[$paramKey] = $value;
         }
         return $sanitized;
+    }
+
+    private function hasDonationGoalAttachment(array $postData, string $expectedGoalId): bool
+    {
+        $normalizedExpected = trim($expectedGoalId);
+        if ($normalizedExpected === '') {
+            return false;
+        }
+
+        $fieldsToCheck = [
+            $postData['donation_goal_id'] ?? null,
+            $postData['donation_goal']['id'] ?? null,
+            $postData['donut']['donation_goal_id'] ?? null,
+            $postData['donut']['goal_id'] ?? null,
+            $postData['donut']['goal']['id'] ?? null,
+        ];
+
+        foreach ($fieldsToCheck as $candidate) {
+            if ((string) $candidate === $normalizedExpected) {
+                return true;
+            }
+        }
+
+        $stack = [$postData];
+        while (!empty($stack)) {
+            $current = array_pop($stack);
+            if (!is_array($current)) {
+                continue;
+            }
+            foreach ($current as $key => $value) {
+                if (is_array($value)) {
+                    $stack[] = $value;
+                    continue;
+                }
+                $keyLower = mb_strtolower((string) $key);
+                if (
+                    in_array($keyLower, ['donation_goal_id', 'goal_id', 'vk_donate_id', 'id'], true)
+                    && (string) $value === $normalizedExpected
+                ) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private function extractPostVerificationExcerpt(array $postData): array
+    {
+        return [
+            'id' => $postData['id'] ?? null,
+            'owner_id' => $postData['owner_id'] ?? null,
+            'donation_goal_id' => $postData['donation_goal_id'] ?? null,
+            'donation_goal' => $postData['donation_goal'] ?? null,
+            'donut' => $postData['donut'] ?? null,
+            'attachments_count' => is_array($postData['attachments'] ?? null) ? count($postData['attachments']) : 0,
+        ];
     }
 }

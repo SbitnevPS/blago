@@ -19,14 +19,15 @@ if (!verifyCSRFToken($csrfToken)) {
 
 $applicationId = max(0, (int) ($payload['application_id'] ?? 0));
 $publicationType = trim((string) ($payload['publication_type'] ?? 'standard'));
-$allowedTypes = ['standard', 'vk_donut', 'donation_goal'];
+$allowedTypes = ['standard', 'donation_goal'];
 if (!in_array($publicationType, $allowedTypes, true)) {
-    $publicationType = 'standard';
+    if ($publicationType === 'vk_donut') {
+        jsonResponse(['success' => false, 'error' => 'Режим VK Donut paywall больше не поддерживается в этом окне публикации.'], 422);
+    }
+    jsonResponse(['success' => false, 'error' => 'Некорректный тип публикации. Допустимо: standard или donation_goal.'], 422);
 }
 $donationEnabled = (int) ($payload['donation_enabled'] ?? 0) === 1;
 $donationGoalId = max(0, (int) ($payload['donation_goal_id'] ?? 0));
-$vkDonutPaidDuration = max(0, (int) ($payload['vk_donut_paid_duration'] ?? 0));
-$vkDonutCanPublishFreeCopy = (int) ($payload['vk_donut_can_publish_free_copy'] ?? 0) === 1;
 if ($applicationId <= 0) {
     jsonResponse(['success' => false, 'error' => 'Некорректный идентификатор заявки.'], 422);
 }
@@ -65,19 +66,13 @@ $extraWallParams = [];
 $goal = null;
 $publicationMeta = [
     'publication_type' => $publicationType,
-    'vk_donut_enabled' => $publicationType === 'vk_donut' ? 1 : 0,
-    'vk_donut_paid_duration' => $publicationType === 'vk_donut' ? $vkDonutPaidDuration : null,
-    'vk_donut_can_publish_free_copy' => $publicationType === 'vk_donut' && $vkDonutCanPublishFreeCopy ? 1 : 0,
+    'vk_donut_enabled' => 0,
+    'vk_donut_paid_duration' => null,
+    'vk_donut_can_publish_free_copy' => 0,
     'donation_enabled' => 0,
     'donation_goal_id' => null,
     'vk_donate_id' => null,
 ];
-
-if ($publicationType === 'vk_donut') {
-    if ($vkDonutPaidDuration <= 0) {
-        jsonResponse(['success' => false, 'error' => 'Для VK Donut укажите срок платной копии (paid_duration).'], 422);
-    }
-}
 
 if ($publicationType === 'donation_goal' || $donationEnabled) {
     if ($donationGoalId <= 0) {
