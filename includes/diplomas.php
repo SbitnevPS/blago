@@ -317,25 +317,38 @@ function getApplicationUiStatusMeta(array $summary): array {
     $total = (int)($summary['total'] ?? 0);
     $pending = (int)($summary['pending'] ?? 0);
     $accepted = (int)($summary['accepted'] ?? 0);
+    $reviewed = (int)($summary['reviewed'] ?? 0);
     $diplomas = (int)($summary['diplomas'] ?? 0);
     $vkPublished = (int)($summary['vk_published'] ?? 0);
 
     if ($total === 0) {
         return ['label' => 'Нет работ', 'badge_class' => 'badge--secondary'];
     }
-    if ($vkPublished > 0) {
-        return ['label' => 'Часть работ опубликована', 'badge_class' => 'badge--primary'];
+
+    if ($diplomas === 0) {
+        if ($pending > 0 && $pending < $total) {
+            return ['label' => 'Работы частично рассмотрены', 'badge_class' => 'badge--warning'];
+        }
+        return ['label' => 'Дипломы недоступны', 'badge_class' => 'badge--warning'];
     }
-    if ($diplomas > 0) {
-        return ['label' => 'Дипломы доступны', 'badge_class' => 'badge--info'];
+
+    if ($diplomas < $total) {
+        return ['label' => 'Дипломы доступны: ' . $diplomas . ' из ' . $total, 'badge_class' => 'badge--info'];
     }
+
     if ($accepted === $total) {
-        return ['label' => 'Все работы приняты к участию', 'badge_class' => 'badge--success'];
+        return ['label' => 'Дипломы участника доступны для всех работ', 'badge_class' => 'badge--success'];
     }
-    if ($pending > 0 && $pending < $total) {
-        return ['label' => 'Частично рассмотрена', 'badge_class' => 'badge--warning'];
+
+    if ($reviewed === $total) {
+        return ['label' => 'Благодарственные дипломы доступны для всех работ', 'badge_class' => 'badge--info'];
     }
-    return ['label' => 'На рассмотрении', 'badge_class' => 'badge--warning'];
+
+    if ($vkPublished > 0) {
+        return ['label' => 'Дипломы доступны, часть работ опубликована', 'badge_class' => 'badge--primary'];
+    }
+
+    return ['label' => 'Дипломы доступны для всех работ', 'badge_class' => 'badge--success'];
 }
 
 function mapWorkStatusToDiplomaType(string $status): ?string {
