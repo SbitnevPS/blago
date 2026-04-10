@@ -58,6 +58,12 @@ $pageTitle = 'Задание #' . $taskId . ' / Публикации в ВК';
 $breadcrumb = 'Публикации в ВК / Просмотр задания';
 
 $statusMeta = getVkTaskStatusMeta((string) $task['task_status']);
+$taskPublicationType = resolveVkPublicationType($task);
+$taskPublicationTypeLabel = [
+    'standard' => 'Обычная',
+    'vk_donut' => 'VK Donut',
+    'donation_goal' => 'С целью доната',
+][$taskPublicationType] ?? $taskPublicationType;
 $items = getVkTaskItems($taskId);
 
 require_once __DIR__ . '/includes/header.php';
@@ -136,8 +142,8 @@ require_once __DIR__ . '/includes/header.php';
             <div><strong>Опубликовано:</strong> <?= $task['published_at'] ? e(date('d.m.Y H:i', strtotime((string) $task['published_at']))) : '—' ?></div>
             <div>
                 <strong>Тип публикации:</strong>
-                <span class="badge <?= (int) ($task['donation_enabled'] ?? 0) === 1 ? 'badge--warning' : 'badge--secondary' ?>">
-                    <?= (int) ($task['donation_enabled'] ?? 0) === 1 ? 'С донатом' : 'Обычный пост' ?>
+                <span class="badge <?= $taskPublicationType === 'standard' ? 'badge--secondary' : 'badge--warning' ?>">
+                    <?= e($taskPublicationTypeLabel) ?>
                 </span>
             </div>
         </div>
@@ -150,10 +156,13 @@ require_once __DIR__ . '/includes/header.php';
             <div><strong>Опубликовано:</strong> <?= (int) $task['published_items'] ?></div>
             <div><strong>Ошибки:</strong> <?= (int) $task['failed_items'] ?></div>
             <div><strong>Пропущено:</strong> <?= (int) $task['skipped_items'] ?></div>
-            <?php if ((int) ($task['donation_enabled'] ?? 0) === 1): ?>
+            <?php if ($taskPublicationType === 'donation_goal'): ?>
                 <div><strong>Донат:</strong> включён</div>
                 <div><strong>ID цели (локальный):</strong> <?= (int) ($task['donation_goal_id'] ?? 0) ?: '—' ?></div>
                 <div><strong>VK Donut ID:</strong> <?= e((string) ($task['vk_donate_id'] ?? '—')) ?></div>
+            <?php elseif ($taskPublicationType === 'vk_donut'): ?>
+                <div><strong>VK Donut paywall:</strong> включён</div>
+                <div><strong>Paid duration:</strong> <?= (int) ($task['vk_donut_paid_duration'] ?? 0) ?></div>
             <?php else: ?>
                 <div><strong>Донат:</strong> выключен</div>
             <?php endif; ?>

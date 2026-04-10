@@ -18,8 +18,15 @@ if (!verifyCSRFToken($csrfToken)) {
 }
 
 $applicationId = max(0, (int) ($payload['application_id'] ?? 0));
+$publicationType = trim((string) ($payload['publication_type'] ?? 'standard'));
+$allowedTypes = ['standard', 'vk_donut', 'donation_goal'];
+if (!in_array($publicationType, $allowedTypes, true)) {
+    $publicationType = 'standard';
+}
 $donationEnabled = (int) ($payload['donation_enabled'] ?? 0) === 1;
 $donationGoalId = max(0, (int) ($payload['donation_goal_id'] ?? 0));
+$vkDonutPaidDuration = max(0, (int) ($payload['vk_donut_paid_duration'] ?? 0));
+$vkDonutCanPublishFreeCopy = (int) ($payload['vk_donut_can_publish_free_copy'] ?? 0) === 1;
 if ($applicationId <= 0) {
     jsonResponse(['success' => false, 'error' => 'Некорректный идентификатор заявки.'], 422);
 }
@@ -57,12 +64,22 @@ if (trim((string) ($settings['publication_token'] ?? '')) === '') {
 $extraWallParams = [];
 $goal = null;
 $publicationMeta = [
+    'publication_type' => $publicationType,
+    'vk_donut_enabled' => $publicationType === 'vk_donut' ? 1 : 0,
+    'vk_donut_paid_duration' => $publicationType === 'vk_donut' ? $vkDonutPaidDuration : null,
+    'vk_donut_can_publish_free_copy' => $publicationType === 'vk_donut' && $vkDonutCanPublishFreeCopy ? 1 : 0,
     'donation_enabled' => 0,
     'donation_goal_id' => null,
     'vk_donate_id' => null,
 ];
 
-if ($donationEnabled) {
+if ($publicationType === 'vk_donut') {
+    if ($vkDonutPaidDuration <= 0) {
+        jsonResponse(['success' => false, 'error' => 'Для VK Donut укажите срок платной копии (paid_duration).'], 422);
+    }
+}
+
+if ($publicationType === 'donation_goal' || $donationEnabled) {
     if ($donationGoalId <= 0) {
         jsonResponse(['success' => false, 'error' => 'Нельзя включить донат без выбора цели.'], 422);
     }
@@ -78,11 +95,16 @@ if ($donationEnabled) {
     }
 
     $publicationMeta = [
+        'publication_type' => 'donation_goal',
+        'vk_donut_enabled' => 0,
+        'vk_donut_paid_duration' => null,
+        'vk_donut_can_publish_free_copy' => 0,
         'donation_enabled' => 1,
         'donation_goal_id' => $donationGoalId,
         'vk_donate_id' => $vkDonateId,
     ];
 }
+$donationEnabled = ($publicationMeta['publication_type'] ?? 'standard') === 'donation_goal';
 
 $filters = normalizeVkTaskFilters([
     'application_status' => 'approved',
@@ -121,6 +143,7 @@ $isDonationHardFail = $donationEnabled && $failed > 0;
 if ($failed > 0 || $published <= 0 || $isDonationHardFail) {
     vkPublicationLog('application_publish_failed', [
         'application_id' => $applicationId,
+        'publication_type' => $publicationMeta['publication_type'] ?? 'standard',
         'task_id' => $taskId,
         'donation_enabled' => $donationEnabled ? 1 : 0,
         'donation_goal_id' => $donationGoalId,
@@ -131,7 +154,7 @@ if ($failed > 0 || $published <= 0 || $isDonationHardFail) {
     ]);
     jsonResponse([
         'success' => false,
-        'publication_type' => $donationEnabled ? 'with_donation' : 'regular',
+        'publication_type' => $publicationMeta['publication_type'] ?? 'standard',
         'task_id' => $taskId,
         'published' => $published,
         'failed' => $failed,
@@ -149,7 +172,7 @@ $pdo->prepare("UPDATE applications SET status = 'approved', updated_at = NOW() W
 jsonResponse([
     'success' => true,
     'task_id' => $taskId,
-    'publication_type' => $donationEnabled ? 'with_donation' : 'regular',
+    'publication_type' => $publicationMeta['publication_type'] ?? 'standard',
     'donation_title' => $goal['title'] ?? '',
     'published' => $published,
     'failed' => $failed,

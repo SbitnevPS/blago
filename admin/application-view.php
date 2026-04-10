@@ -905,16 +905,31 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
             <div id="vkPublishModalSummary" class="text-secondary" style="margin-bottom:10px;"></div>
             <div id="vkPublishPreview" style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;"></div>
             <div style="margin-top: 14px; border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px;">
-                <div style="font-weight: 600; margin-bottom: 8px;">Донаты VK</div>
-                <label class="form-checkbox" style="margin-bottom:8px;">
-                    <input type="checkbox" id="vkDonationEnabled" value="1">
-                    <span class="form-checkbox__mark"></span>
-                    <span>Прикрепить донат</span>
-                </label>
+                <div style="font-weight: 600; margin-bottom: 8px;">Режим публикации</div>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label class="form-label" for="vkPublicationType">Тип публикации</label>
+                    <select class="form-select" id="vkPublicationType">
+                        <option value="standard">Обычная публикация</option>
+                        <option value="vk_donut">VK Donut paywall</option>
+                        <option value="donation_goal">С целью доната</option>
+                    </select>
+                </div>
                 <div id="vkDonationSupportHint" class="text-secondary" style="display:none; margin-bottom:8px; font-size:13px;"></div>
+                <div id="vkDonutFields" style="display:none;">
+                    <div class="form-group" style="margin-bottom:8px;">
+                        <label class="form-label" for="vkDonutPaidDuration">Paid duration (сек.)</label>
+                        <input type="number" class="form-control" id="vkDonutPaidDuration" min="1" step="1" value="86400">
+                    </div>
+                    <label class="form-checkbox" style="margin-bottom:8px;">
+                        <input type="checkbox" id="vkDonutFreeCopy" value="1">
+                        <span class="form-checkbox__mark"></span>
+                        <span>Разрешить бесплатную копию</span>
+                    </label>
+                </div>
+                <div id="vkDonationFields" style="display:none;">
                 <div class="form-group" style="margin-bottom:8px;">
                     <label class="form-label" for="vkDonationGoalSelect">Цель доната</label>
-                    <select class="form-select" id="vkDonationGoalSelect" disabled>
+                    <select class="form-select" id="vkDonationGoalSelect">
                         <option value="">Выберите цель доната</option>
                     </select>
                 </div>
@@ -922,6 +937,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     <div style="font-weight:600;" id="vkDonationGoalCardTitle">—</div>
                     <div class="text-secondary" style="margin-top:4px; font-size:13px;" id="vkDonationGoalCardDescription">—</div>
                     <div class="text-secondary" style="margin-top:6px; font-size:12px;">VK Donut ID: <span id="vkDonationGoalCardVkId">—</span></div>
+                </div>
                 </div>
             </div>
             <div id="vkPublishPromptStatus" class="alert" style="display:none; margin-top:12px;"></div>
@@ -1365,7 +1381,11 @@ ensureComplianceFieldsAvailable();
     const previewBox = document.getElementById('vkPublishPreview');
     const summaryBox = document.getElementById('vkPublishModalSummary');
     const openModalButton = document.getElementById('openVkPublishModalBtn');
-    const donationEnabledCheckbox = document.getElementById('vkDonationEnabled');
+    const publicationTypeSelect = document.getElementById('vkPublicationType');
+    const donutFields = document.getElementById('vkDonutFields');
+    const donutPaidDurationInput = document.getElementById('vkDonutPaidDuration');
+    const donutFreeCopyCheckbox = document.getElementById('vkDonutFreeCopy');
+    const donationFields = document.getElementById('vkDonationFields');
     const donationGoalSelect = document.getElementById('vkDonationGoalSelect');
     const donationGoalCard = document.getElementById('vkDonationGoalCard');
     const donationGoalCardTitle = document.getElementById('vkDonationGoalCardTitle');
@@ -1376,6 +1396,7 @@ ensureComplianceFieldsAvailable();
     const csrfToken = approveButton.dataset.csrf || '';
     let publishInProgress = false;
     let donationAttachmentMessage = '';
+    let publicationCapabilities = {};
 
     const showStatus = (message, type = 'success') => {
         if (!statusBox) return;
@@ -1392,19 +1413,24 @@ ensureComplianceFieldsAvailable();
     };
 
     const toggleDonationFields = () => {
-        const enabled = !!(donationEnabledCheckbox && donationEnabledCheckbox.checked);
-        if (donationEnabledCheckbox) {
-            donationEnabledCheckbox.disabled = false;
+        const publicationType = publicationTypeSelect?.value || 'standard';
+        const isDonationMode = publicationType === 'donation_goal';
+        const isDonutMode = publicationType === 'vk_donut';
+        if (donationFields) {
+            donationFields.style.display = isDonationMode ? 'block' : 'none';
         }
-        if (donationGoalSelect) {
-            donationGoalSelect.disabled = !enabled;
+        if (donutFields) {
+            donutFields.style.display = isDonutMode ? 'block' : 'none';
         }
-        if (!enabled && donationGoalCard) {
+        if (!isDonationMode && donationGoalCard) {
             donationGoalCard.style.display = 'none';
         }
+        const capability = publicationCapabilities[publicationType] || null;
+        const capabilityMessage = capability?.message ? String(capability.message) : '';
         if (donationSupportHint) {
-            donationSupportHint.style.display = donationAttachmentMessage ? 'block' : 'none';
-            donationSupportHint.textContent = donationAttachmentMessage;
+            const message = [donationAttachmentMessage, capabilityMessage].filter(Boolean).join(' ');
+            donationSupportHint.style.display = message ? 'block' : 'none';
+            donationSupportHint.textContent = message;
         }
     };
 
@@ -1462,8 +1488,8 @@ ensureComplianceFieldsAvailable();
         if (statusBox) {
             statusBox.style.display = 'none';
         }
-        if (donationEnabledCheckbox) {
-            donationEnabledCheckbox.checked = false;
+        if (publicationTypeSelect) {
+            publicationTypeSelect.value = 'standard';
         }
         if (donationGoalSelect) {
             donationGoalSelect.innerHTML = '';
@@ -1507,6 +1533,7 @@ ensureComplianceFieldsAvailable();
                 }
             }
             renderDonationGoals(data.donation_goals || []);
+            publicationCapabilities = data.publication_capabilities || {};
             const support = data.donation_attachment_support || {};
             donationAttachmentMessage = String(support.message || '');
             toggleDonationFields();
@@ -1519,12 +1546,10 @@ ensureComplianceFieldsAvailable();
         }
     };
 
-    if (donationEnabledCheckbox) {
-        donationEnabledCheckbox.addEventListener('change', () => {
-            toggleDonationFields();
-            updateDonationGoalCard();
-        });
-    }
+    publicationTypeSelect?.addEventListener('change', () => {
+        toggleDonationFields();
+        updateDonationGoalCard();
+    });
     if (donationGoalSelect) {
         donationGoalSelect.addEventListener('change', updateDonationGoalCard);
     }
@@ -1555,10 +1580,15 @@ ensureComplianceFieldsAvailable();
             if (publishInProgress) {
                 return;
             }
-            const donationEnabled = !!(donationEnabledCheckbox && donationEnabledCheckbox.checked);
+            const publicationType = publicationTypeSelect?.value || 'standard';
+            const donationEnabled = publicationType === 'donation_goal';
             const donationGoalId = Number(donationGoalSelect?.value || 0);
             if (donationEnabled && !donationGoalId) {
                 showStatus('Нельзя включить донат без выбора цели.', 'error');
+                return;
+            }
+            if (publicationType === 'vk_donut' && Number(donutPaidDurationInput?.value || 0) <= 0) {
+                showStatus('Для VK Donut укажите paid duration.', 'error');
                 return;
             }
             publishInProgress = true;
@@ -1577,8 +1607,11 @@ ensureComplianceFieldsAvailable();
                     },
                     body: JSON.stringify({
                         application_id: applicationId,
+                        publication_type: publicationType,
                         donation_enabled: donationEnabled ? 1 : 0,
                         donation_goal_id: donationGoalId,
+                        vk_donut_paid_duration: Number(donutPaidDurationInput?.value || 0),
+                        vk_donut_can_publish_free_copy: donutFreeCopyCheckbox?.checked ? 1 : 0,
                         csrf_token: csrfToken,
                     }),
                 });
@@ -1587,8 +1620,7 @@ ensureComplianceFieldsAvailable();
                     showStatus(data.error || 'Не удалось выполнить публикацию.', 'error');
                     return;
                 }
-                const donationMode = data.publication_type === 'with_donation' ? 'с донатом' : 'без доната';
-                showStatus(`Итог: опубликовано ${data.published || 0} из ${data.total || 0} (${donationMode}).`, 'success');
+                showStatus(`Итог: опубликовано ${data.published || 0} из ${data.total || 0}. Режим: ${data.publication_type || publicationType}.`, 'success');
                 location.reload();
             } catch (e) {
                 showStatus('Ошибка сети при публикации. Попробуйте ещё раз.', 'error');
