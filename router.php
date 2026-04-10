@@ -130,6 +130,7 @@ $routes = [
  '/admin/diploma-template/{id}' => ['file' => 'admin/diploma-template.php', 'name' => 'admin-diploma-template'],
  '/admin/search-users' => ['file' => 'admin/search-users.php', 'name' => 'admin-search-users'],
  '/admin/login' => ['file' => 'admin/login.php', 'name' => 'admin-login'],
+ '/admin/logout' => ['file' => 'admin/logout.php', 'name' => 'admin-logout'],
 ];
 
 // Проверяем маршрут

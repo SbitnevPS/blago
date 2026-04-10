@@ -65,7 +65,7 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 <a href="/" class="admin-sidebar__link">
 <i class="fas fa-external-link-alt"></i> На сайт
 </a>
-<a href="/admin/logout.php" class="admin-sidebar__link admin-sidebar__link--logout">
+<a href="/admin/logout" class="admin-sidebar__link admin-sidebar__link--logout">
 <i class="fas fa-sign-out-alt"></i> Выход
 </a>
 </div>
@@ -94,7 +94,7 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 </div>
  <?php endif; ?>
 <span class="admin-user__name"><?= htmlspecialchars(getUserDisplayName($admin ?? []) ?: 'Админ') ?></span>
-<a href="/admin/logout.php" class="admin-user__logout">
+<a href="/admin/logout" class="admin-user__logout">
 <i class="fas fa-sign-out-alt"></i>
 </a>
 </div>
