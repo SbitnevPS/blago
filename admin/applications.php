@@ -454,17 +454,20 @@ require_once __DIR__ . '/includes/header.php';
                         <label class="select-col" style="display:none;">
                             <input type="checkbox" class="application-select-checkbox" value="<?= (int) $app['id'] ?>">
                         </label>
+                        <a href="/admin/application/<?= (int) $app['id'] ?>" class="btn btn--primary btn--sm">
+                            <i class="fas fa-eye"></i> Открыть заявку
+                        </a>
+                        <?php if (($app['status'] ?? '') === 'approved'): ?>
                         <button
                             type="button"
                             class="btn btn--secondary btn--sm js-open-vk-publish-modal"
+                            style="margin-left:auto;"
                             data-application-id="<?= (int) $app['id'] ?>"
                             data-has-publications="<?= ((int) ($vkStatus['published_count'] ?? 0) > 0 || (int) ($vkStatus['failed_count'] ?? 0) > 0) ? '1' : '0' ?>"
                         >
-                            <?= (int) ($vkStatus['published_count'] ?? 0) > 0 ? 'VK повтор' : 'VK публикация' ?>
+                            <?= (int) ($vkStatus['published_count'] ?? 0) > 0 ? 'VK повтор' : 'VK Публикация' ?>
                         </button>
-                        <a href="/admin/application/<?= (int) $app['id'] ?>" class="btn btn--ghost btn--sm">
-                            <i class="fas fa-eye"></i> Открыть
-                        </a>
+                        <?php endif; ?>
                     </div>
                 </article>
             <?php endforeach; ?>
