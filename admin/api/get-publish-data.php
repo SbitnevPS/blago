@@ -77,17 +77,6 @@ $donationAttachmentSupport = getVkDonationAttachmentSupport();
 $donationGoals = [];
 
 try {
-    if (empty($donationAttachmentSupport['supported'])) {
-        jsonResponse([
-            'success' => true,
-            'participants' => $participants,
-            'summary' => $summary,
-            'donation_goals' => [],
-            'donation_attachment_support' => $donationAttachmentSupport,
-            'application_vk_status' => $publicationStatus,
-        ]);
-    }
-
     $readiness = verifyVkPublicationReadiness(true);
     if (empty($readiness['ok'])) {
         throw new RuntimeException((string) ($readiness['issues'][0] ?? 'VK не готов к загрузке целей донатов.'));

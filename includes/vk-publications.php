@@ -1555,11 +1555,6 @@ function buildVkDonutWallParamsFromTask(array $task): array
 
 function buildVkDonateWallParamsFromItem(array $item): array
 {
-    $support = getVkDonationAttachmentSupport();
-    if (empty($support['supported'])) {
-        return [];
-    }
-
     $enabled = (int) ($item['donation_enabled'] ?? 0) === 1;
     $vkDonateId = trim((string) ($item['vk_donate_id'] ?? ''));
     if (!$enabled || $vkDonateId === '') {
@@ -1572,9 +1567,9 @@ function buildVkDonateWallParamsFromItem(array $item): array
 function getVkDonationAttachmentSupport(): array
 {
     return [
-        'supported' => false,
-        'code' => 'vk_api_not_supported',
-        'message' => 'VK API не поддерживает автоматическое прикрепление цели сбора (donation goal) к обычной записи wall.post.',
+        'supported' => true,
+        'code' => 'enabled',
+        'message' => '',
     ];
 }
 
