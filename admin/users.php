@@ -79,66 +79,40 @@ require_once __DIR__ . '/includes/header.php';
             <h3>Пользователи (<?= e($totalUsers) ?>)</h3>
         </div>
     </div>
-    <div class="card__body" style="padding: 0;">
-<table class="table">
-<thead>
-<tr>
-<th>ID</th>
-<th>Пользователь</th>
-<th>VK ID</th>
-<th>Email</th>
-<th>Заявок</th>
-<th>Дата регистрации</th>
-<th style="width:140px;"></th>
-<th style="width:80px;"></th>
-</tr>
-</thead>
-<tbody>
- <?php foreach ($users as $user): ?>
-<tr>
-<td data-label="ID">#<?= $user['id'] ?></td>
-<td data-label="Пользователь">
-<div class="flex items-center gap-md">
- <?php if (!empty($user['avatar_url'])): ?>
-<img src="<?= htmlspecialchars($user['avatar_url']) ?>" 
- style="width:36px; height:36px; border-radius:50%; object-fit: cover;">
- <?php else: ?>
-<div style="width:36px; height:36px; border-radius:50%; background: #EEF2FF; display: flex; align-items: center; justify-content: center; color: #6366F1;">
-<i class="fas fa-user"></i>
-</div>
- <?php endif; ?>
-<div>
-<div class="font-semibold"><?= htmlspecialchars(($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? '')) ?></div>
-<div class="text-secondary" style="font-size:13px;"><?= htmlspecialchars($user['surname'] ?? '') ?></div>
-</div>
-</div>
-</td>
-<td data-label="VK ID"><?= htmlspecialchars($user['vk_id'] ?? '') ?></td>
-<td data-label="Email"><?= htmlspecialchars($user['email'] ?: '—') ?></td>
-<td data-label="Заявок"><?= $user['applications_count'] ?></td>
-<td data-label="Дата регистрации"><?= date('d.m.Y', strtotime($user['created_at'])) ?></td>
-<td data-label="Роль">
- <?php if ($user['is_admin']): ?>
-<span class="badge badge--primary" style="font-size:10px;">Админ</span>
- <?php endif; ?>
-</td>
-<td data-label="Действия">
-<a href="/admin/user/<?= (int) $user['id'] ?>" class="btn btn--primary" style="padding:10px16px; font-size:13px; display:flex; align-items:center; gap:6px; white-space:nowrap;">
-<i class="fas fa-eye"></i> Профиль
-</a>
-</td>
-</tr>
- <?php endforeach; ?>
-
- <?php if (empty($users)): ?>
-<tr>
-<td colspan="8" class="text-center text-secondary" style="padding:40px;">
- Пользователи не найдены
-</td>
-</tr>
- <?php endif; ?>
-            </tbody>
-        </table>
+    <div class="card__body">
+        <?php if (empty($users)): ?>
+            <div class="text-center text-secondary" style="padding:40px;">Пользователи не найдены</div>
+        <?php else: ?>
+        <div class="admin-list-cards">
+            <?php foreach ($users as $user): ?>
+                <article class="admin-list-card">
+                    <div class="admin-list-card__header">
+                        <div class="admin-list-card__title-wrap" style="display:flex; gap:10px; align-items:center;">
+                            <?php if (!empty($user['avatar_url'])): ?>
+                                <img src="<?= htmlspecialchars($user['avatar_url']) ?>" class="admin-list-card__avatar" alt="Аватар">
+                            <?php else: ?>
+                                <div class="admin-list-card__avatar admin-list-card__avatar--empty"><i class="fas fa-user"></i></div>
+                            <?php endif; ?>
+                            <div>
+                                <h4 class="admin-list-card__title"><?= htmlspecialchars(trim(($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? '')) ?: 'Без имени') ?></h4>
+                                <div class="admin-list-card__subtitle"><?= htmlspecialchars($user['email'] ?: 'Email не указан') ?></div>
+                            </div>
+                        </div>
+                        <?php if ((int) $user['is_admin'] === 1): ?>
+                            <span class="badge badge--primary">Админ</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="admin-list-card__meta">
+                        <span><strong>Заявок:</strong> <?= (int) $user['applications_count'] ?></span>
+                        <span><strong>Регистрация:</strong> <?= date('d.m.Y', strtotime($user['created_at'])) ?></span>
+                    </div>
+                    <div class="admin-list-card__actions">
+                        <a href="/admin/user/<?= (int) $user['id'] ?>" class="btn btn--primary btn--sm"><i class="fas fa-eye"></i> Профиль</a>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
         
         <!-- Пагинация -->
         <?php if ($totalPages > 1): ?>

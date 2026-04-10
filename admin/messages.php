@@ -697,7 +697,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="card__header">
         <h3>Чаты: оспаривание решения по заявке</h3>
     </div>
-    <div class="card__body" style="padding:0;">
+    <div class="card__body">
         <?php if (empty($disputeThreads)): ?>
             <div class="empty-state" style="padding:20px;">
                 <div class="empty-state__icon"><i class="fas fa-comments"></i></div>
@@ -705,49 +705,35 @@ require_once __DIR__ . '/includes/header.php';
                 <p class="empty-state__text">Когда пользователи откроют оспаривание по заявке, диалоги появятся здесь.</p>
             </div>
         <?php else: ?>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Тема</th>
-                    <th>Последнее сообщение</th>
-                    <th>Дата</th>
-                    <th>Новое</th>
-                    <th>Заявка</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($disputeThreads as $thread): ?>
-                <tr>
-                    <td data-label="Тема"><?= htmlspecialchars($thread['title']) ?></td>
-                    <td data-label="Последнее сообщение"><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 120)) ?></td>
-                    <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></td>
-                    <td data-label="Новое">
-                        <?php if ((int) ($thread['unread_count'] ?? 0) > 0): ?>
-                            <span class="badge" style="background:#F59E0B; color:white;">Новое: <?= (int) $thread['unread_count'] ?></span>
-                        <?php else: ?>
-                            —
-                        <?php endif; ?>
-                    </td>
-                    <td data-label="Заявка">
-                        <?php if (!empty($thread['application_id'])): ?>
-                            <a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a>
-                            <?php if ((int) ($thread['dispute_chat_closed'] ?? 0) === 1): ?>
-                                <span class="badge" style="margin-left:6px; background:#6b7280; color:#fff;">Завершён</span>
+        <div class="admin-list-cards">
+            <?php foreach ($disputeThreads as $thread): ?>
+                <article class="admin-list-card">
+                    <div class="admin-list-card__header">
+                        <div class="admin-list-card__title-wrap">
+                            <h4 class="admin-list-card__title"><?= htmlspecialchars($thread['title']) ?></h4>
+                            <div class="admin-list-card__subtitle"><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 150)) ?></div>
+                        </div>
+                        <div class="admin-list-card__statuses">
+                            <?php if ((int) ($thread['unread_count'] ?? 0) > 0): ?>
+                                <span class="badge badge--warning">Новых: <?= (int) $thread['unread_count'] ?></span>
                             <?php endif; ?>
-                        <?php else: ?>
-                            —
-                        <?php endif; ?>
-                    </td>
-                    <td data-label="Действия">
+                            <span class="badge <?= (int) ($thread['dispute_chat_closed'] ?? 0) === 1 ? 'badge--secondary' : 'badge--success' ?>">
+                                <?= (int) ($thread['dispute_chat_closed'] ?? 0) === 1 ? 'Завершён' : 'Активен' ?>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="admin-list-card__meta">
+                        <span><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a></span>
+                        <span><strong>Обновлён:</strong> <?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></span>
+                    </div>
+                    <div class="admin-list-card__actions">
                         <a class="btn btn--ghost btn--sm" href="/admin/messages?view=disputes&dispute_application_id=<?= (int) $thread['application_id'] ?>">
                             <i class="fas fa-comments"></i> Открыть чат
                         </a>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+        </div>
         <?php endif; ?>
     </div>
 </div>
@@ -758,7 +744,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="card__header">
         <h3>Архив чатов оспаривания</h3>
     </div>
-    <div class="card__body" style="padding:0;">
+    <div class="card__body">
         <?php if (empty($disputeThreads)): ?>
             <div class="empty-state" style="padding:20px;">
                 <div class="empty-state__icon"><i class="fas fa-box-archive"></i></div>
@@ -766,20 +752,26 @@ require_once __DIR__ . '/includes/header.php';
                 <p class="empty-state__text">Здесь появятся завершённые чаты после переноса в архив.</p>
             </div>
         <?php else: ?>
-        <table class="table">
-            <thead><tr><th>Тема</th><th>Последнее сообщение</th><th>Дата</th><th>Заявка</th><th></th></tr></thead>
-            <tbody>
+        <div class="admin-list-cards">
             <?php foreach ($disputeThreads as $thread): ?>
-                <tr>
-                    <td><?= htmlspecialchars($thread['title']) ?></td>
-                    <td><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 120)) ?></td>
-                    <td><?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></td>
-                    <td><a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a></td>
-                    <td><a class="btn btn--ghost btn--sm" href="/admin/messages?view=disputes_archive&dispute_application_id=<?= (int) $thread['application_id'] ?>">Открыть</a></td>
-                </tr>
+                <article class="admin-list-card">
+                    <div class="admin-list-card__header">
+                        <div class="admin-list-card__title-wrap">
+                            <h4 class="admin-list-card__title"><?= htmlspecialchars($thread['title']) ?></h4>
+                            <div class="admin-list-card__subtitle"><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 150)) ?></div>
+                        </div>
+                        <span class="badge badge--secondary">Архив</span>
+                    </div>
+                    <div class="admin-list-card__meta">
+                        <span><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a></span>
+                        <span><strong>Дата:</strong> <?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></span>
+                    </div>
+                    <div class="admin-list-card__actions">
+                        <a class="btn btn--ghost btn--sm" href="/admin/messages?view=disputes_archive&dispute_application_id=<?= (int) $thread['application_id'] ?>">Открыть</a>
+                    </div>
+                </article>
             <?php endforeach; ?>
-            </tbody>
-        </table>
+        </div>
         <?php endif; ?>
     </div>
 </div>
@@ -1005,93 +997,66 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 </div>
 </div>
-<div class="card__body" style="padding:0;">
-<table class="table">
-<thead>
-<tr>
-<th class="select-col" style="display:none; width:54px;"></th>
-<th><a href="?sort=<?= $sort === 'id_desc' ? 'id_asc' : 'id_desc' ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>&user_id=<?= (int) $filterUserId ?>&user_query=<?= urlencode($filterUserQuery) ?>" style="color:inherit; text-decoration:none;">ID <?= $sort === 'id_desc' ? '↓' : ($sort === 'id_asc' ? '↑' : '') ?></a></th>
-<th>Получатель</th>
-<th>Тема</th>
-<th>Приоритет</th>
-<th>Отправил</th>
-<th><a href="?sort=<?= $sort === 'date_desc' ? 'date_asc' : 'date_desc' ?>&search=<?= urlencode($search) ?>&priority=<?= e($priority) ?>&user_id=<?= (int) $filterUserId ?>&user_query=<?= urlencode($filterUserQuery) ?>" style="color:inherit; text-decoration:none;">Дата <?= $sort === 'date_desc' ? '↓' : ($sort === 'date_asc' ? '↑' : '') ?></a></th>
-<th style="width:140px;">Действия</th>
-</tr>
-</thead>
-<tbody>
-<?php 
-// Фильтруем дубликаты broadcast-сообщений (оставляем только первое для каждого subject - которое уже последнее благодаря сортировке)
+<div class="card__body">
+<?php
 $shownBroadcast = [];
+$displayMessages = [];
 foreach ($messages as $msg) {
- $broadcastKey = $msg['admin_id'] . '-' . $msg['subject'];
- if (!empty($msg['is_broadcast'])) {
- if (isset($shownBroadcast[$broadcastKey])) continue;
- $shownBroadcast[$broadcastKey] = true;
- }
+    $broadcastKey = $msg['admin_id'] . '-' . $msg['subject'];
+    if (!empty($msg['is_broadcast'])) {
+        if (isset($shownBroadcast[$broadcastKey])) {
+            continue;
+        }
+        $shownBroadcast[$broadcastKey] = true;
+    }
+    $displayMessages[] = $msg;
+}
 ?>
-<tr class="message-row"
+<?php if (empty($displayMessages)): ?>
+<div class="text-center text-secondary" style="padding:40px;">Сообщений не найдено</div>
+<?php else: ?>
+<div class="admin-list-cards">
+<?php foreach ($displayMessages as $msg): ?>
+<article class="admin-list-card message-row"
     data-message-id="<?= (int) $msg['id'] ?>"
     data-admin-id="<?= (int) ($msg['admin_id'] ?? 0) ?>"
     data-message-subject="<?= e($msg['subject']) ?>"
     data-message-content="<?= e($msg['message']) ?>"
     data-message-priority="<?= e($msg['priority']) ?>"
     data-message-broadcast="<?= !empty($msg['is_broadcast']) ? '1' : '0' ?>">
-<td class="select-col" style="display:none;" data-label="Выбор">
-<input type="checkbox" class="message-select-checkbox" value="<?= (int) $msg['id'] ?>">
-</td>
-<td data-label="ID">#<?= $msg['id'] ?></td>
-<td data-label="Получатель">
-<div class="flex items-center gap-sm">
-<?php if (!empty($msg['is_broadcast'])): ?>
-<div>
-<div class="font-semibold" style="color:#6366F1;"><i class="fas fa-bullhorn" style="margin-right:6px;"></i>Отправлено для всех</div>
-<div class="text-secondary" style="font-size:12px;">Все пользователи</div>
+    <div class="admin-list-card__header">
+        <div class="admin-list-card__title-wrap">
+            <h4 class="admin-list-card__title"><?= htmlspecialchars($msg['subject']) ?></h4>
+            <div class="admin-list-card__subtitle">
+                <?php if (!empty($msg['is_broadcast'])): ?>
+                    <i class="fas fa-bullhorn"></i> Отправлено всем пользователям
+                <?php elseif (!empty($msg['user_name'])): ?>
+                    <?= htmlspecialchars(($msg['user_name'] ?? '') . ' ' . ($msg['user_surname'] ?? '')) ?> · <?= htmlspecialchars($msg['user_email'] ?: '') ?>
+                <?php else: ?>
+                    Пользователь удалён
+                <?php endif; ?>
+            </div>
+        </div>
+        <span class="badge <?= $msg['priority'] === 'critical' ? 'badge--error' : ($msg['priority'] === 'important' ? 'badge--warning' : 'badge--secondary') ?>">
+            <?= $msg['priority'] === 'critical' ? 'Критич.' : ($msg['priority'] === 'important' ? 'Важно' : 'Обычное') ?>
+        </span>
+    </div>
+    <div class="admin-list-card__meta">
+        <span><strong>Отправил:</strong> <?= htmlspecialchars(($msg['admin_name'] ?? 'Админ') . ' ' . ($msg['admin_surname'] ?? '')) ?></span>
+        <span><strong>Дата:</strong> <?= date('d.m.Y H:i', strtotime($msg['created_at'])) ?></span>
+        <span><strong>Превью:</strong> <?= htmlspecialchars(mb_substr((string) $msg['message'], 0, 120)) ?><?= mb_strlen((string) $msg['message']) > 120 ? '…' : '' ?></span>
+    </div>
+    <div class="admin-list-card__actions">
+        <label class="select-col" style="display:none;">
+            <input type="checkbox" class="message-select-checkbox" value="<?= (int) $msg['id'] ?>">
+        </label>
+        <button type="button" class="btn btn--ghost btn--sm js-view-message" title="Просмотр"><i class="fas fa-eye"></i> Открыть</button>
+        <button type="button" class="btn btn--ghost btn--sm js-delete-message" title="Удалить" style="color:#EF4444;"><i class="fas fa-trash"></i></button>
+    </div>
+</article>
+<?php endforeach; ?>
 </div>
-<?php elseif (!empty($msg['user_name'])): ?>
-<div>
-<div class="font-semibold"><?= htmlspecialchars(($msg['user_name'] ?? '') . ' ' . ($msg['user_surname'] ?? '')) ?></div>
-<div class="text-secondary" style="font-size:12px;"><?= htmlspecialchars($msg['user_email'] ?: '') ?></div>
-</div>
-<?php else: ?>
-<span class="text-secondary">Пользователь удален</span>
 <?php endif; ?>
-</div>
-</td>
-<td data-label="Тема" style="font-size: var(--font-size-sm);"><?= htmlspecialchars($msg['subject']) ?></td>
-<td data-label="Приоритет">
-<?php if ($msg['priority'] === 'critical'): ?>
-<span class="badge" style="background:#EF4444; color:white;">Критическое</span>
-<?php elseif ($msg['priority'] === 'important'): ?>
-<span class="badge" style="background:#F59E0B; color:white;">Важное</span>
-<?php else: ?>
-<span class="badge" style="background:#6B7280; color:white;">Обычное</span>
-<?php endif; ?>
-</td>
-<td data-label="Отправил"><?= htmlspecialchars(($msg['admin_name'] ?? 'Админ') . ' ' . ($msg['admin_surname'] ?? '')) ?></td>
-<td data-label="Дата"><?= date('d.m.Y H:i', strtotime($msg['created_at'])) ?></td>
-<td data-label="Действия">
-<div class="flex gap-sm">
-<button type="button" class="btn btn--ghost btn--sm js-view-message" title="Просмотр">
-<i class="fas fa-eye"></i> Просмотр
-</button>
-<button type="button" class="btn btn--ghost btn--sm js-delete-message" title="Удалить" style="color:#EF4444;">
-<i class="fas fa-trash"></i>
-</button>
-</div>
-</td>
-</tr>
-<?php } ?>
-
-<?php if (empty($messages)): ?>
-<tr>
-<td colspan="8" class="text-center text-secondary" style="padding:40px;">
- Сообщений не найдено
-</td>
-</tr>
-<?php endif; ?>
-</tbody>
-</table>
 
 <!-- Пагинация -->
 <?php if ($totalPages >1): ?>
@@ -1280,7 +1245,7 @@ function deleteMessage(id, isBroadcast) {
   .then(response => response.json())
   .then(data => {
    if (data.success) {
-    const row = document.querySelector(`tr[data-message-id="${id}"]`);
+    const row = document.querySelector(`.message-row[data-message-id="${id}"]`);
     if (row) {
      row.remove();
     }
@@ -1763,7 +1728,7 @@ document.addEventListener('DOMContentLoaded', function() {
   });
  });
 
- document.querySelectorAll('tr.message-row').forEach((row) => {
+ document.querySelectorAll('.message-row').forEach((row) => {
   row.addEventListener('click', (event) => {
    if (selectionModeEnabled) {
     const checkbox = row.querySelector('.message-select-checkbox');
@@ -1789,7 +1754,7 @@ document.addEventListener('DOMContentLoaded', function() {
  document.querySelectorAll('.js-view-message').forEach((button) => {
   button.addEventListener('click', (event) => {
    event.stopPropagation();
-   const row = button.closest('tr.message-row');
+   const row = button.closest('.message-row');
    if (!row) return;
    viewMessage(
     row.dataset.messageSubject || '',
@@ -1802,7 +1767,7 @@ document.addEventListener('DOMContentLoaded', function() {
  document.querySelectorAll('.js-delete-message').forEach((button) => {
   button.addEventListener('click', (event) => {
    event.stopPropagation();
-   const row = button.closest('tr.message-row');
+   const row = button.closest('.message-row');
    if (!row) return;
    const messageId = Number(row.dataset.messageId || 0);
    const isBroadcast = row.dataset.messageBroadcast === '1';

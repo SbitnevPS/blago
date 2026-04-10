@@ -413,96 +413,63 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
     </div>
-    <div class="card__body" style="padding: 0;">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th class="select-col" style="display:none; width:54px;"></th>
-                    <th>ID</th>
-                    <th>Пользователь</th>
-                    <th>Конкурс</th>
-                    <th>Участников</th>
-                    <th>Статус</th>
-                    <th>Публикация VK</th>
-                    <th>Дата</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($applications as $app): ?>
+    <div class="card__body">
+        <?php if (empty($applications)): ?>
+            <div class="text-center text-secondary" style="padding: 40px;">Заявки не найдены</div>
+        <?php else: ?>
+        <div class="admin-list-cards">
+            <?php foreach ($applications as $app): ?>
                 <?php
                     $statusMeta = getApplicationDisplayMeta($app);
-                    $rowStyle = (string) ($statusMeta['row_style'] ?? '');
+                    $vkStatus = $applicationVkStatuses[(int) $app['id']] ?? getApplicationVkPublicationStatus((int) $app['id']);
                 ?>
-                <tr style="<?= $rowStyle ?>">
-                    <?php $vkStatus = $applicationVkStatuses[(int) $app['id']] ?? getApplicationVkPublicationStatus((int) $app['id']); ?>
-                    <td class="select-col" style="display:none;" data-label="Выбор">
-                        <input type="checkbox" class="application-select-checkbox" value="<?= (int) $app['id'] ?>">
-                    </td>
-                    <td data-label="ID">#<?= $app['id'] ?></td>
-                    <td data-label="Пользователь">
-                        <div class="flex items-center gap-md">
-                            <?php if (!empty($app['avatar_url'])): ?>
-                                <img src="<?= htmlspecialchars($app['avatar_url']) ?>" 
-                                     style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
-                            <?php else: ?>
-                                <div style="width: 32px; height: 32px; border-radius: 50%; background: #EEF2FF; display: flex; align-items: center; justify-content: center; color: #6366F1;">
-                                    <i class="fas fa-user" style="font-size: 12px;"></i>
-                                </div>
-                            <?php endif; ?>
-                            <div>
-                                <div><?= htmlspecialchars(trim(($app['name'] ?? '') . ' ' . ($app['surname'] ?? '')) ?: 'Без имени') ?></div>
+                <article class="admin-list-card admin-list-card--application">
+                    <div class="admin-list-card__accent <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>"></div>
+                    <div class="admin-list-card__header">
+                        <div class="admin-list-card__title-wrap">
+                            <h4 class="admin-list-card__title">Заявка #<?= (int) $app['id'] ?></h4>
+                            <div class="admin-list-card__subtitle">
+                                <?= htmlspecialchars(trim(($app['name'] ?? '') . ' ' . ($app['surname'] ?? '')) ?: 'Без имени') ?>
                                 <?php if (!empty($app['email'])): ?>
-                                    <div class="text-secondary" style="font-size: 12px; margin-top: 2px;"><?= htmlspecialchars($app['email']) ?></div>
+                                    <span class="text-secondary">· <?= htmlspecialchars($app['email']) ?></span>
                                 <?php endif; ?>
                             </div>
                         </div>
-                    </td>
-                    <td data-label="Конкурс"><?= htmlspecialchars($app['contest_title'] ?? '—') ?></td>
-                    <td data-label="Участников"><?= $app['participants_count'] ?></td>
-                    <td data-label="Статус">
-                        <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
-                            <?= e((string) ($statusMeta['label'] ?? '—')) ?>
-                        </span>
-                    </td>
-                    <td data-label="Публикация VK">
-                        <div style="display:grid; gap:6px;">
-                            <span class="badge <?= e((string) ($vkStatus['badge_class'] ?? 'badge--secondary')) ?>">
-                                <?= e((string) ($vkStatus['status_label'] ?? 'Не опубликована')) ?>
+                        <div class="admin-list-card__statuses">
+                            <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
+                                <?= e((string) ($statusMeta['label'] ?? '—')) ?>
                             </span>
-                            <div class="text-secondary" style="font-size:12px;">
-                                <?= (int) ($vkStatus['published_count'] ?? 0) ?>/<?= (int) ($vkStatus['total_count'] ?? 0) ?>
-                            </div>
+                            <span class="badge <?= e((string) ($vkStatus['badge_class'] ?? 'badge--secondary')) ?>">
+                                VK: <?= e((string) ($vkStatus['status_code'] === 'partial' ? 'Частично' : ($vkStatus['status_code'] === 'published' ? 'Опублик.' : ($vkStatus['status_code'] === 'failed' ? 'Ошибка' : 'Не опублик.')))) ?>
+                            </span>
                         </div>
-                    </td>
-                    <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></td>
-                    <td data-label="Действия">
-                        <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+                    </div>
+                    <div class="admin-list-card__meta">
+                        <span><strong>Конкурс:</strong> <?= htmlspecialchars($app['contest_title'] ?? '—') ?></span>
+                        <span><strong>Участников:</strong> <?= (int) $app['participants_count'] ?></span>
+                        <span><strong>VK:</strong> <?= (int) ($vkStatus['published_count'] ?? 0) ?>/<?= (int) ($vkStatus['total_count'] ?? 0) ?></span>
+                        <span><strong>Подача:</strong> <?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></span>
+                    </div>
+                    <div class="admin-list-card__actions">
+                        <label class="select-col" style="display:none;">
+                            <input type="checkbox" class="application-select-checkbox" value="<?= (int) $app['id'] ?>">
+                        </label>
                         <button
                             type="button"
                             class="btn btn--secondary btn--sm js-open-vk-publish-modal"
                             data-application-id="<?= (int) $app['id'] ?>"
                             data-has-publications="<?= ((int) ($vkStatus['published_count'] ?? 0) > 0 || (int) ($vkStatus['failed_count'] ?? 0) > 0) ? '1' : '0' ?>"
                         >
-                            <?= (int) ($vkStatus['published_count'] ?? 0) > 0 ? 'Повторить публикацию' : 'Опубликовать' ?>
+                            <?= (int) ($vkStatus['published_count'] ?? 0) > 0 ? 'VK повтор' : 'VK публикация' ?>
                         </button>
-                        <a href="/admin/application/<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
-                            <i class="fas fa-eye"></i>
+                        <a href="/admin/application/<?= (int) $app['id'] ?>" class="btn btn--ghost btn--sm">
+                            <i class="fas fa-eye"></i> Открыть
                         </a>
-                        </div>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-                
-                <?php if (empty($applications)): ?>
-                <tr>
-                    <td colspan="9" class="text-center text-secondary" style="padding: 40px;">
-                        Заявки не найдены
-                    </td>
-                </tr>
-                <?php endif; ?>
-            </tbody>
-        </table>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
         
         <!-- Пагинация -->
         <?php if ($totalPages > 1): ?>
