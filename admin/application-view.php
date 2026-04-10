@@ -462,8 +462,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
      $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())")
          ->execute([$application['user_id'], $admin['id'], $subject, $messageText]);
 
-     $_SESSION['success_message'] = 'Заявка отправлена на корректировку';
-     redirect('/admin/application/' . $application_id);
+    $_SESSION['success_message'] = 'Заявка отправлена на корректировку';
+    redirect('/admin/applications');
  } elseif ($_POST['action'] === 'save_drawing_edit') {
      header('Content-Type: application/json');
      $participantId = intval($_POST['participant_id'] ?? 0);
