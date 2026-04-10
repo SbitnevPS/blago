@@ -75,6 +75,7 @@ if (!empty($workIds)) {
 
 $donationAttachmentSupport = getVkDonationAttachmentSupport();
 $donationGoals = [];
+$donationGoalsSyncWarning = '';
 
 try {
     $readiness = verifyVkPublicationReadiness(true);
@@ -138,10 +139,29 @@ try {
         return strcasecmp((string) ($a['title'] ?? ''), (string) ($b['title'] ?? ''));
     });
 } catch (Throwable $e) {
-    jsonResponse([
-        'success' => false,
-        'error' => 'Не удалось получить список целей донатов из VK сообщества: ' . $e->getMessage(),
-    ], 422);
+    $donationGoalsSyncWarning = 'Не удалось синхронизировать цели донатов из VK: ' . $e->getMessage();
+
+    $localGoalsStmt = $pdo->query("
+        SELECT id, title, description, vk_donate_id
+        FROM vk_donates
+        WHERE is_active = 1
+        ORDER BY title ASC, id ASC
+    ");
+
+    foreach ($localGoalsStmt->fetchAll() ?: [] as $goal) {
+        $donationGoals[] = [
+            'id' => (int) ($goal['id'] ?? 0),
+            'title' => trim((string) ($goal['title'] ?? '')) ?: ('Цель #' . (string) ($goal['vk_donate_id'] ?? '')),
+            'description' => trim((string) ($goal['description'] ?? '')),
+            'vk_donate_id' => trim((string) ($goal['vk_donate_id'] ?? '')),
+        ];
+    }
+
+    if ($donationAttachmentSupport['message'] === '') {
+        $donationAttachmentSupport['message'] = $donationGoalsSyncWarning;
+    } else {
+        $donationAttachmentSupport['message'] .= ' ' . $donationGoalsSyncWarning;
+    }
 }
 
 jsonResponse([
