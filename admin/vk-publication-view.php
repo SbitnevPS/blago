@@ -62,6 +62,53 @@ $items = getVkTaskItems($taskId);
 
 require_once __DIR__ . '/includes/header.php';
 ?>
+<style>
+.vk-publication-view-nav {
+    margin-bottom: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+.vk-publication-view-nav__crumbs {
+    color: #6B7280;
+    font-size: 13px;
+}
+.vk-publication-view-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+}
+@media (max-width: 768px) {
+    .vk-publication-view-table-wrap .table {
+        min-width: 0;
+    }
+    .vk-publication-view-table-wrap .table thead {
+        display: none;
+    }
+    .vk-publication-view-table-wrap .table tbody,
+    .vk-publication-view-table-wrap .table tr,
+    .vk-publication-view-table-wrap .table td {
+        display: block;
+        width: 100%;
+    }
+    .vk-publication-view-table-wrap .table tr {
+        border-bottom: 1px solid #E5E7EB;
+        padding: 10px 12px;
+    }
+    .vk-publication-view-table-wrap .table td {
+        border: 0;
+        padding: 6px 0;
+    }
+    .vk-publication-view-table-wrap .table td::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: #6B7280;
+        margin-bottom: 3px;
+    }
+}
+</style>
 
 <?php if (!empty($_SESSION['success_message'])): ?>
     <div class="alert alert--success mb-lg"><i class="fas fa-check-circle"></i> <?= e($_SESSION['success_message']) ?></div>
@@ -71,6 +118,11 @@ require_once __DIR__ . '/includes/header.php';
     <div class="alert alert--error mb-lg"><i class="fas fa-exclamation-circle"></i> <?= e($_SESSION['error_message']) ?></div>
     <?php unset($_SESSION['error_message']); ?>
 <?php endif; ?>
+
+<div class="vk-publication-view-nav">
+    <a href="/admin/vk-publications" class="btn btn--ghost"><i class="fas fa-arrow-left"></i> Назад к публикациям</a>
+    <div class="vk-publication-view-nav__crumbs">Публикации в VK → Просмотр задания</div>
+</div>
 
 <div class="card mb-lg">
     <div class="card__header"><h3>Общая информация</h3></div>
@@ -128,6 +180,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card">
     <div class="card__header"><h3>Элементы задания</h3></div>
     <div class="card__body" style="padding: 0;">
+        <div class="vk-publication-view-table-wrap">
         <table class="table">
             <thead>
             <tr>
@@ -219,6 +272,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
             </tbody>
         </table>
+        </div>
     </div>
 </div>
 

@@ -871,6 +871,31 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
     </aside>
 </div>
 
+<style>
+@media (max-width: 768px) {
+    #vkPublishPromptModal .modal__content {
+        width: calc(100vw - 20px);
+        max-width: calc(100vw - 20px) !important;
+        margin: 10px;
+        max-height: calc(100vh - 20px);
+        display: flex;
+        flex-direction: column;
+    }
+    #vkPublishPromptModal .modal__body {
+        overflow-y: auto;
+    }
+    #vkPublishPromptModal .modal__footer {
+        flex-wrap: wrap;
+    }
+    #vkPublishPromptModal .modal__footer .btn {
+        flex: 1 1 180px;
+    }
+    #vkPublishPreview {
+        max-height: 42vh !important;
+    }
+}
+</style>
+
 <div class="modal" id="vkPublishPromptModal">
     <div class="modal__content" style="max-width:700px;">
         <div class="modal__header">
