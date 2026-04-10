@@ -462,7 +462,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
     }
 
     $successMessage = $resubmittedForReview
-        ? 'Заявка исправлена и отправлена на повторную проверку, ждите ответа.'
+        ? 'Заявка исправлена и повторно отправлена на проверку.'
         : 'Изменения сохранены.';
 
     if ($isAjaxRequest) {
@@ -1161,8 +1161,8 @@ function applyApplicationResubmittedState() {
 
  const statusPill = document.querySelector('.status-pill');
  if (statusPill) {
-  statusPill.className = 'status-pill status-pill--pending';
-  statusPill.textContent = 'На рассмотрении';
+  statusPill.className = 'status-pill status-pill--revision';
+  statusPill.textContent = 'Исправлена';
  }
 }
 
