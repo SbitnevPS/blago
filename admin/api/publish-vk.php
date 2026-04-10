@@ -112,22 +112,35 @@ $taskId = createVkTaskFromPreview(
 $publishResult = publishVkTask($taskId, [
     'wall_params' => $extraWallParams,
 ]);
+$taskAfterPublish = getVkTaskById($taskId);
+$postUrl = trim((string) ($taskAfterPublish['vk_post_url'] ?? ''));
+$published = (int) ($publishResult['published'] ?? 0);
+$failed = (int) ($publishResult['failed'] ?? 0);
+$apiError = trim((string) ($publishResult['error'] ?? ''));
+$isDonationHardFail = $donationEnabled && $failed > 0;
 
-if ((int) ($publishResult['failed'] ?? 0) > 0 || (int) ($publishResult['published'] ?? 0) <= 0) {
+if ($failed > 0 || $published <= 0 || $isDonationHardFail) {
     vkPublicationLog('application_publish_failed', [
         'application_id' => $applicationId,
         'task_id' => $taskId,
         'donation_enabled' => $donationEnabled ? 1 : 0,
         'donation_goal_id' => $donationGoalId,
         'vk_donate_id' => $publicationMeta['vk_donate_id'] ?? '',
-        'error' => (string) ($publishResult['error'] ?? ''),
-        'failed' => (int) ($publishResult['failed'] ?? 0),
-        'published' => (int) ($publishResult['published'] ?? 0),
+        'error' => $apiError,
+        'failed' => $failed,
+        'published' => $published,
     ]);
     jsonResponse([
         'success' => false,
-        'error' => trim((string) ($publishResult['error'] ?? 'VK вернул ошибку при публикации.')),
+        'publication_type' => $donationEnabled ? 'with_donation' : 'regular',
         'task_id' => $taskId,
+        'published' => $published,
+        'failed' => $failed,
+        'error' => $apiError !== '' ? $apiError : ($isDonationHardFail
+            ? 'Публикация остановлена: не все работы удалось опубликовать с выбранным донатом.'
+            : 'VK вернул ошибку при публикации.'),
+        'donation_title' => $goal['title'] ?? '',
+        'post_url' => $postUrl !== '' ? $postUrl : null,
     ], 422);
 }
 
@@ -139,7 +152,9 @@ jsonResponse([
     'task_id' => $taskId,
     'publication_type' => $donationEnabled ? 'with_donation' : 'regular',
     'donation_title' => $goal['title'] ?? '',
-    'published' => (int) ($publishResult['published'] ?? 0),
-    'failed' => (int) ($publishResult['failed'] ?? 0),
+    'published' => $published,
+    'failed' => $failed,
     'total' => (int) ($publishResult['total'] ?? 0),
+    'error' => $apiError,
+    'post_url' => $postUrl !== '' ? $postUrl : null,
 ]);
