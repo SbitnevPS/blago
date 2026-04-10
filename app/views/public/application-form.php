@@ -260,7 +260,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if (empty($fio)) continue;
                     
  $age = intval($participant['age'] ??0);
- $workTitle = $fio;
+ $workTitle = trim((string)($participant['work_title'] ?? ''));
                     
  // Обработка временного файла рисунка
  $drawing_file = null;
@@ -333,7 +333,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  (int)$contest_id,
  (int)$application_id,
  $participant_id,
- $workTitle !== '' ? $workTitle : $fio,
+ $workTitle !== '' ? $workTitle : ('Рисунок участника #' . $participant_id),
  (string)$drawing_file
  ]);
  } catch (Throwable $ignored) {
@@ -655,6 +655,10 @@ generateCSRFToken();
 <div class="form-group">
 <label class="form-label form-label--required">Возраст</label>
 <input type="number" name="participants[${index}][age]" class="form-input" min="1" max="18" required value="${data?.age || ''}">
+</div>
+<div class="form-group">
+<label class="form-label form-label--required">Название рисунка</label>
+<input type="text" name="participants[${index}][work_title]" class="form-input" required value="${data?.work_title || ''}" placeholder="Например: Весеннее настроение">
 </div>
 </div>
 </div>
