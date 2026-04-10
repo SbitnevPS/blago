@@ -192,6 +192,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 
  if (isset($_POST['application_id']) && !empty($_POST['application_id'])) {
  $application_id = $_POST['application_id'];
+ $existingApplicationStmt = $pdo->prepare("
+     SELECT id, status, allow_edit
+     FROM applications
+     WHERE id = ? AND user_id = ?
+     LIMIT 1
+ ");
+ $existingApplicationStmt->execute([$application_id, $user['id']]);
+ $existingApplication = $existingApplicationStmt->fetch();
+
+ if (!$existingApplication) {
+ throw new Exception('Заявка для редактирования не найдена');
+ }
+
+ $shouldMarkAsCorrected = $action === 'submit'
+     && (int) ($existingApplication['allow_edit'] ?? 0) === 1
+     && normalizeApplicationStoredStatus((string) ($existingApplication['status'] ?? 'draft')) !== 'approved';
+ $nextStatus = $action === 'submit'
+     ? ($shouldMarkAsCorrected ? 'corrected' : 'submitted')
+     : 'draft';
                     
  $stmt = $pdo->prepare("
 	 UPDATE applications SET 
@@ -209,7 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 	 $source_info,
 	 $colleagues_info,
 	 $recommendations_wishes,
-	 $action === 'submit' ? 'submitted' : 'draft',
+	 $nextStatus,
  $action === 'submit' ? 0 : 1,
  $application_id,
  $user['id']

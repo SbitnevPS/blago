@@ -147,6 +147,74 @@ function ensureEmailVerificationSchema(PDO $pdo): void
 
 ensureEmailVerificationSchema($pdo);
 
+function ensureApplicationStatusSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        $column = $pdo->query("SHOW COLUMNS FROM applications LIKE 'status'")->fetch();
+        $type = strtolower((string) ($column['Type'] ?? ''));
+        $requiredStatuses = ['draft', 'submitted', 'approved', 'rejected', 'cancelled', 'corrected'];
+
+        $hasAllStatuses = true;
+        foreach ($requiredStatuses as $status) {
+            if (strpos($type, "'" . $status . "'") === false) {
+                $hasAllStatuses = false;
+                break;
+            }
+        }
+
+        if (!$hasAllStatuses) {
+            $pdo->exec("
+                ALTER TABLE applications
+                MODIFY COLUMN status ENUM('draft','submitted','approved','rejected','cancelled','corrected')
+                NULL DEFAULT 'draft'
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('[SCHEMA] Application status schema check failed: ' . $e->getMessage());
+    }
+}
+
+function backfillCorrectedApplications(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        $revisionSubject = getSystemSetting('application_revision_subject', 'Заявка отправлена на корректировку');
+        $stmt = $pdo->prepare("
+            UPDATE applications a
+            INNER JOIN (
+                SELECT
+                    CAST(SUBSTRING_INDEX(message, '#', -1) AS UNSIGNED) AS application_id,
+                    MAX(created_at) AS last_revision_sent_at
+                FROM admin_messages
+                WHERE subject = ?
+                  AND message LIKE '%Номер заявки: #%'
+                GROUP BY CAST(SUBSTRING_INDEX(message, '#', -1) AS UNSIGNED)
+            ) revision_log ON revision_log.application_id = a.id
+            SET a.status = 'corrected'
+            WHERE a.status = 'submitted'
+              AND a.allow_edit = 0
+              AND a.updated_at >= revision_log.last_revision_sent_at
+        ");
+        $stmt->execute([$revisionSubject]);
+    } catch (Throwable $e) {
+        error_log('[DATA] Corrected applications backfill failed: ' . $e->getMessage());
+    }
+}
+
+ensureApplicationStatusSchema($pdo);
+backfillCorrectedApplications($pdo);
+
 
 // Настройки сессии
 if (session_status() === PHP_SESSION_NONE) {
@@ -181,6 +249,110 @@ if (session_status() === PHP_SESSION_NONE) {
 // Функции
 function e($value) {
     return htmlspecialchars((string) ($value ?? ''), ENT_QUOTES, 'UTF-8');
+}
+
+function render_html_attrs(array $attrs): string
+{
+    $parts = [];
+
+    foreach ($attrs as $name => $value) {
+        if ($value === null || $value === false) {
+            continue;
+        }
+
+        if ($value === true) {
+            $parts[] = $name;
+            continue;
+        }
+
+        $parts[] = $name . '="' . e($value) . '"';
+    }
+
+    return implode(' ', $parts);
+}
+
+function db_table_has_column(string $table, string $column): bool
+{
+    static $cache = [];
+
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table) || !preg_match('/^[A-Za-z0-9_]+$/', $column)) {
+        return false;
+    }
+
+    $cacheKey = $table . '.' . $column;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
+    global $pdo;
+
+    try {
+        $stmt = $pdo->prepare("SHOW COLUMNS FROM `{$table}` LIKE ?");
+        $stmt->execute([$column]);
+        $cache[$cacheKey] = (bool) $stmt->fetch();
+    } catch (Throwable $e) {
+        $cache[$cacheKey] = false;
+    }
+
+    return $cache[$cacheKey];
+}
+
+function build_user_search_conditions(string $alias = ''): array
+{
+    $qualifiedAlias = trim($alias);
+    if ($qualifiedAlias !== '' && substr($qualifiedAlias, -1) !== '.') {
+        $qualifiedAlias .= '.';
+    }
+
+    $hasPatronymic = db_table_has_column('users', 'patronymic');
+    $conditions = [
+        $qualifiedAlias . 'name LIKE ?',
+        $qualifiedAlias . 'surname LIKE ?',
+        $qualifiedAlias . 'email LIKE ?',
+    ];
+
+    if ($hasPatronymic) {
+        $conditions[] = $qualifiedAlias . 'patronymic LIKE ?';
+    }
+
+    $surnameFirstFields = [$qualifiedAlias . 'surname', $qualifiedAlias . 'name'];
+    $nameFirstFields = [$qualifiedAlias . 'name', $qualifiedAlias . 'surname'];
+
+    if ($hasPatronymic) {
+        $surnameFirstFields[] = $qualifiedAlias . 'patronymic';
+        $nameFirstFields[] = $qualifiedAlias . 'patronymic';
+    }
+
+    $conditions[] = "CONCAT_WS(' ', " . implode(', ', $surnameFirstFields) . ") LIKE ?";
+    $conditions[] = "CONCAT_WS(' ', " . implode(', ', $nameFirstFields) . ") LIKE ?";
+
+    return $conditions;
+}
+
+function admin_live_search_attrs(array $config): string
+{
+    $map = [
+        'endpoint' => 'data-endpoint',
+        'query_param' => 'data-query-param',
+        'id_field' => 'data-id-field',
+        'primary_template' => 'data-primary-template',
+        'secondary_template' => 'data-secondary-template',
+        'value_template' => 'data-value-template',
+        'empty_text' => 'data-empty-text',
+        'limit' => 'data-limit',
+        'min_length' => 'data-min-length',
+        'min_length_numeric' => 'data-min-length-numeric',
+        'debounce' => 'data-debounce',
+    ];
+
+    $attrs = ['data-live-search' => true];
+    foreach ($map as $key => $attrName) {
+        if (array_key_exists($key, $config)) {
+            $attrs[$attrName] = $config[$key];
+        }
+    }
+
+    return render_html_attrs($attrs);
 }
 
 function csrf_token() {

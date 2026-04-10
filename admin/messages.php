@@ -464,11 +464,13 @@ if ($filterUserId > 0) {
     $where .= " AND am.user_id = ?";
     $params[] = $filterUserId;
 } elseif ($filterUserQuery !== '') {
-    $where .= " AND (u.name LIKE ? OR u.surname LIKE ? OR u.email LIKE ?)";
+    $userSearchConditions = build_user_search_conditions('u');
+    $where .= " AND (
+        " . implode("
+        OR ", $userSearchConditions) . "
+    )";
     $userSearchTerm = '%' . $filterUserQuery . '%';
-    $params[] = $userSearchTerm;
-    $params[] = $userSearchTerm;
-    $params[] = $userSearchTerm;
+    $params = array_merge($params, array_fill(0, count($userSearchConditions), $userSearchTerm));
 }
 if ($priority) {
 $where .= " AND am.priority = ?";
@@ -938,18 +940,30 @@ require_once __DIR__ . '/includes/header.php';
  placeholder="Поиск по теме, сообщению или пользователю..." 
  value="<?= htmlspecialchars($search) ?>">
 </div>
-<div style="flex:1; min-width:250px; position:relative;">
+<div
+ style="flex:1; min-width:250px; position:relative;"
+ <?= admin_live_search_attrs([
+  'endpoint' => '/admin/search-message-users',
+  'primary_template' => '{{name + surname||Без имени}}',
+  'secondary_template' => '{{email||Email не указан}}',
+  'value_template' => '{{name + surname||Без имени}} ({{email||Email не указан}})',
+  'limit' => 7,
+  'min_length' => 2,
+  'min_length_numeric' => 1,
+  'debounce' => 250,
+ ]) ?>>
 <label class="form-label">Поиск по родителю/куратору</label>
 <input
  type="text"
  name="user_query"
  id="filterUserSearch"
+ data-live-search-input
  class="form-input"
  placeholder="Фильтр по пользователю"
  value="<?= htmlspecialchars($filterUserQuery) ?>"
  autocomplete="off">
-<input type="hidden" name="user_id" id="filterUserId" value="<?= (int) $filterUserId ?>">
-<div id="filterUserResults" class="user-results"></div>
+<input type="hidden" name="user_id" id="filterUserId" data-live-search-hidden value="<?= (int) $filterUserId ?>">
+<div id="filterUserResults" class="user-results" data-live-search-results></div>
 </div>
 <div style="width:180px;">
 <label class="form-label">Приоритет</label>
@@ -1095,10 +1109,21 @@ foreach ($messages as $msg) {
 <div class="modal__body">
 <div class="form-group">
 <label class="form-label">Получатель</label>
-<div class="message-recipient-search">
-<input type="text" class="form-input" id="userSearch" placeholder="Начните вводить имя, фамилию или email..." autocomplete="off">
-<input type="hidden" name="user_id" id="userId">
-<div id="userResults" class="user-results">
+<div
+ class="message-recipient-search"
+ <?= admin_live_search_attrs([
+  'endpoint' => '/admin/search-users',
+  'primary_template' => '{{name + surname||Без имени}}',
+  'secondary_template' => '{{email||Email не указан}}',
+  'value_template' => '{{name + surname||Без имени}} ({{email||Email не указан}})',
+  'limit' => 7,
+  'min_length' => 2,
+  'min_length_numeric' => 1,
+  'debounce' => 300,
+ ]) ?>>
+<input type="text" class="form-input" id="userSearch" data-live-search-input placeholder="Начните вводить имя, фамилию или email..." autocomplete="off">
+<input type="hidden" name="user_id" id="userId" data-live-search-hidden>
+<div id="userResults" class="user-results" data-live-search-results>
 </div>
 </div>
 </div>
@@ -1413,78 +1438,8 @@ function toggleUserSelect() {
  }
 }
 
-let searchTimeout;
-const userSearchInput = document.getElementById('userSearch');
-const userResults = document.getElementById('userResults');
-const userIdInput = document.getElementById('userId');
-const filterUserSearchInput = document.getElementById('filterUserSearch');
-const filterUserResults = document.getElementById('filterUserResults');
-const filterUserIdInput = document.getElementById('filterUserId');
 const messageField = document.querySelector('textarea[name="message"]');
 const messageCounter = document.getElementById('messageCounter');
-
-userSearchInput?.addEventListener('input', function() {
- clearTimeout(searchTimeout);
- const query = this.value.trim();
- userIdInput.value = '';
-
- if (query.length < 2) {
-  userResults.style.display = 'none';
-  userIdInput.value = '';
-  return;
- }
-
- searchTimeout = setTimeout(function() {
-  fetch('/admin/search-users?q=' + encodeURIComponent(query) + '&limit=7')
-   .then(response => response.json())
-   .then(users => {
-   if (users.length > 0) {
-     userResults.innerHTML = users.map(u =>
-      '<button type="button" class="user-results__item" onclick="selectUser(' + u.id + ', \'' + escapeHtml((u.name + ' ' + u.surname + ' (' + u.email + ')').trim()).replace(/'/g, '&#39;') + '\')">' +
-      '<div class="user-results__name">' + escapeHtml((u.name + ' ' + u.surname).trim()) + '</div>' +
-      '<div class="user-results__email">' + escapeHtml(u.email) + '</div>' +
-      '</button>'
-     ).join('');
-     userResults.style.display = 'block';
-    } else {
-     userResults.innerHTML = '<div class="user-results__empty">Пользователи не найдены</div>';
-     userResults.style.display = 'block';
-    }
-   });
-}, 300);
-});
-
-let filterSearchTimeout;
-filterUserSearchInput?.addEventListener('input', function() {
- clearTimeout(filterSearchTimeout);
- const query = this.value.trim();
- filterUserIdInput.value = '';
-
- if (query.length < 2) {
-  filterUserResults.style.display = 'none';
-  filterUserIdInput.value = '';
-  return;
- }
-
- filterSearchTimeout = setTimeout(function() {
-  fetch('/admin/search-users?q=' + encodeURIComponent(query) + '&limit=7')
-   .then(response => response.json())
-   .then(users => {
-    if (users.length > 0) {
-     filterUserResults.innerHTML = users.map(u =>
-      '<button type="button" class="user-results__item" onclick="selectFilterUser(' + u.id + ', \'' + escapeHtml((u.name + ' ' + u.surname + ' (' + u.email + ')').trim()).replace(/'/g, '&#39;') + '\')">' +
-      '<div class="user-results__name">' + escapeHtml((u.name + ' ' + u.surname).trim()) + '</div>' +
-      '<div class="user-results__email">' + escapeHtml(u.email) + '</div>' +
-      '</button>'
-     ).join('');
-     filterUserResults.style.display = 'block';
-    } else {
-     filterUserResults.innerHTML = '<div class="user-results__empty">Пользователи не найдены</div>';
-     filterUserResults.style.display = 'block';
-    }
-   });
- }, 250);
-});
 
 function updateMessageCounter() {
  if (!messageField || !messageCounter) return;
@@ -1495,18 +1450,6 @@ function updateMessageCounter() {
 if (messageField) {
  messageField.addEventListener('input', updateMessageCounter);
  updateMessageCounter();
-}
-
-function selectUser(id, name) {
- userIdInput.value = id;
- userSearchInput.value = name.replace(/&quot;/g, '"').trim();
- userResults.style.display = 'none';
-}
-
-function selectFilterUser(id, name) {
- filterUserIdInput.value = id;
- filterUserSearchInput.value = name.replace(/&quot;/g, '"').trim();
- filterUserResults.style.display = 'none';
 }
 
 function escapeHtml(text) {
@@ -1635,15 +1578,6 @@ function scheduleDisputePolling() {
  }, delay);
 }
 
-document.addEventListener('click', function(e) {
- if (userSearchInput && userResults && !userSearchInput.contains(e.target) && !userResults.contains(e.target)) {
-  userResults.style.display = 'none';
- }
- if (filterUserSearchInput && filterUserResults && !filterUserSearchInput.contains(e.target) && !filterUserResults.contains(e.target)) {
-  filterUserResults.style.display = 'none';
- }
-});
-
 function updatePriorityStyle(radio) {
  if (!radio) return;
  document.querySelectorAll('.priority-option').forEach(el => {
@@ -1676,12 +1610,6 @@ document.addEventListener('DOMContentLoaded', function() {
  });
  document.querySelectorAll('.message-select-checkbox').forEach((checkbox) => {
   checkbox.addEventListener('change', updateBulkSelectionState);
- });
-
- filterUserSearchInput?.addEventListener('keydown', function(event) {
-  if (event.key === 'Backspace' && !filterUserSearchInput.value.trim()) {
-   filterUserIdInput.value = '';
-  }
  });
 
  document.getElementById('sendMessageModal')?.addEventListener('click', function(e) {

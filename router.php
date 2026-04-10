@@ -129,6 +129,8 @@ $routes = [
  '/admin/vk-publication/{id}' => ['file' => 'admin/vk-publication-view.php', 'name' => 'admin-vk-publication-view'],
  '/admin/diploma-template/{id}' => ['file' => 'admin/diploma-template.php', 'name' => 'admin-diploma-template'],
  '/admin/search-users' => ['file' => 'admin/search-users.php', 'name' => 'admin-search-users'],
+ '/admin/search-message-users' => ['file' => 'admin/search-message-users.php', 'name' => 'admin-search-message-users'],
+ '/admin/search-participants' => ['file' => 'admin/search-participants.php', 'name' => 'admin-search-participants'],
  '/admin/login' => ['file' => 'admin/login.php', 'name' => 'admin-login'],
  '/admin/logout' => ['file' => 'admin/logout.php', 'name' => 'admin-logout'],
 ];

@@ -5,6 +5,7 @@
 <link rel="stylesheet" href="/css/style.css">
 <link rel="stylesheet" href="/css/admin-layout.css">
 <link rel="stylesheet" href="/css/admin-assets.css">
+<script src="/js/admin-live-search.js" defer></script>
 <?php if (!empty($pageStyles) && is_array($pageStyles)): ?>
     <?php foreach ($pageStyles as $style): ?>
 <link rel="stylesheet" href="/css/<?= htmlspecialchars($style) ?>">

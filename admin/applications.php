@@ -229,8 +229,13 @@ if ($searchUserId > 0) {
     $where[] = 'a.user_id = ?';
     $params[] = $searchUserId;
 } elseif ($search) {
-    $where[] = '(u.name LIKE ? OR u.surname LIKE ? OR u.email LIKE ? OR a.id LIKE ?)';
-    $params = array_merge($params, ["%$search%", "%$search%", "%$search%", "%$search%"]);
+    $userSearchConditions = build_user_search_conditions('u');
+    $where[] = "(
+        " . implode("
+        OR ", $userSearchConditions) . "
+        OR a.id LIKE ?
+    )";
+    $params = array_merge($params, array_fill(0, count($userSearchConditions), "%$search%"), ["%$search%"]);
 }
 
 if ($participantId > 0) {
@@ -330,25 +335,47 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div style="flex: 1; min-width: 200px; max-width: 300px; position:relative;">
+            <div
+                style="flex: 1; min-width: 200px; max-width: 300px; position:relative;"
+                <?= admin_live_search_attrs([
+                    'endpoint' => '/admin/search-users',
+                    'primary_template' => '{{surname + name||Без имени}}',
+                    'secondary_template' => '{{email||Email не указан}}',
+                    'value_template' => '{{surname + name||Без имени}} · {{email||Email не указан}}',
+                    'limit' => 7,
+                    'min_length' => 2,
+                    'min_length_numeric' => 1,
+                    'debounce' => 220,
+                ]) ?>>
                 <label class="form-label">Поиск</label>
-                <input type="text" id="applicationsSearchInput" name="search" class="form-input" 
+                <input type="text" id="applicationsSearchInput" name="search" class="form-input" data-live-search-input
                        placeholder="ID, имя, email..." value="<?= htmlspecialchars($search) ?>">
-                <input type="hidden" name="search_user_id" id="applicationsSearchUserId" value="<?= (int) $searchUserId ?>">
-                <div id="applicationsSearchResults" class="user-results"></div>
+                <input type="hidden" name="search_user_id" id="applicationsSearchUserId" data-live-search-hidden value="<?= (int) $searchUserId ?>">
+                <div id="applicationsSearchResults" class="user-results" data-live-search-results></div>
             </div>
-            <div style="flex:1; min-width: 260px; max-width: 380px; position:relative;">
+            <div
+                style="flex:1; min-width: 260px; max-width: 380px; position:relative;"
+                <?= admin_live_search_attrs([
+                    'endpoint' => '/admin/search-participants',
+                    'primary_template' => '#{{id}} · {{fio||Без имени}}',
+                    'secondary_template' => 'Регион: {{region||—}} · {{email||Email не указан}}',
+                    'value_template' => '#{{id}} · {{fio||Без имени}}',
+                    'min_length' => 2,
+                    'min_length_numeric' => 1,
+                    'debounce' => 220,
+                ]) ?>>
                 <label class="form-label">Поиск по участнику</label>
                 <input
                     type="text"
                     name="participant_query"
                     id="participantSearchInput"
+                    data-live-search-input
                     class="form-input"
                     placeholder="ID, ФИО участника, регион или email заявителя"
                     value="<?= htmlspecialchars($participantQuery) ?>"
                     autocomplete="off">
-                <input type="hidden" name="participant_id" id="participantId" value="<?= (int) $participantId ?>">
-                <div id="participantSearchResults" class="user-results"></div>
+                <input type="hidden" name="participant_id" id="participantId" data-live-search-hidden value="<?= (int) $participantId ?>">
+                <div id="participantSearchResults" class="user-results" data-live-search-results></div>
             </div>
             <button type="submit" class="btn btn--primary">
                 <i class="fas fa-filter"></i> Фильтр
@@ -786,157 +813,6 @@ require_once __DIR__ . '/includes/header.php';
     }
 })();
 
-(() => {
-    const input = document.getElementById('participantSearchInput');
-    const hiddenInput = document.getElementById('participantId');
-    const results = document.getElementById('participantSearchResults');
-    if (!input || !hiddenInput || !results) return;
-
-    let timer = null;
-
-    const hideResults = () => {
-        results.style.display = 'none';
-        results.innerHTML = '';
-    };
-
-    const renderItems = (items) => {
-        if (!Array.isArray(items) || items.length === 0) {
-            results.innerHTML = '<div class="user-results__empty">Ничего не найдено</div>';
-            results.style.display = 'block';
-            return;
-        }
-
-        const escapeHtml = (value) => String(value ?? '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/\"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-
-        results.innerHTML = items.map((item) => {
-            const fullName = `${item.fio || ''}`.trim() || 'Без имени';
-            const region = item.region ? `Регион: ${item.region}` : 'Регион: —';
-            const email = item.email || 'Email не указан';
-            const labelName = `#${item.id} · ${fullName}`;
-            const safeName = escapeHtml(labelName);
-            const safeRegion = escapeHtml(region);
-            const safeEmail = escapeHtml(email);
-            return `
-                <button type="button" class="user-results__item" data-id="${item.id}" data-name="${safeName}">
-                    <div class="user-results__name">${safeName}</div>
-                    <div class="user-results__email">${safeRegion} · ${safeEmail}</div>
-                </button>
-            `;
-        }).join('');
-        results.style.display = 'block';
-    };
-
-    input.addEventListener('input', () => {
-        hiddenInput.value = '';
-        const query = input.value.trim();
-        if (timer) clearTimeout(timer);
-        if (query.length < 2) {
-            hideResults();
-            return;
-        }
-
-        timer = setTimeout(async () => {
-            try {
-                const response = await fetch(`/admin/search-participants.php?q=${encodeURIComponent(query)}`);
-                const data = await response.json();
-                renderItems(data);
-            } catch (error) {
-                hideResults();
-            }
-        }, 220);
-    });
-
-    results.addEventListener('click', (event) => {
-        const item = event.target.closest('.user-results__item');
-        if (!item) return;
-        hiddenInput.value = item.dataset.id || '';
-        input.value = item.dataset.name || '';
-        hideResults();
-    });
-
-    document.addEventListener('click', (event) => {
-        if (!results.contains(event.target) && event.target !== input) {
-            hideResults();
-        }
-    });
-})();
-
-(() => {
-    const input = document.getElementById('applicationsSearchInput');
-    const hiddenInput = document.getElementById('applicationsSearchUserId');
-    const results = document.getElementById('applicationsSearchResults');
-    if (!input || !results || !hiddenInput) return;
-    let timer = null;
-
-    const hideResults = () => {
-        results.style.display = 'none';
-        results.innerHTML = '';
-    };
-
-    const escapeHtml = (value) => String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-
-    const renderItems = (items) => {
-        if (!Array.isArray(items) || !items.length) {
-            results.innerHTML = '<div class="user-results__empty">Ничего не найдено</div>';
-            results.style.display = 'block';
-            return;
-        }
-        results.innerHTML = items.map((item) => {
-            const fullName = `${item.surname || ''} ${item.name || ''}`.trim() || 'Без имени';
-            const email = item.email || 'Email не указан';
-            const displayValue = `${fullName} · ${email}`;
-            return `<button type="button" class="user-results__item" data-id="${Number(item.id || 0)}" data-value="${escapeHtml(displayValue)}">
-                <div class="user-results__name">${escapeHtml(fullName)}</div>
-                <div class="user-results__email">${escapeHtml(email)}</div>
-            </button>`;
-        }).join('');
-        results.style.display = 'block';
-    };
-
-    input.addEventListener('input', () => {
-        hiddenInput.value = '';
-        const query = input.value.trim();
-        if (timer) clearTimeout(timer);
-        const isNumericQuery = /^\d+$/.test(query);
-        if ((!isNumericQuery && query.length < 2) || (isNumericQuery && query.length < 1)) {
-            hideResults();
-            return;
-        }
-        timer = setTimeout(async () => {
-            try {
-                const response = await fetch(`/admin/search-users.php?q=${encodeURIComponent(query)}&limit=7`);
-                const data = await response.json();
-                renderItems(data);
-            } catch (e) {
-                hideResults();
-            }
-        }, 220);
-    });
-
-    results.addEventListener('click', (event) => {
-        const item = event.target.closest('.user-results__item');
-        if (!item) return;
-        hiddenInput.value = item.dataset.id || '';
-        input.value = item.dataset.value || '';
-        hideResults();
-    });
-
-    document.addEventListener('click', (event) => {
-        if (!results.contains(event.target) && event.target !== input) {
-            hideResults();
-        }
-    });
-})();
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

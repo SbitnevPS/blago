@@ -58,7 +58,7 @@ $contests = $pdo->query('SELECT id, title FROM contests ORDER BY created_at DESC
 require_once __DIR__ . '/includes/header.php';
 ?>
 
-<div class="card mb-lg">
+<div class="card card--allow-overflow mb-lg">
     <div class="card__body">
         <form method="GET" class="flex gap-md" style="align-items: flex-end; flex-wrap: wrap;">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -73,18 +73,29 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div style="flex:1; min-width: 260px; max-width: 420px; position:relative;">
+            <div
+                style="flex:1; min-width: 260px; max-width: 420px; position:relative;"
+                <?= admin_live_search_attrs([
+                    'endpoint' => '/admin/search-participants',
+                    'primary_template' => '#{{id}} · {{fio||Без имени}}',
+                    'secondary_template' => 'Регион: {{region||—}} · {{email||Email не указан}}',
+                    'value_template' => '#{{id}} · {{fio||Без имени}}',
+                    'min_length' => 2,
+                    'min_length_numeric' => 1,
+                    'debounce' => 220,
+                ]) ?>>
                 <label class="form-label">Поиск по участнику</label>
                 <input
                     type="text"
                     name="participant_query"
                     id="participantSearchInput"
+                    data-live-search-input
                     class="form-input"
                     placeholder="ID, ФИО участника, регион или email заявителя"
                     value="<?= htmlspecialchars($participantQuery) ?>"
                     autocomplete="off">
-                <input type="hidden" name="participant_id" id="participantId" value="<?= (int) $participantId ?>">
-                <div id="participantSearchResults" class="user-results"></div>
+                <input type="hidden" name="participant_id" id="participantId" data-live-search-hidden value="<?= (int) $participantId ?>">
+                <div id="participantSearchResults" class="user-results" data-live-search-results></div>
             </div>
             <button type="submit" class="btn btn--primary"><i class="fas fa-filter"></i> Применить</button>
             <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0): ?>
@@ -161,88 +172,5 @@ require_once __DIR__ . '/includes/header.php';
         <?php endif; ?>
     </div>
 </div>
-
-<script>
-(() => {
-    const input = document.getElementById('participantSearchInput');
-    const hiddenInput = document.getElementById('participantId');
-    const results = document.getElementById('participantSearchResults');
-    if (!input || !hiddenInput || !results) return;
-
-    let timer = null;
-
-    const hideResults = () => {
-        results.style.display = 'none';
-        results.innerHTML = '';
-    };
-
-    const renderItems = (items) => {
-        if (!Array.isArray(items) || items.length === 0) {
-            results.innerHTML = '<div class="user-results__empty">Ничего не найдено</div>';
-            results.style.display = 'block';
-            return;
-        }
-
-        const escapeHtml = (value) => String(value ?? '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/\"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-
-        results.innerHTML = items.map((item) => {
-            const fullName = `${item.fio || ''}`.trim() || 'Без имени';
-            const region = item.region ? `Регион: ${item.region}` : 'Регион: —';
-            const email = item.email || 'Email не указан';
-            const labelName = `#${item.id} · ${fullName}`;
-            const safeName = escapeHtml(labelName);
-            const safeValueName = escapeHtml(labelName);
-            const safeRegion = escapeHtml(region);
-            const safeEmail = escapeHtml(email);
-            return `
-                <button type="button" class="user-results__item" data-id="${item.id}" data-name="${safeValueName}">
-                    <div class="user-results__name">${safeName}</div>
-                    <div class="user-results__email">${safeRegion} · ${safeEmail}</div>
-                </button>
-            `;
-        }).join('');
-        results.style.display = 'block';
-    };
-
-    input.addEventListener('input', () => {
-        hiddenInput.value = '';
-        const query = input.value.trim();
-        if (timer) clearTimeout(timer);
-        if (query.length < 2) {
-            hideResults();
-            return;
-        }
-
-        timer = setTimeout(async () => {
-            try {
-                const response = await fetch(`/admin/search-participants.php?q=${encodeURIComponent(query)}`);
-                const data = await response.json();
-                renderItems(data);
-            } catch (error) {
-                hideResults();
-            }
-        }, 220);
-    });
-
-    results.addEventListener('click', (event) => {
-        const item = event.target.closest('.user-results__item');
-        if (!item) return;
-        hiddenInput.value = item.dataset.id || '';
-        input.value = item.dataset.name || '';
-        hideResults();
-    });
-
-    document.addEventListener('click', (event) => {
-        if (!results.contains(event.target) && event.target !== input) {
-            hideResults();
-        }
-    });
-})();
-</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

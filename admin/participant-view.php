@@ -184,26 +184,6 @@ require_once __DIR__ . '/includes/header.php';
     </aside>
 
     <div class="participant-layout__details">
-        <?php foreach ($detailsMap as $sectionTitle => $items): ?>
-            <section class="card participant-detail-card">
-                <div class="card__header participant-section-title"><h3><?= e($sectionTitle) ?></h3></div>
-                <div class="card__body participant-detail-grid">
-                    <?php foreach ($items as $item): ?>
-                        <article class="participant-detail-item">
-                            <p class="participant-detail-item__label"><?= e($item['label']) ?></p>
-                            <div class="participant-detail-item__value">
-                                <?php if (!empty($item['is_html'])): ?>
-                                    <?= $item['value'] ?>
-                                <?php else: ?>
-                                    <?= e($item['value'] !== '' ? $item['value'] : '—') ?>
-                                <?php endif; ?>
-                            </div>
-                        </article>
-                    <?php endforeach; ?>
-                </div>
-            </section>
-        <?php endforeach; ?>
-
         <section class="card participant-diploma-card" id="diploma-actions">
             <div class="card__header participant-section-title">
                 <h3><i class="fas fa-award"></i> Действия с дипломом</h3>
@@ -239,6 +219,26 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endif; ?>
             </div>
         </section>
+
+        <?php foreach ($detailsMap as $sectionTitle => $items): ?>
+            <section class="card participant-detail-card">
+                <div class="card__header participant-section-title"><h3><?= e($sectionTitle) ?></h3></div>
+                <div class="card__body participant-detail-grid">
+                    <?php foreach ($items as $item): ?>
+                        <article class="participant-detail-item">
+                            <p class="participant-detail-item__label"><?= e($item['label']) ?></p>
+                            <div class="participant-detail-item__value">
+                                <?php if (!empty($item['is_html'])): ?>
+                                    <?= $item['value'] ?>
+                                <?php else: ?>
+                                    <?= e($item['value'] !== '' ? $item['value'] : '—') ?>
+                                <?php endif; ?>
+                            </div>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+        <?php endforeach; ?>
     </div>
 </section>
 

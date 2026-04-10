@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS applications (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     contest_id INT NOT NULL,
-    status ENUM('draft', 'submitted', 'approved', 'rejected') DEFAULT 'draft',
+    status ENUM('draft', 'submitted', 'approved', 'rejected', 'cancelled', 'corrected') DEFAULT 'draft',
     parent_fio VARCHAR(255),
     source_info VARCHAR(255),
     colleagues_info VARCHAR(255),
