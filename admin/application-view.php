@@ -45,6 +45,8 @@ $stmt->execute([$application_id]);
 $participants = $stmt->fetchAll();
 $works = getApplicationWorks((int)$application_id);
 $isApplicationApproved = (string) ($application['status'] ?? '') === 'approved';
+$displayPermissions = getApplicationDisplayPermissions($application, $works);
+$canShowBulkDiplomaActions = (bool) ($displayPermissions['can_show_bulk_diplomas'] ?? false);
 $showVkPublishPrompt = max(0, (int) ($_SESSION['vk_publish_prompt_application_id'] ?? 0)) === (int) $application_id;
 unset($_SESSION['vk_publish_prompt_application_id']);
 $participantColumns = $pdo->query("DESCRIBE participants")->fetchAll(PDO::FETCH_COLUMN);
@@ -153,6 +155,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             throw new RuntimeException('Работа не найдена');
         }
+        $workContext = getWorkDiplomaContext($workId);
+        if (!$workContext || (int) ($workContext['application_id'] ?? 0) !== (int) $application_id || !canShowIndividualDiplomaActions(['status' => (string) ($workContext['work_status'] ?? 'pending')])) {
+            throw new RuntimeException('Для выбранной работы диплом недоступен');
+        }
         $diploma = generateWorkDiploma($workId, false);
         if ($isAjaxRequest) {
             jsonResponse([
@@ -169,6 +175,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     } elseif ($_POST['action'] === 'send_participant_diploma') {
         $workId = (int)($_POST['work_id'] ?? 0);
         $ctx = getWorkDiplomaContext($workId);
+        if (!$ctx || (int) ($ctx['application_id'] ?? 0) !== (int) $application_id || !canShowIndividualDiplomaActions(['status' => (string) ($ctx['work_status'] ?? 'pending')])) {
+            throw new RuntimeException('Для выбранной работы диплом недоступен');
+        }
         $diploma = generateWorkDiploma($workId, false);
         sendDiplomaByEmail($ctx ?? [], $diploma);
         if ($isAjaxRequest) {
@@ -178,6 +187,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         redirect('/admin/application/' . $application_id);
     } elseif ($_POST['action'] === 'link_participant_diploma') {
         $workId = (int)($_POST['work_id'] ?? 0);
+        $ctx = getWorkDiplomaContext($workId);
+        if (!$ctx || (int) ($ctx['application_id'] ?? 0) !== (int) $application_id || !canShowIndividualDiplomaActions(['status' => (string) ($ctx['work_status'] ?? 'pending')])) {
+            throw new RuntimeException('Для выбранной работы диплом недоступен');
+        }
         $diploma = generateWorkDiploma($workId, false);
         $_SESSION['success_message'] = 'Ссылка участника: ' . getPublicDiplomaUrl($diploma['public_token']);
         redirect('/admin/application/' . $application_id);
@@ -185,7 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $workId = (int)($_POST['work_id'] ?? 0);
         $participantId = (int)($_POST['participant_id'] ?? findWorkParticipantId($works, $workId));
         $newStatus = (string)($_POST['work_status'] ?? 'pending');
-        if ($workId <= 0 || !in_array($newStatus, ['pending', 'accepted', 'reviewed'], true)) {
+        if ($workId <= 0 || !in_array($newStatus, ['pending', 'accepted', 'reviewed', 'reviewed_non_competitive'], true)) {
             if ($isAjaxRequest) {
                 jsonResponse(['success' => false, 'error' => 'Некорректный статус работы'], 422);
             }
@@ -223,6 +236,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $_SESSION['success_message'] = 'Статус работы обновлён';
         redirect('/admin/application/' . $application_id);
     } elseif ($_POST['action'] === 'generate_all_diplomas') {
+        if (!$canShowBulkDiplomaActions) {
+            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
+        }
         foreach ($works as $workRow) {
             if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
                 continue;
@@ -232,6 +248,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $_SESSION['success_message'] = 'Дипломы сформированы';
         redirect('/admin/application/' . $application_id);
     } elseif ($_POST['action'] === 'generate_and_send_all_diplomas') {
+        if (!$canShowBulkDiplomaActions) {
+            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
+        }
         foreach ($works as $workRow) {
             if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
                 continue;
@@ -243,6 +262,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $_SESSION['success_message'] = 'Дипломы сформированы и отправлены';
         redirect('/admin/application/' . $application_id);
     } elseif ($_POST['action'] === 'collect_all_diploma_links') {
+        if (!$canShowBulkDiplomaActions) {
+            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
+        }
         foreach ($works as $workRow) {
             if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
                 continue;
@@ -256,6 +278,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 ", $lines);
         redirect('/admin/application/' . $application_id);
     } elseif ($_POST['action'] === 'download_zip_diplomas') {
+        if (!$canShowBulkDiplomaActions) {
+            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
+        }
         foreach ($works as $workRow) {
             if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
                 continue;
@@ -536,7 +561,7 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <?php
-$statusMeta = getApplicationStatusMeta($application['status']);
+$statusMeta = getApplicationDisplayMeta($application, buildApplicationWorkSummary($works));
 $submittedAt = !empty($application['created_at']) ? date('d.m.Y H:i', strtotime($application['created_at'])) : '—';
 $applicantName = trim((string) (($application['name'] ?? '') . ' ' . ($application['surname'] ?? ''))) ?: '—';
 $paymentReceipt = trim((string) ($application['payment_receipt'] ?? ''));
@@ -755,6 +780,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
         <div class="card application-sticky-panel">
             <div class="card__body">
                 <h3 class="application-card-title">Массовые действия по дипломам</h3>
+                <?php if ($canShowBulkDiplomaActions): ?>
                 <form method="POST" class="application-diploma-actions">
                     <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                     <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -767,6 +793,9 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     </select>
                     <button type="submit" class="btn btn--primary" id="bulkDiplomaActionRun">Выполнить</button>
                 </form>
+                <?php else: ?>
+                    <p class="text-secondary">Массовые дипломные действия доступны только после статуса «Заявка принята».</p>
+                <?php endif; ?>
                 <hr class="application-separator">
                 <h3 class="application-card-title">Действия с заявкой</h3>
                 <div class="card" style="margin-bottom: 14px;">

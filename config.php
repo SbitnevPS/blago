@@ -600,80 +600,91 @@ function getSystemSetting($key, $default = '') {
     return $settings[$key] ?? $default;
 }
 
-function getApplicationStatusConfig() {
+function getApplicationStoredStatuses(): array {
+    return ['draft', 'submitted', 'approved', 'rejected', 'cancelled', 'corrected'];
+}
+
+function normalizeApplicationStoredStatus(?string $status): string {
+    $status = strtolower(trim((string) $status));
+    if ($status === 'declined') {
+        return 'rejected';
+    }
+    if (!in_array($status, getApplicationStoredStatuses(), true)) {
+        return 'draft';
+    }
+    return $status;
+}
+
+function getApplicationUiStatusConfig(): array {
     return [
-        'draft' => [
-            'label' => 'Черновик',
-            'badge_class' => 'badge--secondary',
-            'row_style' => '',
-            'message_priority' => 'normal',
-        ],
-        'submitted' => [
-            'label' => 'Не обработанная заявка',
-            'badge_class' => 'badge--success',
-            'row_style' => '',
-            'message_priority' => 'normal',
-        ],
-        'revision' => [
-            'label' => 'Требует исправлений',
-            'badge_class' => 'badge--warning',
-            'row_style' => 'background:#FEF9C3;',
-            'message_priority' => 'important',
-        ],
-        'corrected' => [
-            'label' => 'Исправленная',
-            'badge_class' => 'badge--primary',
-            'row_style' => 'background:#DBEAFE;',
-            'message_priority' => 'important',
-        ],
-        'approved' => [
-            'label' => 'Заявка принята',
-            'badge_class' => 'badge--success',
-            'row_style' => 'background:#ECFDF5;',
-            'message_priority' => 'important',
-        ],
-        'declined' => [
-            'label' => 'Заявка отклонена',
-            'badge_class' => 'badge--error',
-            'row_style' => 'background:#FEE2E2;',
-            'message_priority' => 'critical',
-        ],
-        'rejected' => [
-            'label' => 'Заявка отклонена',
-            'badge_class' => 'badge--error',
-            'row_style' => 'background:#FEE2E2;',
-            'message_priority' => 'critical',
-        ],
-        'cancelled' => [
-            'label' => 'Отменена',
-            'badge_class' => 'badge--error',
-            'row_style' => 'background:#FEE2E2;',
-            'message_priority' => 'normal',
-        ],
-        'pending' => [
-            'label' => 'На рассмотрении',
-            'badge_class' => 'badge--warning',
-            'row_style' => '',
-            'message_priority' => 'normal',
-        ],
-        'partial_reviewed' => [
-            'label' => 'Частично рассмотрена',
-            'badge_class' => 'badge--warning',
-            'row_style' => '',
-            'message_priority' => 'normal',
-        ],
-        'reviewed' => [
-            'label' => 'Рассмотрена',
-            'badge_class' => 'badge--secondary',
-            'row_style' => '',
-            'message_priority' => 'normal',
-        ],
+        'draft' => ['label' => 'Черновик', 'badge_class' => 'badge--secondary', 'row_style' => '', 'message_priority' => 'normal'],
+        'submitted' => ['label' => 'Заявка подана', 'badge_class' => 'badge--primary', 'row_style' => '', 'message_priority' => 'normal'],
+        'revision' => ['label' => 'Требует исправлений', 'badge_class' => 'badge--warning', 'row_style' => 'background:#FEF9C3;', 'message_priority' => 'important'],
+        'corrected' => ['label' => 'Исправлена, ожидает повторной проверки', 'badge_class' => 'badge--primary', 'row_style' => 'background:#DBEAFE;', 'message_priority' => 'important'],
+        'partial_reviewed' => ['label' => 'Частично рассмотрена', 'badge_class' => 'badge--warning', 'row_style' => '', 'message_priority' => 'normal'],
+        'reviewed' => ['label' => 'Рассмотрена', 'badge_class' => 'badge--secondary', 'row_style' => '', 'message_priority' => 'normal'],
+        'approved' => ['label' => 'Заявка принята', 'badge_class' => 'badge--success', 'row_style' => 'background:#ECFDF5;', 'message_priority' => 'important'],
+        'rejected' => ['label' => 'Заявка отклонена', 'badge_class' => 'badge--error', 'row_style' => 'background:#FEE2E2;', 'message_priority' => 'critical'],
+        'cancelled' => ['label' => 'Заявка отменена', 'badge_class' => 'badge--error', 'row_style' => 'background:#FEE2E2;', 'message_priority' => 'normal'],
     ];
 }
 
+function getApplicationStatusConfig() {
+    return getApplicationUiStatusConfig();
+}
+
+function getApplicationCanonicalStatus(array $application): string {
+    return normalizeApplicationStoredStatus((string) ($application['status'] ?? 'draft'));
+}
+
+function getApplicationUiStatus(array $application, ?array $workSummary = null): string {
+    $storedStatus = getApplicationCanonicalStatus($application);
+    $allowEdit = (int) ($application['allow_edit'] ?? 0) === 1;
+    $hasUnresolvedCorrections = (int) ($application['has_unresolved_corrections'] ?? 0) > 0;
+    if ($hasUnresolvedCorrections || ($allowEdit && $storedStatus !== 'approved')) {
+        return 'revision';
+    }
+
+    if ($storedStatus === 'approved' || $storedStatus === 'rejected' || $storedStatus === 'cancelled' || $storedStatus === 'draft') {
+        return $storedStatus;
+    }
+    if ($storedStatus === 'corrected') {
+        return 'corrected';
+    }
+
+    if ($workSummary !== null && (int) ($workSummary['total'] ?? 0) > 0) {
+        $pending = (int) ($workSummary['pending'] ?? 0);
+        $accepted = (int) ($workSummary['accepted'] ?? 0);
+        $reviewed = (int) ($workSummary['reviewed'] ?? 0);
+        $total = (int) ($workSummary['total'] ?? 0);
+        if ($pending === 0 && ($accepted + $reviewed) === $total) {
+            return 'reviewed';
+        }
+        if ($accepted > 0 || $reviewed > 0) {
+            return 'partial_reviewed';
+        }
+    }
+
+    return 'submitted';
+}
+
+function getApplicationDisplayMeta(array $application, ?array $workSummary = null): array {
+    $uiStatus = getApplicationUiStatus($application, $workSummary);
+    $config = getApplicationUiStatusConfig();
+    $meta = $config[$uiStatus] ?? ['label' => ucfirst($uiStatus), 'badge_class' => 'badge--warning', 'row_style' => '', 'message_priority' => 'normal'];
+    $meta['status_code'] = $uiStatus;
+    $meta['stored_status'] = getApplicationCanonicalStatus($application);
+    return $meta;
+}
+
 function getApplicationStatusMeta($status) {
-    $config = getApplicationStatusConfig();
-    return $config[$status] ?? [
+    if (is_array($status)) {
+        return getApplicationDisplayMeta($status);
+    }
+    $config = getApplicationUiStatusConfig();
+    $normalized = normalizeApplicationStoredStatus((string) $status);
+    $meta = $config[$normalized] ?? $config[(string) $status] ?? null;
+    return $meta ?? [
         'label' => ucfirst((string) $status),
         'badge_class' => 'badge--warning',
         'row_style' => '',

@@ -115,9 +115,11 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
                 <?php foreach ($participants as $participant): ?>
                     <?php
-                        $isRevisionState = isset($participant['allow_edit']) && (int) $participant['allow_edit'] === 1 && $participant['application_status'] !== 'approved';
-                        $statusMeta = getApplicationStatusMeta($participant['application_status']);
-                        $rowStyle = $isRevisionState ? 'background:#FEF9C3;' : ($statusMeta['row_style'] ?? '');
+                        $statusMeta = getApplicationDisplayMeta([
+                            'status' => (string) ($participant['application_status'] ?? 'draft'),
+                            'allow_edit' => (int) ($participant['allow_edit'] ?? 0),
+                        ]);
+                        $rowStyle = (string) ($statusMeta['row_style'] ?? '');
                     ?>
                     <tr style="<?= $rowStyle ?>">
                         <td data-label="ID участника">#<?= (int) $participant['id'] ?></td>
@@ -140,8 +142,8 @@ require_once __DIR__ . '/includes/header.php';
                         <td data-label="Email заявки"><?= htmlspecialchars($participant['applicant_email'] ?: ($participant['organization_email'] ?: '—')) ?></td>
                         <td data-label="Регион"><?= htmlspecialchars($participant['region'] ?: '—') ?></td>
                         <td data-label="Статус заявки">
-                            <span class="badge <?= $isRevisionState ? 'badge--warning' : $statusMeta['badge_class'] ?>">
-                                <?= htmlspecialchars($isRevisionState ? 'Требует исправлений' : $statusMeta['label']) ?>
+                            <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
+                                <?= e((string) ($statusMeta['label'] ?? '—')) ?>
                             </span>
                         </td>
                         <td data-label="Действия" style="display:flex; gap:6px; flex-wrap:wrap;">
