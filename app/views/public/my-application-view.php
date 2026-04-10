@@ -1,6 +1,6 @@
 <?php
 // my-application-view.php - Просмотр заявки пользователем
-require_once dirname(__DIR__, 3) . '/config.php';
+require_once dirname(__DIR__, 3) . '/includes/init.php';
 
 // Проверка авторизации
 if (!isAuthenticated()) {
