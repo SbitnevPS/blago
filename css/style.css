@@ -967,8 +967,8 @@ h4 {
 }
 
 .badge--success {
-	background: var(--color-success-light);
-	color: #065F46;
+	background: #16A34A;
+	color: #FFFFFF;
 }
 
 .badge--warning {
