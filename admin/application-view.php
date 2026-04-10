@@ -857,6 +857,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     <span class="form-checkbox__mark"></span>
                     <span>Прикрепить донат</span>
                 </label>
+                <div id="vkDonationSupportHint" class="text-secondary" style="display:none; margin-bottom:8px; font-size:13px;"></div>
                 <div class="form-group" style="margin-bottom:8px;">
                     <label class="form-label" for="vkDonationGoalSelect">Цель доната</label>
                     <select class="form-select" id="vkDonationGoalSelect" disabled>
@@ -1316,9 +1317,12 @@ ensureComplianceFieldsAvailable();
     const donationGoalCardTitle = document.getElementById('vkDonationGoalCardTitle');
     const donationGoalCardDescription = document.getElementById('vkDonationGoalCardDescription');
     const donationGoalCardVkId = document.getElementById('vkDonationGoalCardVkId');
+    const donationSupportHint = document.getElementById('vkDonationSupportHint');
     const applicationId = Number(approveButton.dataset.id || 0);
     const csrfToken = approveButton.dataset.csrf || '';
     let publishInProgress = false;
+    let donationAttachmentSupported = true;
+    let donationAttachmentMessage = '';
 
     const showStatus = (message, type = 'success') => {
         if (!statusBox) return;
@@ -1336,11 +1340,21 @@ ensureComplianceFieldsAvailable();
 
     const toggleDonationFields = () => {
         const enabled = !!(donationEnabledCheckbox && donationEnabledCheckbox.checked);
+        if (donationEnabledCheckbox && !donationAttachmentSupported) {
+            donationEnabledCheckbox.checked = false;
+            donationEnabledCheckbox.disabled = true;
+        } else if (donationEnabledCheckbox) {
+            donationEnabledCheckbox.disabled = false;
+        }
         if (donationGoalSelect) {
-            donationGoalSelect.disabled = !enabled;
+            donationGoalSelect.disabled = !enabled || !donationAttachmentSupported;
         }
         if (!enabled && donationGoalCard) {
             donationGoalCard.style.display = 'none';
+        }
+        if (donationSupportHint) {
+            donationSupportHint.style.display = donationAttachmentSupported ? 'none' : 'block';
+            donationSupportHint.textContent = donationAttachmentMessage || 'Публикация с целью доната сейчас недоступна.';
         }
     };
 
@@ -1404,6 +1418,8 @@ ensureComplianceFieldsAvailable();
         if (donationGoalSelect) {
             donationGoalSelect.innerHTML = '';
         }
+        donationAttachmentSupported = true;
+        donationAttachmentMessage = '';
         toggleDonationFields();
         updateDonationGoalCard();
 
@@ -1442,6 +1458,9 @@ ensureComplianceFieldsAvailable();
                 }
             }
             renderDonationGoals(data.donation_goals || []);
+            const support = data.donation_attachment_support || {};
+            donationAttachmentSupported = support.supported !== false;
+            donationAttachmentMessage = String(support.message || '');
             toggleDonationFields();
             updateDonationGoalCard();
         } catch (error) {
@@ -1490,6 +1509,10 @@ ensureComplianceFieldsAvailable();
             }
             const donationEnabled = !!(donationEnabledCheckbox && donationEnabledCheckbox.checked);
             const donationGoalId = Number(donationGoalSelect?.value || 0);
+            if (donationEnabled && !donationAttachmentSupported) {
+                showStatus(donationAttachmentMessage || 'Публикация с целью доната не поддерживается VK API.', 'error');
+                return;
+            }
             if (donationEnabled && !donationGoalId) {
                 showStatus('Нельзя включить донат без выбора цели.', 'error');
                 return;

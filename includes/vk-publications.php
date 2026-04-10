@@ -1344,8 +1344,18 @@ function publishVkTaskItem(int $itemId, array $options = []): array
     }
     $donationParams = buildVkDonateWallParamsFromItem($item);
     if ((int) ($item['donation_enabled'] ?? 0) === 1 && empty($donationParams)) {
-        $error = 'Нельзя публиковать с пустым vk_donate_id.';
-        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
+        $support = getVkDonationAttachmentSupport();
+        $vkDonateId = trim((string) ($item['vk_donate_id'] ?? ''));
+        $error = empty($support['supported'])
+            ? (string) ($support['message'] ?? 'Публикация с выбранной целью доната недоступна для текущего VK API.')
+            : 'Нельзя публиковать с пустым vk_donate_id.';
+        $technical = empty($support['supported'])
+            ? 'donation attachment disabled: ' . (string) ($support['code'] ?? 'unknown')
+            : $error;
+        if ($vkDonateId === '' && !empty($support['supported'])) {
+            $technical = 'donation attachment blocked: empty vk_donate_id';
+        }
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $technical);
         return ['success' => false, 'error' => $error];
     }
     if (!empty($donationParams)) {
@@ -1545,6 +1555,11 @@ function buildVkDonutWallParamsFromTask(array $task): array
 
 function buildVkDonateWallParamsFromItem(array $item): array
 {
+    $support = getVkDonationAttachmentSupport();
+    if (empty($support['supported'])) {
+        return [];
+    }
+
     $enabled = (int) ($item['donation_enabled'] ?? 0) === 1;
     $vkDonateId = trim((string) ($item['vk_donate_id'] ?? ''));
     if (!$enabled || $vkDonateId === '') {
@@ -1552,6 +1567,15 @@ function buildVkDonateWallParamsFromItem(array $item): array
     }
 
     return ['donation_goal_id' => $vkDonateId];
+}
+
+function getVkDonationAttachmentSupport(): array
+{
+    return [
+        'supported' => false,
+        'code' => 'vk_api_not_supported',
+        'message' => 'VK API не поддерживает автоматическое прикрепление цели сбора (donation goal) к обычной записи wall.post.',
+    ];
 }
 
 function sanitizeVkExtraWallParamsForLog(array $params): array

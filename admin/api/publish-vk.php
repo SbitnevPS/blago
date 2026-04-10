@@ -63,6 +63,17 @@ $publicationMeta = [
 ];
 
 if ($donationEnabled) {
+    $donationSupport = getVkDonationAttachmentSupport();
+    if (empty($donationSupport['supported'])) {
+        $error = (string) ($donationSupport['message'] ?? 'Публикация с целью доната через VK API недоступна.');
+        vkPublicationLog('application_publish_donation_not_supported', [
+            'application_id' => $applicationId,
+            'support_code' => (string) ($donationSupport['code'] ?? 'unknown'),
+            'requested_goal_id' => $donationGoalId,
+        ]);
+        jsonResponse(['success' => false, 'error' => $error], 422);
+    }
+
     if ($donationGoalId <= 0) {
         jsonResponse(['success' => false, 'error' => 'Нельзя включить донат без выбора цели.'], 422);
     }
@@ -77,7 +88,6 @@ if ($donationEnabled) {
         jsonResponse(['success' => false, 'error' => 'Нельзя публиковать с пустым vk_donate_id.'], 422);
     }
 
-    $extraWallParams['donation_goal_id'] = $vkDonateId;
     $publicationMeta = [
         'donation_enabled' => 1,
         'donation_goal_id' => $donationGoalId,
