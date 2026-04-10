@@ -163,11 +163,17 @@ foreach ($participants as $participantRow) {
     $participantByWorkId[(int)($participantRow['id'] ?? 0)] = $participantRow;
 }
 
-$ensureDiplomaActionsAllowed = static function () use ($isApplicationAccepted, $applicationId) {
-    if ($isApplicationAccepted) {
+$workSummary = buildApplicationWorkSummary($participants);
+$uiStatusMeta = getApplicationUiStatusMeta($workSummary);
+$isEncouragementDiplomasForAllWorks = ((string) ($uiStatusMeta['label'] ?? '') === 'Благодарственные дипломы доступны для всех работ');
+$isAnyWorkAccepted = (int) ($workSummary['accepted'] ?? 0) > 0;
+$canUseDiplomaActions = $isApplicationAccepted || $isAnyWorkAccepted || $isEncouragementDiplomasForAllWorks;
+
+$ensureDiplomaActionsAllowed = static function () use ($canUseDiplomaActions, $applicationId) {
+    if ($canUseDiplomaActions) {
         return;
     }
-    $_SESSION['error_message'] = 'Действия с дипломами доступны только после статуса «Принята к участию».';
+    $_SESSION['error_message'] = 'Действия с дипломами доступны после принятия заявки, принятия хотя бы одной работы или открытия благодарственных дипломов для всех работ.';
     redirect('/application/' . $applicationId);
 };
 
@@ -487,7 +493,6 @@ foreach ($unresolvedCorrections as $correction) {
     }
 }
 
-$workSummary = buildApplicationWorkSummary($participants);
 $allPending = $workSummary['total'] > 0 && $workSummary['pending'] === $workSummary['total'];
 $hasDiplomas = $workSummary['diplomas'] > 0;
 $participantsWithDiplomas = array_values(array_filter($participants, static function (array $participantRow): bool {
@@ -496,7 +501,6 @@ $participantsWithDiplomas = array_values(array_filter($participants, static func
 }));
 $hasParticipantsWithDiplomas = count($participantsWithDiplomas) > 0;
 $hasVkPublished = $workSummary['vk_published'] > 0;
-$uiStatusMeta = getApplicationUiStatusMeta($workSummary);
 $vkPublicationLinks = [];
 foreach ($participants as $participantRow) {
     if (!empty($participantRow['vk_post_url'])) {
@@ -739,7 +743,7 @@ $currentPage = 'applications';
                                     <?php if ($hasParticipantCorrection): ?>
                                         <button type="button" class="btn btn--primary btn--sm js-open-participant-edit" data-work-id="<?= (int)($participant['id'] ?? 0) ?>" data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>" data-age="<?= (int)($participant['age'] ?? 0) ?>" data-work-title="<?= htmlspecialchars($workTitle, ENT_QUOTES) ?>" data-drawing-url="<?= htmlspecialchars($drawingSrc, ENT_QUOTES) ?>"><i class="fas fa-pen"></i> Исправить</button>
                                     <?php endif; ?>
-                                    <?php if ($isApplicationAccepted && $isDiplomaAvailable): ?>
+                                    <?php if ($canUseDiplomaActions && $isDiplomaAvailable): ?>
                                         <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_one"><input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>"><button class="btn btn--primary btn--sm" type="submit"><i class="fas fa-download"></i> Скачать диплом</button></form>
                                     <?php endif; ?>
                                     <?php if ($participantVkUrl !== ''): ?>
@@ -789,7 +793,7 @@ $currentPage = 'applications';
             <div style="display:flex; flex-wrap:wrap; gap:8px;">
                 <?php if ($application['status'] === 'revision' && $canEdit): ?>
                     <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary"><i class="fas fa-pen"></i> Исправить заявку</a>
-                <?php elseif ($isApplicationAccepted && $hasDiplomas): ?>
+                <?php elseif ($canUseDiplomaActions && $hasDiplomas): ?>
                     <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать диплом</button></form>
                 <?php elseif (in_array($application['status'], ['declined', 'rejected'], true)): ?>
                     <div class="app-highlight" style="width:100%;">
