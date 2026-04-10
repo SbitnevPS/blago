@@ -197,12 +197,15 @@ try {
 $where = [];
 $params = [];
 
+// Черновики не участвуют в админских сценариях обработки
+$where[] = "a.status <> 'draft'";
+
 if ($status) {
     if ($status === 'declined') {
         $status = 'rejected';
     }
     if ($status === 'revision') {
-        $where[] = "a.allow_edit = 1 AND a.status <> 'approved'";
+        $where[] = "a.allow_edit = 1 AND a.status <> 'approved' AND a.status <> 'draft'";
     } else {
         $where[] = 'a.status = ?';
         $params[] = $status;

@@ -441,7 +441,7 @@ generateCSRFToken();
                 <section class="wizard-progress card mb-lg">
                     <div class="card__body">
                         <div class="wizard-progress__head">
-                            <strong id="mobileStepLabel">Шаг 1 из 4</strong>
+                            <strong id="mobileStepLabel">Шаг 1 из 3</strong>
                             <span id="progressPercent">25%</span>
                         </div>
                         <div class="wizard-progress__bar"><span id="progressBar"></span></div>
@@ -501,19 +501,14 @@ generateCSRFToken();
                         <div id="participantsEmpty" class="empty-state" style="display:none;">
                             <div class="empty-state__icon"><i class="fas fa-users"></i></div>
                             <div class="empty-state__title">Добавьте первого участника</div>
-                            <div class="empty-state__text">После этого можно перейти к загрузке рисунков.</div>
+                            <div class="empty-state__text">В карточке участника сразу заполняются данные и загружается рисунок.</div>
                         </div>
                         <div id="participantsContainer"></div>
                     </div>
                 </section>
 
                 <section class="wizard-step card mb-lg" data-step="3" hidden>
-                    <div class="card__header"><h3>Шаг 3. Загрузка рисунков</h3></div>
-                    <div class="card__body" id="uploadsContainer"></div>
-                </section>
-
-                <section class="wizard-step card mb-lg" data-step="4" hidden>
-                    <div class="card__header"><h3>Шаг 4. Проверка и отправка</h3></div>
+                    <div class="card__header"><h3>Шаг 3. Проверка и отправка</h3></div>
                     <div class="card__body" id="reviewContainer"></div>
                 </section>
 
@@ -581,10 +576,11 @@ const initialParticipants = <?= json_encode(array_map(function($p) use ($user) {
 
 const csrfToken = '<?= generateCSRFToken() ?>';
 const contestId = <?= e($contest_id) ?>;
-const steps = ['Заявитель', 'Участники', 'Рисунки', 'Отправка'];
+const steps = ['Заявитель', 'Участники и рисунки', 'Проверка и отправка'];
 const draftKey = `applicationDraft:${contestId}:<?= intval($user['id'] ?? 0) ?>`;
 let currentStep = 1;
 let participantCount = 0;
+const isEditingServerDraft = <?= $editingApplication ? 'true' : 'false' ?>;
 
 function createFieldError(input, message) {
     let error = input.parentElement.querySelector('.field-error');
@@ -616,8 +612,8 @@ function validateStep(step) {
         }
     });
 
-    if (step === 2 && participantCount === 0) valid = false;
-    if (step === 3) {
+    if (step === 2) {
+        if (participantCount === 0) valid = false;
         document.querySelectorAll('[id^="temp_file_"]').forEach((field) => {
             const idx = field.id.split('_').pop();
             const existing = document.getElementById(`existing_file_${idx}`);
@@ -651,12 +647,12 @@ function updateProgress() {
         return `<button type="button" class="wizard-step-pill ${cls}" onclick="goStep(${n})">${n}. ${title}</button>`;
     }).join('');
 
-    if (currentStep === 3) renderUploadsStep();
-    if (currentStep === 4) renderReview();
+    if (currentStep === 3) renderReview();
     updateSidebar();
 }
 
 function goStep(step) {
+    document.getElementById('formAction').value = 'submit';
     if (step > currentStep && !validateStep(currentStep)) return;
     currentStep = step;
     updateProgress();
@@ -685,6 +681,26 @@ function createParticipantForm(index, data = null) {
             </div>
             <input type="hidden" name="participants[${index}][temp_file]" id="temp_file_${index}" value="${data?.temp_file || ''}">
             <input type="hidden" name="participants[${index}][existing_drawing_file]" id="existing_file_${index}" value="${data?.existing_drawing_file || ''}">
+            <div class="form-section form-section--boxed">
+                <h4 class="form-section__title">Рисунок участника</h4>
+                <div class="drawing-layout">
+                    <div class="upload-area ${data?.temp_file || data?.existing_drawing_file ? 'has-file' : ''}" id="drawingUpload_${index}">
+                        <input type="file" accept="image/*" class="file-upload__input" data-index="${index}">
+                        <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                        <div class="upload-area__title" id="upload_title_${index}">${data?.temp_file || data?.existing_drawing_file ? 'Файл загружен' : 'Перетащите рисунок сюда или нажмите для выбора файла'}</div>
+                        <div class="upload-area__hint" id="upload_hint_${index}">JPG, PNG, GIF, WebP, TIF до 15MB</div>
+                    </div>
+                    <div class="drawing-preview-wrap">
+                        <div class="drawing-preview ${data?.preview ? 'visible' : ''}" id="preview_${index}">
+                            ${data?.preview ? `<img src="${data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large drawing-preview__image--clickable" id="preview_img_${index}" onclick="viewDrawing(${index})">` : ''}
+                            <div class="drawing-preview__actions">
+                                <button type="button" class="drawing-preview__action" onclick="viewDrawing(${index})">Посмотреть</button>
+                                <button type="button" class="drawing-preview__action drawing-preview__action--danger" onclick="removeDrawing(${index})">Удалить</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>`;
     return container;
 }
@@ -697,10 +713,11 @@ function toggleParticipant(index) {
 
 function addParticipant(data = null) {
     const container = document.getElementById('participantsContainer');
-    container.appendChild(createParticipantForm(participantCount, data));
+    const card = createParticipantForm(participantCount, data);
+    container.appendChild(card);
+    initUploadArea(participantCount);
     participantCount++;
     updateParticipantsState();
-    renderUploadsStep();
 }
 
 function removeParticipant(index) {
@@ -718,67 +735,20 @@ function removeParticipant(index) {
             age: f.querySelector(`[name="participants[${old}][age]"]`)?.value || '',
             work_title: f.querySelector(`[name="participants[${old}][work_title]"]`)?.value || '',
             temp_file: f.querySelector(`#temp_file_${old}`)?.value || '',
-            existing_drawing_file: f.querySelector(`#existing_file_${old}`)?.value || ''
+            existing_drawing_file: f.querySelector(`#existing_file_${old}`)?.value || '',
+            preview: f.querySelector(`#preview_img_${old}`)?.src || ''
         });
-        const oldPreview = document.getElementById(`preview_${old}`);
-        if (oldPreview) {
-            oldPreview.id = `preview_${participantCount}`;
-            oldPreview.querySelector('img').id = `preview_img_${participantCount}`;
-            fresh.querySelector('.participant-form__body').appendChild(oldPreview);
-        }
         f.replaceWith(fresh);
+        initUploadArea(participantCount);
         participantCount++;
     });
     updateParticipantsState();
-    renderUploadsStep();
 }
 
 function updateParticipantsState() {
     document.getElementById('participantsEmpty').style.display = participantCount ? 'none' : 'block';
     updateSidebar();
     saveLocalDraft();
-}
-
-function renderUploadsStep() {
-    const uploads = document.getElementById('uploadsContainer');
-    if (!uploads) return;
-    uploads.innerHTML = '';
-    const cards = document.querySelectorAll('#participantsContainer .participant-form');
-    if (!cards.length) {
-        uploads.innerHTML = '<div class="empty-state"><div class="empty-state__title">Нет участников</div><div class="empty-state__text">Добавьте участника на предыдущем шаге.</div></div>';
-        return;
-    }
-
-    cards.forEach((card, index) => {
-        const name = card.querySelector(`[name="participants[${index}][surname]"]`)?.value || 'Участник';
-        const tempVal = document.getElementById(`temp_file_${index}`)?.value || '';
-        const existingVal = document.getElementById(`existing_file_${index}`)?.value || '';
-        const previewImg = document.getElementById(`preview_img_${index}`)?.src || '';
-
-        const wrap = document.createElement('div');
-        wrap.className = 'upload-card';
-        wrap.innerHTML = `
-            <h4>${index + 1}. ${name}</h4>
-            <div class="drawing-layout">
-                <div class="upload-area ${tempVal || existingVal ? 'has-file' : ''}" id="drawingUpload_${index}">
-                    <input type="file" accept="image/*" class="file-upload__input" data-index="${index}">
-                    <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
-                    <div class="upload-area__title" id="upload_title_${index}">${tempVal || existingVal ? 'Файл загружен' : 'Перетащите рисунок сюда или нажмите для выбора файла'}</div>
-                    <div class="upload-area__hint" id="upload_hint_${index}">JPG, PNG, GIF, WebP, TIF до 15MB</div>
-                </div>
-                <div class="drawing-preview-wrap">
-                    <div class="drawing-preview ${previewImg ? 'visible' : ''}" id="preview_${index}">
-                        ${previewImg ? `<img src="${previewImg}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large drawing-preview__image--clickable" id="preview_img_${index}" onclick="viewDrawing(${index})">` : ''}
-                        <div class="drawing-preview__actions">
-                            <button type="button" class="drawing-preview__action" onclick="viewDrawing(${index})">Посмотреть</button>
-                            <button type="button" class="drawing-preview__action drawing-preview__action--danger" onclick="removeDrawing(${index})">Удалить</button>
-                        </div>
-                    </div>
-                </div>
-            </div>`;
-        uploads.appendChild(wrap);
-        initUploadArea(index);
-    });
 }
 
 function initUploadArea(index) {
@@ -803,7 +773,11 @@ function initUploadArea(index) {
 
 function handleFileSelect(file, index) {
     if (file.size > 15 * 1024 * 1024) {
-        alert('Файл слишком большой. Допустимо до 15MB.');
+        const title = document.getElementById(`upload_title_${index}`);
+        if (title) {
+            title.textContent = 'Файл слишком большой. Допустимо до 15MB.';
+            title.style.color = 'var(--color-error)';
+        }
         return;
     }
     const area = document.getElementById(`drawingUpload_${index}`);
@@ -870,10 +844,26 @@ function renderReview() {
     const parentName = document.querySelector('[name="parent_surname"]').value + ' ' + document.querySelector('[name="parent_name"]').value;
     const parentEmail = document.querySelector('[name="organization_email"]').value || '—';
     const participants = [...document.querySelectorAll('#participantsContainer .participant-form')].map((card, index) => {
-        const fio = `${card.querySelector(`[name="participants[${index}][surname]"]`)?.value || ''} ${card.querySelector(`[name="participants[${index}][name]"]`)?.value || ''}`.trim();
+        const fio = `${card.querySelector(`[name="participants[${index}][surname]"]`)?.value || ''} ${card.querySelector(`[name="participants[${index}][name]"]`)?.value || ''} ${card.querySelector(`[name="participants[${index}][patronymic]"]`)?.value || ''}`.trim();
         const age = card.querySelector(`[name="participants[${index}][age]"]`)?.value || '—';
+        const workTitle = card.querySelector(`[name="participants[${index}][work_title]"]`)?.value || '—';
         const hasDrawing = !!(document.getElementById(`temp_file_${index}`)?.value || document.getElementById(`existing_file_${index}`)?.value);
-        return `<li class="review-item"><strong>${fio || 'Участник'}</strong> · ${age} лет · ${hasDrawing ? '✅ Рисунок загружен' : '❌ Нет рисунка'} <button type="button" class="btn btn--ghost" onclick="goStep(${hasDrawing ? 2 : 3})">Изменить</button></li>`;
+        const previewUrl = document.getElementById(`preview_img_${index}`)?.src || '';
+        return `
+            <li class="review-item review-item--card">
+                <div class="review-item__thumb-wrap">
+                    ${hasDrawing && previewUrl
+                        ? `<img src="${previewUrl}" alt="Рисунок участника ${index + 1}" class="review-item__thumb drawing-preview__image--clickable" onclick="viewDrawing(${index})">`
+                        : '<div class="review-item__thumb review-item__thumb--empty">Нет рисунка</div>'}
+                </div>
+                <div class="review-item__meta">
+                    <strong>${fio || 'Участник'}</strong>
+                    <span>Возраст: ${age}</span>
+                    <span>Название рисунка: ${workTitle}</span>
+                </div>
+                <button type="button" class="btn btn--ghost" onclick="goStep(2)">Изменить</button>
+            </li>
+        `;
     });
 
     const ready = participants.length > 0 && participants.every((_, i) => document.getElementById(`temp_file_${i}`)?.value || document.getElementById(`existing_file_${i}`)?.value);
@@ -908,21 +898,27 @@ function saveDraft() {
 }
 
 function saveLocalDraft() {
+    if (isEditingServerDraft) return;
     const data = Object.fromEntries(new FormData(document.getElementById('applicationForm')).entries());
     data.currentStep = currentStep;
     localStorage.setItem(draftKey, JSON.stringify(data));
 }
 
 function tryRestoreDraft() {
+    if (isEditingServerDraft) return;
     const raw = localStorage.getItem(draftKey);
     if (!raw) return;
-    if (!confirm('Мы нашли незавершённую заявку. Продолжить заполнение?')) return;
     const data = JSON.parse(raw);
     Object.entries(data).forEach(([key, value]) => {
         const field = document.querySelector(`[name="${CSS.escape(key)}"]`);
         if (field && field.type !== 'file') field.value = value;
     });
     currentStep = Number(data.currentStep || 1);
+    const note = document.createElement('div');
+    note.className = 'alert alert--info mb-md';
+    note.innerHTML = '<i class="fas fa-info-circle alert__icon"></i><div class="alert__content"><div class="alert__message">Данные формы восстановлены из локального черновика.</div></div>';
+    const form = document.getElementById('applicationForm');
+    form.insertBefore(note, form.firstElementChild.nextElementSibling);
 }
 
 function viewDrawing(index) {
@@ -955,23 +951,34 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('addParticipantBtn').addEventListener('click', () => {
         addParticipant();
     });
-    document.getElementById('goReviewBtn').addEventListener('click', () => goStep(4));
+    document.getElementById('goReviewBtn').addEventListener('click', () => goStep(3));
     document.getElementById('nextStepBtn').addEventListener('click', () => goStep(Math.min(currentStep + 1, steps.length)));
     document.getElementById('prevStepBtn').addEventListener('click', () => goStep(Math.max(currentStep - 1, 1)));
+    document.getElementById('submitBtn').addEventListener('click', () => {
+        document.getElementById('formAction').value = 'submit';
+    });
     document.getElementById('applicationForm').addEventListener('input', (e) => {
         if (e.target.matches('[required]') && String(e.target.value || '').trim()) clearFieldError(e.target);
         updateSidebar();
         saveLocalDraft();
     });
     document.getElementById('applicationForm').addEventListener('submit', function (e) {
-        if (!validateStep(4)) {
-            e.preventDefault();
-            return;
+        const action = document.getElementById('formAction').value;
+        if (action === 'submit') {
+            if (currentStep !== steps.length || !validateStep(3)) {
+                e.preventDefault();
+                return;
+            }
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span> Отправляем...';
+            localStorage.removeItem(draftKey);
+        } else {
+            const btn = e.submitter;
+            if (btn) {
+                btn.disabled = true;
+            }
         }
-        const btn = document.getElementById('submitBtn');
-        btn.disabled = true;
-        btn.innerHTML = '<span class="loading-spinner"></span> Отправляем...';
-        localStorage.removeItem(draftKey);
     });
 
     <?php if (isset($show_success_modal) && $show_success_modal): ?>
