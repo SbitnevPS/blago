@@ -393,3 +393,39 @@
   gap:12px;
  }
 }
+
+.application-wizard-page { padding: var(--space-xl) var(--space-lg); max-width: 1200px; }
+.application-layout { display:grid; grid-template-columns:minmax(0, 1fr) 300px; gap:var(--space-lg); align-items:start; }
+.application-sidebar { position:sticky; top:100px; }
+.application-prep-grid { margin-top:var(--space-lg); display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
+.application-prep-item { background:#fff; border:1px solid var(--color-border); border-radius:12px; padding:10px 12px; font-weight:600; color:var(--color-text-secondary); }
+.wizard-progress__head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.wizard-progress__bar { height:8px; border-radius:999px; background:var(--color-bg); overflow:hidden; }
+.wizard-progress__bar span { display:block; height:100%; width:0; background:linear-gradient(90deg, var(--color-primary), #818cf8); transition:width .3s ease; }
+.wizard-steps { margin-top:14px; display:flex; flex-wrap:wrap; gap:8px; }
+.wizard-step-pill { border:1px solid var(--color-border); background:#fff; border-radius:999px; padding:7px 12px; font-size:var(--font-size-sm); }
+.wizard-step-pill.active { background:var(--color-primary); color:#fff; border-color:var(--color-primary); }
+.wizard-step-pill.done { border-color:var(--color-success); color:var(--color-success); }
+.form-grid { display:grid; gap:12px; }
+.form-grid--2 { grid-template-columns:repeat(2, minmax(0,1fr)); }
+.form-grid--3 { grid-template-columns:repeat(3, minmax(0,1fr)); }
+.wizard-card-head { display:flex; justify-content:space-between; align-items:center; gap:var(--space-md); }
+.wizard-nav { display:flex; gap:10px; flex-wrap:wrap; }
+.wizard-nav .btn { min-height:46px; }
+.upload-card { border:1px solid var(--color-border); border-radius:16px; padding:16px; margin-bottom:12px; background:#fff; }
+.field-error { color:var(--color-error); font-size:var(--font-size-xs); margin-top:6px; }
+.form-input.is-invalid, .form-select.is-invalid, .form-textarea.is-invalid, .upload-area.is-invalid { border-color:var(--color-error) !important; box-shadow:0 0 0 2px var(--color-error-light); }
+.sidebar-stat { padding:10px 12px; background:var(--color-bg); border-radius:10px; margin-top:8px; }
+.review-block { border:1px solid var(--color-border); border-radius:14px; padding:14px; margin-bottom:12px; }
+.review-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; }
+.review-item { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; padding:10px; border-radius:10px; background:var(--color-bg); }
+
+@media (max-width: 1024px) {
+  .application-layout { grid-template-columns:1fr; }
+  .application-sidebar { position:static; }
+}
+
+@media (max-width: 768px) {
+  .form-grid--2, .form-grid--3, .application-prep-grid { grid-template-columns:1fr; }
+  .wizard-nav .btn { width:100%; justify-content:center; }
+}
