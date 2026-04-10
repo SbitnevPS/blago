@@ -804,6 +804,7 @@ $currentPage = 'applications';
                     <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary"><i class="fas fa-pen"></i> Исправить заявку</a>
                 <?php elseif ($canShowBulkDiplomaActions && $hasDiplomas): ?>
                     <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать все дипломы</button></form>
+                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_email_all"><button class="btn btn--secondary" type="submit"><i class="fas fa-envelope"></i> Отправить дипломы себе на почту</button></form>
                 <?php elseif (getApplicationCanonicalStatus($application) === 'rejected'): ?>
                     <div class="app-highlight" style="width:100%;">
                         <strong>Заявка отклонена.</strong>
