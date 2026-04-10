@@ -417,11 +417,6 @@ generateCSRFToken();
     <div class="application-hero__inner">
         <div class="application-hero__eyebrow">Подача заявки</div>
         <h2 class="application-hero__title">Как заполнить заявку</h2>
-        <p class="application-hero__text">
-            Заполнение займёт всего несколько минут. Сначала укажите данные родителя или куратора, затем общую информацию
-            об организации, после этого добавьте участников. Один участник = одна конкурсная работа.
-        </p>
-
         <div class="application-hero__steps">
             <article class="application-step">
                 <div class="application-step__badge">Шаг 1</div>
