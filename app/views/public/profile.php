@@ -325,6 +325,19 @@ generateCSRFToken();
         messageEl.textContent = message;
     }
 
+    async function parseJsonResponse(response) {
+        const text = await response.text();
+        if (!text) {
+            return {};
+        }
+
+        try {
+            return JSON.parse(text);
+        } catch (error) {
+            return {};
+        }
+    }
+
     function renderVerifiedState() {
         if (!blockEl) return;
         blockEl.innerHTML = '<div id="email-verified-status" style="display:inline-flex; align-items:center; gap:8px; background:#dcfce7; color:#166534; border:1px solid #86efac; padding:10px 14px; border-radius:10px; font-weight:600;"><i class="fas fa-check-circle"></i><span>Адрес подтверждён</span></div>';
@@ -338,7 +351,7 @@ generateCSRFToken();
         try {
             const response = await fetch('/email/verification-status', { credentials: 'same-origin' });
             if (!response.ok) return;
-            const data = await response.json();
+            const data = await parseJsonResponse(response);
             if (data && data.email_verified) {
                 renderVerifiedState();
             }
@@ -356,7 +369,7 @@ generateCSRFToken();
                     body: formData,
                     credentials: 'same-origin'
                 });
-                const data = await response.json();
+                const data = await parseJsonResponse(response);
                 if (!response.ok || !data.success) {
                     throw new Error(data.message || 'Не удалось отправить письмо.');
                 }
