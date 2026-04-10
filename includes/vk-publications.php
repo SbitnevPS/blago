@@ -124,6 +124,21 @@ function ensureVkPublicationSchema(): void
         if (!in_array('response_payload_json', $itemColumns, true)) {
             $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN response_payload_json LONGTEXT NULL AFTER request_payload_json");
         }
+        if (!in_array('verification_status', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN verification_status VARCHAR(64) NULL AFTER response_payload_json");
+        }
+        if (!in_array('verification_message', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN verification_message TEXT NULL AFTER verification_status");
+        }
+        if (!in_array('detected_mode', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN detected_mode VARCHAR(64) NULL AFTER verification_message");
+        }
+        if (!in_array('detected_features_json', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN detected_features_json LONGTEXT NULL AFTER detected_mode");
+        }
+        if (!in_array('vk_post_readback_json', $itemColumns, true)) {
+            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_post_readback_json LONGTEXT NULL AFTER detected_features_json");
+        }
         try {
             $pdo->exec("ALTER TABLE vk_publication_task_items ADD INDEX idx_donation_goal_id (donation_goal_id)");
         } catch (Throwable $e) {
@@ -1520,6 +1535,12 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         'donation_enabled' => (int) ($item['donation_enabled'] ?? 0),
         'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
         'vk_donate_id' => (string) ($item['vk_donate_id'] ?? ''),
+        'vk_donut_enabled' => (int) ($item['vk_donut_enabled'] ?? 0),
+        'vk_donut_paid_duration' => isset($item['vk_donut_paid_duration']) ? (int) $item['vk_donut_paid_duration'] : null,
+        'vk_donut_can_publish_free_copy' => (int) ($item['vk_donut_can_publish_free_copy'] ?? 0),
+        'build_by_mode' => buildVkWallParamsByMode($item, $options),
+        'build_donate_params' => buildVkDonateWallParamsFromItem($item),
+        'build_donut_params' => buildVkDonutWallParamsFromTask($item),
     ]);
 
     $readiness = verifyVkPublicationReadiness(true);
@@ -1549,6 +1570,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
     }
 
     $extraWallParams = buildVkWallParamsByMode($item, $options);
+    $extraWallParams['_publication_mode'] = $publicationType;
 
     if ($publicationType === 'donation_goal' && empty($extraWallParams)) {
         $failureStage = 'validation';
@@ -1585,10 +1607,20 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             $extraWallParams
         );
         $responsePayload = $published;
+        $readbackPost = is_array($published['readback_post'] ?? null) ? $published['readback_post'] : [];
+        $verification = verifyVkPublicationReadback($publicationType, $readbackPost);
+        $verificationStatus = (string) ($verification['verification_status'] ?? 'unknown_result');
+        $verificationMessage = (string) ($verification['verification_message'] ?? 'VK создал пост, но не удалось верифицировать результат.');
+        $verificationFailed = in_array($verificationStatus, ['post_created_but_donut_not_confirmed', 'post_created_but_goal_not_confirmed', 'unknown_result'], true);
+
+        if ($verificationFailed) {
+            throw new RuntimeException($verificationMessage);
+        }
 
         $pdo->prepare("UPDATE vk_publication_task_items
             SET item_status = 'published', vk_post_id = ?, vk_post_url = ?, error_message = ?, technical_error = ?, published_at = NOW(), updated_at = NOW(),
-                resolved_mode = ?, capability_status = ?, failure_stage = NULL, request_payload_json = ?, response_payload_json = ?
+                resolved_mode = ?, capability_status = ?, failure_stage = NULL, request_payload_json = ?, response_payload_json = ?,
+                verification_status = ?, verification_message = ?, detected_mode = ?, detected_features_json = ?, vk_post_readback_json = ?
             WHERE id = ?")
             ->execute([
                 (string) $published['post_id'],
@@ -1599,6 +1631,11 @@ function publishVkTaskItem(int $itemId, array $options = []): array
                 'supported',
                 json_encode($requestPayload, JSON_UNESCAPED_UNICODE),
                 json_encode($responsePayload, JSON_UNESCAPED_UNICODE),
+                $verificationStatus,
+                $verificationMessage,
+                (string) ($verification['detected_mode'] ?? 'unknown'),
+                json_encode($verification['detected_features'] ?? [], JSON_UNESCAPED_UNICODE),
+                json_encode($published['readback_raw'] ?? [], JSON_UNESCAPED_UNICODE),
                 (int) $item['id'],
             ]);
 
@@ -1624,6 +1661,10 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
             'vk_donate_id' => (string) ($item['vk_donate_id'] ?? ''),
             'extra_wall_params' => sanitizeVkExtraWallParamsForLog($extraWallParams),
+            'verification_status' => $verificationStatus,
+            'verification_message' => $verificationMessage,
+            'detected_mode' => (string) ($verification['detected_mode'] ?? 'unknown'),
+            'detected_features' => $verification['detected_features'] ?? [],
         ]);
 
         return [
@@ -1663,7 +1704,8 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         ]);
         markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $errorMessage, $normalized['technical']);
         $pdo->prepare("UPDATE vk_publication_task_items
-            SET resolved_mode = ?, capability_status = ?, failure_stage = ?, request_payload_json = ?, response_payload_json = ?, updated_at = NOW()
+            SET resolved_mode = ?, capability_status = ?, failure_stage = ?, request_payload_json = ?, response_payload_json = ?,
+                verification_status = COALESCE(verification_status, ?), verification_message = COALESCE(verification_message, ?), updated_at = NOW()
             WHERE id = ?")
             ->execute([
                 $publicationType,
@@ -1674,6 +1716,8 @@ function publishVkTaskItem(int $itemId, array $options = []): array
                     'error' => $errorMessage,
                     'technical' => $normalized['technical'],
                 ], JSON_UNESCAPED_UNICODE),
+                'verification_failed',
+                $errorMessage,
                 (int) $item['id'],
             ]);
         return ['success' => false, 'error' => $errorMessage];
@@ -1866,6 +1910,73 @@ function sanitizeVkExtraWallParamsForLog(array $params): array
         $out[$normalizedKey] = $value;
     }
     return $out;
+}
+
+function detectVkPostFeatures(array $post): array
+{
+    $json = json_encode($post, JSON_UNESCAPED_UNICODE);
+    $jsonLower = mb_strtolower((string) $json);
+    $donut = is_array($post['donut'] ?? null) ? $post['donut'] : [];
+    $donutDetected = !empty($donut)
+        || (int) ($post['is_donut'] ?? 0) === 1
+        || str_contains($jsonLower, '"donut"')
+        || str_contains($jsonLower, 'is_donut');
+
+    $goalHints = ['goal', 'donat', 'donation', 'fundrais', 'support', 'donut_link'];
+    $goalDetected = false;
+    foreach ($goalHints as $hint) {
+        if (str_contains($jsonLower, $hint)) {
+            $goalDetected = true;
+            break;
+        }
+    }
+
+    return [
+        'has_donut' => $donutDetected,
+        'has_goal' => $goalDetected,
+        'donut' => $donut,
+        'attachments_count' => is_array($post['attachments'] ?? null) ? count($post['attachments']) : 0,
+    ];
+}
+
+function verifyVkPublicationReadback(string $mode, array $post): array
+{
+    $features = detectVkPostFeatures($post);
+    $status = 'unknown_result';
+    $message = 'VK создал пост, но итог верификации неоднозначен.';
+    $detectedMode = 'unknown';
+
+    if ($features['has_donut'] && !$features['has_goal']) {
+        $detectedMode = 'vk_donut';
+    } elseif ($features['has_goal'] && !$features['has_donut']) {
+        $detectedMode = 'donation_goal';
+    } elseif (!$features['has_goal'] && !$features['has_donut']) {
+        $detectedMode = 'standard';
+    }
+
+    if ($mode === 'standard') {
+        $status = (!$features['has_goal'] && !$features['has_donut']) ? 'confirmed_standard' : 'post_created_but_unexpected_features';
+        $message = $status === 'confirmed_standard'
+            ? 'Пост создан, признаки donut/paywall и цели сбора не обнаружены.'
+            : 'Пост создан, но в readback обнаружены неожиданные признаки донатов/целей.';
+    } elseif ($mode === 'vk_donut') {
+        $status = $features['has_donut'] ? 'confirmed_vk_donut' : 'post_created_but_donut_not_confirmed';
+        $message = $features['has_donut']
+            ? 'Пост создан и donut/paywall подтверждён readback-ответом VK.'
+            : 'Пост создан, но VK не подтвердил donut/paywall в readback.';
+    } elseif ($mode === 'donation_goal') {
+        $status = $features['has_goal'] ? 'confirmed_donation_goal' : 'post_created_but_goal_not_confirmed';
+        $message = $features['has_goal']
+            ? 'Пост создан и цель сбора подтверждена readback-ответом VK.'
+            : 'Пост создан, но VK не подтвердил прикрепление цели сбора. Публикация считается неуспешной.';
+    }
+
+    return [
+        'verification_status' => $status,
+        'verification_message' => $message,
+        'detected_mode' => $detectedMode,
+        'detected_features' => $features,
+    ];
 }
 
 function isVkDonationAttachmentError(Throwable $e): bool
