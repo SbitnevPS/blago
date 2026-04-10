@@ -318,6 +318,83 @@
 .application-btn--danger { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
 .application-btn--success { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
 .application-btn--success:disabled { opacity: .55; cursor: not-allowed; }
+
+.admin-list-cards {
+  display: grid;
+  gap: 12px;
+}
+.admin-list-card {
+  position: relative;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 14px;
+  background: #fff;
+  overflow: hidden;
+}
+.admin-list-card__accent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #9ca3af;
+}
+.admin-list-card__accent.badge--warning { background: #f59e0b; }
+.admin-list-card__accent.badge--success { background: #10b981; }
+.admin-list-card__accent.badge--error { background: #ef4444; }
+.admin-list-card__accent.badge--primary { background: #6366f1; }
+.admin-list-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.admin-list-card__title { margin: 0; font-size: 16px; }
+.admin-list-card__subtitle { margin-top: 4px; color: #6b7280; font-size: 13px; }
+.admin-list-card__statuses { display: flex; gap: 6px; flex-wrap: wrap; }
+.admin-list-card__meta {
+  margin-top: 10px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: #374151;
+  font-size: 13px;
+}
+.admin-list-card__actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.admin-list-card__avatar,
+.admin-list-card__thumb {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid #e5e7eb;
+}
+.admin-list-card__avatar { border-radius: 50%; }
+.admin-list-card__avatar--empty,
+.admin-list-card__thumb--empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef2ff;
+  color: #6366f1;
+}
+
+@media (max-width: 768px) {
+  .admin-list-card {
+    padding: 12px;
+  }
+  .admin-list-card__meta {
+    display: grid;
+    gap: 6px;
+  }
+}
 .application-message-modal { max-width: 580px; }
 .application-recipient-card { display: flex; align-items: center; gap: 10px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; padding: 12px; margin-bottom: 14px; }
 .application-recipient-card span { display: block; font-size: 13px; color: #64748b; margin-top: 2px; }

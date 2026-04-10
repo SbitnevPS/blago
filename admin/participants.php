@@ -98,69 +98,53 @@ require_once __DIR__ . '/includes/header.php';
     <div class="card__header">
         <h3>Участники (<?= $totalParticipants ?>)</h3>
     </div>
-    <div class="card__body" style="padding: 0;">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>ID участника</th>
-                    <th>ФИО участника</th>
-                    <th>Рисунок</th>
-                    <th>Возраст</th>
-                    <th>Email заявки</th>
-                    <th>Регион</th>
-                    <th>Статус заявки</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($participants as $participant): ?>
-                    <?php
-                        $statusMeta = getApplicationDisplayMeta([
-                            'status' => (string) ($participant['application_status'] ?? 'draft'),
-                            'allow_edit' => (int) ($participant['allow_edit'] ?? 0),
-                        ]);
-                        $rowStyle = (string) ($statusMeta['row_style'] ?? '');
-                    ?>
-                    <tr style="<?= $rowStyle ?>">
-                        <td data-label="ID участника">#<?= (int) $participant['id'] ?></td>
-                        <td data-label="ФИО участника"><?= htmlspecialchars($participant['fio'] ?: '—') ?></td>
-                        <td data-label="Рисунок">
-                            <?php if (!empty($participant['drawing_file'])): ?>
-                                <?php $drawingUrl = getParticipantDrawingWebPath((string) ($participant['applicant_email'] ?? ''), (string) $participant['drawing_file']); ?>
-                                <a href="/admin/participant/<?= (int) $participant['id'] ?>" title="Открыть участника" style="display:inline-flex;">
-                                    <img
-                                        src="<?= htmlspecialchars($drawingUrl) ?>"
-                                        alt="Миниатюра рисунка участника"
-                                        loading="lazy"
-                                        style="width:46px; height:46px; object-fit:cover; border-radius:8px; border:1px solid var(--color-border);">
-                                </a>
+    <div class="card__body">
+        <?php if (empty($participants)): ?>
+            <div class="text-center text-secondary" style="padding: 36px;">Участники не найдены.</div>
+        <?php else: ?>
+        <div class="admin-list-cards">
+            <?php foreach ($participants as $participant): ?>
+                <?php
+                    $statusMeta = getApplicationDisplayMeta([
+                        'status' => (string) ($participant['application_status'] ?? 'draft'),
+                        'allow_edit' => (int) ($participant['allow_edit'] ?? 0),
+                    ]);
+                    $drawingUrl = !empty($participant['drawing_file'])
+                        ? getParticipantDrawingWebPath((string) ($participant['applicant_email'] ?? ''), (string) $participant['drawing_file'])
+                        : '';
+                    $isDiplomaEnabled = (string) ($statusMeta['status_code'] ?? '') === 'approved';
+                ?>
+                <article class="admin-list-card admin-list-card--participant">
+                    <div class="admin-list-card__header">
+                        <div class="admin-list-card__title-wrap" style="display:flex; gap:12px; align-items:center;">
+                            <?php if ($drawingUrl !== ''): ?>
+                                <img src="<?= htmlspecialchars($drawingUrl) ?>" alt="Рисунок участника" loading="lazy" class="admin-list-card__thumb">
                             <?php else: ?>
-                                <span class="text-secondary">—</span>
+                                <div class="admin-list-card__thumb admin-list-card__thumb--empty"><i class="fas fa-image"></i></div>
                             <?php endif; ?>
-                        </td>
-                        <td data-label="Возраст"><?= (int) ($participant['age'] ?? 0) ?: '—' ?></td>
-                        <td data-label="Email заявки"><?= htmlspecialchars($participant['applicant_email'] ?: ($participant['organization_email'] ?: '—')) ?></td>
-                        <td data-label="Регион"><?= htmlspecialchars($participant['region'] ?: '—') ?></td>
-                        <td data-label="Статус заявки">
-                            <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
-                                <?= e((string) ($statusMeta['label'] ?? '—')) ?>
-                            </span>
-                        </td>
-                        <td data-label="Действия" style="display:flex; gap:6px; flex-wrap:wrap;">
-                            <a href="/admin/participant/<?= (int) $participant['id'] ?>" class="btn btn--ghost btn--sm" title="Открыть участника"><i class="fas fa-eye"></i></a>
-                            <a href="/admin/participant/<?= (int) $participant['id'] ?>#diploma-actions" class="btn btn--primary btn--sm" title="Скачать диплом"><i class="fas fa-download"></i></a>
-                            <a href="/admin/participant/<?= (int) $participant['id'] ?>#diploma-actions" class="btn btn--secondary btn--sm" title="Отправить диплом"><i class="fas fa-envelope"></i></a>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-
-                <?php if (empty($participants)): ?>
-                    <tr>
-                        <td colspan="8" class="text-center text-secondary" style="padding: 36px;">Участники не найдены.</td>
-                    </tr>
-                <?php endif; ?>
-            </tbody>
-        </table>
+                            <div>
+                                <h4 class="admin-list-card__title"><?= htmlspecialchars($participant['fio'] ?: 'Без имени') ?></h4>
+                                <div class="admin-list-card__subtitle">#<?= (int) $participant['id'] ?> · <?= htmlspecialchars($participant['contest_title'] ?: 'Конкурс не указан') ?></div>
+                            </div>
+                        </div>
+                        <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
+                            <?= e((string) ($statusMeta['label'] ?? '—')) ?>
+                        </span>
+                    </div>
+                    <div class="admin-list-card__meta">
+                        <span><strong>Возраст:</strong> <?= (int) ($participant['age'] ?? 0) ?: '—' ?></span>
+                        <span><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?: '—') ?></span>
+                    </div>
+                    <div class="admin-list-card__actions">
+                        <a href="/admin/participant/<?= (int) $participant['id'] ?>" class="btn btn--ghost btn--sm"><i class="fas fa-eye"></i> Открыть</a>
+                        <?php if ($isDiplomaEnabled): ?>
+                            <a href="/admin/participant/<?= (int) $participant['id'] ?>#diploma-actions" class="btn btn--primary btn--sm"><i class="fas fa-award"></i> Диплом</a>
+                        <?php endif; ?>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
 
         <?php if ($totalPages > 1): ?>
             <div class="flex justify-between items-center" style="padding: 16px 20px; border-top: 1px solid var(--color-border);">
