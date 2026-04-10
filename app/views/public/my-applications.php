@@ -11,7 +11,7 @@ function getStatusClassByAdminStatus(string $status): string {
         'draft' => 'bg-gray-100 text-gray-700',
         'submitted' => 'bg-emerald-100 text-emerald-700',
         'revision' => 'bg-yellow-100 text-yellow-700',
-        'approved' => 'bg-green-100 text-green-700',
+        'approved' => 'bg-green-600 text-white',
         'declined', 'rejected', 'cancelled' => 'bg-red-100 text-red-700',
         'pending', 'partial_reviewed' => 'bg-amber-100 text-amber-700',
         'reviewed' => 'bg-slate-100 text-slate-700',
