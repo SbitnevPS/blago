@@ -261,7 +261,7 @@ $totalPages = ceil($totalApps / $perPage);
 
 // Получаем заявки
 $stmt = $pdo->prepare("
-    SELECT a.*, c.title as contest_title, u.name, u.surname, u.avatar_url,
+    SELECT a.*, c.title as contest_title, u.name, u.surname, u.email, u.avatar_url,
            (SELECT COUNT(*) FROM participants WHERE application_id = a.id) as participants_count
     FROM applications a
     LEFT JOIN contests c ON a.contest_id = c.id
@@ -439,7 +439,12 @@ require_once __DIR__ . '/includes/header.php';
                                     <i class="fas fa-user" style="font-size: 12px;"></i>
                                 </div>
                             <?php endif; ?>
-                            <span><?= htmlspecialchars(($app['name'] ?? '') . ' ' . ($app['surname'] ?? '')) ?></span>
+                            <div>
+                                <div><?= htmlspecialchars(trim(($app['name'] ?? '') . ' ' . ($app['surname'] ?? '')) ?: 'Без имени') ?></div>
+                                <?php if (!empty($app['email'])): ?>
+                                    <div class="text-secondary" style="font-size: 12px; margin-top: 2px;"><?= htmlspecialchars($app['email']) ?></div>
+                                <?php endif; ?>
+                            </div>
                         </div>
                     </td>
                     <td data-label="Конкурс"><?= htmlspecialchars($app['contest_title'] ?? '—') ?></td>
