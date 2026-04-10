@@ -620,7 +620,7 @@ function getApplicationUiStatusConfig(): array {
         'draft' => ['label' => 'Черновик', 'badge_class' => 'badge--secondary', 'row_style' => '', 'message_priority' => 'normal'],
         'submitted' => ['label' => 'Заявка подана', 'badge_class' => 'badge--primary', 'row_style' => '', 'message_priority' => 'normal'],
         'revision' => ['label' => 'Требует исправлений', 'badge_class' => 'badge--warning', 'row_style' => 'background:#FEF9C3;', 'message_priority' => 'important'],
-        'corrected' => ['label' => 'Исправлена, ожидает повторной проверки', 'badge_class' => 'badge--primary', 'row_style' => 'background:#DBEAFE;', 'message_priority' => 'important'],
+        'corrected' => ['label' => 'Исправлена', 'badge_class' => 'badge--primary', 'row_style' => 'background:#DBEAFE;', 'message_priority' => 'important'],
         'partial_reviewed' => ['label' => 'Частично рассмотрена', 'badge_class' => 'badge--warning', 'row_style' => '', 'message_priority' => 'normal'],
         'reviewed' => ['label' => 'Рассмотрена', 'badge_class' => 'badge--secondary', 'row_style' => '', 'message_priority' => 'normal'],
         'approved' => ['label' => 'Заявка принята', 'badge_class' => 'badge--success', 'row_style' => 'background:#ECFDF5;', 'message_priority' => 'important'],
