@@ -912,6 +912,61 @@ function getPublicDiplomaUrl(string $token): string {
     return SITE_URL . '/diploma/' . urlencode($token);
 }
 
+function getDiplomaEmailEmbeddedImages(string $diplomaType): array
+{
+    $heroImage = match ($diplomaType) {
+        'encouragement' => [
+            'path' => ROOT_PATH . '/assets/email/diploma-hero-thanks.jpg',
+            'cid' => 'diploma_hero_thanks',
+            'name' => 'diploma-hero-thanks.jpg',
+        ],
+        default => [
+            'path' => ROOT_PATH . '/assets/email/diploma-hero-main.jpg',
+            'cid' => 'diploma_hero_main',
+            'name' => 'diploma-hero-main.jpg',
+        ],
+    };
+
+    return [
+        [
+            'path' => ROOT_PATH . '/assets/email/email-logo.png',
+            'cid' => 'email_logo',
+            'name' => 'email-logo.png',
+        ],
+        $heroImage,
+        [
+            'path' => ROOT_PATH . '/assets/email/diploma-footer-stars.png',
+            'cid' => 'diploma_footer_stars',
+            'name' => 'diploma-footer-stars.png',
+        ],
+    ];
+}
+
+function getAvailableDiplomaEmailImageCidMap(array $embeddedImages): array
+{
+    $available = [];
+
+    foreach ($embeddedImages as $embeddedImage) {
+        if (!is_array($embeddedImage)) {
+            continue;
+        }
+
+        $path = trim((string)($embeddedImage['path'] ?? ''));
+        $cid = trim((string)($embeddedImage['cid'] ?? ''));
+        if ($path === '' || $cid === '' || !is_file($path) || !is_readable($path)) {
+            continue;
+        }
+
+        if (strpos(detectMailFileMimeType($path), 'image/') !== 0) {
+            continue;
+        }
+
+        $available[$cid] = true;
+    }
+
+    return $available;
+}
+
 function sendDiplomaByEmail(array $ctx, array $diploma): bool {
     global $pdo;
     $to = trim((string)($ctx['user_email'] ?? ''));
@@ -921,11 +976,18 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
     }
 
     $diplomaType = (string)($diploma['diploma_type'] ?? 'contest_participant');
-    $subject = $diplomaType === 'encouragement'
-        ? 'Ваш благодарственный диплом готов'
-        : 'Ваш диплом участника готов';
+    $subject = match ($diplomaType) {
+        'encouragement' => 'Ваш благодарственный диплом готов',
+        'winner' => 'Ваш диплом победителя готов',
+        'laureate' => 'Ваш диплом лауреата готов',
+        'nomination' => 'Ваш диплом в номинации готов',
+        default => 'Ваш диплом участника готов',
+    };
 
     $publicUrl = getPublicDiplomaUrl((string)($diploma['public_token'] ?? ''));
+    $attachmentName = 'diploma.pdf';
+    $embeddedImages = getDiplomaEmailEmbeddedImages($diplomaType);
+    $availableImageCidMap = getAvailableDiplomaEmailImageCidMap($embeddedImages);
     $emailData = [
         'diploma_type' => $diplomaType,
         'user_name' => trim((string)($ctx['user_name'] ?? '')),
@@ -936,6 +998,10 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
         'site_url' => SITE_URL,
         'brand_name' => 'ДетскиеКонкурсы.рф',
         'brand_subtitle' => 'Всероссийские конкурсы детского творчества',
+        'attachment_name' => $attachmentName,
+        'logo_cid' => isset($availableImageCidMap['email_logo']) ? 'email_logo' : '',
+        'hero_cid' => isset($availableImageCidMap['diploma_hero_thanks']) ? 'diploma_hero_thanks' : (isset($availableImageCidMap['diploma_hero_main']) ? 'diploma_hero_main' : ''),
+        'footer_cid' => isset($availableImageCidMap['diploma_footer_stars']) ? 'diploma_footer_stars' : '',
     ];
 
     $ok = sendEmail($to, $subject, buildDiplomaEmailTemplate($emailData), [
@@ -943,9 +1009,10 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
         'attachments' => [
             [
                 'path' => $file,
-                'name' => 'diploma.pdf',
+                'name' => $attachmentName,
             ],
         ],
+        'embedded_images' => $embeddedImages,
     ]);
     if ($ok) {
         $pdo->prepare('UPDATE participant_diplomas SET email_sent_at = NOW(), updated_at = NOW() WHERE id = ?')->execute([(int)$diploma['id']]);
