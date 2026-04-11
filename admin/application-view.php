@@ -15,7 +15,7 @@ $application_id = $_GET['id'] ?? 0;
 
 // Получаем заявку
 $stmt = $pdo->prepare("
- SELECT a.*, c.title as contest_title, 
+ SELECT a.*, c.title as contest_title, c.requires_payment_receipt AS contest_requires_payment_receipt,
  u.name, u.surname, u.avatar_url, u.email, u.vk_id,
  u.organization_region, u.organization_name, u.organization_address
  FROM applications a
@@ -564,8 +564,10 @@ require_once __DIR__ . '/includes/header.php';
 $statusMeta = getApplicationDisplayMeta($application, buildApplicationWorkSummary($works));
 $submittedAt = !empty($application['created_at']) ? date('d.m.Y H:i', strtotime($application['created_at'])) : '—';
 $applicantName = trim((string) (($application['name'] ?? '') . ' ' . ($application['surname'] ?? ''))) ?: '—';
+$receiptMeta = getApplicationPaymentReceiptMeta($application);
 $paymentReceipt = trim((string) ($application['payment_receipt'] ?? ''));
 $paymentReceiptName = $paymentReceipt !== '' ? basename($paymentReceipt) : '—';
+$paymentReceiptUrl = (string) ($receiptMeta['file_url'] ?? '');
 $workStats = ['total' => count($works), 'accepted' => 0, 'reviewed' => 0, 'rejected' => 0];
 $nonCompliantCount = 0;
 foreach ($works as $workRow) {
@@ -602,13 +604,17 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                 <h2 class="application-hero__title">Заявка #<?= e($application_id) ?></h2>
                 <p class="application-hero__subtitle"><?= e($application['contest_title']) ?></p>
             </div>
-            <span class="badge application-hero__status <?= $statusMeta['badge_class'] ?>"><?= e($statusMeta['label']) ?></span>
+            <div class="flex gap-sm" style="flex-wrap:wrap; justify-content:flex-end;">
+                <span class="badge application-hero__status <?= $statusMeta['badge_class'] ?>"><?= e($statusMeta['label']) ?></span>
+                <span class="badge application-hero__status <?= e((string) ($receiptMeta['badge_class'] ?? 'badge--secondary')) ?>"><?= e((string) ($receiptMeta['label'] ?? '—')) ?></span>
+            </div>
         </div>
         <div class="application-hero__meta">
             <span class="application-meta-chip"><i class="fas fa-calendar-alt"></i>Подана: <?= e($submittedAt) ?></span>
             <span class="application-meta-chip"><i class="fas fa-user"></i><?= e($applicantName) ?></span>
             <a class="application-meta-chip" href="mailto:<?= e($application['email'] ?? '') ?>"><i class="fas fa-envelope"></i><?= e($application['email'] ?: '—') ?></a>
             <span class="application-meta-chip"><i class="fas fa-images"></i>Работ: <?= (int) $workStats['total'] ?></span>
+            <span class="application-meta-chip"><i class="fas fa-receipt"></i><?= e((string) ($receiptMeta['label'] ?? '—')) ?></span>
         </div>
         <div class="application-hero__actions">
             <a href="/admin/applications" class="btn btn--ghost"><i class="fas fa-arrow-left"></i> К списку</a>
@@ -679,6 +685,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                         <dt>Номер</dt><dd>#<?= (int) $application_id ?></dd>
                         <dt>Конкурс</dt><dd><?= e($application['contest_title'] ?: '—') ?></dd>
                         <dt>Статус</dt><dd><span class="badge <?= e($statusMeta['badge_class']) ?>"><?= e($statusMeta['label']) ?></span></dd>
+                        <dt>Оплата</dt><dd><span class="badge <?= e((string) ($receiptMeta['badge_class'] ?? 'badge--secondary')) ?>"><?= e((string) ($receiptMeta['label'] ?? '—')) ?></span></dd>
                         <dt>Дата подачи</dt><dd><?= e($submittedAt) ?></dd>
                     </dl>
                 </div></article>
@@ -695,13 +702,25 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     <dl class="application-kv-list">
                         <dt>Источник</dt><dd><?= e($application['source_info'] ?: '—') ?></dd>
                         <dt>Коллеги</dt><dd><?= e($application['colleagues_info'] ?: '—') ?></dd>
+                        <dt>Требование</dt><dd><?= !empty($receiptMeta['is_required']) ? 'Квитанция обязательна' : 'Квитанция не требуется' ?></dd>
                     </dl>
                     <div class="application-file-block">
                         <i class="fas fa-file-invoice"></i>
                         <?php if ($paymentReceipt !== ''): ?>
-                            <div><strong><?= e($paymentReceiptName) ?></strong><a href="/uploads/documents/<?= e($paymentReceipt) ?>" target="_blank" class="application-file-block__link">Открыть квитанцию</a></div>
+                            <div>
+                                <strong><?= e($paymentReceiptName) ?></strong>
+                                <div class="flex gap-sm" style="flex-wrap:wrap; margin-top:6px;">
+                                    <a href="<?= e($paymentReceiptUrl) ?>" target="_blank" class="application-file-block__link">Открыть квитанцию</a>
+                                    <a href="<?= e($paymentReceiptUrl) ?>" target="_blank" class="application-file-block__link" download>Скачать</a>
+                                </div>
+                            </div>
                         <?php else: ?>
-                            <div><strong>Квитанция не приложена</strong></div>
+                            <div>
+                                <strong><?= !empty($receiptMeta['is_required']) ? 'Квитанция пока не приложена' : 'Квитанция не приложена' ?></strong>
+                                <?php if (!empty($receiptMeta['is_required'])): ?>
+                                    <div class="text-secondary" style="margin-top:4px;">Для этого конкурса квитанция обязательна и должна быть видна администратору.</div>
+                                <?php endif; ?>
+                            </div>
                         <?php endif; ?>
                     </div>
                 </div></article>
@@ -734,7 +753,16 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                             <div class="work-card__preview">
                                 <?php if ($p['drawing_file']): ?>
                                     <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
-                                    <img src="<?= e($drawingUrl) ?>" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" class="js-admin-drawing work-card__image" alt="Рисунок участника">
+                                    <button
+                                        type="button"
+                                        class="work-card__image-button js-open-drawing-viewer"
+                                        data-image-src="<?= e($drawingUrl) ?>"
+                                        data-image-alt="Рисунок участника <?= e($p['fio'] ?: '') ?>"
+                                        aria-label="Открыть рисунок участника"
+                                    >
+                                        <img src="<?= e($drawingUrl) ?>" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" class="js-admin-drawing work-card__image" alt="Рисунок участника">
+                                        <span class="work-card__image-hint"><i class="fas fa-search-plus"></i> Нажмите для просмотра</span>
+                                    </button>
                                     <button type="button" class="btn btn--secondary js-open-editor mt-sm" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" data-image-src="<?= e($drawingUrl) ?>"><i class="fas fa-crop-alt"></i> Редактировать</button>
                                 <?php else: ?>
                                     <div class="drawing-empty-state"><i class="fas fa-image"></i><strong>Рисунок отсутствует</strong><span>Участник ещё не загрузил файл.</span></div>
@@ -872,7 +900,173 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
 </div>
 
 <style>
+#drawingEditorModal,
+#drawingViewerModal {
+    padding: 16px;
+}
+
+#drawingEditorModal .modal__content,
+#drawingViewerModal .modal__content {
+    width: min(980px, calc(100vw - 32px));
+    max-width: min(980px, calc(100vw - 32px)) !important;
+    max-height: calc(100vh - 32px);
+    display: flex;
+    flex-direction: column;
+}
+
+#drawingEditorModal .modal__body,
+#drawingViewerModal .modal__body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.work-card__preview {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.work-card__image-button {
+    position: relative;
+    display: block;
+    width: 100%;
+    min-height: 280px;
+    height: clamp(280px, 44vh, 420px);
+    padding: 0;
+    border: 2px solid #e2e8f0;
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: zoom-in;
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+
+.work-card__image-button:hover,
+.work-card__image-button:focus-visible {
+    border-color: #94a3b8;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+    transform: translateY(-1px);
+}
+
+.work-card__image-button::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0) 35%, rgba(15, 23, 42, 0.36) 100%);
+    opacity: .72;
+    transition: opacity .18s ease, background .18s ease;
+    pointer-events: none;
+}
+
+.work-card__image-button:hover::after,
+.work-card__image-button:focus-visible::after {
+    opacity: 1;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.08) 20%, rgba(15, 23, 42, 0.48) 100%);
+}
+
+.work-card__image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    background: #ffffff;
+}
+
+.work-card__image-hint {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.72);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    pointer-events: none;
+}
+
+.drawing-editor-toolbar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.drawing-editor-stage,
+.drawing-viewer-stage {
+    min-height: 280px;
+    height: clamp(280px, 50vh, 560px);
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+    overflow: auto;
+}
+
+.drawing-editor-stage {
+    padding: 12px;
+}
+
+.drawing-viewer-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+#editorImage,
+#drawingViewerImage {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+}
+
+#drawingEditorModal .modal__footer,
+#drawingViewerModal .modal__footer {
+    flex-wrap: wrap;
+}
+
+#drawingEditorModal .modal__footer .btn,
+#drawingViewerModal .modal__footer .btn {
+    flex: 1 1 180px;
+}
+
 @media (max-width: 768px) {
+    #drawingEditorModal,
+    #drawingViewerModal {
+        padding: 10px;
+    }
+
+    #drawingEditorModal .modal__content,
+    #drawingViewerModal .modal__content {
+        width: calc(100vw - 20px);
+        max-width: calc(100vw - 20px) !important;
+        max-height: calc(100vh - 20px);
+    }
+
+    .work-card__image-button {
+        height: clamp(240px, 40vh, 340px);
+        min-height: 240px;
+    }
+
+    .drawing-editor-stage,
+    .drawing-viewer-stage {
+        height: clamp(220px, 38vh, 360px);
+        min-height: 220px;
+    }
+
+    .drawing-editor-toolbar .btn {
+        flex: 1 1 140px;
+    }
+
     #vkPublishPromptModal .modal__content {
         width: calc(100vw - 20px);
         max-width: calc(100vw - 20px) !important;
@@ -1008,14 +1202,14 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
 </div>
 
 <div class="modal" id="drawingEditorModal">
-<div class="modal__content" style="max-width: 1100px; width: 96%;">
+<div class="modal__content">
 <div class="modal__header">
 <h3>Редактирование рисунка</h3>
 <button type="button" class="modal__close" onclick="closeDrawingEditor()">&times;</button>
 </div>
 <div class="modal__body">
 <input type="hidden" id="editorParticipantId">
-<div class="flex gap-md mb-md" style="flex-wrap:wrap;">
+<div class="drawing-editor-toolbar">
 <button type="button" class="btn btn--secondary" onclick="rotateBy(-45)">-45°</button>
 <button type="button" class="btn btn--secondary" onclick="rotateBy(45)">+45°</button>
 <button type="button" class="btn btn--secondary" onclick="rotateBy(-90)">-90°</button>
@@ -1024,13 +1218,31 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
 <input type="number" id="rotationInput" value="0" step="1" style="width:90px;" class="form-input">
 </label>
 </div>
-<div style="max-height:70vh;overflow:auto;">
+<div class="drawing-editor-stage">
 <img id="editorImage" src="" alt="Рисунок" style="max-width:100%; display:block;">
 </div>
-<div class="flex gap-md mt-lg">
-<button type="button" id="saveDrawingChanges" class="btn btn--primary" style="display:none;">Сохранить изменения</button>
-<button type="button" id="cancelDrawingChanges" class="btn btn--ghost" style="display:none;" onclick="resetDrawingEditor()">Отменить изменения</button>
 </div>
+<div class="modal__footer">
+<button type="button" id="saveDrawingChanges" class="btn btn--primary" style="display:none;">Сохранить изменения</button>
+<button type="button" id="cancelDrawingChanges" class="btn btn--ghost" style="display:none;" onclick="resetDrawingEditor()">Отмена изменений</button>
+<button type="button" class="btn btn--secondary" onclick="closeDrawingEditor()">Закрыть</button>
+</div>
+</div>
+</div>
+
+<div class="modal" id="drawingViewerModal">
+<div class="modal__content">
+<div class="modal__header">
+<h3>Просмотр рисунка</h3>
+<button type="button" class="modal__close" onclick="closeDrawingViewer()">&times;</button>
+</div>
+<div class="modal__body">
+<div class="drawing-viewer-stage">
+<img id="drawingViewerImage" src="" alt="Рисунок участника">
+</div>
+</div>
+<div class="modal__footer">
+<button type="button" class="btn btn--secondary" onclick="closeDrawingViewer()">Закрыть</button>
 </div>
 </div>
 </div>
@@ -1051,6 +1263,13 @@ if (bulkDiplomaActionSelect && bulkDiplomaActionRun) {
 let cropper = null;
 let currentRotation = 0;
 let editorDirty = false;
+const drawingEditorModal = document.getElementById('drawingEditorModal');
+const drawingViewerModal = document.getElementById('drawingViewerModal');
+const drawingViewerImage = document.getElementById('drawingViewerImage');
+
+function setPageModalScrollLocked(locked) {
+ document.body.style.overflow = locked ? 'hidden' : '';
+}
 
 function markEditorDirty(dirty) {
  editorDirty = dirty;
@@ -1059,12 +1278,11 @@ function markEditorDirty(dirty) {
 }
 
 function openDrawingEditor(participantId, imageSrc) {
- const modal = document.getElementById('drawingEditorModal');
  const image = document.getElementById('editorImage');
  document.getElementById('editorParticipantId').value = participantId;
  image.src = imageSrc;
- modal.classList.add('active');
- document.body.style.overflow = 'hidden';
+ drawingEditorModal.classList.add('active');
+ setPageModalScrollLocked(true);
  currentRotation = 0;
  document.getElementById('rotationInput').value = '0';
  markEditorDirty(false);
@@ -1086,13 +1304,27 @@ function openDrawingEditor(participantId, imageSrc) {
 }
 
 function closeDrawingEditor() {
- const modal = document.getElementById('drawingEditorModal');
- modal.classList.remove('active');
- document.body.style.overflow = '';
+ drawingEditorModal.classList.remove('active');
+ setPageModalScrollLocked(false);
  if (cropper) {
   cropper.destroy();
   cropper = null;
  }
+}
+
+function openDrawingViewer(imageSrc, imageAlt) {
+ if (!drawingViewerModal || !drawingViewerImage) return;
+ drawingViewerImage.src = imageSrc;
+ drawingViewerImage.alt = imageAlt || 'Рисунок участника';
+ drawingViewerModal.classList.add('active');
+ setPageModalScrollLocked(true);
+}
+
+function closeDrawingViewer() {
+ if (!drawingViewerModal || !drawingViewerImage) return;
+ drawingViewerModal.classList.remove('active');
+ drawingViewerImage.src = '';
+ setPageModalScrollLocked(false);
 }
 
 function rotateBy(deg) {
@@ -1124,6 +1356,34 @@ document.querySelectorAll('.js-open-editor').forEach((btn) => {
  btn.addEventListener('click', () => openDrawingEditor(btn.dataset.participantId, btn.dataset.imageSrc));
 });
 
+document.querySelectorAll('.js-open-drawing-viewer').forEach((button) => {
+ button.addEventListener('click', () => openDrawingViewer(button.dataset.imageSrc, button.dataset.imageAlt));
+});
+
+[drawingEditorModal, drawingViewerModal].forEach((modal) => {
+ if (!modal) return;
+ modal.addEventListener('click', (event) => {
+  if (event.target === modal) {
+   if (modal === drawingEditorModal) {
+    closeDrawingEditor();
+   } else if (modal === drawingViewerModal) {
+    closeDrawingViewer();
+   }
+  }
+ });
+});
+
+document.addEventListener('keydown', (event) => {
+ if (event.key !== 'Escape') return;
+ if (drawingEditorModal?.classList.contains('active')) {
+  closeDrawingEditor();
+  return;
+ }
+ if (drawingViewerModal?.classList.contains('active')) {
+  closeDrawingViewer();
+ }
+});
+
 document.getElementById('saveDrawingChanges').addEventListener('click', function() {
  if (!cropper) return;
  const cropData = cropper.getData(true);
@@ -1147,6 +1407,15 @@ document.getElementById('saveDrawingChanges').addEventListener('click', function
    }
    document.querySelectorAll(`.js-admin-drawing[data-participant-id="${participantId}"]`).forEach((img) => {
     img.src = data.updated_url;
+   });
+   document.querySelectorAll(`.js-open-editor[data-participant-id="${participantId}"]`).forEach((button) => {
+    button.dataset.imageSrc = data.updated_url;
+   });
+   document.querySelectorAll(`.js-admin-drawing[data-participant-id="${participantId}"]`).forEach((img) => {
+    const viewerButton = img.closest('.js-open-drawing-viewer');
+    if (viewerButton) {
+     viewerButton.dataset.imageSrc = data.updated_url;
+    }
    });
    closeDrawingEditor();
   })

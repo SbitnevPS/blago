@@ -272,7 +272,7 @@ $totalPages = ceil($totalApps / $perPage);
 
 // Получаем заявки
 $stmt = $pdo->prepare("
-    SELECT a.*, c.title as contest_title, u.name, u.surname, u.email, u.avatar_url,
+    SELECT a.*, c.title as contest_title, c.requires_payment_receipt AS contest_requires_payment_receipt, u.name, u.surname, u.email, u.avatar_url,
            (SELECT COUNT(*) FROM participants WHERE application_id = a.id) as participants_count
     FROM applications a
     LEFT JOIN contests c ON a.contest_id = c.id
@@ -451,6 +451,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php foreach ($applications as $app): ?>
                 <?php
                     $statusMeta = getApplicationDisplayMeta($app);
+                    $receiptMeta = getApplicationPaymentReceiptMeta($app);
                     $vkStatus = $applicationVkStatuses[(int) $app['id']] ?? getApplicationVkPublicationStatus((int) $app['id']);
                     $isCorrected = (string) ($statusMeta['status_code'] ?? '') === 'corrected';
                 ?>
@@ -470,6 +471,9 @@ require_once __DIR__ . '/includes/header.php';
                             <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
                                 <?= e((string) ($statusMeta['label'] ?? '—')) ?>
                             </span>
+                            <span class="badge <?= e((string) ($receiptMeta['badge_class'] ?? 'badge--secondary')) ?>">
+                                <?= e((string) ($receiptMeta['label'] ?? '—')) ?>
+                            </span>
                             <span class="badge <?= e((string) ($vkStatus['badge_class'] ?? 'badge--secondary')) ?>">
                                 VK: <?= e((string) ($vkStatus['status_code'] === 'partial' ? 'Частично' : ($vkStatus['status_code'] === 'published' ? 'Опублик.' : ($vkStatus['status_code'] === 'failed' ? 'Ошибка' : 'Не опублик.')))) ?>
                             </span>
@@ -481,6 +485,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                         <span><strong>Конкурс:</strong> <?= htmlspecialchars($app['contest_title'] ?? '—') ?></span>
                         <span><strong>Участников:</strong> <?= (int) $app['participants_count'] ?></span>
+                        <span><strong>Оплата:</strong> <?= e((string) ($receiptMeta['label'] ?? '—')) ?></span>
                         <span><strong>VK:</strong> <?= (int) ($vkStatus['published_count'] ?? 0) ?>/<?= (int) ($vkStatus['total_count'] ?? 0) ?></span>
                         <span><strong>Подача:</strong> <?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></span>
                     </div>
@@ -491,6 +496,11 @@ require_once __DIR__ . '/includes/header.php';
                         <a href="/admin/application/<?= (int) $app['id'] ?>" class="btn btn--primary btn--sm">
                             <i class="fas fa-eye"></i> Открыть заявку
                         </a>
+                        <?php if (!empty($receiptMeta['file_url'])): ?>
+                        <a href="<?= e((string) $receiptMeta['file_url']) ?>" target="_blank" class="btn btn--ghost btn--sm">
+                            <i class="fas fa-receipt"></i> Квитанция
+                        </a>
+                        <?php endif; ?>
                         <?php if (($app['status'] ?? '') === 'approved'): ?>
                         <button
                             type="button"

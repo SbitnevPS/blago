@@ -12,6 +12,7 @@ if (!isAuthenticated()) {
 
 $contest_id = $_GET['contest_id'] ??0;
 $contest = getContestById($contest_id);
+$contestRequiresPaymentReceipt = isContestPaymentReceiptRequired($contest ?: []);
 
 if (!$contest) {
  redirect('contests.php');
@@ -68,6 +69,9 @@ $tempPath = DRAWINGS_PATH . '/temp';
 // Создание директорий
 if (!is_dir(DRAWINGS_PATH)) {
  mkdir(DRAWINGS_PATH,0777, true);
+}
+if (!is_dir(DOCUMENTS_PATH)) {
+ mkdir(DOCUMENTS_PATH,0777, true);
 }
 if (!is_dir($userUploadPath)) {
  mkdir($userUploadPath,0777, true);
@@ -173,6 +177,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if ($action === 'save_draft' || $action === 'submit') {
  try {
  $pdo->beginTransaction();
+ $receiptFilesToDelete = [];
+ $uploadedReceiptFiles = [];
                 
  // Данные родителя - теперь раздельно
  $parent_name = trim($_POST['parent_name'] ?? ''); // Имя
@@ -189,11 +195,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  }
                 
  $parent_fio = $parent_surname . ' ' . $parent_name . ' ' . $parent_patronymic;
+ $paymentReceipt = '';
+ $removePaymentReceipt = (int)($_POST['remove_payment_receipt'] ?? 0) === 1;
                 
  if (isset($_POST['application_id']) && !empty($_POST['application_id'])) {
  $application_id = $_POST['application_id'];
  $existingApplicationStmt = $pdo->prepare("
-     SELECT id, status, allow_edit
+     SELECT id, status, allow_edit, payment_receipt
      FROM applications
      WHERE id = ? AND user_id = ?
      LIMIT 1
@@ -203,6 +211,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
  if (!$existingApplication) {
  throw new Exception('Заявка для редактирования не найдена');
+ }
+
+ $paymentReceipt = trim((string)($existingApplication['payment_receipt'] ?? ''));
+
+ if ($removePaymentReceipt && $paymentReceipt !== '') {
+     $receiptFilesToDelete[] = DOCUMENTS_PATH . '/' . $paymentReceipt;
+     $paymentReceipt = '';
+ }
+
+ if (isset($_FILES['payment_receipt']) && (int)($_FILES['payment_receipt']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+     $receiptUpload = uploadFile($_FILES['payment_receipt'], DOCUMENTS_PATH, ['jpg', 'jpeg', 'png', 'webp', 'pdf']);
+     if (empty($receiptUpload['success'])) {
+         throw new Exception((string)($receiptUpload['message'] ?? 'Не удалось загрузить квитанцию'));
+     }
+
+     $oldReceipt = trim((string)($existingApplication['payment_receipt'] ?? ''));
+     $paymentReceipt = (string)($receiptUpload['filename'] ?? '');
+     if ($paymentReceipt !== '') {
+         $uploadedReceiptFiles[] = DOCUMENTS_PATH . '/' . $paymentReceipt;
+     }
+     if ($oldReceipt !== '' && $oldReceipt !== $paymentReceipt) {
+         $receiptFilesToDelete[] = DOCUMENTS_PATH . '/' . $oldReceipt;
+     }
+ } elseif (isset($_FILES['payment_receipt']) && !in_array((int)($_FILES['payment_receipt']['error'] ?? UPLOAD_ERR_NO_FILE), [UPLOAD_ERR_OK, UPLOAD_ERR_NO_FILE], true)) {
+     throw new Exception('Не удалось загрузить квитанцию. Попробуйте ещё раз.');
  }
 
  $shouldMarkAsCorrected = $action === 'submit'
@@ -218,6 +251,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 	 source_info = ?,
 	 colleagues_info = ?,
 	 recommendations_wishes = ?,
+         payment_receipt = ?,
 	 status = ?,
 	 allow_edit = ?,
 	 updated_at = NOW()
@@ -228,6 +262,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 	 $source_info,
 	 $colleagues_info,
 	 $recommendations_wishes,
+         $paymentReceipt,
 	 $nextStatus,
  $action === 'submit' ? 0 : 1,
  $application_id,
@@ -236,9 +271,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     
  $pdo->prepare("DELETE FROM participants WHERE application_id = ?")->execute([$application_id]);
  } else {
+                if (isset($_FILES['payment_receipt']) && (int)($_FILES['payment_receipt']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+                    $receiptUpload = uploadFile($_FILES['payment_receipt'], DOCUMENTS_PATH, ['jpg', 'jpeg', 'png', 'webp', 'pdf']);
+                    if (empty($receiptUpload['success'])) {
+                        throw new Exception((string)($receiptUpload['message'] ?? 'Не удалось загрузить квитанцию'));
+                    }
+                    $paymentReceipt = (string)($receiptUpload['filename'] ?? '');
+                    if ($paymentReceipt !== '') {
+                        $uploadedReceiptFiles[] = DOCUMENTS_PATH . '/' . $paymentReceipt;
+                    }
+                } elseif (isset($_FILES['payment_receipt']) && !in_array((int)($_FILES['payment_receipt']['error'] ?? UPLOAD_ERR_NO_FILE), [UPLOAD_ERR_OK, UPLOAD_ERR_NO_FILE], true)) {
+                    throw new Exception('Не удалось загрузить квитанцию. Попробуйте ещё раз.');
+                }
+
                 $stmt = $pdo->prepare("
-                INSERT INTO applications (user_id, contest_id, parent_fio, source_info, colleagues_info, recommendations_wishes, status, allow_edit)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO applications (user_id, contest_id, parent_fio, source_info, colleagues_info, recommendations_wishes, payment_receipt, status, allow_edit)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                 $user['id'],
@@ -247,10 +295,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $source_info,
                 $colleagues_info,
                 $recommendations_wishes,
+                $paymentReceipt,
                 $action === 'submit' ? 'submitted' : 'draft',
                 $action === 'submit' ? 0 : 1,
                 ]);
  $application_id = $pdo->lastInsertId();
+ }
+
+ if ($action === 'submit' && $contestRequiresPaymentReceipt && trim($paymentReceipt) === '') {
+     throw new Exception('Приложите квитанцию или скриншот об оплате участия, чтобы отправить заявку.');
  }
                 
  // Данные организации (общие для всех участников)
@@ -363,6 +416,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  }
                 
  $pdo->commit();
+ foreach ($receiptFilesToDelete as $receiptFilePath) {
+ if (is_file($receiptFilePath)) {
+ @unlink($receiptFilePath);
+ }
+ }
                 
  if ($action === 'submit') {
  $show_success_modal = true;
@@ -374,7 +432,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  }
                 
  } catch (Exception $e) {
+ if ($pdo->inTransaction()) {
  $pdo->rollBack();
+ }
+ foreach ($uploadedReceiptFiles ?? [] as $receiptFilePath) {
+ if (is_file($receiptFilePath)) {
+ @unlink($receiptFilePath);
+ }
+ }
  $error = 'Ошибка при сохранении заявки: ' . $e->getMessage();
  }
  }
@@ -410,6 +475,13 @@ if ($editingApplication) {
 	    ];
 }
 
+$existingPaymentReceipt = trim((string)($editingApplication['payment_receipt'] ?? ''));
+$hasExistingPaymentReceipt = $existingPaymentReceipt !== '';
+$existingPaymentReceiptUrl = $hasExistingPaymentReceipt ? getPaymentReceiptWebPath($existingPaymentReceipt) : '';
+$existingPaymentReceiptIsImage = $hasExistingPaymentReceipt && preg_match('/\.(jpg|jpeg|png|webp)$/i', $existingPaymentReceipt);
+$paymentStepNumber = $contestRequiresPaymentReceipt ? 3 : null;
+$reviewStepNumber = $contestRequiresPaymentReceipt ? 4 : 3;
+
 generateCSRFToken();
 ?>
 <!DOCTYPE html>
@@ -436,11 +508,25 @@ generateCSRFToken();
             <div class="application-prep-grid">
                 <div class="application-prep-item">👤 Данные участника</div>
                 <div class="application-prep-item">🖼 Отдельный рисунок</div>
-                <div class="application-prep-item">⏱ 3–5 минут</div>
+                <?php if ($contestRequiresPaymentReceipt): ?>
+                    <div class="application-prep-item">🧾 Квитанция или скриншот оплаты</div>
+                <?php else: ?>
+                    <div class="application-prep-item">⏱ 3–5 минут</div>
+                <?php endif; ?>
                 <div class="application-prep-item">✅ Отправка онлайн</div>
             </div>
         </div>
     </section>
+
+    <?php if ($contestRequiresPaymentReceipt): ?>
+        <section class="payment-receipt-note mb-lg" aria-label="Информация об оплате">
+            <div class="payment-receipt-note__icon"><i class="fas fa-receipt"></i></div>
+            <div>
+                <h2 class="payment-receipt-note__title">Для этого конкурса нужна квитанция об оплате</h2>
+                <p class="payment-receipt-note__text">На одном из шагов мы попросим приложить фото, скриншот или PDF-квитанцию. Без этого кнопка отправки заявки останется неактивной.</p>
+            </div>
+        </section>
+    <?php endif; ?>
 
     <?php if ($error): ?>
         <div class="alert alert--error mb-lg">
@@ -456,11 +542,13 @@ generateCSRFToken();
                 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                 <input type="hidden" name="action" value="submit" id="formAction">
                 <input type="hidden" name="application_id" value="<?= $editingApplication ? intval($editingApplication['id']) : '' ?>">
+                <input type="hidden" name="existing_payment_receipt" id="existingPaymentReceipt" value="<?= e($existingPaymentReceipt) ?>">
+                <input type="hidden" name="remove_payment_receipt" id="removePaymentReceipt" value="0">
 
                 <section class="wizard-progress card mb-lg">
                     <div class="card__body">
                         <div class="wizard-progress__head">
-                            <strong id="mobileStepLabel">Шаг 1 из 3</strong>
+                            <strong id="mobileStepLabel">Шаг 1 из <?= (int) $reviewStepNumber ?></strong>
                             <span id="progressPercent">25%</span>
                         </div>
                         <div class="wizard-progress__bar"><span id="progressBar"></span></div>
@@ -526,8 +614,62 @@ generateCSRFToken();
                     </div>
                 </section>
 
-                <section class="wizard-step card mb-lg" data-step="3" hidden>
-                    <div class="card__header"><h3>Шаг 3. Проверка и отправка</h3></div>
+                <?php if ($contestRequiresPaymentReceipt): ?>
+                <section class="wizard-step card mb-lg" data-step="<?= (int) $paymentStepNumber ?>" hidden>
+                    <div class="card__header"><h3>Шаг 3. Оплата участия</h3></div>
+                    <div class="card__body">
+                        <div class="payment-receipt-grid">
+                            <article class="payment-receipt-card payment-receipt-card--info">
+                                <div class="payment-receipt-card__head">
+                                    <span class="payment-receipt-card__badge">Обязательно</span>
+                                    <h4>Что нужно приложить</h4>
+                                </div>
+                                <p class="payment-receipt-card__text">Подойдёт фотография бумажной квитанции, скриншот банковского приложения или PDF-файл с подтверждением оплаты участия в конкурсе.</p>
+                                <ul class="payment-receipt-card__list">
+                                    <li>Форматы: JPG, JPEG, PNG, WEBP или PDF.</li>
+                                    <li>Файл должен быть читаемым: видны сумма, дата и назначение платежа.</li>
+                                    <li>Отправка заявки станет доступна только после прикрепления квитанции.</li>
+                                </ul>
+                            </article>
+
+                            <article class="payment-receipt-card">
+                                <div class="payment-receipt-card__head">
+                                    <span class="payment-receipt-card__badge payment-receipt-card__badge--neutral">Шаг для отправки</span>
+                                    <h4>Загрузка квитанции</h4>
+                                </div>
+                                <div class="upload-area payment-receipt-upload <?= $hasExistingPaymentReceipt ? 'has-file' : '' ?>" id="paymentReceiptUploadArea">
+                                    <input type="file" name="payment_receipt" id="paymentReceiptInput" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" class="file-upload__input">
+                                    <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                                    <div class="upload-area__title" id="paymentReceiptUploadTitle"><?= $hasExistingPaymentReceipt ? 'Квитанция уже прикреплена' : 'Нажмите или перетащите файл квитанции' ?></div>
+                                    <div class="upload-area__hint" id="paymentReceiptUploadHint">JPG, PNG, WEBP или PDF до 10MB</div>
+                                </div>
+                                <div class="payment-receipt-preview <?= $hasExistingPaymentReceipt ? 'visible' : '' ?>" id="paymentReceiptPreview">
+                                    <div class="payment-receipt-preview__visual" id="paymentReceiptPreviewVisual">
+                                        <?php if ($hasExistingPaymentReceipt): ?>
+                                            <?php if ($existingPaymentReceiptIsImage): ?>
+                                                <img src="<?= e($existingPaymentReceiptUrl) ?>" alt="Квитанция об оплате" class="payment-receipt-preview__image" id="paymentReceiptPreviewImage">
+                                            <?php else: ?>
+                                                <div class="payment-receipt-preview__file-icon" id="paymentReceiptPreviewImage"><i class="fas fa-file-pdf"></i></div>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="payment-receipt-preview__meta">
+                                        <strong id="paymentReceiptFileName"><?= $hasExistingPaymentReceipt ? e(basename($existingPaymentReceipt)) : 'Файл ещё не выбран' ?></strong>
+                                        <span id="paymentReceiptPreviewText"><?= $hasExistingPaymentReceipt ? 'Файл уже прикреплён к этой заявке.' : 'После выбора файла здесь появится карточка квитанции.' ?></span>
+                                    </div>
+                                    <div class="drawing-preview__actions">
+                                        <button type="button" class="drawing-preview__action" id="paymentReceiptViewBtn" <?= $hasExistingPaymentReceipt ? '' : 'disabled' ?>>Посмотреть</button>
+                                        <button type="button" class="drawing-preview__action drawing-preview__action--danger" id="paymentReceiptRemoveBtn" <?= $hasExistingPaymentReceipt ? '' : 'disabled' ?>>Убрать</button>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
+                    </div>
+                </section>
+                <?php endif; ?>
+
+                <section class="wizard-step card mb-lg" data-step="<?= (int) $reviewStepNumber ?>" hidden>
+                    <div class="card__header"><h3>Шаг <?= (int) $reviewStepNumber ?>. Проверка и отправка</h3></div>
                     <div class="card__body" id="reviewContainer"></div>
                 </section>
 
@@ -545,6 +687,9 @@ generateCSRFToken();
                 <h4>Прогресс заявки</h4>
                 <div class="sidebar-stat" id="statParticipants">Участников: 0</div>
                 <div class="sidebar-stat" id="statDrawings">Рисунков: 0</div>
+                <?php if ($contestRequiresPaymentReceipt): ?>
+                    <div class="sidebar-stat" id="statReceipt">Квитанция: не добавлена</div>
+                <?php endif; ?>
                 <div class="sidebar-stat" id="statConfidence">Заполнено: 0%</div>
                 <button type="button" class="btn btn--ghost btn--block mt-md" id="goReviewBtn">Перейти к проверке</button>
             </div>
@@ -595,11 +740,22 @@ const initialParticipants = <?= json_encode(array_map(function($p) use ($user) {
 
 const csrfToken = '<?= generateCSRFToken() ?>';
 const contestId = <?= e($contest_id) ?>;
-const steps = ['Заявитель', 'Участники и рисунки', 'Проверка и отправка'];
+const needsPaymentReceipt = <?= $contestRequiresPaymentReceipt ? 'true' : 'false' ?>;
+const paymentStepNumber = <?= $contestRequiresPaymentReceipt ? (int) $paymentStepNumber : 'null' ?>;
+const finalReviewStep = <?= (int) $reviewStepNumber ?>;
+const steps = needsPaymentReceipt
+    ? ['Заявитель', 'Участники и рисунки', 'Квитанция об оплате', 'Проверка и отправка']
+    : ['Заявитель', 'Участники и рисунки', 'Проверка и отправка'];
 const draftKey = `applicationDraft:${contestId}:<?= intval($user['id'] ?? 0) ?>`;
 let currentStep = 1;
 let participantCount = 0;
 const isEditingServerDraft = <?= $editingApplication ? 'true' : 'false' ?>;
+const initialPaymentReceipt = <?= json_encode([
+    'fileName' => $hasExistingPaymentReceipt ? basename($existingPaymentReceipt) : '',
+    'url' => $existingPaymentReceiptUrl,
+    'isImage' => (bool) $existingPaymentReceiptIsImage,
+], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+let paymentReceiptObjectUrl = null;
 
 function createFieldError(input, message) {
     let error = input.parentElement.querySelector('.field-error');
@@ -616,6 +772,166 @@ function clearFieldError(input) {
     const error = input.parentElement.querySelector('.field-error');
     if (error) error.remove();
     input.classList.remove('is-invalid');
+}
+
+function getPaymentReceiptElements() {
+    return {
+        area: document.getElementById('paymentReceiptUploadArea'),
+        input: document.getElementById('paymentReceiptInput'),
+        preview: document.getElementById('paymentReceiptPreview'),
+        previewVisual: document.getElementById('paymentReceiptPreviewVisual'),
+        fileName: document.getElementById('paymentReceiptFileName'),
+        previewText: document.getElementById('paymentReceiptPreviewText'),
+        uploadTitle: document.getElementById('paymentReceiptUploadTitle'),
+        uploadHint: document.getElementById('paymentReceiptUploadHint'),
+        existingInput: document.getElementById('existingPaymentReceipt'),
+        removeInput: document.getElementById('removePaymentReceipt'),
+        viewBtn: document.getElementById('paymentReceiptViewBtn'),
+        removeBtn: document.getElementById('paymentReceiptRemoveBtn'),
+    };
+}
+
+function revokePaymentReceiptObjectUrl() {
+    if (paymentReceiptObjectUrl) {
+        URL.revokeObjectURL(paymentReceiptObjectUrl);
+        paymentReceiptObjectUrl = null;
+    }
+}
+
+function hasPaymentReceipt() {
+    if (!needsPaymentReceipt) return true;
+    const {input, existingInput} = getPaymentReceiptElements();
+    return !!(input?.files?.length || existingInput?.value);
+}
+
+function getPaymentReceiptSource() {
+    if (!needsPaymentReceipt) return null;
+    const {input, existingInput} = getPaymentReceiptElements();
+    if (input?.files?.length) {
+        const file = input.files[0];
+        return {
+            name: file.name,
+            url: paymentReceiptObjectUrl,
+            isImage: /^image\//.test(file.type) || /\.(jpg|jpeg|png|webp)$/i.test(file.name),
+            isSelectedFile: true,
+        };
+    }
+
+    if (existingInput?.value) {
+        return {
+            name: initialPaymentReceipt.fileName || existingInput.value.split('/').pop(),
+            url: initialPaymentReceipt.url,
+            isImage: !!initialPaymentReceipt.isImage,
+            isSelectedFile: false,
+        };
+    }
+
+    return null;
+}
+
+function renderPaymentReceiptPreview(source = null) {
+    if (!needsPaymentReceipt) return;
+    const {area, preview, previewVisual, fileName, previewText, uploadTitle, uploadHint, viewBtn, removeBtn} = getPaymentReceiptElements();
+    if (!area || !preview || !previewVisual || !fileName || !previewText || !uploadTitle || !uploadHint) return;
+
+    if (!source || !source.isSelectedFile) {
+        revokePaymentReceiptObjectUrl();
+    }
+
+    if (!source) {
+        preview.classList.remove('visible');
+        area.classList.remove('has-file');
+        area.classList.remove('is-invalid');
+        previewVisual.innerHTML = '';
+        fileName.textContent = 'Файл ещё не выбран';
+        previewText.textContent = 'После выбора файла здесь появится карточка квитанции.';
+        uploadTitle.textContent = 'Нажмите или перетащите файл квитанции';
+        uploadHint.textContent = 'JPG, PNG, WEBP или PDF до 10MB';
+        if (viewBtn) viewBtn.disabled = true;
+        if (removeBtn) removeBtn.disabled = true;
+        return;
+    }
+
+    preview.classList.add('visible');
+    area.classList.add('has-file');
+    area.classList.remove('is-invalid');
+    uploadTitle.textContent = source.isSelectedFile ? 'Файл квитанции выбран' : 'Квитанция уже прикреплена';
+    uploadHint.textContent = source.isSelectedFile ? 'Файл будет загружен при сохранении заявки' : 'Файл уже сохранён в заявке';
+    fileName.textContent = source.name;
+    previewText.textContent = source.isSelectedFile ? 'Проверьте файл перед отправкой заявки.' : 'Файл уже прикреплён к этой заявке.';
+    previewVisual.innerHTML = source.isImage && source.url
+        ? `<img src="${source.url}" alt="Квитанция об оплате" class="payment-receipt-preview__image">`
+        : '<div class="payment-receipt-preview__file-icon"><i class="fas fa-file-pdf"></i></div>';
+    if (viewBtn) viewBtn.disabled = !source.url;
+    if (removeBtn) removeBtn.disabled = false;
+}
+
+function handlePaymentReceiptSelection(file) {
+    if (!needsPaymentReceipt || !file) return;
+    if (file.size > 10 * 1024 * 1024) {
+        const {uploadTitle, area} = getPaymentReceiptElements();
+        if (uploadTitle) uploadTitle.textContent = 'Файл слишком большой. Допустимо до 10MB.';
+        if (area) area.classList.add('is-invalid');
+        return;
+    }
+
+    revokePaymentReceiptObjectUrl();
+    paymentReceiptObjectUrl = URL.createObjectURL(file);
+    const {removeInput} = getPaymentReceiptElements();
+    if (removeInput) removeInput.value = '0';
+    renderPaymentReceiptPreview({
+        name: file.name,
+        url: paymentReceiptObjectUrl,
+        isImage: /^image\//.test(file.type) || /\.(jpg|jpeg|png|webp)$/i.test(file.name),
+        isSelectedFile: true,
+    });
+    updateSidebar();
+    if (currentStep === finalReviewStep) renderReview();
+    saveLocalDraft();
+}
+
+function removePaymentReceiptSelection() {
+    if (!needsPaymentReceipt) return;
+    const {input, existingInput, removeInput} = getPaymentReceiptElements();
+    const hasSelectedFile = !!input?.files?.length;
+
+    if (hasSelectedFile && input) {
+        input.value = '';
+        if (existingInput?.value) {
+            renderPaymentReceiptPreview(getPaymentReceiptSource());
+        } else {
+            renderPaymentReceiptPreview(null);
+        }
+    } else if (existingInput?.value) {
+        existingInput.value = '';
+        if (removeInput) removeInput.value = '1';
+        renderPaymentReceiptPreview(null);
+    } else {
+        renderPaymentReceiptPreview(null);
+    }
+
+    updateSidebar();
+    if (currentStep === finalReviewStep) renderReview();
+    saveLocalDraft();
+}
+
+function openPaymentReceiptPreview() {
+    if (!needsPaymentReceipt) return;
+    const source = getPaymentReceiptSource();
+    if (source?.url) {
+        window.open(source.url, '_blank', 'noopener');
+    }
+}
+
+function isApplicationReadyToSubmit() {
+    const requiredFieldsFilled = [...document.querySelectorAll('#applicationForm [required]')].every((input) => String(input.value || '').trim());
+    const participantsReady = participantCount > 0 && [...document.querySelectorAll('[id^="temp_file_"]')].every((field) => {
+        const idx = field.id.split('_').pop();
+        const existing = document.getElementById(`existing_file_${idx}`);
+        return !!(field.value || (existing && existing.value));
+    });
+
+    return requiredFieldsFilled && participantsReady && (!needsPaymentReceipt || hasPaymentReceipt());
 }
 
 function validateStep(step) {
@@ -643,6 +959,14 @@ function validateStep(step) {
             }
         });
     }
+
+    if (needsPaymentReceipt && step === paymentStepNumber && !hasPaymentReceipt()) {
+        const {area} = getPaymentReceiptElements();
+        if (area) {
+            area.classList.add('is-invalid');
+        }
+        valid = false;
+    }
     return valid;
 }
 
@@ -666,7 +990,7 @@ function updateProgress() {
         return `<button type="button" class="wizard-step-pill ${cls}" onclick="goStep(${n})">${n}. ${title}</button>`;
     }).join('');
 
-    if (currentStep === 3) renderReview();
+    if (currentStep === finalReviewStep) renderReview();
     updateSidebar();
 }
 
@@ -862,6 +1186,7 @@ function renderReview() {
     const review = document.getElementById('reviewContainer');
     const parentName = document.querySelector('[name="parent_surname"]').value + ' ' + document.querySelector('[name="parent_name"]').value;
     const parentEmail = document.querySelector('[name="organization_email"]').value || '—';
+    const paymentReceiptSource = needsPaymentReceipt ? getPaymentReceiptSource() : null;
     const participants = [...document.querySelectorAll('#participantsContainer .participant-form')].map((card, index) => {
         const fio = `${card.querySelector(`[name="participants[${index}][surname]"]`)?.value || ''} ${card.querySelector(`[name="participants[${index}][name]"]`)?.value || ''} ${card.querySelector(`[name="participants[${index}][patronymic]"]`)?.value || ''}`.trim();
         const age = card.querySelector(`[name="participants[${index}][age]"]`)?.value || '—';
@@ -885,7 +1210,7 @@ function renderReview() {
         `;
     });
 
-    const ready = participants.length > 0 && participants.every((_, i) => document.getElementById(`temp_file_${i}`)?.value || document.getElementById(`existing_file_${i}`)?.value);
+    const ready = isApplicationReadyToSubmit();
     review.innerHTML = `
         <div class="review-block">
             <h4>Заявитель</h4>
@@ -896,7 +1221,14 @@ function renderReview() {
             <h4>Участники</h4>
             <ul class="review-list">${participants.join('')}</ul>
         </div>
-        <div class="alert ${ready ? 'alert--success' : 'alert--error'}">${ready ? 'Заявка готова к отправке.' : 'Заполните все обязательные поля и добавьте рисунки.'}</div>`;
+        ${needsPaymentReceipt ? `
+        <div class="review-block">
+            <h4>Квитанция об оплате</h4>
+            <p>${paymentReceiptSource ? paymentReceiptSource.name : 'Квитанция пока не прикреплена'}</p>
+            <p>${paymentReceiptSource ? 'Файл готов к отправке вместе с заявкой.' : 'Без квитанции кнопка отправки останется неактивной.'}</p>
+            <button type="button" class="btn btn--ghost" onclick="goStep(${paymentStepNumber})">Изменить</button>
+        </div>` : ''}
+        <div class="alert ${ready ? 'alert--success' : 'alert--error'}">${ready ? 'Заявка готова к отправке.' : needsPaymentReceipt ? 'Заполните все обязательные поля, добавьте рисунки и прикрепите квитанцию об оплате.' : 'Заполните все обязательные поля и добавьте рисунки.'}</div>`;
     document.getElementById('submitBtn').disabled = !ready;
 }
 
@@ -904,10 +1236,18 @@ function updateSidebar() {
     const drawings = [...document.querySelectorAll('[id^="temp_file_"]')].filter((f) => f.value).length + [...document.querySelectorAll('[id^="existing_file_"]')].filter((f) => f.value).length;
     document.getElementById('statParticipants').textContent = `Участников: ${participantCount}`;
     document.getElementById('statDrawings').textContent = `Рисунков: ${drawings}`;
+    if (needsPaymentReceipt) {
+        const statReceipt = document.getElementById('statReceipt');
+        if (statReceipt) {
+            statReceipt.textContent = `Квитанция: ${hasPaymentReceipt() ? 'добавлена' : 'не добавлена'}`;
+        }
+    }
 
     const required = document.querySelectorAll('#applicationForm [required]');
     const done = [...required].filter((el) => String(el.value || '').trim()).length;
-    const fillPercent = required.length ? Math.round((done / required.length) * 100) : 0;
+    const additionalRequired = needsPaymentReceipt ? 1 : 0;
+    const additionalDone = needsPaymentReceipt && hasPaymentReceipt() ? 1 : 0;
+    const fillPercent = (required.length + additionalRequired) ? Math.round(((done + additionalDone) / (required.length + additionalRequired)) * 100) : 0;
     document.getElementById('statConfidence').textContent = `Заполнено: ${fillPercent}%`;
 }
 
@@ -919,6 +1259,7 @@ function saveDraft() {
 function saveLocalDraft() {
     if (isEditingServerDraft) return;
     const data = Object.fromEntries(new FormData(document.getElementById('applicationForm')).entries());
+    delete data.payment_receipt;
     data.currentStep = currentStep;
     localStorage.setItem(draftKey, JSON.stringify(data));
 }
@@ -932,7 +1273,7 @@ function tryRestoreDraft() {
         const field = document.querySelector(`[name="${CSS.escape(key)}"]`);
         if (field && field.type !== 'file') field.value = value;
     });
-    currentStep = Number(data.currentStep || 1);
+    currentStep = Math.min(Math.max(Number(data.currentStep || 1), 1), steps.length);
     const note = document.createElement('div');
     note.className = 'alert alert--info mb-md';
     note.innerHTML = '<i class="fas fa-info-circle alert__icon"></i><div class="alert__content"><div class="alert__message">Данные формы восстановлены из локального черновика.</div></div>';
@@ -957,6 +1298,47 @@ function closeDrawingPreviewModal() {
 function goToMyApplications() { window.location.href = '/my-applications'; }
 
 document.addEventListener('DOMContentLoaded', function () {
+    if (needsPaymentReceipt) {
+        const {area, input, viewBtn, removeBtn, existingInput, removeInput} = getPaymentReceiptElements();
+        if (area && input) {
+            area.addEventListener('click', (event) => {
+                if (event.target !== input) input.click();
+            });
+            area.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                area.classList.add('dragover');
+            });
+            area.addEventListener('dragleave', (event) => {
+                event.preventDefault();
+                area.classList.remove('dragover');
+            });
+            area.addEventListener('drop', (event) => {
+                event.preventDefault();
+                area.classList.remove('dragover');
+                if (event.dataTransfer?.files?.length) {
+                    const droppedFile = event.dataTransfer.files[0];
+                    if (typeof DataTransfer !== 'undefined') {
+                        const transfer = new DataTransfer();
+                        transfer.items.add(droppedFile);
+                        input.files = transfer.files;
+                    }
+                    handlePaymentReceiptSelection(droppedFile);
+                }
+            });
+            input.addEventListener('change', () => {
+                if (input.files?.length) {
+                    if (removeInput) removeInput.value = '0';
+                    handlePaymentReceiptSelection(input.files[0]);
+                }
+            });
+        }
+        viewBtn?.addEventListener('click', openPaymentReceiptPreview);
+        removeBtn?.addEventListener('click', removePaymentReceiptSelection);
+        if (existingInput?.value) {
+            renderPaymentReceiptPreview(getPaymentReceiptSource());
+        }
+    }
+
     if (Array.isArray(initialParticipants) && initialParticipants.length) {
         initialParticipants.forEach((p) => addParticipant(p));
     } else {
@@ -970,7 +1352,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('addParticipantBtn').addEventListener('click', () => {
         addParticipant();
     });
-    document.getElementById('goReviewBtn').addEventListener('click', () => goStep(3));
+    document.getElementById('goReviewBtn').addEventListener('click', () => goStep(finalReviewStep));
     document.getElementById('nextStepBtn').addEventListener('click', () => goStep(Math.min(currentStep + 1, steps.length)));
     document.getElementById('prevStepBtn').addEventListener('click', () => goStep(Math.max(currentStep - 1, 1)));
     document.getElementById('submitBtn').addEventListener('click', () => {
@@ -981,11 +1363,24 @@ document.addEventListener('DOMContentLoaded', function () {
         updateSidebar();
         saveLocalDraft();
     });
+    document.getElementById('applicationForm').addEventListener('change', () => {
+        updateSidebar();
+        saveLocalDraft();
+    });
     document.getElementById('applicationForm').addEventListener('submit', function (e) {
         const action = document.getElementById('formAction').value;
         if (action === 'submit') {
-            if (currentStep !== steps.length || !validateStep(3)) {
+            if (currentStep !== steps.length || !isApplicationReadyToSubmit()) {
                 e.preventDefault();
+                if (!validateStep(1)) {
+                    goStep(1);
+                } else if (!validateStep(2)) {
+                    goStep(2);
+                } else if (needsPaymentReceipt && !validateStep(paymentStepNumber)) {
+                    goStep(paymentStepNumber);
+                } else {
+                    renderReview();
+                }
                 return;
             }
             const btn = document.getElementById('submitBtn');

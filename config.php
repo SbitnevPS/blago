@@ -215,6 +215,53 @@ function backfillCorrectedApplications(PDO $pdo): void
 ensureApplicationStatusSchema($pdo);
 backfillCorrectedApplications($pdo);
 
+function ensureContestPaymentReceiptSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        $contestColumns = $pdo->query("SHOW COLUMNS FROM contests")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('requires_payment_receipt', $contestColumns, true)) {
+            $pdo->exec("
+                ALTER TABLE contests
+                ADD COLUMN requires_payment_receipt TINYINT(1) NOT NULL DEFAULT 0
+                AFTER document_file
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('[SCHEMA] Contest payment receipt schema check failed: ' . $e->getMessage());
+    }
+}
+
+function ensureApplicationPaymentReceiptSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        $applicationColumns = $pdo->query("SHOW COLUMNS FROM applications")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('payment_receipt', $applicationColumns, true)) {
+            $pdo->exec("
+                ALTER TABLE applications
+                ADD COLUMN payment_receipt VARCHAR(255) NULL
+                AFTER recommendations_wishes
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('[SCHEMA] Application payment receipt schema check failed: ' . $e->getMessage());
+    }
+}
+
+ensureContestPaymentReceiptSchema($pdo);
+ensureApplicationPaymentReceiptSchema($pdo);
+
 
 // Настройки сессии
 if (session_status() === PHP_SESSION_NONE) {
@@ -861,6 +908,56 @@ function getApplicationStatusMeta($status) {
         'badge_class' => 'badge--warning',
         'row_style' => '',
         'message_priority' => 'normal',
+    ];
+}
+
+function isContestPaymentReceiptRequired(array $contest): bool
+{
+    return (int) ($contest['requires_payment_receipt'] ?? 0) === 1;
+}
+
+function getPaymentReceiptWebPath(?string $fileName): string
+{
+    $safeFileName = trim((string) $fileName);
+    if ($safeFileName === '') {
+        return '';
+    }
+
+    return '/uploads/documents/' . rawurlencode($safeFileName);
+}
+
+function getApplicationPaymentReceiptMeta(array $application): array
+{
+    $paymentReceipt = trim((string) ($application['payment_receipt'] ?? ''));
+    $isRequired = (int) ($application['contest_requires_payment_receipt'] ?? $application['requires_payment_receipt'] ?? 0) === 1;
+    $hasReceipt = $paymentReceipt !== '';
+
+    if ($isRequired && $hasReceipt) {
+        $label = 'Квитанция загружена';
+        $badgeClass = 'badge--success';
+        $statusCode = 'receipt_uploaded';
+    } elseif ($isRequired) {
+        $label = 'Ожидает квитанцию';
+        $badgeClass = 'badge--warning';
+        $statusCode = 'receipt_missing';
+    } elseif ($hasReceipt) {
+        $label = 'Квитанция приложена';
+        $badgeClass = 'badge--info';
+        $statusCode = 'receipt_optional_uploaded';
+    } else {
+        $label = 'Квитанция не требуется';
+        $badgeClass = 'badge--secondary';
+        $statusCode = 'receipt_not_required';
+    }
+
+    return [
+        'label' => $label,
+        'badge_class' => $badgeClass,
+        'status_code' => $statusCode,
+        'is_required' => $isRequired,
+        'has_receipt' => $hasReceipt,
+        'file_name' => $hasReceipt ? basename($paymentReceipt) : '',
+        'file_url' => $hasReceipt ? getPaymentReceiptWebPath($paymentReceipt) : '',
     ];
 }
 

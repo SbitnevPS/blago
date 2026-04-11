@@ -12,6 +12,7 @@ if (!$contest || (int)($contest['is_published'] ?? 0) !== 1) {
 
 $currentPage = 'contests';
 $applicationUrl = getApplicationAccessUrl((int) $contest['id']);
+$contestRequiresPaymentReceipt = isContestPaymentReceiptRequired($contest);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -110,12 +111,25 @@ $applicationUrl = getApplicationAccessUrl((int) $contest['id']);
                         <h3 class="contest-prep-card__title">Отдельный рисунок</h3>
                         <p class="contest-prep-card__text">Для каждого участника нужно загрузить отдельную конкурсную работу.</p>
                     </article>
+
+                    <?php if ($contestRequiresPaymentReceipt): ?>
+                    <article class="contest-prep-card">
+                        <div class="contest-prep-card__icon" aria-hidden="true">
+                            <i class="fas fa-receipt"></i>
+                        </div>
+                        <h3 class="contest-prep-card__title">Квитанция об оплате</h3>
+                        <p class="contest-prep-card__text">Подготовьте фото, скриншот или PDF-квитанцию: без неё заявку отправить не получится.</p>
+                    </article>
+                    <?php endif; ?>
                 </div>
 
                 <div class="contest-prep__highlights" aria-label="Ключевые условия подачи">
                     <span class="contest-prep__highlight">1 участник = 1 работа</span>
                     <span class="contest-prep__highlight">Можно добавить несколько участников</span>
                     <span class="contest-prep__highlight">Подача заявки занимает несколько минут</span>
+                    <?php if ($contestRequiresPaymentReceipt): ?>
+                        <span class="contest-prep__highlight">Квитанция обязательна при отправке</span>
+                    <?php endif; ?>
                 </div>
 
                 <div class="contest-prep__tip" role="note" aria-label="Совет по заполнению">
@@ -123,7 +137,13 @@ $applicationUrl = getApplicationAccessUrl((int) $contest['id']);
                         <i class="fas fa-circle-info" aria-hidden="true"></i>
                         Совет
                     </h3>
-                    <p class="contest-prep__tip-text">Если вы планируете подать несколько работ, подготовьте рисунки заранее, чтобы быстрее заполнить заявку.</p>
+                    <p class="contest-prep__tip-text">
+                        <?php if ($contestRequiresPaymentReceipt): ?>
+                            Если участие в конкурсе оплачивается, заранее подготовьте и рисунки, и квитанцию. Так вы сможете заполнить и отправить заявку за один раз.
+                        <?php else: ?>
+                            Если вы планируете подать несколько работ, подготовьте рисунки заранее, чтобы быстрее заполнить заявку.
+                        <?php endif; ?>
+                    </p>
                 </div>
             </div>
         </section>

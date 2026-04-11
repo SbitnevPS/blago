@@ -399,6 +399,10 @@
 .application-sidebar { position:sticky; top:100px; }
 .application-prep-grid { margin-top:var(--space-lg); display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
 .application-prep-item { background:#fff; border:1px solid var(--color-border); border-radius:12px; padding:10px 12px; font-weight:600; color:var(--color-text-secondary); }
+.payment-receipt-note { display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:flex-start; border:1px solid #FDE68A; background:linear-gradient(145deg, #FFFDF4 0%, #FFFBEB 100%); border-radius:18px; padding:18px; box-shadow:0 12px 28px rgba(217, 119, 6, .08); }
+.payment-receipt-note__icon { width:52px; height:52px; border-radius:16px; display:flex; align-items:center; justify-content:center; background:#FEF3C7; color:#B45309; font-size:22px; }
+.payment-receipt-note__title { margin:0 0 8px; color:#92400E; font-size:var(--font-size-lg); }
+.payment-receipt-note__text { margin:0; color:#78350F; line-height:1.6; }
 .wizard-progress__head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
 .wizard-progress__bar { height:8px; border-radius:999px; background:var(--color-bg); overflow:hidden; }
 .wizard-progress__bar span { display:block; height:100%; width:0; background:linear-gradient(90deg, var(--color-primary), #818cf8); transition:width .3s ease; }
@@ -413,6 +417,23 @@
 .wizard-nav { display:flex; gap:10px; flex-wrap:wrap; }
 .wizard-nav .btn { min-height:46px; }
 .upload-card { border:1px solid var(--color-border); border-radius:16px; padding:16px; margin-bottom:12px; background:#fff; }
+.payment-receipt-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+.payment-receipt-card { border:1px solid var(--color-border); border-radius:18px; padding:18px; background:#fff; box-shadow:0 10px 24px rgba(15, 23, 42, .04); }
+.payment-receipt-card--info { background:linear-gradient(145deg, #FFFDF6 0%, #FFFBEB 100%); border-color:#FDE68A; }
+.payment-receipt-card__head { display:grid; gap:10px; margin-bottom:14px; }
+.payment-receipt-card__head h4 { margin:0; color:var(--color-text); font-size:var(--font-size-lg); }
+.payment-receipt-card__badge { display:inline-flex; align-items:center; justify-content:center; width:max-content; border-radius:999px; padding:6px 10px; background:#F59E0B; color:#fff; font-size:var(--font-size-xs); font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+.payment-receipt-card__badge--neutral { background:#E2E8F0; color:#334155; }
+.payment-receipt-card__text { margin:0; color:var(--color-text-secondary); line-height:1.6; }
+.payment-receipt-card__list { margin:14px 0 0; padding-left:18px; color:#475569; line-height:1.7; display:grid; gap:8px; }
+.payment-receipt-upload { min-height:180px; display:flex; flex-direction:column; justify-content:center; }
+.payment-receipt-preview { margin-top:16px; display:none; border:1px solid var(--color-border); border-radius:16px; background:#F8FAFC; padding:14px; }
+.payment-receipt-preview.visible { display:grid; gap:14px; }
+.payment-receipt-preview__visual { display:flex; align-items:center; justify-content:center; min-height:180px; border-radius:14px; border:1px dashed #CBD5E1; background:#fff; overflow:hidden; }
+.payment-receipt-preview__image { width:100%; max-height:260px; object-fit:contain; display:block; }
+.payment-receipt-preview__file-icon { width:76px; height:76px; border-radius:22px; display:flex; align-items:center; justify-content:center; background:#FEE2E2; color:#B91C1C; font-size:28px; }
+.payment-receipt-preview__meta { display:grid; gap:6px; color:var(--color-text-secondary); font-size:var(--font-size-sm); }
+.payment-receipt-preview__meta strong { color:var(--color-text); font-size:var(--font-size-base); }
 .field-error { color:var(--color-error); font-size:var(--font-size-xs); margin-top:6px; }
 .form-input.is-invalid, .form-select.is-invalid, .form-textarea.is-invalid, .upload-area.is-invalid { border-color:var(--color-error) !important; box-shadow:0 0 0 2px var(--color-error-light); }
 .sidebar-stat { padding:10px 12px; background:var(--color-bg); border-radius:10px; margin-top:8px; }
@@ -429,6 +450,7 @@
 @media (max-width: 1024px) {
   .application-layout { grid-template-columns:1fr; }
   .application-sidebar { position:static; }
+  .payment-receipt-grid { grid-template-columns:1fr; }
 }
 
 @media (max-width: 768px) {
@@ -436,4 +458,5 @@
   .wizard-nav .btn { width:100%; justify-content:center; }
   .review-item--card { align-items:flex-start; }
   .review-item--card .btn { width:100%; justify-content:center; }
+  .payment-receipt-note { grid-template-columns:1fr; }
 }
