@@ -131,6 +131,7 @@ $routes = [
  '/admin/search-users' => ['file' => 'admin/search-users.php', 'name' => 'admin-search-users'],
  '/admin/search-message-users' => ['file' => 'admin/search-message-users.php', 'name' => 'admin-search-message-users'],
  '/admin/search-participants' => ['file' => 'admin/search-participants.php', 'name' => 'admin-search-participants'],
+ '/admin/search-contests' => ['file' => 'admin/search-contests.php', 'name' => 'admin-search-contests'],
  '/admin/login' => ['file' => 'admin/login.php', 'name' => 'admin-login'],
  '/admin/logout' => ['file' => 'admin/logout.php', 'name' => 'admin-logout'],
 ];

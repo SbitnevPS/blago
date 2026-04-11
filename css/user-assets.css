@@ -236,13 +236,25 @@
 .form-section { margin-bottom:var(--space-lg); }
 .form-section--boxed { border:1px solid var(--color-border); border-radius:var(--radius-md); padding:var(--space-md); background:#fff; }
 .form-section__title { font-size:var(--font-size-base); font-weight:var(--font-weight-semibold); color:var(--color-text-secondary); margin-bottom:var(--space-md); padding-bottom:var(--space-sm); border-bottom:1px solid var(--color-border); }
-.drawing-layout { display:grid; grid-template-columns:minmax(280px, 1fr) minmax(320px, 1fr); gap:var(--space-lg); align-items:start; }
-.drawing-preview-wrap { min-height: 40px; }
+.drawing-layout { display:grid; grid-template-columns:1fr; gap:var(--space-lg); align-items:start; }
+.drawing-upload-card { display:grid; gap:12px; }
+.upload-area--drawing { min-height:320px; border:2px dashed #CBD5E1; border-radius:18px; background:linear-gradient(145deg, #F8FAFC 0%, #EEF2FF 100%); overflow:hidden; padding:18px; }
+.upload-area--drawing .drawing-upload-placeholder { min-height:280px; display:grid; place-items:center; text-align:center; }
+.upload-area--drawing.has-file { border-style:solid; border-color:#BFDBFE; background:#fff; padding:0; }
+.upload-area--drawing.has-file .drawing-upload-placeholder { display:none; }
+.drawing-upload-preview { display:none; position:relative; min-height:320px; background:#fff; }
+.drawing-upload-preview.visible { display:block; }
+.drawing-upload-image { width:100%; height:320px; display:block; object-fit:contain; background:#fff; }
+.drawing-upload-overlay { position:absolute; left:14px; right:14px; bottom:14px; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:10px 12px; border-radius:999px; background:rgba(15, 23, 42, .72); color:#fff; font-size:13px; font-weight:600; pointer-events:none; }
+.drawing-upload-actions { display:flex; gap:10px; flex-wrap:wrap; }
+.drawing-upload-actions .btn { min-width:140px; justify-content:center; }
 .file-upload { position:relative; }
 .file-upload__input { position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer; z-index:10; }
 .upload-area { position:relative; z-index:1; transition:all var(--transition-fast); cursor:pointer; }
 .upload-area.dragover { border-color:var(--color-primary); background:var(--color-primary-light); transform:scale(1.02); }
 .upload-area.has-file { border-color:var(--color-success); background:var(--color-success-light); }
+.upload-area.upload-area--drawing.has-file { border-color:#BFDBFE; background:#fff; }
+.upload-area.upload-area--drawing.dragover { background:linear-gradient(145deg, #DBEAFE 0%, #EFF6FF 100%); }
 .drawing-preview.visible { display:block; }
 .drawing-preview__info { margin-top:var(--space-sm); font-size:var(--font-size-sm); color:var(--color-success); }
 .drawing-preview__actions { margin-top:var(--space-sm); display:flex; gap:8px; flex-wrap:wrap; }
@@ -283,7 +295,6 @@
 .error-page a { display:inline-block; margin-top:20px; padding:12px 24px; background:#6366F1; color:#fff; text-decoration:none; border-radius:8px; }
 
 @media (max-width: 900px) {
- .drawing-layout { grid-template-columns:1fr; }
  .application-hero__steps { grid-template-columns:repeat(2, minmax(0, 1fr)); }
  .contest-prep__grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
 }
@@ -319,6 +330,14 @@
   width: 100%;
   max-width: 220px;
   height: auto;
+ }
+
+ .drawing-upload-image {
+  height: 260px;
+ }
+
+ .drawing-upload-actions .btn {
+  width: 100%;
  }
 
  .participant-work-card {

@@ -162,10 +162,12 @@
 }
 
 .contest-card__badges {
-    margin-top: 8px;
+    margin: 10px 0 12px;
+    min-height: 28px;
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    align-items: flex-start;
 }
 
 .contest-badge {

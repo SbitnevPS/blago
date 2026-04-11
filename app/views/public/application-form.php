@@ -674,10 +674,10 @@ generateCSRFToken();
                 </section>
 
                 <div class="wizard-nav mb-lg">
-                    <button type="button" class="btn btn--ghost" id="prevStepBtn" disabled><i class="fas fa-arrow-left"></i> Назад</button>
-                    <button type="button" class="btn btn--secondary" onclick="saveDraft()"><i class="fas fa-save"></i> Сохранить черновик</button>
+                    <button type="button" class="btn btn--primary" id="prevStepBtn" disabled><i class="fas fa-arrow-left"></i> Назад</button>
+                    <button type="submit" class="btn btn--secondary" id="saveDraftBtn" data-form-action="save_draft"><i class="fas fa-save"></i> Сохранить черновик</button>
                     <button type="button" class="btn btn--primary" id="nextStepBtn">Далее <i class="fas fa-arrow-right"></i></button>
-                    <button type="submit" class="btn btn--primary" id="submitBtn" hidden><i class="fas fa-paper-plane"></i> Отправить заявку</button>
+                    <button type="submit" class="btn btn--primary" id="submitBtn" data-form-action="submit" disabled><i class="fas fa-paper-plane"></i> Отправить заявку</button>
                 </div>
             </form>
         </div>
@@ -970,14 +970,30 @@ function validateStep(step) {
     return valid;
 }
 
+function syncNavigationButtons(isReadyToSubmit = false) {
+    const prevBtn = document.getElementById('prevStepBtn');
+    const nextBtn = document.getElementById('nextStepBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const isLastStep = currentStep === steps.length;
+
+    if (prevBtn) {
+        prevBtn.disabled = currentStep === 1;
+    }
+
+    if (nextBtn) {
+        nextBtn.disabled = isLastStep;
+    }
+
+    if (submitBtn) {
+        submitBtn.disabled = !isLastStep || !isReadyToSubmit;
+    }
+}
+
 function updateProgress() {
     const percent = Math.round((currentStep / steps.length) * 100);
     document.getElementById('progressBar').style.width = `${percent}%`;
     document.getElementById('progressPercent').textContent = `${percent}%`;
     document.getElementById('mobileStepLabel').textContent = `Шаг ${currentStep} из ${steps.length}`;
-    document.getElementById('prevStepBtn').disabled = currentStep === 1;
-    document.getElementById('nextStepBtn').hidden = currentStep === steps.length;
-    document.getElementById('submitBtn').hidden = currentStep !== steps.length;
 
     document.querySelectorAll('.wizard-step').forEach((s) => {
         s.hidden = Number(s.dataset.step) !== currentStep;
@@ -991,6 +1007,7 @@ function updateProgress() {
     }).join('');
 
     if (currentStep === finalReviewStep) renderReview();
+    syncNavigationButtons(currentStep === finalReviewStep && isApplicationReadyToSubmit());
     updateSidebar();
 }
 
@@ -1002,7 +1019,74 @@ function goStep(step) {
     saveLocalDraft();
 }
 
+function buildDrawingActionButtons(index, hasFile, isLoading = false) {
+    if (isLoading) {
+        return '<button type="button" class="btn btn--secondary" disabled><span class="loading-spinner"></span> Загружаем...</button>';
+    }
+
+    if (!hasFile) {
+        return `<button type="button" class="btn btn--secondary" onclick="openDrawingPicker(${index}); return false;">Загрузить</button>`;
+    }
+
+    return `
+        <button type="button" class="btn btn--ghost" onclick="viewDrawing(${index}); return false;">Просмотр</button>
+        <button type="button" class="btn btn--ghost" onclick="removeDrawing(${index}); return false;">Удалить</button>
+    `;
+}
+
+function renderDrawingUploader(index, options = {}) {
+    const area = document.getElementById(`drawingUpload_${index}`);
+    const title = document.getElementById(`upload_title_${index}`);
+    const hint = document.getElementById(`upload_hint_${index}`);
+    const preview = document.getElementById(`preview_${index}`);
+    const actions = document.getElementById(`drawingActions_${index}`);
+
+    if (!area || !title || !hint || !preview || !actions) return;
+
+    const hasFile = !!options.previewUrl;
+    const isLoading = options.isLoading === true;
+    const fileName = String(options.fileName || '');
+
+    area.classList.toggle('has-file', hasFile);
+    area.classList.toggle('is-loading', isLoading);
+    if (!options.keepInvalid) {
+        area.removeAttribute('title');
+    }
+
+    if (hasFile) {
+        title.textContent = fileName ? `Файл: ${fileName}` : 'Файл загружен';
+        hint.textContent = 'Нажмите на изображение, чтобы заменить файл';
+        preview.classList.add('visible');
+        preview.innerHTML = `
+            <img src="${options.previewUrl}" alt="Рисунок участника" class="drawing-upload-image" id="preview_img_${index}">
+            <div class="drawing-upload-overlay">
+                <i class="fas fa-arrows-rotate"></i>
+                Нажмите, чтобы выбрать другой рисунок
+            </div>
+        `;
+    } else {
+        title.textContent = options.message || 'Перетащите рисунок сюда или нажмите для выбора файла';
+        hint.textContent = options.hint || 'JPG, PNG, GIF, WebP, TIF до 15MB';
+        preview.classList.remove('visible');
+        preview.innerHTML = '';
+    }
+
+    actions.innerHTML = buildDrawingActionButtons(index, hasFile, isLoading);
+
+    if (!isLoading && !options.keepInvalid) {
+        area.classList.remove('is-invalid');
+    }
+}
+
+function openDrawingPicker(index) {
+    const input = document.querySelector(`#drawingUpload_${index} input[type="file"]`);
+    if (input) {
+        input.click();
+    }
+}
+
 function createParticipantForm(index, data = null) {
+    const hasPreview = !!(data?.preview);
     const container = document.createElement('article');
     container.className = 'participant-form';
     container.dataset.index = index;
@@ -1027,19 +1111,26 @@ function createParticipantForm(index, data = null) {
             <div class="form-section form-section--boxed">
                 <h4 class="form-section__title">Рисунок участника</h4>
                 <div class="drawing-layout">
-                    <div class="upload-area ${data?.temp_file || data?.existing_drawing_file ? 'has-file' : ''}" id="drawingUpload_${index}">
-                        <input type="file" accept="image/*" class="file-upload__input" data-index="${index}">
-                        <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
-                        <div class="upload-area__title" id="upload_title_${index}">${data?.temp_file || data?.existing_drawing_file ? 'Файл загружен' : 'Перетащите рисунок сюда или нажмите для выбора файла'}</div>
-                        <div class="upload-area__hint" id="upload_hint_${index}">JPG, PNG, GIF, WebP, TIF до 15MB</div>
-                    </div>
-                    <div class="drawing-preview-wrap">
-                        <div class="drawing-preview ${data?.preview ? 'visible' : ''}" id="preview_${index}">
-                            ${data?.preview ? `<img src="${data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large drawing-preview__image--clickable" id="preview_img_${index}" onclick="viewDrawing(${index})">` : ''}
-                            <div class="drawing-preview__actions">
-                                <button type="button" class="drawing-preview__action" onclick="viewDrawing(${index})">Посмотреть</button>
-                                <button type="button" class="drawing-preview__action drawing-preview__action--danger" onclick="removeDrawing(${index})">Удалить</button>
+                    <div class="drawing-upload-card">
+                        <div class="upload-area upload-area--drawing ${hasPreview ? 'has-file' : ''}" id="drawingUpload_${index}">
+                            <input type="file" accept="image/*" class="file-upload__input" data-index="${index}" style="display:none;">
+                            <div class="drawing-upload-placeholder">
+                                <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                                <div class="upload-area__title" id="upload_title_${index}">${hasPreview ? 'Файл загружен' : 'Перетащите рисунок сюда или нажмите для выбора файла'}</div>
+                                <div class="upload-area__hint" id="upload_hint_${index}">${hasPreview ? 'Нажмите на изображение, чтобы заменить файл' : 'JPG, PNG, GIF, WebP, TIF до 15MB'}</div>
                             </div>
+                            <div class="drawing-upload-preview ${hasPreview ? 'visible' : ''}" id="preview_${index}">
+                                ${hasPreview ? `
+                                    <img src="${data.preview}" alt="Рисунок участника" class="drawing-upload-image" id="preview_img_${index}">
+                                    <div class="drawing-upload-overlay">
+                                        <i class="fas fa-arrows-rotate"></i>
+                                        Нажмите, чтобы выбрать другой рисунок
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        <div class="drawing-upload-actions" id="drawingActions_${index}">
+                            ${buildDrawingActionButtons(index, hasPreview)}
                         </div>
                     </div>
                 </div>
@@ -1054,13 +1145,27 @@ function toggleParticipant(index) {
     card.hidden = !card.hidden;
 }
 
-function addParticipant(data = null) {
+function scrollToParticipantForm(card) {
+    if (!card) return;
+    requestAnimationFrame(() => {
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const firstInput = card.querySelector('input, textarea, select');
+        if (firstInput) {
+            firstInput.focus({ preventScroll: true });
+        }
+    });
+}
+
+function addParticipant(data = null, options = {}) {
     const container = document.getElementById('participantsContainer');
     const card = createParticipantForm(participantCount, data);
     container.appendChild(card);
     initUploadArea(participantCount);
     participantCount++;
     updateParticipantsState();
+    if (options.scrollIntoView) {
+        scrollToParticipantForm(card);
+    }
 }
 
 function removeParticipant(index) {
@@ -1100,6 +1205,7 @@ function initUploadArea(index) {
     const input = area.querySelector('input[type="file"]');
 
     area.addEventListener('click', (e) => {
+        if (area.classList.contains('is-loading')) return;
         if (e.target !== input) input.click();
     });
     area.addEventListener('dragover', (e) => { e.preventDefault(); area.classList.add('dragover'); });
@@ -1107,6 +1213,7 @@ function initUploadArea(index) {
     area.addEventListener('drop', (e) => {
         e.preventDefault();
         area.classList.remove('dragover');
+        if (area.classList.contains('is-loading')) return;
         if (e.dataTransfer.files.length > 0) handleFileSelect(e.dataTransfer.files[0], index);
     });
     input.addEventListener('change', function () {
@@ -1116,17 +1223,24 @@ function initUploadArea(index) {
 
 function handleFileSelect(file, index) {
     if (file.size > 15 * 1024 * 1024) {
-        const title = document.getElementById(`upload_title_${index}`);
-        if (title) {
-            title.textContent = 'Файл слишком большой. Допустимо до 15MB.';
-            title.style.color = 'var(--color-error)';
-        }
+        renderDrawingUploader(index, {
+            previewUrl: document.getElementById(`preview_img_${index}`)?.src || '',
+            fileName: '',
+            message: 'Файл слишком большой. Допустимо до 15MB.',
+            hint: 'Выберите изображение меньшего размера',
+            keepInvalid: true,
+        });
+        const area = document.getElementById(`drawingUpload_${index}`);
+        if (area) area.classList.add('is-invalid');
         return;
     }
-    const area = document.getElementById(`drawingUpload_${index}`);
-    const title = document.getElementById(`upload_title_${index}`);
-    const hint = document.getElementById(`upload_hint_${index}`);
-    title.innerHTML = '<span class="loading-spinner"></span> Загрузка...';
+    const previousPreviewUrl = document.getElementById(`preview_img_${index}`)?.src || '';
+    const previousFileName = previousPreviewUrl ? 'Файл загружен' : '';
+    renderDrawingUploader(index, {
+        previewUrl: previousPreviewUrl,
+        fileName: previousFileName,
+        isLoading: true,
+    });
 
     const formData = new FormData();
     formData.append('action', 'upload_temp');
@@ -1139,39 +1253,48 @@ function handleFileSelect(file, index) {
         .then((data) => {
             if (!data.success) throw new Error(data.message || 'Ошибка загрузки');
             document.getElementById(`temp_file_${index}`).value = data.temp_file;
-            let preview = document.getElementById(`preview_${index}`);
-            if (!preview) return;
-            preview.classList.add('visible');
-            preview.innerHTML = `<img src="${data.original_url || data.preview}" alt="Рисунок" class="drawing-preview__image drawing-preview__image--large drawing-preview__image--clickable" id="preview_img_${index}" onclick="viewDrawing(${index})"><div class="drawing-preview__actions"><button type="button" class="drawing-preview__action" onclick="viewDrawing(${index})">Посмотреть</button><button type="button" class="drawing-preview__action drawing-preview__action--danger" onclick="removeDrawing(${index})">Удалить</button></div>`;
-            area.classList.add('has-file');
-            area.classList.remove('is-invalid');
-            title.textContent = `Файл: ${data.original_name}`;
-            hint.textContent = 'Загрузка успешна. Можно заменить файл.';
+            renderDrawingUploader(index, {
+                previewUrl: data.original_url || data.preview,
+                fileName: data.original_name || 'Файл загружен',
+            });
             saveLocalDraft();
             updateSidebar();
         })
         .catch((error) => {
-            title.textContent = error.message;
-            title.style.color = 'var(--color-error)';
+            if (previousPreviewUrl) {
+                renderDrawingUploader(index, {
+                    previewUrl: previousPreviewUrl,
+                    fileName: previousFileName,
+                });
+                const area = document.getElementById(`drawingUpload_${index}`);
+                if (area) {
+                    area.classList.add('is-invalid');
+                    area.title = error.message;
+                }
+            } else {
+                renderDrawingUploader(index, {
+                    message: error.message,
+                    hint: 'Попробуйте выбрать другой файл',
+                    keepInvalid: true,
+                });
+                const area = document.getElementById(`drawingUpload_${index}`);
+                if (area) area.classList.add('is-invalid');
+            }
         });
 }
 
 function removeDrawing(index) {
     const tempFile = document.getElementById(`temp_file_${index}`)?.value || '';
     const clearUi = () => {
-        const area = document.getElementById(`drawingUpload_${index}`);
-        const title = document.getElementById(`upload_title_${index}`);
-        const hint = document.getElementById(`upload_hint_${index}`);
-        const preview = document.getElementById(`preview_${index}`);
-        if (preview) preview.classList.remove('visible');
-        if (area) area.classList.remove('has-file');
-        if (title) title.textContent = 'Перетащите рисунок сюда или нажмите для выбора файла';
-        if (hint) hint.textContent = 'JPG, PNG, GIF, WebP, TIF до 15MB';
+        renderDrawingUploader(index);
+        const input = document.querySelector(`#drawingUpload_${index} input[type="file"]`);
         const temp = document.getElementById(`temp_file_${index}`);
         const existing = document.getElementById(`existing_file_${index}`);
+        if (input) input.value = '';
         if (temp) temp.value = '';
         if (existing) existing.value = '';
         updateSidebar();
+        saveLocalDraft();
     };
 
     if (!tempFile) { clearUi(); return; }
@@ -1229,7 +1352,7 @@ function renderReview() {
             <button type="button" class="btn btn--ghost" onclick="goStep(${paymentStepNumber})">Изменить</button>
         </div>` : ''}
         <div class="alert ${ready ? 'alert--success' : 'alert--error'}">${ready ? 'Заявка готова к отправке.' : needsPaymentReceipt ? 'Заполните все обязательные поля, добавьте рисунки и прикрепите квитанцию об оплате.' : 'Заполните все обязательные поля и добавьте рисунки.'}</div>`;
-    document.getElementById('submitBtn').disabled = !ready;
+    syncNavigationButtons(ready);
 }
 
 function updateSidebar() {
@@ -1252,8 +1375,16 @@ function updateSidebar() {
 }
 
 function saveDraft() {
+    const form = document.getElementById('applicationForm');
+    const saveDraftBtn = document.getElementById('saveDraftBtn');
     document.getElementById('formAction').value = 'save_draft';
-    document.getElementById('applicationForm').submit();
+    if (form && typeof form.requestSubmit === 'function' && saveDraftBtn) {
+        form.requestSubmit(saveDraftBtn);
+        return;
+    }
+    if (form) {
+        form.submit();
+    }
 }
 
 function saveLocalDraft() {
@@ -1350,14 +1481,11 @@ document.addEventListener('DOMContentLoaded', function () {
     updateSidebar();
 
     document.getElementById('addParticipantBtn').addEventListener('click', () => {
-        addParticipant();
+        addParticipant(null, { scrollIntoView: true });
     });
     document.getElementById('goReviewBtn').addEventListener('click', () => goStep(finalReviewStep));
     document.getElementById('nextStepBtn').addEventListener('click', () => goStep(Math.min(currentStep + 1, steps.length)));
     document.getElementById('prevStepBtn').addEventListener('click', () => goStep(Math.max(currentStep - 1, 1)));
-    document.getElementById('submitBtn').addEventListener('click', () => {
-        document.getElementById('formAction').value = 'submit';
-    });
     document.getElementById('applicationForm').addEventListener('input', (e) => {
         if (e.target.matches('[required]') && String(e.target.value || '').trim()) clearFieldError(e.target);
         updateSidebar();
@@ -1368,7 +1496,12 @@ document.addEventListener('DOMContentLoaded', function () {
         saveLocalDraft();
     });
     document.getElementById('applicationForm').addEventListener('submit', function (e) {
-        const action = document.getElementById('formAction').value;
+        const actionField = document.getElementById('formAction');
+        const submitterAction = e.submitter?.dataset?.formAction || '';
+        if (submitterAction) {
+            actionField.value = submitterAction;
+        }
+        const action = actionField.value;
         if (action === 'submit') {
             if (currentStep !== steps.length || !isApplicationReadyToSubmit()) {
                 e.preventDefault();

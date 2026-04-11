@@ -702,8 +702,11 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     <dl class="application-kv-list">
                         <dt>Источник</dt><dd><?= e($application['source_info'] ?: '—') ?></dd>
                         <dt>Коллеги</dt><dd><?= e($application['colleagues_info'] ?: '—') ?></dd>
-                        <dt>Требование</dt><dd><?= !empty($receiptMeta['is_required']) ? 'Квитанция обязательна' : 'Квитанция не требуется' ?></dd>
+                        <?php if (!empty($receiptMeta['is_required'])): ?>
+                            <dt>Требуется квитанция</dt><dd>Да</dd>
+                        <?php endif; ?>
                     </dl>
+                    <?php if (!empty($receiptMeta['is_required'])): ?>
                     <div class="application-file-block">
                         <i class="fas fa-file-invoice"></i>
                         <?php if ($paymentReceipt !== ''): ?>
@@ -723,6 +726,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                             </div>
                         <?php endif; ?>
                     </div>
+                    <?php endif; ?>
                 </div></article>
             </div>
         </section>

@@ -536,7 +536,16 @@ $statusDisplay = [
     'label' => (string) ($statusMeta['label'] ?? 'На рассмотрении'),
     'class' => (string) ($statusColorMap[$statusCode]['class'] ?? 'status-pill--pending'),
 ];
-$applicationProgressStep = $statusCode === 'approved' ? 3 : 2;
+$showWorkSummaryBadge = $statusCode !== 'draft' && (int) ($workSummary['total'] ?? 0) > 0;
+$applicationProgressStep = match ($statusCode) {
+    'draft' => 1,
+    'approved' => 3,
+    default => 2,
+};
+$applicationProgressLabels = $statusCode === 'draft'
+    ? ['Черновик', 'Отправка', 'Проверка']
+    : ['Подана', 'Проверка', 'Принята'];
+$applicationDateCaption = $statusCode === 'draft' ? 'Создана' : 'Подана';
 $userFullName = trim((string) (($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? '')));
 $userRegion = (string) ($user['region'] ?? $application['region'] ?? '—');
 $userOrganization = (string) ($user['organization_name'] ?? $application['organization_name'] ?? '');
@@ -673,19 +682,21 @@ $currentPage = 'applications';
         <div>
             <h1 class="app-card__title" style="margin-bottom:8px;"><?= htmlspecialchars($application['contest_title']) ?></h1>
             <div class="app-header__meta">
-                <span><i class="fas fa-calendar"></i> Подана: <?= $applicationDateLabel ?></span>
+                <span><i class="fas fa-calendar"></i> <?= e($applicationDateCaption) ?>: <?= $applicationDateLabel ?></span>
                 <span>ID заявки: #<?= (int) $applicationId ?></span>
             </div>
         </div>
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <span class="status-pill <?= e($statusDisplay['class']) ?>"><?= e($statusDisplay['label']) ?></span>
-            <span class="badge <?= e($uiStatusMeta['badge_class']) ?>"><?= e($uiStatusMeta['label']) ?></span>
+            <?php if ($showWorkSummaryBadge): ?>
+                <span class="badge <?= e($uiStatusMeta['badge_class']) ?>"><?= e($uiStatusMeta['label']) ?></span>
+            <?php endif; ?>
         </div>
     </div>
     <div class="application-progress" aria-label="Прогресс заявки">
-        <div class="application-progress__step <?= $applicationProgressStep >= 1 ? 'is-active' : '' ?>"><span class="application-progress__dot">1</span>Подана</div>
-        <div class="application-progress__step <?= $applicationProgressStep >= 2 ? 'is-active' : '' ?>"><span class="application-progress__dot">2</span>Проверка</div>
-        <div class="application-progress__step <?= $applicationProgressStep >= 3 ? 'is-active' : '' ?>"><span class="application-progress__dot">3</span>Принята</div>
+        <div class="application-progress__step <?= $applicationProgressStep >= 1 ? 'is-active' : '' ?>"><span class="application-progress__dot">1</span><?= e($applicationProgressLabels[0]) ?></div>
+        <div class="application-progress__step <?= $applicationProgressStep >= 2 ? 'is-active' : '' ?>"><span class="application-progress__dot">2</span><?= e($applicationProgressLabels[1]) ?></div>
+        <div class="application-progress__step <?= $applicationProgressStep >= 3 ? 'is-active' : '' ?>"><span class="application-progress__dot">3</span><?= e($applicationProgressLabels[2]) ?></div>
     </div>
 </section>
 
@@ -728,7 +739,9 @@ $currentPage = 'applications';
                                         <h3 class="participant-modern-card__name"><?= e((string)($participant['fio'] ?? 'Без имени')) ?></h3>
                                         <div class="participant-modern-card__subtitle js-participant-work-subtitle"><?= $workTitle !== '' ? '«' . e($workTitle) . '»' : 'Работа #' . ($index + 1) ?></div>
                                     </div>
-                                    <span class="badge <?= getWorkStatusBadgeClass($workStatus) ?>"><?= e(getWorkStatusLabel($workStatus)) ?></span>
+                                    <?php if ($effectiveApplicationStatus !== 'draft'): ?>
+                                        <span class="badge <?= getWorkStatusBadgeClass($workStatus) ?>"><?= e(getWorkStatusLabel($workStatus)) ?></span>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="participant-modern-card__subtitle"><?= e(getWorkStatusHint($workStatus)) ?></div>
                                 <div class="participant-modern-card__facts">
@@ -801,7 +814,15 @@ $currentPage = 'applications';
         <section class="app-card">
             <h2 class="app-card__title" style="font-size:18px;">Действия</h2>
             <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                <?php if ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
+                <?php if ($effectiveApplicationStatus === 'draft'): ?>
+                    <?php if ($canEdit): ?>
+                        <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary"><i class="fas fa-pen"></i> Продолжить заполнение</a>
+                    <?php endif; ?>
+                    <div class="app-highlight" style="width:100%;">
+                        <strong>Заявка сохранена как черновик.</strong>
+                        <div>Она ещё не отправлена на проверку. Проверьте данные и отправьте её после завершения заполнения.</div>
+                    </div>
+                <?php elseif ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
                     <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary"><i class="fas fa-pen"></i> Исправить заявку</a>
                 <?php elseif ($canShowBulkDiplomaActions && $hasDiplomas): ?>
                     <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать все дипломы</button></form>
@@ -812,7 +833,7 @@ $currentPage = 'applications';
                         <div>Причина доступна в комментариях администратора и чате оспаривания.</div>
                     </div>
                 <?php else: ?>
-                    <div style="color:#64748B;">Заявка находится на рассмотрении. Действия станут доступны после проверки.</div>
+                    <div style="color:#64748B;"><?= $effectiveApplicationStatus === 'corrected' ? 'Заявка повторно отправлена на проверку после исправлений.' : 'Заявка находится на рассмотрении. Действия станут доступны после проверки.' ?></div>
                 <?php endif; ?>
                 <a href="/messages" class="btn btn--ghost"><i class="fas fa-envelope"></i> Сообщения</a>
                 <a href="/my-applications" class="btn btn--secondary"><i class="fas fa-arrow-left"></i> К списку</a>

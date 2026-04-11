@@ -860,11 +860,16 @@ function getApplicationUiStatus(array $application, ?array $workSummary = null):
     $storedStatus = getApplicationCanonicalStatus($application);
     $allowEdit = (int) ($application['allow_edit'] ?? 0) === 1;
     $hasUnresolvedCorrections = (int) ($application['has_unresolved_corrections'] ?? 0) > 0;
+
+    if ($storedStatus === 'draft') {
+        return 'draft';
+    }
+
     if ($hasUnresolvedCorrections || ($allowEdit && $storedStatus !== 'approved')) {
         return 'revision';
     }
 
-    if ($storedStatus === 'approved' || $storedStatus === 'rejected' || $storedStatus === 'cancelled' || $storedStatus === 'draft') {
+    if ($storedStatus === 'approved' || $storedStatus === 'rejected' || $storedStatus === 'cancelled') {
         return $storedStatus;
     }
     if ($storedStatus === 'corrected') {
