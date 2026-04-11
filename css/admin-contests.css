@@ -463,14 +463,15 @@
 }
 
 .contest-editor-switch-card {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
     gap: 16px;
     border: 1px solid #e2e8f0;
     border-radius: 16px;
     padding: 18px;
     background: #fff;
+    overflow: hidden;
 }
 
 .contest-editor-switch-card--accent {
@@ -481,6 +482,7 @@
 .contest-editor-switch-card__text {
     display: grid;
     gap: 6px;
+    min-width: 0;
 }
 
 .contest-editor-switch-card__text strong {
@@ -492,6 +494,12 @@
     color: #64748b;
     font-size: 13px;
     line-height: 1.5;
+}
+
+.contest-editor-switch-card .ios-toggle {
+    flex-shrink: 0;
+    align-self: start;
+    margin-top: 2px;
 }
 
 .contest-editor-dates {
@@ -658,7 +666,28 @@ body.is-modal-open {
     overflow: hidden;
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1320px) {
+    .contest-editor-layout {
+        grid-template-columns: minmax(0, 1fr) 310px;
+        gap: 16px;
+    }
+
+    .contest-editor-split {
+        grid-template-columns: 1fr;
+    }
+
+    .contest-cover-layout {
+        flex-direction: column;
+    }
+
+    .contest-cover-dropzone,
+    .contest-cover-preview {
+        width: 100%;
+        max-width: 320px;
+    }
+}
+
+@media (max-width: 1180px) {
     .contests-stats {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -717,10 +746,6 @@ body.is-modal-open {
 
     .contests-controls__actions .btn {
         flex: 1;
-    }
-
-    .contest-cover-layout {
-        flex-direction: column;
     }
 
     .contest-cover-dropzone,
@@ -856,6 +881,36 @@ body.is-modal-open {
     border: 2px solid rgba(255,255,255,.75);
     box-shadow: 0 0 0 1px rgba(15,23,42,.15);
     flex-shrink: 0;
+}
+
+.contest-editor-form .tox-tinymce {
+    width: 100%;
+    border-color: #dbe2ef !important;
+    border-radius: 12px !important;
+}
+
+.contest-editor-form .tox .tox-toolbar,
+.contest-editor-form .tox .tox-toolbar__primary,
+.contest-editor-form .tox .tox-editor-header {
+    background: #f8fafc !important;
+}
+
+.contest-editor-form .tox .tox-edit-area__iframe {
+    background: #fff;
+    min-height: 420px !important;
+}
+
+.contest-editor-form .tox .tox-statusbar {
+    border-top-color: #dbe2ef !important;
+}
+
+.contest-editor-form .tox .tox-edit-area {
+    min-height: 420px !important;
+}
+
+.contest-editor-form .tox .tox-tbtn,
+.contest-editor-form .tox .tox-tbtn svg {
+    color: #0f172a;
 }
 
 .contest-theme-option__label {

@@ -6,6 +6,7 @@ define('UPLOAD_PATH', ROOT_PATH . '/uploads');
 define('DRAWINGS_PATH', UPLOAD_PATH . '/drawings');
 define('DOCUMENTS_PATH', UPLOAD_PATH . '/documents');
 define('CONTEST_COVERS_PATH', UPLOAD_PATH . '/contest-covers');
+define('EDITOR_UPLOADS_PATH', UPLOAD_PATH . '/editor');
 define('SITE_BANNERS_PATH', UPLOAD_PATH . '/site-banners');
 define('SETTINGS_FILE', ROOT_PATH . '/storage/settings.json');
 
@@ -1106,6 +1107,339 @@ function uploadContestCoverImage($file, $directory, $size = 500) {
     }
 
     return ['success' => true, 'filename' => $newFileName];
+}
+
+function ensureEditorUploadsTable(PDO $pdo): bool
+{
+    static $checked = false;
+    if ($checked) {
+        return true;
+    }
+
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS editor_uploads (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            contest_id INT NULL,
+            file_name VARCHAR(255) NOT NULL,
+            original_name VARCHAR(255) NULL,
+            file_path VARCHAR(255) NOT NULL,
+            file_url VARCHAR(255) NOT NULL,
+            mime_type VARCHAR(100) NOT NULL,
+            file_size INT NOT NULL DEFAULT 0,
+            uploaded_by INT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_editor_uploads_contest (contest_id),
+            INDEX idx_editor_uploads_uploaded_by (uploaded_by),
+            CONSTRAINT fk_editor_uploads_contest FOREIGN KEY (contest_id) REFERENCES contests(id) ON DELETE SET NULL,
+            CONSTRAINT fk_editor_uploads_user FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        $checked = true;
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function buildEditorUploadPublicUrl(string $fileName): string
+{
+    return '/uploads/editor/' . rawurlencode(basename($fileName));
+}
+
+function buildEditorUploadFilename(?int $contestId, string $extension): string
+{
+    $extension = strtolower(trim($extension, '.'));
+    $contestToken = $contestId && $contestId > 0 ? (string) $contestId : 'temp';
+    return sprintf('contest_%s_%s_%s.%s', $contestToken, date('Ymd_His'), bin2hex(random_bytes(4)), $extension);
+}
+
+function validateEditorImageUpload(array $file, int $maxBytes = 5242880): array
+{
+    if (!isset($file['error']) || is_array($file['error'])) {
+        return ['success' => false, 'message' => 'Ошибка загрузки файла.'];
+    }
+
+    if ((int) $file['error'] !== UPLOAD_ERR_OK) {
+        return ['success' => false, 'message' => 'Файл не удалось загрузить.'];
+    }
+
+    $originalName = (string) ($file['name'] ?? '');
+    $tmpName = (string) ($file['tmp_name'] ?? '');
+    $fileSize = (int) ($file['size'] ?? 0);
+    $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    $allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+    $allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+    if (!in_array($extension, $allowedExtensions, true)) {
+        return ['success' => false, 'message' => 'Допустимы только JPG, JPEG, PNG, WEBP и GIF.'];
+    }
+
+    if ($fileSize <= 0 || $fileSize > $maxBytes) {
+        return ['success' => false, 'message' => 'Размер изображения должен быть не больше 5 МБ.'];
+    }
+
+    $mimeType = '';
+    if (function_exists('finfo_open')) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo !== false) {
+            $mimeType = (string) finfo_file($finfo, $tmpName);
+            finfo_close($finfo);
+        }
+    }
+    if ($mimeType === '') {
+        $mimeType = (string) @mime_content_type($tmpName);
+    }
+
+    if (!in_array($mimeType, $allowedMimeTypes, true) || @getimagesize($tmpName) === false) {
+        return ['success' => false, 'message' => 'Загруженный файл не является допустимым изображением.'];
+    }
+
+    return [
+        'success' => true,
+        'extension' => $extension,
+        'mime_type' => $mimeType,
+        'file_size' => $fileSize,
+        'original_name' => $originalName !== '' ? basename($originalName) : 'image.' . $extension,
+    ];
+}
+
+function saveEditorImageUpload(array $file, ?int $contestId, int $uploadedBy): array
+{
+    global $pdo;
+
+    if (!($pdo instanceof PDO) || !ensureEditorUploadsTable($pdo)) {
+        return ['success' => false, 'message' => 'Не удалось подготовить хранилище изображений редактора.'];
+    }
+
+    $validation = validateEditorImageUpload($file);
+    if (empty($validation['success'])) {
+        return $validation;
+    }
+
+    if (!is_dir(EDITOR_UPLOADS_PATH) && !mkdir(EDITOR_UPLOADS_PATH, 0775, true) && !is_dir(EDITOR_UPLOADS_PATH)) {
+        return ['success' => false, 'message' => 'Не удалось подготовить каталог загрузки изображений.'];
+    }
+
+    $fileName = buildEditorUploadFilename($contestId, (string) $validation['extension']);
+    $targetPath = EDITOR_UPLOADS_PATH . '/' . $fileName;
+
+    if (!move_uploaded_file((string) $file['tmp_name'], $targetPath)) {
+        return ['success' => false, 'message' => 'Не удалось сохранить изображение на сервере.'];
+    }
+
+    @chmod($targetPath, 0644);
+
+    $fileUrl = buildEditorUploadPublicUrl($fileName);
+    $relativePath = 'uploads/editor/' . $fileName;
+
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO editor_uploads (
+                contest_id, file_name, original_name, file_path, file_url, mime_type, file_size, uploaded_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $contestId ?: null,
+            $fileName,
+            (string) $validation['original_name'],
+            $relativePath,
+            $fileUrl,
+            (string) $validation['mime_type'],
+            (int) $validation['file_size'],
+            $uploadedBy,
+        ]);
+    } catch (Throwable $e) {
+        if (is_file($targetPath)) {
+            @unlink($targetPath);
+        }
+        return ['success' => false, 'message' => 'Не удалось сохранить запись о загруженном изображении.'];
+    }
+
+    return [
+        'success' => true,
+        'file_name' => $fileName,
+        'file_url' => $fileUrl,
+        'file_path' => $relativePath,
+        'mime_type' => (string) $validation['mime_type'],
+        'file_size' => (int) $validation['file_size'],
+        'original_name' => (string) $validation['original_name'],
+    ];
+}
+
+function sanitizeContestDescriptionHtml(string $html): string
+{
+    $html = trim($html);
+    if ($html === '') {
+        return '';
+    }
+
+    if (!class_exists('DOMDocument')) {
+        return trim((string) strip_tags($html, '<p><br><strong><b><em><i><u><s><ul><ol><li><blockquote><a><table><thead><tbody><tr><th><td><img><figure><figcaption><h2><h3><h4><h5><h6>'));
+    }
+
+    libxml_use_internal_errors(true);
+    $document = new DOMDocument('1.0', 'UTF-8');
+    $document->loadHTML('<!DOCTYPE html><html><body><div id="contest-description-root">' . $html . '</div></body></html>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+    libxml_clear_errors();
+
+    $root = $document->getElementById('contest-description-root');
+    if (!$root) {
+        return '';
+    }
+
+    $allowedTags = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'figure', 'figcaption', 'img'];
+    $allowedAttributes = [
+        'a' => ['href', 'target', 'rel'],
+        'img' => ['src', 'alt', 'width', 'height', 'style'],
+        'p' => ['style'],
+        'h2' => ['style'],
+        'h3' => ['style'],
+        'h4' => ['style'],
+        'h5' => ['style'],
+        'h6' => ['style'],
+        'figure' => ['style'],
+        'table' => ['style'],
+        'th' => ['colspan', 'rowspan', 'style'],
+        'td' => ['colspan', 'rowspan', 'style'],
+    ];
+
+    $sanitizeStyle = static function (string $style): string {
+        $allowed = ['text-align', 'width', 'height', 'max-width'];
+        $sanitized = [];
+        foreach (explode(';', $style) as $chunk) {
+            $chunk = trim($chunk);
+            if ($chunk === '' || strpos($chunk, ':') === false) {
+                continue;
+            }
+            [$property, $value] = array_map('trim', explode(':', $chunk, 2));
+            $property = strtolower($property);
+            $value = strtolower($value);
+            if (!in_array($property, $allowed, true)) {
+                continue;
+            }
+            if ($property === 'text-align' && !in_array($value, ['left', 'center', 'right', 'justify'], true)) {
+                continue;
+            }
+            if (in_array($property, ['width', 'height', 'max-width'], true) && !preg_match('/^[0-9.]+(%|px|rem|em|vh|vw)?$/', $value)) {
+                continue;
+            }
+            $sanitized[] = $property . ':' . $value;
+        }
+        return implode(';', $sanitized);
+    };
+
+    $sanitizeUrl = static function (string $url, bool $image = false): string {
+        $url = trim($url);
+        if ($url === '') {
+            return '';
+        }
+        $lower = strtolower($url);
+        if (str_starts_with($lower, 'javascript:') || str_starts_with($lower, 'data:')) {
+            return '';
+        }
+        if ($image && str_starts_with($url, '/uploads/editor/')) {
+            return $url;
+        }
+        if (preg_match('#^(https?:)?//#i', $url) || str_starts_with($url, '/') || str_starts_with($url, '#') || str_starts_with($lower, 'mailto:') || str_starts_with($lower, 'tel:')) {
+            return $url;
+        }
+        return '';
+    };
+
+    $sanitizeNode = static function (DOMNode $node) use (&$sanitizeNode, $allowedTags, $allowedAttributes, $sanitizeStyle, $sanitizeUrl) {
+        if ($node->nodeType === XML_ELEMENT_NODE) {
+            $tagName = strtolower($node->nodeName);
+            if (!in_array($tagName, $allowedTags, true)) {
+                $parent = $node->parentNode;
+                if ($parent) {
+                    while ($node->firstChild) {
+                        $parent->insertBefore($node->firstChild, $node);
+                    }
+                    $parent->removeChild($node);
+                }
+                return;
+            }
+
+            if ($node->hasAttributes()) {
+                $remove = [];
+                foreach (iterator_to_array($node->attributes) as $attribute) {
+                    $name = strtolower($attribute->nodeName);
+                    $value = (string) $attribute->nodeValue;
+                    $allowedForTag = $allowedAttributes[$tagName] ?? [];
+                    if (!in_array($name, $allowedForTag, true)) {
+                        $remove[] = $name;
+                        continue;
+                    }
+                    if ($name === 'style') {
+                        $style = $sanitizeStyle($value);
+                        if ($style === '') {
+                            $remove[] = $name;
+                        } else {
+                            $node->setAttribute('style', $style);
+                        }
+                    } elseif ($tagName === 'a' && $name === 'href') {
+                        $href = $sanitizeUrl($value, false);
+                        if ($href === '') {
+                            $remove[] = $name;
+                        } else {
+                            $node->setAttribute('href', $href);
+                            if ($node->getAttribute('target') === '_blank') {
+                                $node->setAttribute('rel', 'noopener noreferrer');
+                            }
+                        }
+                    } elseif ($tagName === 'img' && $name === 'src') {
+                        $src = $sanitizeUrl($value, true);
+                        if ($src === '') {
+                            $remove[] = $name;
+                        } else {
+                            $node->setAttribute('src', $src);
+                        }
+                    }
+                }
+                foreach ($remove as $attributeName) {
+                    $node->removeAttribute($attributeName);
+                }
+            }
+        }
+
+        for ($child = $node->firstChild; $child !== null; ) {
+            $next = $child->nextSibling;
+            $sanitizeNode($child);
+            $child = $next;
+        }
+    };
+
+    $sanitizeNode($root);
+
+    $output = '';
+    foreach ($root->childNodes as $childNode) {
+        $output .= $document->saveHTML($childNode);
+    }
+
+    return trim($output);
+}
+
+function attachEditorUploadsToContest(int $contestId, string $html, int $uploadedBy): void
+{
+    global $pdo;
+    if ($contestId <= 0 || !($pdo instanceof PDO) || !ensureEditorUploadsTable($pdo)) {
+        return;
+    }
+
+    preg_match_all('#/uploads/editor/[^"\'\s<>()]+#u', $html, $matches);
+    $urls = array_values(array_unique($matches[0] ?? []));
+    if (empty($urls)) {
+        return;
+    }
+
+    $placeholders = implode(', ', array_fill(0, count($urls), '?'));
+    $stmt = $pdo->prepare("
+        UPDATE editor_uploads
+        SET contest_id = ?
+        WHERE uploaded_by = ?
+          AND contest_id IS NULL
+          AND file_url IN ($placeholders)
+    ");
+    $stmt->execute(array_merge([$contestId, $uploadedBy], $urls));
 }
 
 // Функция для получения конкурса

@@ -45,7 +45,7 @@ if ($isEdit) {
     
     if (!$contest) {
         redirect('/admin/contests');
-    }
+    }   
 } else {
     $contest = [
         'title' => '',
@@ -100,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Ошибка безопасности';
     } else {
         $title = trim($_POST['title'] ?? '');
-        $description = $_POST['description'] ?? '';
+        $description = sanitizeContestDescriptionHtml((string) ($_POST['description'] ?? ''));
         $is_published = isset($_POST['is_published']) ? 1 : 0;
         $theme_style = normalizeContestThemeStyle($_POST['theme_style'] ?? 'blue');
         $requires_payment_receipt = isset($_POST['requires_payment_receipt']) ? 1 : 0;
@@ -233,6 +233,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             if (empty($error)) {
+                attachEditorUploadsToContest((int) $contest_id, $description, (int) ($admin['id'] ?? 0));
                 $success = 'Конкурс сохранён';
                 
                 // Перезагружаем данные
@@ -339,7 +340,7 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
 
                     <div class="form-group">
                         <label class="form-label">Описание конкурса</label>
-                        <textarea id="description_editor" name="description" class="form-textarea" rows="15"><?= htmlspecialchars($contest['description'] ?? '') ?></textarea>
+                        <textarea id="description_editor" name="description" class="form-textarea js-rich-editor" data-editor-upload-url="/admin/ckeditor-image-upload" data-contest-id="<?= (int) $contest_id ?>" rows="15"><?= htmlspecialchars($contest['description'] ?? '') ?></textarea>
                         <div class="form-hint">Здесь можно описать тему, условия участия, формат дипломов и важные организационные детали.</div>
                     </div>
                 </div>
@@ -557,32 +558,71 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
     </div>
 </div>
 
-<!-- CKEditor5 - бесплатный редактор -->
-<script src="https://cdn.ckeditor.com/ckeditor5/41.0.0/classic/ckeditor.js"></script>
-<script src="https://cdn.ckeditor.com/ckeditor5/41.0.0/classic/translations/ru.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tinymce@5.10.9/tinymce.min.js" referrerpolicy="origin"></script>
 <script>
- ClassicEditor
- .create(document.querySelector('#description_editor'), {
- language: 'ru',
- height:400,
- toolbar: ['heading', '|', 'bold', 'italic', 'underline', 'strikethrough', '|', 
- 'bulletedList', 'numberedList', '|',
- 'alignment:left', 'alignment:center', 'alignment:right', '|',
- 'link', 'blockQuote', 'insertTable', '|',
- 'undo', 'redo'],
- simpleUpload: {
- uploadUrl: '/upload-image.php'
- },
- image: {
- toolbar: ['imageTextAlternative', 'imageStyle:full', 'imageStyle:side']
- },
- table: {
- contentToolbar: ['tableColumn', 'tableRow', 'mergeTableCells']
- }
- })
- .catch(error => {
- console.error('Ошибка инициализации CKEditor:', error);
- });
+(() => {
+    if (!window.tinymce) {
+        console.error('TinyMCE не загрузился');
+        return;
+    }
+
+    const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
+    document.querySelectorAll('.js-rich-editor').forEach((element) => {
+        const uploadUrl = element.dataset.editorUploadUrl || '/admin/ckeditor-image-upload';
+        const contestId = element.dataset.contestId || '';
+
+        tinymce.init({
+            target: element,
+            menubar: false,
+            branding: false,
+            height: 420,
+            min_height: 420,
+            resize: true,
+            plugins: 'lists link image table code charmap paste',
+            toolbar: 'undo redo | formatselect | bold italic underline strikethrough | alignleft aligncenter alignright alignjustify | bullist numlist | blockquote table link image | removeformat code',
+            block_formats: 'Абзац=p; Заголовок 2=h2; Заголовок 3=h3; Заголовок 4=h4',
+            content_style: 'body{font-family:Arial,sans-serif;font-size:15px;line-height:1.7;} img{max-width:100%;height:auto;} table{width:100%;border-collapse:collapse;} table td, table th{border:1px solid #dbe2ef;padding:8px;} blockquote{border-left:4px solid #94a3b8;margin:0;padding:8px 16px;color:#475569;background:#f8fafc;}',
+            images_upload_handler: (blobInfo, success, failure, progress) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', uploadUrl);
+                xhr.responseType = 'json';
+                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable && typeof progress === 'function') {
+                        progress((event.loaded / event.total) * 100);
+                    }
+                };
+
+                xhr.onerror = () => failure('Не удалось загрузить изображение.');
+                xhr.onload = () => {
+                    const response = xhr.response || {};
+                    if (xhr.status < 200 || xhr.status >= 300 || !response.url) {
+                        failure((response.error && response.error.message) || 'Не удалось загрузить изображение.');
+                        return;
+                    }
+                    success(response.url);
+                };
+
+                const formData = new FormData();
+                formData.append('upload', blobInfo.blob(), blobInfo.filename());
+                formData.append('csrf_token', csrfToken);
+                if (contestId) {
+                    formData.append('contest_id', contestId);
+                }
+                xhr.send(formData);
+            },
+            setup: (editor) => {
+                editor.on('change input undo redo', () => {
+                    editor.save();
+                });
+                element._richEditorInstance = editor;
+            }
+        }).catch((error) => {
+            console.error('Ошибка инициализации TinyMCE:', error);
+        });
+    });
+})();
 </script>
 <script>
 (() => {

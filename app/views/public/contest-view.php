@@ -149,7 +149,11 @@ $contestRequiresPaymentReceipt = isContestPaymentReceiptRequired($contest);
         </section>
 
         <div class="contest-description">
-            <?= $contest['description'] ?? '<p style="color: var(--color-text-muted);">Описание конкурса скоро появится.</p>' ?>
+            <?php if (trim((string) ($contest['description'] ?? '')) !== ''): ?>
+                <?= (string) $contest['description'] ?>
+            <?php else: ?>
+                <p style="color: var(--color-text-muted);">Описание конкурса скоро появится.</p>
+            <?php endif; ?>
         </div>
 
         <?php if (!empty($contest['document_file'])): ?>
