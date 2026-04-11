@@ -760,14 +760,30 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true): array
 
 function defaultVkPostTemplate(): string
 {
-    return "🎨 {participant_full_name}\n"
-        . "🏫 {organization_name}\n"
+    return "🎨 Работа участника конкурса детского рисунка\n\n"
+        . "Представляем рисунок участника:\n"
+        . "👤 {participant_full_name}\n\n"
+        . "🖼 Работа: «{drawing_title}»\n"
+        . "🏆 Конкурс: {contest_title}\n\n"
         . "📍 {region_name}\n"
-        . "🖼 {drawing_title}\n"
-        . "🏆 {contest_title}\n"
-        . "Номинация: {nomination}\n"
-        . "Возраст: {participant_age}\n"
-        . "Возрастная категория: {age_category}";
+        . "🏫 {organization_name}\n"
+        . "🎂 Возраст: {participant_age}\n"
+        . "👥 Возрастная категория: {age_category}\n\n"
+        . "✨ Благодарим за участие, творчество и вдохновение!\n"
+        . "Поддержите юного художника добрым словом и реакцией ❤️";
+}
+
+function compactVkPostTemplate(): string
+{
+    return "🎨 Юный участник конкурса\n\n"
+        . "👤 {participant_full_name}\n"
+        . "🖼 «{drawing_title}»\n"
+        . "🏆 {contest_title}\n\n"
+        . "📍 {region_name}\n"
+        . "🏫 {organization_name}\n"
+        . "🎂 {participant_age} лет\n"
+        . "👥 {age_category}\n\n"
+        . "✨ Поддержите участника реакцией и добрым комментарием!";
 }
 
 function normalizeVkTaskFilters(array $input): array
@@ -938,33 +954,82 @@ function buildVkPostText(array $workRow, string $template): string
     $parts = preg_split('/\s+/u', $participantFullName) ?: [];
 
     $vars = [
-        '{participant_name}' => trim((string) ($parts[1] ?? $parts[0] ?? '')),
-        '{participant_full_name}' => $participantFullName,
-        '{organization_name}' => trim((string) ($workRow['organization_name'] ?? '')),
-        '{region_name}' => trim((string) ($workRow['region'] ?? '')),
-        '{work_title}' => trim((string) ($workRow['work_title'] ?? '')),
-        '{drawing_title}' => trim((string) ($workRow['work_title'] ?? '')),
-        '{contest_title}' => trim((string) ($workRow['contest_title'] ?? '')),
-        '{nomination}' => '',
-        '{participant_age}' => (int) ($workRow['participant_age'] ?? 0) > 0 ? (string) ((int) $workRow['participant_age']) : '',
-        '{age_category}' => resolveAgeCategory((int) ($workRow['participant_age'] ?? 0)),
+        'participant_name' => trim((string) ($parts[1] ?? $parts[0] ?? '')),
+        'participant_full_name' => $participantFullName,
+        'organization_name' => trim((string) ($workRow['organization_name'] ?? '')),
+        'region_name' => trim((string) ($workRow['region'] ?? '')),
+        'work_title' => trim((string) ($workRow['work_title'] ?? '')),
+        'drawing_title' => trim((string) ($workRow['work_title'] ?? '')),
+        'contest_title' => trim((string) ($workRow['contest_title'] ?? '')),
+        'nomination' => '',
+        'participant_age' => (int) ($workRow['participant_age'] ?? 0) > 0 ? (string) ((int) $workRow['participant_age']) : '',
+        'age_category' => resolveAgeCategory((int) ($workRow['participant_age'] ?? 0)),
     ];
 
-    $text = strtr($template, $vars);
-    $lines = preg_split('/\R/u', $text) ?: [];
+    $replaceMap = [];
+    foreach ($vars as $key => $value) {
+        $replaceMap['{' . $key . '}'] = $value;
+    }
+
+    $lines = preg_split('/\R/u', $template) ?: [];
     $cleanLines = [];
     foreach ($lines as $line) {
         $line = trim((string) $line);
         if ($line === '') {
+            $cleanLines[] = '';
             continue;
         }
-        if (preg_match('/^([\p{L}\p{N}\s\-]+:)?\s*[{}]*$/u', $line)) {
+
+        preg_match_all('/\{([a-z0-9_]+)\}/iu', $line, $matches);
+        $tokens = $matches[1] ?? [];
+        if (!empty($tokens)) {
+            $allEmpty = true;
+            foreach ($tokens as $token) {
+                if (trim((string) ($vars[$token] ?? '')) !== '') {
+                    $allEmpty = false;
+                    break;
+                }
+            }
+            if ($allEmpty) {
+                continue;
+            }
+        }
+
+        $line = strtr($line, $replaceMap);
+        if (preg_match('/\{[a-z0-9_]+\}/iu', $line)) {
             continue;
         }
+
+        $line = trim($line);
+        if ($line === '' || preg_match('/[:：]\s*$/u', $line)) {
+            continue;
+        }
+        $lineCore = preg_replace('/[\p{Z}\p{P}\p{S}]+/u', '', $line);
+        if ($lineCore === '') {
+            continue;
+        }
+
         $cleanLines[] = $line;
     }
 
-    return trim(implode("\n", $cleanLines));
+    $collapsed = [];
+    $prevEmpty = true;
+    foreach ($cleanLines as $line) {
+        $isEmpty = trim($line) === '';
+        if ($isEmpty) {
+            if ($prevEmpty) {
+                continue;
+            }
+            $collapsed[] = '';
+            $prevEmpty = true;
+            continue;
+        }
+
+        $collapsed[] = $line;
+        $prevEmpty = false;
+    }
+
+    return trim(implode("\n", $collapsed));
 }
 
 function resolveAgeCategory(int $age): string
