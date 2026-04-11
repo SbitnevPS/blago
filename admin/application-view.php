@@ -944,6 +944,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
         <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
             <button type="button" class="btn btn--primary" id="vkPublishPromptRun">Опубликовать</button>
             <button type="button" class="btn btn--secondary" id="vkPublishPromptSkip">Отмена</button>
+            <button type="button" class="btn btn--secondary" id="vkPublishPromptClose" style="display:none;">Закрыть</button>
         </div>
     </div>
 </div>
@@ -1376,6 +1377,7 @@ ensureComplianceFieldsAvailable();
 
     const publishButton = document.getElementById('vkPublishPromptRun');
     const skipButton = document.getElementById('vkPublishPromptSkip');
+    const closeButton = document.getElementById('vkPublishPromptClose');
     const statusBox = document.getElementById('vkPublishPromptStatus');
     const previewBox = document.getElementById('vkPublishPreview');
     const summaryBox = document.getElementById('vkPublishModalSummary');
@@ -1409,6 +1411,21 @@ ensureComplianceFieldsAvailable();
             return;
         }
         modal.classList.remove('active');
+    };
+
+    const setErrorState = (isErrorState) => {
+        if (!publishButton || !skipButton || !closeButton) {
+            return;
+        }
+        publishButton.style.display = isErrorState ? 'none' : '';
+        skipButton.style.display = isErrorState ? 'none' : '';
+        closeButton.style.display = isErrorState ? '' : 'none';
+        if (!isErrorState) {
+            publishButton.disabled = false;
+            skipButton.disabled = false;
+        } else {
+            closeButton.disabled = false;
+        }
     };
 
     const toggleDonationFields = () => {
@@ -1479,11 +1496,15 @@ ensureComplianceFieldsAvailable();
     if (skipButton) {
         skipButton.addEventListener('click', closeModal);
     }
+    if (closeButton) {
+        closeButton.addEventListener('click', closeModal);
+    }
 
     const openPublishModal = async () => {
         if (!applicationId) {
             return;
         }
+        setErrorState(false);
         modal.classList.add('active');
         if (previewBox) {
             previewBox.innerHTML = '<div class="text-secondary">Загрузка списка участников...</div>';
@@ -1625,19 +1646,23 @@ ensureComplianceFieldsAvailable();
                 const data = await response.json();
                 if (!response.ok || !data.success) {
                     showStatus(data.error || 'Не удалось выполнить публикацию.', 'error');
+                    setErrorState(true);
                     return;
                 }
                 const modeTitle = publicationType === 'vk_donut'
                     ? 'VK Donut paywall (диагностика)'
                     : (publicationType === 'donation_goal' ? 'Публикация с целью сбора' : 'Обычная публикация');
                 showStatus(`Итог: опубликовано ${data.published || 0} из ${data.total || 0}. Режим: ${modeTitle}.`, 'success');
-                location.reload();
+                window.location.assign('/admin/applications');
             } catch (e) {
                 showStatus('Ошибка сети при публикации. Попробуйте ещё раз.', 'error');
+                setErrorState(true);
             } finally {
                 publishInProgress = false;
-                publishButton.disabled = false;
-                if (skipButton) {
+                if (publishButton.style.display !== 'none') {
+                    publishButton.disabled = false;
+                }
+                if (skipButton && skipButton.style.display !== 'none') {
                     skipButton.disabled = false;
                 }
             }
