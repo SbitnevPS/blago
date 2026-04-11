@@ -1523,6 +1523,11 @@ function publishVkTaskItem(int $itemId, array $options = []): array
     $failureStage = null;
     $requestPayload = [];
     $responsePayload = [];
+    $verificationStatus = null;
+    $verificationMessage = null;
+    $detectedMode = null;
+    $detectedFeatures = [];
+    $vkPostReadbackJson = null;
     $capabilities = getVkPublicationCapabilities();
     $capabilityMeta = $capabilities[$publicationType] ?? ['status' => 'not_checked', 'message' => ''];
 
@@ -1607,11 +1612,58 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             $extraWallParams
         );
         $responsePayload = $published;
+        $readbackOk = !empty($published['readback_ok']);
+        $readbackError = trim((string) ($published['readback_error'] ?? ''));
         $readbackPost = is_array($published['readback_post'] ?? null) ? $published['readback_post'] : [];
-        $verification = verifyVkPublicationReadback($publicationType, $readbackPost);
+        $verification = [
+            'verification_status' => 'unknown_result',
+            'verification_message' => 'VK создал пост, но не удалось верифицировать результат.',
+            'detected_mode' => 'unknown',
+            'detected_features' => [],
+        ];
+
+        if ($readbackOk) {
+            $verification = verifyVkPublicationReadback($publicationType, $readbackPost);
+        } elseif ($publicationType === 'standard') {
+            $verification = [
+                'verification_status' => 'standard_post_created_without_readback_confirmation',
+                'verification_message' => $readbackError !== ''
+                    ? 'Пост создан, но readback-диагностика не подтвердила результат: ' . $readbackError
+                    : 'Пост создан, но readback-диагностика не вернула подтверждающий ответ.',
+                'detected_mode' => 'unknown',
+                'detected_features' => [],
+            ];
+        } elseif ($publicationType === 'vk_donut') {
+            $verification = [
+                'verification_status' => 'unknown_result',
+                'verification_message' => $readbackError !== ''
+                    ? 'Пост создан, но VK не подтвердил donut/paywall через readback: ' . $readbackError
+                    : 'Пост создан, но readback-ответ VK не подтвердил donut/paywall.',
+                'detected_mode' => 'unknown',
+                'detected_features' => [],
+            ];
+        } elseif ($publicationType === 'donation_goal') {
+            $verification = [
+                'verification_status' => 'unknown_result',
+                'verification_message' => $readbackError !== ''
+                    ? 'Пост создан, но VK не подтвердил цель сбора через readback: ' . $readbackError
+                    : 'Пост создан, но readback-ответ VK не подтвердил цель сбора.',
+                'detected_mode' => 'unknown',
+                'detected_features' => [],
+            ];
+        }
+
         $verificationStatus = (string) ($verification['verification_status'] ?? 'unknown_result');
         $verificationMessage = (string) ($verification['verification_message'] ?? 'VK создал пост, но не удалось верифицировать результат.');
-        $verificationFailed = in_array($verificationStatus, ['post_created_but_donut_not_confirmed', 'post_created_but_goal_not_confirmed', 'unknown_result'], true);
+        $detectedMode = (string) ($verification['detected_mode'] ?? 'unknown');
+        $detectedFeatures = is_array($verification['detected_features'] ?? null) ? $verification['detected_features'] : [];
+        $vkPostReadbackJson = json_encode($published['readback_raw'] ?? [], JSON_UNESCAPED_UNICODE);
+        $verificationFailed = false;
+        if ($publicationType === 'vk_donut') {
+            $verificationFailed = in_array($verificationStatus, ['post_created_but_donut_not_confirmed', 'unknown_result'], true);
+        } elseif ($publicationType === 'donation_goal') {
+            $verificationFailed = in_array($verificationStatus, ['post_created_but_goal_not_confirmed', 'unknown_result'], true);
+        }
 
         if ($verificationFailed) {
             throw new RuntimeException($verificationMessage);
@@ -1633,9 +1685,9 @@ function publishVkTaskItem(int $itemId, array $options = []): array
                 json_encode($responsePayload, JSON_UNESCAPED_UNICODE),
                 $verificationStatus,
                 $verificationMessage,
-                (string) ($verification['detected_mode'] ?? 'unknown'),
-                json_encode($verification['detected_features'] ?? [], JSON_UNESCAPED_UNICODE),
-                json_encode($published['readback_raw'] ?? [], JSON_UNESCAPED_UNICODE),
+                $detectedMode,
+                json_encode($detectedFeatures, JSON_UNESCAPED_UNICODE),
+                $vkPostReadbackJson,
                 (int) $item['id'],
             ]);
 
@@ -1663,8 +1715,10 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             'extra_wall_params' => sanitizeVkExtraWallParamsForLog($extraWallParams),
             'verification_status' => $verificationStatus,
             'verification_message' => $verificationMessage,
-            'detected_mode' => (string) ($verification['detected_mode'] ?? 'unknown'),
-            'detected_features' => $verification['detected_features'] ?? [],
+            'readback_ok' => $readbackOk ? 1 : 0,
+            'readback_error' => $readbackError,
+            'detected_mode' => $detectedMode,
+            'detected_features' => $detectedFeatures,
         ]);
 
         return [
@@ -1697,6 +1751,8 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             'failure_stage' => $failureStage ?? 'wall_post',
             'error' => $errorMessage,
             'technical' => $normalized['technical'],
+            'post_id' => (string) ($responsePayload['post_id'] ?? ''),
+            'post_url' => (string) ($responsePayload['post_url'] ?? ''),
             'donation_enabled' => (int) ($item['donation_enabled'] ?? 0),
             'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
             'vk_donate_id' => (string) ($item['vk_donate_id'] ?? ''),
@@ -1705,19 +1761,25 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $errorMessage, $normalized['technical']);
         $pdo->prepare("UPDATE vk_publication_task_items
             SET resolved_mode = ?, capability_status = ?, failure_stage = ?, request_payload_json = ?, response_payload_json = ?,
-                verification_status = COALESCE(verification_status, ?), verification_message = COALESCE(verification_message, ?), updated_at = NOW()
+                verification_status = COALESCE(verification_status, ?), verification_message = COALESCE(verification_message, ?),
+                detected_mode = COALESCE(detected_mode, ?), detected_features_json = COALESCE(detected_features_json, ?),
+                vk_post_readback_json = COALESCE(vk_post_readback_json, ?), updated_at = NOW()
             WHERE id = ?")
             ->execute([
                 $publicationType,
                 'unsupported',
                 $failureStage ?? 'wall_post',
                 json_encode($requestPayload, JSON_UNESCAPED_UNICODE),
-                json_encode([
+                json_encode(array_filter([
+                    'published_payload' => !empty($responsePayload) ? $responsePayload : null,
                     'error' => $errorMessage,
                     'technical' => $normalized['technical'],
-                ], JSON_UNESCAPED_UNICODE),
-                'verification_failed',
-                $errorMessage,
+                ], static fn($value) => $value !== null), JSON_UNESCAPED_UNICODE),
+                $verificationStatus ?? 'verification_failed',
+                $verificationMessage ?? $errorMessage,
+                $detectedMode,
+                !empty($detectedFeatures) ? json_encode($detectedFeatures, JSON_UNESCAPED_UNICODE) : null,
+                $vkPostReadbackJson,
                 (int) $item['id'],
             ]);
         return ['success' => false, 'error' => $errorMessage];

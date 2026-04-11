@@ -117,8 +117,42 @@ class VkApiClient
         }
 
         $ownerId = (int) ($wallPostParams['owner_id'] ?? (-1 * $this->groupId));
-        $readbackRaw = $this->getWallPostById($ownerId, $postId);
-        $postData = $this->extractWallPostFromReadback($readbackRaw);
+        $publicationMode = (string) ($extraWallParams['_publication_mode'] ?? 'unknown');
+        $readbackOk = false;
+        $readbackError = '';
+        $readbackRaw = [];
+        $postData = [];
+
+        try {
+            $readbackRaw = $this->getWallPostById($ownerId, $postId);
+            $postData = $this->extractWallPostFromReadback($readbackRaw);
+            $readbackOk = is_array($postData) && !empty($postData) && (int) ($postData['id'] ?? 0) > 0;
+
+            if (!$readbackOk) {
+                $readbackError = 'wall.getById returned empty or unexpected post data';
+                if (function_exists('vkPublicationLog')) {
+                    vkPublicationLog('vk_wall_post_readback_failed_but_post_created', [
+                        'post_id' => $postId,
+                        'owner_id' => $ownerId,
+                        'publication_type' => $publicationMode,
+                        'error' => $readbackError,
+                        'readback_raw' => $readbackRaw,
+                    ]);
+                }
+            }
+        } catch (Throwable $e) {
+            $readbackError = $e instanceof VkApiException ? $e->getTechnicalMessage() : $e->getMessage();
+            $readbackRaw = [];
+            $postData = [];
+            if (function_exists('vkPublicationLog')) {
+                vkPublicationLog('vk_wall_post_readback_failed_but_post_created', [
+                    'post_id' => $postId,
+                    'owner_id' => $ownerId,
+                    'publication_type' => $publicationMode,
+                    'error' => $readbackError,
+                ]);
+            }
+        }
 
         return [
             'post_id' => $postId,
@@ -127,6 +161,8 @@ class VkApiClient
             'owner_id' => $ownerId,
             'wall_post_params' => $this->sanitizeParamsForLog($wallPostParams),
             'wall_post_response' => $post,
+            'readback_ok' => $readbackOk,
+            'readback_error' => $readbackError,
             'readback_raw' => $readbackRaw,
             'readback_post' => $postData,
             'post_data_excerpt' => is_array($postData) ? $this->extractPostVerificationExcerpt($postData) : [],
