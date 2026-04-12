@@ -159,10 +159,11 @@ $filteredApplications = array_values(array_filter(
 
                         <div class="p-4">
                             <div class="mb-2">
-                                <div class="mb-2">
+                                <div class="mb-2 flex items-center justify-between gap-3 flex-wrap">
                                     <span class="text-xs px-2 py-1 rounded-full inline-flex <?= htmlspecialchars($statusClass) ?>">
                                         <?= htmlspecialchars($statusLabel) ?>
                                     </span>
+                                    <span class="text-xs text-gray-500 whitespace-nowrap">Заявка #<?= (int) ($app['id'] ?? 0) ?></span>
                                 </div>
 
                                 <h3 class="font-semibold text-lg leading-tight"><?= htmlspecialchars((string)$app['contest_title']) ?></h3>

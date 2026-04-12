@@ -45,6 +45,7 @@ $stmt->execute([$application_id]);
 $participants = $stmt->fetchAll();
 $works = getApplicationWorks((int)$application_id);
 $isApplicationApproved = (string) ($application['status'] ?? '') === 'approved';
+$isApplicationFinal = in_array((string) ($application['status'] ?? ''), ['approved', 'rejected', 'cancelled'], true);
 $displayPermissions = getApplicationDisplayPermissions($application, $works);
 $canShowBulkDiplomaActions = (bool) ($displayPermissions['can_show_bulk_diplomas'] ?? false);
 $showVkPublishPrompt = max(0, (int) ($_SESSION['vk_publish_prompt_application_id'] ?? 0)) === (int) $application_id;
@@ -206,29 +207,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             redirect('/admin/application/' . $application_id);
         }
         $comment = trim((string) ($_POST['comment'] ?? ''));
-        if ($newStatus === 'reviewed_non_competitive' && $hasDrawingCommentColumn && $comment === '') {
-            if ($isAjaxRequest) {
-                jsonResponse(['success' => false, 'error' => 'Укажите комментарий, почему рисунок не принят и что нужно изменить'], 422);
-            }
-            $_SESSION['error_message'] = 'Укажите комментарий, почему рисунок не принят и что нужно изменить';
-            redirect('/admin/application/' . $application_id);
-        }
         updateWorkStatus($workId, $newStatus);
 
         if ($participantId > 0 && $hasDrawingCompliantColumn) {
-            $isCompliant = $newStatus === 'accepted' ? 1 : 0;
-            if ($hasDrawingCommentColumn) {
-                $pdo->prepare("
-                    UPDATE participants
-                    SET drawing_compliant = ?, drawing_comment = ?
-                    WHERE id = ? AND application_id = ?
-                ")->execute([$isCompliant, $isCompliant ? null : $comment, $participantId, $application_id]);
-            } else {
-                $pdo->prepare("
-                    UPDATE participants
-                    SET drawing_compliant = ?
-                    WHERE id = ? AND application_id = ?
-                ")->execute([$isCompliant, $participantId, $application_id]);
+            if ($newStatus === 'accepted') {
+                if ($hasDrawingCommentColumn) {
+                    $pdo->prepare("
+                        UPDATE participants
+                        SET drawing_compliant = 1, drawing_comment = NULL
+                        WHERE id = ? AND application_id = ?
+                    ")->execute([$participantId, $application_id]);
+                } else {
+                    $pdo->prepare("
+                        UPDATE participants
+                        SET drawing_compliant = 1
+                        WHERE id = ? AND application_id = ?
+                    ")->execute([$participantId, $application_id]);
+                }
             }
         }
         if ($isAjaxRequest) {
@@ -239,6 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 'status_label' => getWorkStatusLabel($newStatus),
                 'status_class' => getWorkStatusBadgeClass($newStatus),
                 'diploma_available' => mapWorkStatusToDiplomaType($newStatus) !== null,
+                'drawing_compliant' => $newStatus === 'accepted' ? 1 : null,
             ]);
         }
         $_SESSION['success_message'] = 'Статус работы обновлён';
@@ -306,19 +302,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $unresolvedStmt = $pdo->prepare("
                 SELECT COUNT(*)
                 FROM works w
-                LEFT JOIN participants p ON p.id = w.participant_id
                 WHERE w.application_id = ?
-                  AND (
-                    w.status NOT IN ('accepted', 'reviewed_non_competitive')
-                    OR (
-                        w.status = 'reviewed_non_competitive'
-                        AND TRIM(COALESCE(p.drawing_comment, '')) = ''
-                    )
-                  )
+                  AND w.status NOT IN ('accepted', 'reviewed_non_competitive')
             ");
             $unresolvedStmt->execute([$application_id]);
             if ((int)$unresolvedStmt->fetchColumn() > 0) {
-                $errorMessage = 'Нельзя принять заявку: не по всем рисункам принято решение или не заполнен комментарий по несоответствию.';
+                $errorMessage = 'Нельзя принять заявку: не по всем рисункам принято решение.';
                 if ($isAjaxRequest) {
                     jsonResponse(['success' => false, 'error' => $errorMessage], 422);
                 }
@@ -330,6 +319,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt->execute([$application_id]);
         $application['status'] = 'approved';
         $isApplicationApproved = true;
+        $isApplicationFinal = true;
 
         $declinedSubject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
         $pdo->prepare("
@@ -358,6 +348,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt = $pdo->prepare("UPDATE applications SET status = 'cancelled', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
         $application['status'] = 'cancelled';
+        $isApplicationFinal = true;
 
         $subject = getSystemSetting('application_cancelled_subject', 'Ваша заявка отменена');
         $message = getSystemSetting('application_cancelled_message', 'Ваша заявка отменена администратором.') . "\n\nНомер заявки: #" . $application_id;
@@ -372,6 +363,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt = $pdo->prepare("UPDATE applications SET status = 'rejected', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
         $application['status'] = 'rejected';
+        $isApplicationFinal = true;
 
         $subject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
         $message = getSystemSetting('application_declined_message', 'Ваша заявка отклонена администратором.') . "\n\nНомер заявки: #" . $application_id;
@@ -792,9 +784,13 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                             <div class="work-card__details">
                                 <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd></dl></section>
                                 <section class="work-section"><h4>Организация</h4><dl class="application-kv-list"><dt>Организация</dt><dd><?= e($p['organization_name'] ?? '—') ?></dd><dt>Адрес</dt><dd><?= e($p['organization_address'] ?? '—') ?></dd></dl></section>
-                                <?php $isComplianceLocked = $isApplicationApproved; ?>
+                                <?php
+                                    $workStatus = (string) ($p['status'] ?? 'pending');
+                                    $isDecisionFinal = in_array($workStatus, ['accepted', 'reviewed_non_competitive'], true);
+                                    $isComplianceLocked = $isDecisionFinal || $isApplicationFinal;
+                                ?>
                                 <section class="work-section"><h4>Проверка работы</h4>
-                                    <form method="POST" class="js-drawing-compliance-form work-compliance-form">
+                                    <form method="POST" class="js-drawing-compliance-form work-compliance-form<?= $isComplianceLocked ? ' is-disabled' : '' ?>" data-compliance-form data-locked="<?= $isComplianceLocked ? '1' : '0' ?>">
                                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                                         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                                         <input type="hidden" name="action" value="toggle_drawing_compliance">
@@ -806,7 +802,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                                     </form>
                                 </section>
                                 <section class="work-section"><h4>Действия по работе с дипломами</h4>
-                                    <div class="work-actions" data-work-controls data-work-id="<?= (int) $p['id'] ?>" data-work-status="<?= e((string) ($p['status'] ?? 'pending')) ?>">
+                                    <div class="work-actions" data-work-controls data-work-id="<?= (int) $p['id'] ?>" data-work-status="<?= e($workStatus) ?>">
                                         <form method="POST" class="js-work-async-form" data-accept-work-form><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--sm work-decision-btn <?= ((string) ($p['status'] ?? 'pending')) === 'accepted' ? 'work-decision-btn--accepted is-active' : '' ?>" type="submit" data-decision-button="accepted" <?= ((string) ($p['status'] ?? 'pending')) === 'reviewed_non_competitive' ? 'disabled aria-disabled="true"' : '' ?>>Рисунок принят</button></form>
                                         <form method="POST" class="js-work-async-form" data-reject-work-form><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="reviewed_non_competitive"><input type="hidden" name="comment" value="<?= e((string) ($p['drawing_comment'] ?? '')) ?>" data-reject-comment-input><button class="btn btn--sm work-decision-btn <?= ((string) ($p['status'] ?? 'pending')) === 'reviewed_non_competitive' ? 'work-decision-btn--rejected is-active' : '' ?>" type="submit" data-decision-button="reviewed_non_competitive" <?= ((string) ($p['status'] ?? 'pending')) === 'accepted' ? 'disabled aria-disabled="true"' : '' ?>>Рисунок отклонён</button></form>
                                         <div class="work-diploma-actions" style="display:<?= mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null ? 'flex' : 'none' ?>;" data-diploma-actions>
@@ -914,7 +910,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                         <a href="/admin/applications" class="btn btn--ghost"><i class="fas fa-list"></i> Закрыть</a>
                     <?php endif; ?>
                 </div>
-                <p class="application-sidebar-hint" style="<?= $approveButtonDisabled ? '' : 'display:none;' ?>">Кнопка станет активной, когда по каждой работе будет принято решение кнопкой «Рисунок принят» или «Рисунок отклонён». Если рисунок не соответствует условиям, выключите переключатель и заполните комментарий.</p>
+                <p class="application-sidebar-hint" style="<?= $isApplicationFinal || $approveButtonDisabled ? 'display:none;' : '' ?>">Кнопка станет активной, когда по каждой работе будет принято решение кнопкой «Рисунок принят» или «Рисунок отклонён».</p>
             </div>
         </div>
     </aside>
@@ -1245,6 +1241,8 @@ document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
  alertEl.remove();
 });
 
+const applicationDecisionLocked = <?= $isApplicationFinal ? 'true' : 'false' ?>;
+
 function updateDecisionButtons(controls, status) {
  if (!controls) return;
  const acceptButton = controls.querySelector('[data-decision-button="accepted"]');
@@ -1258,14 +1256,16 @@ function updateDecisionButtons(controls, status) {
 
  const acceptedFinal = status === 'accepted';
  const rejectedFinal = status === 'reviewed_non_competitive';
+ const acceptDisabled = rejectedFinal;
+ const rejectDisabled = acceptedFinal;
 
- acceptButton.disabled = rejectedFinal;
- acceptButton.setAttribute('aria-disabled', rejectedFinal ? 'true' : 'false');
- acceptButton.classList.toggle('is-disabled', rejectedFinal);
+ acceptButton.disabled = acceptDisabled;
+ acceptButton.setAttribute('aria-disabled', acceptDisabled ? 'true' : 'false');
+ acceptButton.classList.toggle('is-disabled', acceptDisabled);
 
- rejectButton.disabled = acceptedFinal;
- rejectButton.setAttribute('aria-disabled', acceptedFinal ? 'true' : 'false');
- rejectButton.classList.toggle('is-disabled', acceptedFinal);
+ rejectButton.disabled = rejectDisabled;
+ rejectButton.setAttribute('aria-disabled', rejectDisabled ? 'true' : 'false');
+ rejectButton.classList.toggle('is-disabled', rejectDisabled);
 }
 
 async function parseJsonResponse(response) {
@@ -1326,16 +1326,17 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
       diplomaActions.style.display = data.diploma_available ? 'flex' : 'none';
     }
 
-    const workStatus = formData.get('work_status');
+    const workStatus = data.work_status || formData.get('work_status') || 'pending';
     const compliantToggle = card?.querySelector('.js-drawing-compliant-toggle');
     const commentField = card?.querySelector('.js-drawing-comment');
-    if (compliantToggle && (workStatus === 'accepted' || workStatus === 'reviewed' || workStatus === 'reviewed_non_competitive' || workStatus === 'pending')) {
-      compliantToggle.checked = workStatus === 'accepted';
+    if (compliantToggle && data.drawing_compliant !== null) {
+      compliantToggle.checked = String(data.drawing_compliant) === '1';
     }
     if (workStatus === 'accepted' && commentField) {
       commentField.value = '';
     }
     updateDecisionButtons(controls, workStatus);
+    syncComplianceFormState(card, workStatus);
     syncApproveApplicationButtonState();
    }
 
@@ -1416,6 +1417,9 @@ document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
  const controls = form.closest('.card')?.querySelector('[data-work-controls]');
  if (toggle) {
   toggle.addEventListener('change', () => {
+   if (form.dataset.locked === '1') {
+    return;
+   }
    if (controls) {
     controls.dataset.workStatus = toggle.checked ? 'accepted' : (String(comment?.value || '').trim() ? 'reviewed' : 'pending');
     updateDecisionButtons(controls, controls.dataset.workStatus);
@@ -1427,6 +1431,9 @@ document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
  if (comment) {
   let commentTimer = null;
   comment.addEventListener('input', () => {
+   if (form.dataset.locked === '1') {
+    return;
+   }
    const rejectCommentInput = form.closest('.card')?.querySelector('[data-reject-comment-input]');
    if (rejectCommentInput) {
     rejectCommentInput.value = comment.value;
@@ -1455,14 +1462,37 @@ function ensureComplianceFieldsAvailable() {
  });
 }
 
+function syncComplianceFormState(card, workStatus) {
+ const form = card?.querySelector('[data-compliance-form]');
+ if (!form) return;
+ const shouldLock = applicationDecisionLocked || workStatus === 'accepted' || workStatus === 'reviewed_non_competitive';
+ form.dataset.locked = shouldLock ? '1' : '0';
+ form.classList.toggle('is-disabled', shouldLock);
+ const toggle = form.querySelector('.js-drawing-compliant-toggle');
+ const comment = form.querySelector('.js-drawing-comment');
+ [toggle, comment].forEach((field) => {
+  if (!field) return;
+  field.disabled = shouldLock;
+  if (shouldLock) {
+   field.setAttribute('aria-disabled', 'true');
+  } else {
+   field.removeAttribute('aria-disabled');
+  }
+ });
+}
+
 function syncApproveApplicationButtonState() {
  const approveButton = document.getElementById('approveApplicationButton');
  if (!approveButton) return;
+ const hint = document.querySelector('.application-sidebar-hint');
  const isApproved = approveButton.dataset.approved === '1';
- if (isApproved) {
+ if (applicationDecisionLocked || isApproved) {
   approveButton.disabled = true;
   approveButton.setAttribute('aria-disabled', 'true');
- approveButton.setAttribute('tabindex', '-1');
+  approveButton.setAttribute('tabindex', '-1');
+  if (hint) {
+   hint.style.display = 'none';
+  }
   return;
  }
  const hasInvalid = Array.from(document.querySelectorAll('[data-work-controls]')).some((controls) => {
@@ -1471,7 +1501,6 @@ function syncApproveApplicationButtonState() {
  });
  approveButton.disabled = hasInvalid;
  approveButton.setAttribute('aria-disabled', hasInvalid ? 'true' : 'false');
- const hint = document.querySelector('.application-sidebar-hint');
  if (hint) {
   hint.style.display = hasInvalid ? 'block' : 'none';
  }
@@ -1484,7 +1513,10 @@ function syncApproveApplicationButtonState() {
 
 syncApproveApplicationButtonState();
 ensureComplianceFieldsAvailable();
-document.querySelectorAll('[data-work-controls]').forEach((controls) => updateDecisionButtons(controls, controls.dataset.workStatus || 'pending'));
+document.querySelectorAll('[data-work-controls]').forEach((controls) => {
+ updateDecisionButtons(controls, controls.dataset.workStatus || 'pending');
+ syncComplianceFormState(controls.closest('.card'), controls.dataset.workStatus || 'pending');
+});
 
 (() => {
     const modal = document.getElementById('vkPublishPromptModal');
@@ -1618,6 +1650,9 @@ document.querySelectorAll('[data-work-controls]').forEach((controls) => updateDe
                 approveButton.innerHTML = '<i class="fas fa-check-double"></i> Заявка принята';
                 document.querySelectorAll('.js-application-secondary-action').forEach((secondaryAction) => {
                     secondaryAction.style.display = 'none';
+                });
+                document.querySelectorAll('[data-work-controls]').forEach((controls) => {
+                    syncComplianceFormState(controls.closest('.card'), controls.dataset.workStatus || 'pending');
                 });
                 syncApproveApplicationButtonState();
             } catch (error) {

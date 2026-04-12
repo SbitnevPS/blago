@@ -93,7 +93,7 @@ function ensureDiplomaSchema(): void {
             participant_id INT NOT NULL,
             title VARCHAR(255) DEFAULT NULL,
             image_path VARCHAR(255) DEFAULT NULL,
-            status ENUM('pending','accepted','reviewed') NOT NULL DEFAULT 'pending',
+            status ENUM('pending','accepted','reviewed','reviewed_non_competitive') NOT NULL DEFAULT 'pending',
             reviewed_at DATETIME DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -104,6 +104,19 @@ function ensureDiplomaSchema(): void {
             CONSTRAINT fk_works_application FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
             CONSTRAINT fk_works_participant FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $statusColumn = $pdo->query("SHOW COLUMNS FROM works LIKE 'status'")->fetch(PDO::FETCH_ASSOC);
+        $statusType = strtolower((string) ($statusColumn['Type'] ?? ''));
+        if ($statusType !== '' && strpos($statusType, 'reviewed_non_competitive') === false) {
+            $pdo->exec("
+                ALTER TABLE works
+                MODIFY COLUMN status ENUM('pending','accepted','reviewed','reviewed_non_competitive')
+                NOT NULL DEFAULT 'pending'
+            ");
+        }
     } catch (Throwable $e) {
     }
 

@@ -1316,6 +1316,16 @@ body:has(#application-actions) .admin-content {
   margin: 0;
 }
 
+.work-compliance-form.is-disabled {
+  opacity: 0.6;
+}
+
+.work-compliance-form.is-disabled .ios-toggle-wrap,
+.work-compliance-form.is-disabled .form-label,
+.work-compliance-form.is-disabled .form-textarea {
+  pointer-events: none;
+}
+
 .work-actions,
 .work-diploma-actions {
   display: flex;
