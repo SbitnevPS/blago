@@ -121,7 +121,7 @@ require_once __DIR__ . '/includes/header.php';
                         'allow_edit' => (int) ($participant['allow_edit'] ?? 0),
                     ]);
                     $drawingUrl = !empty($participant['drawing_file'])
-                        ? getParticipantDrawingWebPath((string) ($participant['applicant_email'] ?? ''), (string) $participant['drawing_file'])
+                        ? getParticipantDrawingPreviewWebPath((string) ($participant['applicant_email'] ?? ''), (string) $participant['drawing_file'])
                         : '';
                     $isDiplomaEnabled = (string) ($statusMeta['status_code'] ?? '') === 'approved';
                 ?>

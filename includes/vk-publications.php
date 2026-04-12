@@ -942,6 +942,7 @@ function getVkWorksByFilters(array $filters): array
     foreach ($rows as &$row) {
         $row['work_image_file'] = trim((string) ($row['image_path'] ?: $row['drawing_file']));
         $row['work_image_web_path'] = getParticipantDrawingWebPath((string) ($row['applicant_email'] ?? ''), $row['work_image_file']);
+        $row['work_image_preview_web_path'] = getParticipantDrawingPreviewWebPath((string) ($row['applicant_email'] ?? ''), $row['work_image_file']);
         $row['work_image_fs_path'] = getParticipantDrawingFsPath((string) ($row['applicant_email'] ?? ''), $row['work_image_file']);
     }
 
@@ -1381,6 +1382,7 @@ function getVkTaskItems(int $taskId): array
 
     foreach ($rows as &$row) {
         $row['work_image_web_path'] = getParticipantDrawingWebPath((string) ($row['applicant_email'] ?? ''), (string) ($row['work_image_path'] ?? ''));
+        $row['work_image_preview_web_path'] = getParticipantDrawingPreviewWebPath((string) ($row['applicant_email'] ?? ''), (string) ($row['work_image_path'] ?? ''));
         $row['work_image_fs_path'] = getParticipantDrawingFsPath((string) ($row['applicant_email'] ?? ''), (string) ($row['work_image_path'] ?? ''));
     }
 

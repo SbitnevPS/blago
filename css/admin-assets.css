@@ -901,11 +901,391 @@ body:has(#application-actions) .admin-content {
 }
 
 .work-card__image {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
   border-radius: 14px;
   border: 2px solid #e2e8f0;
+}
+
+/* Admin application view */
+#drawingEditorModal,
+#drawingViewerModal {
+  padding: 16px;
+}
+
+#drawingEditorModal .modal__content,
+#drawingViewerModal .modal__content {
+  width: min(980px, calc(100vw - 32px));
+  max-width: min(980px, calc(100vw - 32px)) !important;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+
+#drawingEditorModal .modal__body,
+#drawingViewerModal .modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.work-card__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.work-card__image-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  cursor: zoom-in;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+
+.work-card__image-button:hover,
+.work-card__image-button:focus-visible {
+  border-color: #94a3b8;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px);
+}
+
+.work-card__image-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0) 35%, rgba(15, 23, 42, 0.36) 100%);
+  opacity: .72;
+  transition: opacity .18s ease, background .18s ease;
+  pointer-events: none;
+}
+
+.work-card__image-button:hover::after,
+.work-card__image-button:focus-visible::after {
+  opacity: 1;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.08) 20%, rgba(15, 23, 42, 0.48) 100%);
+}
+
+.work-card__image {
+  display: block;
+  background: #ffffff;
+  flex: 0 0 auto;
+}
+
+.work-card__image-hint {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.drawing-editor-toolbar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.drawing-editor-angle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawing-editor-angle__input {
+  width: 90px;
+}
+
+.drawing-editor-stage,
+.drawing-viewer-stage {
+  min-height: 280px;
+  height: clamp(280px, 50vh, 560px);
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  overflow: auto;
+}
+
+.drawing-editor-stage {
+  padding: 12px;
+}
+
+.drawing-viewer-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+#editorImage,
+#drawingViewerImage {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#drawingEditorModal .modal__footer,
+#drawingViewerModal .modal__footer {
+  flex-wrap: wrap;
+}
+
+#drawingEditorModal .modal__footer .btn,
+#drawingViewerModal .modal__footer .btn {
+  flex: 1 1 180px;
+}
+
+.application-message-modal__footer {
+  padding: 20px;
+  border-top: 1px solid #E5E7EB;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.is-hidden {
+  display: none !important;
+}
+
+.application-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.application-payment-note {
+  margin-top: 4px;
+}
+
+.work-card__footer-actions {
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.vk-publication-card {
+  margin-bottom: 14px;
+}
+
+.vk-publication-card .card__body {
+  padding: 12px;
+}
+
+.vk-publication-card__title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.vk-publication-card__meta {
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.vk-publication-card__caption {
+  font-size: 12px;
+}
+
+.vk-publication-card__text {
+  font-size: 13px;
+  line-height: 1.35;
+  margin-bottom: 6px;
+}
+
+.vk-publication-card__link {
+  margin-bottom: 8px;
+}
+
+.vk-preview-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid #E5E7EB;
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.vk-preview-item__thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.vk-preview-item__thumb-placeholder {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  background: #EEF2FF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vk-preview-item__content {
+  display: grid;
+  gap: 4px;
+}
+
+.vk-preview-item__reason {
+  font-size: 12px;
+}
+
+.vk-publish-modal__content {
+  max-width: 700px !important;
+}
+
+.vk-publish-modal__summary {
+  margin-bottom: 10px;
+}
+
+.vk-publish-modal__preview {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.vk-publish-modal__section {
+  margin-top: 14px;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.vk-publish-modal__section-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.vk-publish-modal__group {
+  margin-bottom: 8px;
+}
+
+.vk-publish-modal__hint {
+  display: none;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.vk-publish-modal__fields {
+  display: none;
+}
+
+.vk-publish-modal__checkbox {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.vk-publish-modal__goal-card {
+  display: none;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.vk-publish-modal__goal-title {
+  font-weight: 600;
+}
+
+.vk-publish-modal__goal-description {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.vk-publish-modal__goal-id {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.vk-publish-modal__status {
+  display: none;
+  margin-top: 12px;
+}
+
+.vk-publish-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.vk-publish-modal__close {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  #drawingEditorModal,
+  #drawingViewerModal {
+    padding: 10px;
+  }
+
+  #drawingEditorModal .modal__content,
+  #drawingViewerModal .modal__content {
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px) !important;
+    max-height: calc(100vh - 20px);
+  }
+
+  .work-card__image-button {
+    min-height: 0;
+  }
+
+  .drawing-editor-stage,
+  .drawing-viewer-stage {
+    height: clamp(220px, 38vh, 360px);
+    min-height: 220px;
+  }
+
+  .drawing-editor-toolbar .btn {
+    flex: 1 1 140px;
+  }
+
+  #vkPublishPromptModal .modal__content {
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px) !important;
+    margin: 10px;
+    max-height: calc(100vh - 20px);
+    display: flex;
+    flex-direction: column;
+  }
+
+  #vkPublishPromptModal .modal__body {
+    overflow-y: auto;
+  }
+
+  #vkPublishPromptModal .modal__footer {
+    flex-wrap: wrap;
+  }
+
+  #vkPublishPromptModal .modal__footer .btn {
+    flex: 1 1 180px;
+  }
+
+  .vk-publish-modal__preview {
+    max-height: 42vh !important;
+  }
 }
 
 .work-card__details {

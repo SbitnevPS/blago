@@ -63,7 +63,7 @@ if ($editingApplicationId > 0) {
 }
 
 // Директория пользователя для рисунков
-$userUploadPath = DRAWINGS_PATH . '/' . $user['email'];
+$userUploadPath = DRAWINGS_PATH . '/' . normalizeDrawingOwner($user['email'] ?? '');
 $tempPath = DRAWINGS_PATH . '/temp';
 
 // Создание директорий
@@ -80,6 +80,34 @@ if (!is_dir($tempPath)) {
  mkdir($tempPath,0777, true);
 }
 
+function deleteTempDrawingArtifacts(string $tempDirectory, string $tempFile): void
+{
+ $tempFile = basename(trim($tempFile));
+ if ($tempFile === '') {
+ return;
+ }
+
+ $safeTempPath = realpath($tempDirectory);
+ if ($safeTempPath === false) {
+ return;
+ }
+
+ $targetFsPath = $safeTempPath . '/' . $tempFile;
+ $targetRealPath = realpath($targetFsPath);
+
+ if ($targetRealPath !== false && strpos($targetRealPath, $safeTempPath . DIRECTORY_SEPARATOR) === 0 && is_file($targetRealPath)) {
+ @unlink($targetRealPath);
+ }
+
+ $pathInfo = pathinfo($tempFile);
+ $thumbFile = ($pathInfo['filename'] ?? '') . '_thumb.jpg';
+ $thumbFsPath = $safeTempPath . '/' . $thumbFile;
+ $thumbRealPath = realpath($thumbFsPath);
+ if ($thumbRealPath !== false && strpos($thumbRealPath, $safeTempPath . DIRECTORY_SEPARATOR) === 0 && is_file($thumbRealPath)) {
+ @unlink($thumbRealPath);
+ }
+}
+
 // Обработка AJAX загрузки изображения
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'upload_temp') {
  header('Content-Type: application/json');
@@ -90,6 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
  }
     
  $participantIndex = intval($_POST['participant_index'] ??0);
+ $previousTempFile = (string) ($_POST['previous_temp_file'] ?? '');
     
  if (isset($_FILES['drawing']) && $_FILES['drawing']['error'] === UPLOAD_ERR_OK) {
  $file = $_FILES['drawing'];
@@ -108,8 +137,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
  $tempFilePath = $tempPath . '/' . $tempFilename . '.' . $ext;
         
  if (move_uploaded_file($file['tmp_name'], $tempFilePath)) {
+ if ($previousTempFile !== '') {
+ deleteTempDrawingArtifacts($tempPath, $previousTempFile);
+ }
  // Создаем превью
- $previewUrl = createThumbnail($tempFilePath, $tempPath, $tempFilename . '_thumb.jpg',300,300);
+ $previewUrl = createThumbnail($tempFilePath, $tempPath, $tempFilename . '_thumb.jpg',630,630);
             
  echo json_encode([
  'success' => true,
@@ -142,26 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
  exit;
  }
 
- $safeTempPath = realpath($tempPath);
- if ($safeTempPath === false) {
- echo json_encode(['success' => false, 'message' => 'Временная директория недоступна']);
- exit;
- }
-
- $targetFsPath = $safeTempPath . '/' . $tempFile;
- $targetRealPath = realpath($targetFsPath);
-
- if ($targetRealPath !== false && strpos($targetRealPath, $safeTempPath . DIRECTORY_SEPARATOR) === 0 && is_file($targetRealPath)) {
- @unlink($targetRealPath);
- }
-
- $pathInfo = pathinfo($tempFile);
- $thumbFile = ($pathInfo['filename'] ?? '') . '_thumb.jpg';
- $thumbFsPath = $safeTempPath . '/' . $thumbFile;
- $thumbRealPath = realpath($thumbFsPath);
- if ($thumbRealPath !== false && strpos($thumbRealPath, $safeTempPath . DIRECTORY_SEPARATOR) === 0 && is_file($thumbRealPath)) {
- @unlink($thumbRealPath);
- }
+ deleteTempDrawingArtifacts($tempPath, $tempFile);
 
  echo json_encode(['success' => true]);
  exit;
@@ -353,19 +366,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  sanitizeFilename($filePatronymic) . '_' . 
  intval($age) . '_' . bin2hex(random_bytes(4)) . '.jpg';
 
- // Обработка изображения (resize + конвертация в JPG)
- $finalPath = processAndSaveImage($tempFilePath, $userUploadPath, $newFilename);
+ // Сохраняем оригинал и отдельную превью-копию с тем же именем в подпапке thumb
+ $savedDrawing = saveParticipantDrawingWithThumbnail($tempFilePath, $userUploadPath, $newFilename);
 
- if ($finalPath) {
- $drawing_file = basename($finalPath);
+ if (!empty($savedDrawing['success'])) {
+ $drawing_file = (string)($savedDrawing['filename'] ?? '');
  }
 
- // Удаляем временный файл
- @unlink($tempFilePath);
-
- // Удаляем превью
- $thumbFile = str_replace(basename($tempFile), 'thumb_' . basename($tempFile), $tempFilePath);
- @unlink($thumbFile);
+ // Удаляем временный файл и превью после сохранения постоянного рисунка
+ deleteTempDrawingArtifacts($tempPath, $tempFile);
  }
  }
                     
@@ -734,7 +743,8 @@ const initialParticipants = <?= json_encode(array_map(function($p) use ($user) {
         'work_title' => $p['work_title'] ?? '',
         'temp_file' => '',
         'existing_drawing_file' => $p['drawing_file'] ?? '',
-        'preview' => !empty($p['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $p['drawing_file']) : null,
+        'preview' => !empty($p['drawing_file']) ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $p['drawing_file']) : null,
+        'full_preview' => !empty($p['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $p['drawing_file']) : null,
     ];
 }, $editingParticipants), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
@@ -1046,6 +1056,7 @@ function renderDrawingUploader(index, options = {}) {
     const hasFile = !!options.previewUrl;
     const isLoading = options.isLoading === true;
     const fileName = String(options.fileName || '');
+    const fullPreviewUrl = String(options.fullPreviewUrl || options.previewUrl || '');
 
     area.classList.toggle('has-file', hasFile);
     area.classList.toggle('is-loading', isLoading);
@@ -1058,7 +1069,7 @@ function renderDrawingUploader(index, options = {}) {
         hint.textContent = 'Нажмите на изображение, чтобы заменить файл';
         preview.classList.add('visible');
         preview.innerHTML = `
-            <img src="${options.previewUrl}" alt="Рисунок участника" class="drawing-upload-image" id="preview_img_${index}">
+            <img src="${options.previewUrl}" data-full-src="${fullPreviewUrl}" alt="Рисунок участника" class="drawing-upload-image" id="preview_img_${index}">
             <div class="drawing-upload-overlay">
                 <i class="fas fa-arrows-rotate"></i>
                 Нажмите, чтобы выбрать другой рисунок
@@ -1087,6 +1098,7 @@ function openDrawingPicker(index) {
 
 function createParticipantForm(index, data = null) {
     const hasPreview = !!(data?.preview);
+    const fullPreview = data?.full_preview || data?.preview || '';
     const container = document.createElement('article');
     container.className = 'participant-form';
     container.dataset.index = index;
@@ -1121,7 +1133,7 @@ function createParticipantForm(index, data = null) {
                             </div>
                             <div class="drawing-upload-preview ${hasPreview ? 'visible' : ''}" id="preview_${index}">
                                 ${hasPreview ? `
-                                    <img src="${data.preview}" alt="Рисунок участника" class="drawing-upload-image" id="preview_img_${index}">
+                                    <img src="${data.preview}" data-full-src="${fullPreview}" alt="Рисунок участника" class="drawing-upload-image" id="preview_img_${index}">
                                     <div class="drawing-upload-overlay">
                                         <i class="fas fa-arrows-rotate"></i>
                                         Нажмите, чтобы выбрать другой рисунок
@@ -1184,7 +1196,8 @@ function removeParticipant(index) {
             work_title: f.querySelector(`[name="participants[${old}][work_title]"]`)?.value || '',
             temp_file: f.querySelector(`#temp_file_${old}`)?.value || '',
             existing_drawing_file: f.querySelector(`#existing_file_${old}`)?.value || '',
-            preview: f.querySelector(`#preview_img_${old}`)?.src || ''
+            preview: f.querySelector(`#preview_img_${old}`)?.src || '',
+            full_preview: f.querySelector(`#preview_img_${old}`)?.dataset.fullSrc || f.querySelector(`#preview_img_${old}`)?.src || ''
         });
         f.replaceWith(fresh);
         initUploadArea(participantCount);
@@ -1246,6 +1259,7 @@ function handleFileSelect(file, index) {
     formData.append('action', 'upload_temp');
     formData.append('csrf_token', csrfToken);
     formData.append('participant_index', index);
+    formData.append('previous_temp_file', document.getElementById(`temp_file_${index}`)?.value || '');
     formData.append('drawing', file);
 
     fetch('/application-form?contest_id=' + contestId, { method: 'POST', body: formData })
@@ -1254,7 +1268,8 @@ function handleFileSelect(file, index) {
             if (!data.success) throw new Error(data.message || 'Ошибка загрузки');
             document.getElementById(`temp_file_${index}`).value = data.temp_file;
             renderDrawingUploader(index, {
-                previewUrl: data.original_url || data.preview,
+                previewUrl: data.preview,
+                fullPreviewUrl: data.original_url || data.preview,
                 fileName: data.original_name || 'Файл загружен',
             });
             saveLocalDraft();
@@ -1416,7 +1431,7 @@ function viewDrawing(index) {
     const img = document.getElementById(`preview_img_${index}`);
     if (!img || !img.src) return;
     const modal = document.getElementById('drawingPreviewModal');
-    document.getElementById('drawingPreviewModalImage').src = img.src;
+    document.getElementById('drawingPreviewModalImage').src = img.dataset.fullSrc || img.src;
     modal.classList.add('active');
 }
 

@@ -1907,10 +1907,11 @@ function createThumbnail($sourcePath, $outputDir, $outputFilename, $maxWidth, $m
     $width = imagesx($image);
     $height = imagesy($image);
 
-    // Вычисляем размеры превью
-    $ratio = min($maxWidth / $width, $maxHeight / $height);
-    $newWidth = round($width * $ratio);
-    $newHeight = round($height * $ratio);
+    // Делаем миниатюру фиксированной ширины, сохраняя пропорции по высоте.
+    $targetWidth = max(1, (int) $maxWidth);
+    $ratio = $targetWidth / max(1, $width);
+    $newWidth = $targetWidth;
+    $newHeight = max(1, (int) round($height * $ratio));
 
     // Создаем новое изображение
     $thumb = imagecreatetruecolor($newWidth, $newHeight);
@@ -2022,6 +2023,96 @@ function processAndSaveImage($sourcePath, $outputDir, $filename) {
     imagedestroy($resized);
 
     return $outputPath;
+}
+
+function getParticipantDrawingThumbDirectory(string $baseDirectory): string
+{
+    return rtrim($baseDirectory, '/\\') . '/thumb';
+}
+
+function getParticipantDrawingThumbWebPath($userEmail, $drawingFile) {
+    $safeFile = normalizeDrawingFilename($drawingFile);
+    if ($safeFile === '') {
+        return null;
+    }
+
+    $safeEmail = normalizeDrawingOwner($userEmail);
+    $userScopedPath = '/uploads/drawings/' . $safeEmail . '/thumb/' . $safeFile;
+    $legacyPath = '/uploads/drawings/thumb/' . $safeFile;
+
+    $userScopedFs = DRAWINGS_PATH . '/' . $safeEmail . '/thumb/' . $safeFile;
+    $legacyFs = DRAWINGS_PATH . '/thumb/' . $safeFile;
+
+    if ($safeEmail !== '' && file_exists($userScopedFs)) {
+        return $userScopedPath;
+    }
+
+    if (file_exists($legacyFs)) {
+        return $legacyPath;
+    }
+
+    return $userScopedPath;
+}
+
+function getParticipantDrawingPreviewWebPath($userEmail, $drawingFile) {
+    $thumbPath = getParticipantDrawingThumbWebPath($userEmail, $drawingFile);
+    if ($thumbPath !== null) {
+        $thumbFsPath = getParticipantDrawingThumbFsPath($userEmail, $drawingFile);
+        if ($thumbFsPath !== null && file_exists($thumbFsPath)) {
+            return $thumbPath;
+        }
+    }
+
+    return getParticipantDrawingWebPath($userEmail, $drawingFile);
+}
+
+function getParticipantDrawingThumbFsPath($userEmail, $drawingFile) {
+    $safeFile = normalizeDrawingFilename($drawingFile);
+    if ($safeFile === '') {
+        return null;
+    }
+
+    $safeEmail = normalizeDrawingOwner($userEmail);
+    $userScopedFs = DRAWINGS_PATH . '/' . $safeEmail . '/thumb/' . $safeFile;
+    if ($safeEmail !== '' && file_exists($userScopedFs)) {
+        return $userScopedFs;
+    }
+
+    $legacyFs = DRAWINGS_PATH . '/thumb/' . $safeFile;
+    if (file_exists($legacyFs)) {
+        return $legacyFs;
+    }
+
+    return null;
+}
+
+function saveParticipantDrawingWithThumbnail(string $sourcePath, string $outputDir, string $filename, int $thumbMaxWidth = 630, int $thumbMaxHeight = 630): array
+{
+    $originalPath = processAndSaveImage($sourcePath, $outputDir, $filename);
+    if (!$originalPath) {
+        return ['success' => false, 'message' => 'Не удалось сохранить оригинал изображения.'];
+    }
+
+    $finalFilename = basename((string) $originalPath);
+    $thumbDir = getParticipantDrawingThumbDirectory($outputDir);
+    if (!is_dir($thumbDir) && !mkdir($thumbDir, 0777, true) && !is_dir($thumbDir)) {
+        @unlink($originalPath);
+        return ['success' => false, 'message' => 'Не удалось подготовить каталог для превью.'];
+    }
+
+    $thumbUrl = createThumbnail($originalPath, $thumbDir, $finalFilename, $thumbMaxWidth, $thumbMaxHeight);
+    $thumbPath = $thumbDir . '/' . $finalFilename;
+    if ($thumbUrl === false || !is_file($thumbPath)) {
+        @unlink($originalPath);
+        return ['success' => false, 'message' => 'Не удалось создать превью изображения.'];
+    }
+
+    return [
+        'success' => true,
+        'original_path' => $originalPath,
+        'thumb_path' => $thumbPath,
+        'filename' => $finalFilename,
+    ];
 }
 
 function normalizeDrawingOwner($userEmail) {

@@ -355,7 +355,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
 
     $drawingFile = trim((string)($workRow['drawing_file'] ?? ''));
     $oldDrawingPath = $drawingFile !== '' ? getParticipantDrawingFsPath($user['email'] ?? '', $drawingFile) : null;
+    $oldThumbPath = $drawingFile !== '' ? getParticipantDrawingThumbFsPath($user['email'] ?? '', $drawingFile) : null;
     $newDrawingPath = null;
+    $newThumbPath = null;
 
     if (isset($_FILES['drawing_file']) && (int)($_FILES['drawing_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
         if ((int)$_FILES['drawing_file']['error'] !== UPLOAD_ERR_OK) {
@@ -390,8 +392,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
 
         $tmpUpload = (string)($_FILES['drawing_file']['tmp_name'] ?? '');
         $newFilename = sanitizeFilename($fio) . '_' . $age . '_' . bin2hex(random_bytes(4)) . '.jpg';
-        $saved = processAndSaveImage($tmpUpload, $userUploadPath, $newFilename);
-        if (!$saved) {
+        $saved = saveParticipantDrawingWithThumbnail($tmpUpload, $userUploadPath, $newFilename);
+        if (empty($saved['success'])) {
             $message = 'Не удалось обработать файл рисунка.';
             if ($isAjaxRequest) {
                 jsonResponse(['success' => false, 'error' => $message], 422);
@@ -400,8 +402,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
             redirect('/application/' . $applicationId);
         }
 
-        $newDrawingPath = (string)$saved;
-        $drawingFile = basename($newDrawingPath);
+        $newDrawingPath = (string)($saved['original_path'] ?? '');
+        $newThumbPath = (string)($saved['thumb_path'] ?? '');
+        $drawingFile = (string)($saved['filename'] ?? '');
     }
 
     $pdo->beginTransaction();
@@ -444,6 +447,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
         if ($newDrawingPath && file_exists($newDrawingPath)) {
             @unlink($newDrawingPath);
         }
+        if ($newThumbPath && file_exists($newThumbPath)) {
+            @unlink($newThumbPath);
+        }
         $message = 'Не удалось сохранить изменения участника.';
         if ($isAjaxRequest) {
             jsonResponse(['success' => false, 'error' => $message], 500);
@@ -455,10 +461,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
     if ($newDrawingPath && $oldDrawingPath && file_exists($oldDrawingPath) && realpath($oldDrawingPath) !== realpath($newDrawingPath)) {
         @unlink($oldDrawingPath);
     }
+    if ($newThumbPath && $oldThumbPath && file_exists($oldThumbPath) && realpath($oldThumbPath) !== realpath($newThumbPath)) {
+        @unlink($oldThumbPath);
+    }
 
     $updatedDrawingUrl = $drawingFile !== '' ? getParticipantDrawingWebPath($user['email'] ?? '', $drawingFile) : null;
+    $updatedDrawingPreviewUrl = $drawingFile !== '' ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $drawingFile) : null;
     if ($updatedDrawingUrl) {
         $updatedDrawingUrl .= '?v=' . time();
+    }
+    if ($updatedDrawingPreviewUrl) {
+        $updatedDrawingPreviewUrl .= '?v=' . time();
     }
 
     $successMessage = $resubmittedForReview
@@ -475,6 +488,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
                 'age' => $age > 0 ? $age : '—',
                 'work_title' => $workTitle,
                 'drawing_url' => $updatedDrawingUrl,
+                'drawing_preview_url' => $updatedDrawingPreviewUrl,
             ],
             'resubmitted_for_review' => $resubmittedForReview,
         ]);
@@ -720,6 +734,7 @@ $currentPage = 'applications';
                             $workTitle = trim((string) (($participant['work_title'] ?? $participant['title'] ?? '')));
                             $participantVkUrl = trim((string)($participant['vk_post_url'] ?? ''));
                             $drawingSrc = !empty($participant['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
+                            $drawingPreviewSrc = !empty($participant['drawing_file']) ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
                             $participantGalleryIndex = null;
                             if ($drawingSrc !== '') {
                                 $participantGalleryIndex = $galleryDisplayIndex++;
@@ -728,7 +743,7 @@ $currentPage = 'applications';
                         <article class="app-card participant-modern-card<?= $hasParticipantCorrection ? ' participant-card--needs-fix' : '' ?>" data-work-id="<?= (int)($participant['id'] ?? 0) ?>">
                             <div class="participant-modern-card__image-wrap">
                                 <?php if ($drawingSrc !== ''): ?>
-                                    <img src="<?= e($drawingSrc) ?>" alt="Рисунок участника <?= e((string)($participant['fio'] ?? '')) ?>" class="participant-modern-card__image js-gallery-image" data-gallery-index="<?= (int) $participantGalleryIndex ?>">
+                                    <img src="<?= e($drawingPreviewSrc) ?>" alt="Рисунок участника <?= e((string)($participant['fio'] ?? '')) ?>" class="participant-modern-card__image js-gallery-image" data-gallery-index="<?= (int) $participantGalleryIndex ?>">
                                 <?php else: ?>
                                     <div class="participant-modern-card__image" style="display:flex;align-items:center;justify-content:center;color:#94A3B8;background:#F1F5F9;"><i class="fas fa-image"></i></div>
                                 <?php endif; ?>
@@ -764,7 +779,7 @@ $currentPage = 'applications';
                                         <button type="button" class="btn btn--ghost btn--sm js-gallery-open" data-gallery-index="<?= (int) $participantGalleryIndex ?>"><i class="fas fa-expand"></i> Увеличить</button>
                                     <?php endif; ?>
                                     <?php if ($hasParticipantCorrection): ?>
-                                        <button type="button" class="btn btn--primary btn--sm js-open-participant-edit" data-work-id="<?= (int)($participant['id'] ?? 0) ?>" data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>" data-age="<?= (int)($participant['age'] ?? 0) ?>" data-work-title="<?= htmlspecialchars($workTitle, ENT_QUOTES) ?>" data-drawing-url="<?= htmlspecialchars($drawingSrc, ENT_QUOTES) ?>"><i class="fas fa-pen"></i> Исправить</button>
+                                        <button type="button" class="btn btn--primary btn--sm js-open-participant-edit" data-work-id="<?= (int)($participant['id'] ?? 0) ?>" data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>" data-age="<?= (int)($participant['age'] ?? 0) ?>" data-work-title="<?= htmlspecialchars($workTitle, ENT_QUOTES) ?>" data-drawing-url="<?= htmlspecialchars($drawingSrc, ENT_QUOTES) ?>" data-drawing-preview-url="<?= htmlspecialchars($drawingPreviewSrc, ENT_QUOTES) ?>"><i class="fas fa-pen"></i> Исправить</button>
                                     <?php endif; ?>
                                     <?php if ($isDiplomaAvailable): ?>
                                         <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_one"><input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>"><button class="btn btn--primary btn--sm" type="submit"><i class="fas fa-download"></i> Скачать диплом</button></form>
@@ -924,6 +939,7 @@ foreach ($participants as $participant) {
         $galleryWorkTitle = trim((string) ($participant['work_title'] ?? $participant['title'] ?? ''));
         $galleryImages[] = [
             'src' => getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']),
+            'preview' => getParticipantDrawingPreviewWebPath($user['email'] ?? '', $participant['drawing_file']),
             'title' => $galleryWorkTitle !== '' ? $galleryWorkTitle : ($participant['fio'] ?? 'Рисунок'),
         ];
     }
@@ -990,7 +1006,7 @@ function renderGalleryThumbs() {
  container.innerHTML = '';
  galleryItems.forEach((item, i) => {
   const thumb = document.createElement('img');
-  thumb.src = item.src;
+  thumb.src = item.preview || item.src;
   thumb.alt = item.title;
   thumb.style.cssText = `width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:${i === galleryCurrent ? '3px solid #6366F1' : '2px solid #E5E7EB'}`;
   thumb.addEventListener('click', () => openGallery(i));
@@ -1164,12 +1180,18 @@ function updateParticipantCardAfterSave(participant) {
   editButton.dataset.fio = fio;
   editButton.dataset.age = String(age);
   editButton.dataset.workTitle = workTitle;
+  if (participant.drawing_url) {
+   editButton.dataset.drawingUrl = participant.drawing_url;
+  }
+  if (participant.drawing_preview_url) {
+   editButton.dataset.drawingPreviewUrl = participant.drawing_preview_url;
+  }
  }
 
  if (participant.drawing_url) {
   const imageNode = card.querySelector('.participant-modern-card__image');
   if (imageNode) {
-   imageNode.src = participant.drawing_url;
+   imageNode.src = participant.drawing_preview_url || participant.drawing_url;
   }
  }
 }

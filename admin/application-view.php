@@ -604,7 +604,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                 <h2 class="application-hero__title">Заявка #<?= e($application_id) ?></h2>
                 <p class="application-hero__subtitle"><?= e($application['contest_title']) ?></p>
             </div>
-            <div class="flex gap-sm" style="flex-wrap:wrap; justify-content:flex-end;">
+            <div class="flex gap-sm application-actions">
                 <span class="badge application-hero__status <?= $statusMeta['badge_class'] ?>"><?= e($statusMeta['label']) ?></span>
                 <span class="badge application-hero__status <?= e((string) ($receiptMeta['badge_class'] ?? 'badge--secondary')) ?>"><?= e((string) ($receiptMeta['label'] ?? '—')) ?></span>
             </div>
@@ -712,7 +712,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                         <?php if ($paymentReceipt !== ''): ?>
                             <div>
                                 <strong><?= e($paymentReceiptName) ?></strong>
-                                <div class="flex gap-sm" style="flex-wrap:wrap; margin-top:6px;">
+                                <div class="flex gap-sm work-card__footer-actions">
                                     <a href="<?= e($paymentReceiptUrl) ?>" target="_blank" class="application-file-block__link">Открыть квитанцию</a>
                                     <a href="<?= e($paymentReceiptUrl) ?>" target="_blank" class="application-file-block__link" download>Скачать</a>
                                 </div>
@@ -721,7 +721,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                             <div>
                                 <strong><?= !empty($receiptMeta['is_required']) ? 'Квитанция пока не приложена' : 'Квитанция не приложена' ?></strong>
                                 <?php if (!empty($receiptMeta['is_required'])): ?>
-                                    <div class="text-secondary" style="margin-top:4px;">Для этого конкурса квитанция обязательна и должна быть видна администратору.</div>
+                                    <div class="text-secondary application-payment-note">Для этого конкурса квитанция обязательна и должна быть видна администратору.</div>
                                 <?php endif; ?>
                             </div>
                         <?php endif; ?>
@@ -757,6 +757,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                             <div class="work-card__preview">
                                 <?php if ($p['drawing_file']): ?>
                                     <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
+                                    <?php $drawingPreviewUrl = getParticipantDrawingPreviewWebPath($application['email'] ?? '', $p['drawing_file']); ?>
                                     <button
                                         type="button"
                                         class="work-card__image-button js-open-drawing-viewer"
@@ -764,7 +765,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                                         data-image-alt="Рисунок участника <?= e($p['fio'] ?: '') ?>"
                                         aria-label="Открыть рисунок участника"
                                     >
-                                        <img src="<?= e($drawingUrl) ?>" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" class="js-admin-drawing work-card__image" alt="Рисунок участника">
+                                        <img src="<?= e($drawingPreviewUrl) ?>" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" class="js-admin-drawing work-card__image" alt="Рисунок участника">
                                         <span class="work-card__image-hint"><i class="fas fa-search-plus"></i> Нажмите для просмотра</span>
                                     </button>
                                     <button type="button" class="btn btn--secondary js-open-editor mt-sm" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" data-image-src="<?= e($drawingUrl) ?>"><i class="fas fa-crop-alt"></i> Редактировать</button>
@@ -830,29 +831,29 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                 <?php endif; ?>
                 <hr class="application-separator">
                 <h3 class="application-card-title">Действия с заявкой</h3>
-                <div class="card" style="margin-bottom: 14px;">
-                    <div class="card__body" style="padding: 12px;">
-                        <div style="font-weight: 600; margin-bottom: 6px;">Публикация в VK</div>
-                        <div class="flex items-center gap-sm" style="margin-bottom:8px; flex-wrap:wrap;">
+                <div class="card vk-publication-card">
+                    <div class="card__body">
+                        <div class="vk-publication-card__title">Публикация в VK</div>
+                        <div class="flex items-center gap-sm vk-publication-card__meta">
                             <span class="badge <?= e((string) ($applicationVkStatus['badge_class'] ?? 'badge--secondary')) ?>">
                                 <?= e((string) ($applicationVkStatus['status_label'] ?? 'Не опубликована')) ?>
                             </span>
-                            <span class="text-secondary" style="font-size:12px;">
+                            <span class="text-secondary vk-publication-card__caption">
                                 Опубликовано <?= (int) ($applicationVkStatus['published_count'] ?? 0) ?> из <?= (int) ($applicationVkStatus['total_count'] ?? 0) ?>
                             </span>
                         </div>
                         <?php if (!empty($applicationVkStatus['last_attempt_at'])): ?>
-                            <div class="text-secondary" style="font-size: 13px; line-height: 1.35; margin-bottom: 6px;">
+                            <div class="text-secondary vk-publication-card__text">
                                 Последняя попытка: <?= e(date('d.m.Y H:i', strtotime((string) $applicationVkStatus['last_attempt_at']))) ?>
                             </div>
                         <?php endif; ?>
                         <?php if (!empty($applicationVkStatus['last_error'])): ?>
-                            <div class="text-secondary" style="font-size: 13px; line-height: 1.35; margin-bottom: 6px;">
+                            <div class="text-secondary vk-publication-card__text">
                                 Ошибка: <?= e((string) $applicationVkStatus['last_error']) ?>
                             </div>
                         <?php endif; ?>
                         <?php if (!empty($applicationVkStatus['last_post_url'])): ?>
-                            <a class="btn btn--ghost btn--sm" href="<?= e((string) $applicationVkStatus['last_post_url']) ?>" target="_blank" style="margin-bottom:8px;">
+                            <a class="btn btn--ghost btn--sm vk-publication-card__link" href="<?= e((string) $applicationVkStatus['last_post_url']) ?>" target="_blank">
                                 <i class="fas fa-up-right-from-square"></i> Открыть пост
                             </a>
                         <?php endif; ?>
@@ -903,208 +904,17 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
     </aside>
 </div>
 
-<style>
-#drawingEditorModal,
-#drawingViewerModal {
-    padding: 16px;
-}
-
-#drawingEditorModal .modal__content,
-#drawingViewerModal .modal__content {
-    width: min(980px, calc(100vw - 32px));
-    max-width: min(980px, calc(100vw - 32px)) !important;
-    max-height: calc(100vh - 32px);
-    display: flex;
-    flex-direction: column;
-}
-
-#drawingEditorModal .modal__body,
-#drawingViewerModal .modal__body {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    min-height: 0;
-    overflow-y: auto;
-}
-
-.work-card__preview {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.work-card__image-button {
-    position: relative;
-    display: block;
-    width: 100%;
-    min-height: 280px;
-    height: clamp(280px, 44vh, 420px);
-    padding: 0;
-    border: 2px solid #e2e8f0;
-    border-radius: 14px;
-    overflow: hidden;
-    cursor: zoom-in;
-    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
-}
-
-.work-card__image-button:hover,
-.work-card__image-button:focus-visible {
-    border-color: #94a3b8;
-    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
-    transform: translateY(-1px);
-}
-
-.work-card__image-button::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0) 35%, rgba(15, 23, 42, 0.36) 100%);
-    opacity: .72;
-    transition: opacity .18s ease, background .18s ease;
-    pointer-events: none;
-}
-
-.work-card__image-button:hover::after,
-.work-card__image-button:focus-visible::after {
-    opacity: 1;
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.08) 20%, rgba(15, 23, 42, 0.48) 100%);
-}
-
-.work-card__image {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    display: block;
-    background: #ffffff;
-}
-
-.work-card__image-hint {
-    position: absolute;
-    left: 14px;
-    right: 14px;
-    bottom: 14px;
-    z-index: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 10px 12px;
-    border-radius: 999px;
-    background: rgba(15, 23, 42, 0.72);
-    color: #fff;
-    font-size: 13px;
-    font-weight: 600;
-    pointer-events: none;
-}
-
-.drawing-editor-toolbar {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-.drawing-editor-stage,
-.drawing-viewer-stage {
-    min-height: 280px;
-    height: clamp(280px, 50vh, 560px);
-    border: 1px solid #e2e8f0;
-    border-radius: 14px;
-    background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-    overflow: auto;
-}
-
-.drawing-editor-stage {
-    padding: 12px;
-}
-
-.drawing-viewer-stage {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
-}
-
-#editorImage,
-#drawingViewerImage {
-    display: block;
-    max-width: 100%;
-    max-height: 100%;
-}
-
-#drawingEditorModal .modal__footer,
-#drawingViewerModal .modal__footer {
-    flex-wrap: wrap;
-}
-
-#drawingEditorModal .modal__footer .btn,
-#drawingViewerModal .modal__footer .btn {
-    flex: 1 1 180px;
-}
-
-@media (max-width: 768px) {
-    #drawingEditorModal,
-    #drawingViewerModal {
-        padding: 10px;
-    }
-
-    #drawingEditorModal .modal__content,
-    #drawingViewerModal .modal__content {
-        width: calc(100vw - 20px);
-        max-width: calc(100vw - 20px) !important;
-        max-height: calc(100vh - 20px);
-    }
-
-    .work-card__image-button {
-        height: clamp(240px, 40vh, 340px);
-        min-height: 240px;
-    }
-
-    .drawing-editor-stage,
-    .drawing-viewer-stage {
-        height: clamp(220px, 38vh, 360px);
-        min-height: 220px;
-    }
-
-    .drawing-editor-toolbar .btn {
-        flex: 1 1 140px;
-    }
-
-    #vkPublishPromptModal .modal__content {
-        width: calc(100vw - 20px);
-        max-width: calc(100vw - 20px) !important;
-        margin: 10px;
-        max-height: calc(100vh - 20px);
-        display: flex;
-        flex-direction: column;
-    }
-    #vkPublishPromptModal .modal__body {
-        overflow-y: auto;
-    }
-    #vkPublishPromptModal .modal__footer {
-        flex-wrap: wrap;
-    }
-    #vkPublishPromptModal .modal__footer .btn {
-        flex: 1 1 180px;
-    }
-    #vkPublishPreview {
-        max-height: 42vh !important;
-    }
-}
-</style>
-
 <div class="modal" id="vkPublishPromptModal">
-    <div class="modal__content" style="max-width:700px;">
+    <div class="modal__content vk-publish-modal__content">
         <div class="modal__header">
             <h3 class="modal__title">Публикация в VK</h3>
         </div>
         <div class="modal__body">
-            <div id="vkPublishModalSummary" class="text-secondary" style="margin-bottom:10px;"></div>
-            <div id="vkPublishPreview" style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;"></div>
-            <div style="margin-top: 14px; border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px;">
-                <div style="font-weight: 600; margin-bottom: 8px;">Режим публикации</div>
-                <div class="form-group" style="margin-bottom:8px;">
+            <div id="vkPublishModalSummary" class="text-secondary vk-publish-modal__summary"></div>
+            <div id="vkPublishPreview" class="vk-publish-modal__preview"></div>
+            <div class="vk-publish-modal__section">
+                <div class="vk-publish-modal__section-title">Режим публикации</div>
+                <div class="form-group vk-publish-modal__group">
                     <label class="form-label" for="vkPublicationType">Тип публикации</label>
                     <select class="form-select" id="vkPublicationType">
                         <option value="standard">Обычная публикация</option>
@@ -1112,37 +922,37 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                         <option value="donation_goal">Публикация с целью сбора</option>
                     </select>
                 </div>
-                <div id="vkDonationSupportHint" class="text-secondary" style="display:none; margin-bottom:8px; font-size:13px;"></div>
-                <div id="vkDonutFields" style="display:none;">
-                    <div class="form-group" style="margin-bottom:8px;">
+                <div id="vkDonationSupportHint" class="text-secondary vk-publish-modal__hint"></div>
+                <div id="vkDonutFields" class="vk-publish-modal__fields">
+                    <div class="form-group vk-publish-modal__group">
                         <label class="form-label" for="vkDonutPaidDuration">paid_duration (сек.)</label>
                         <input class="form-control" id="vkDonutPaidDuration" type="number" min="1" step="1" value="2592000">
                     </div>
-                    <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+                    <label class="vk-publish-modal__checkbox">
                         <input type="checkbox" id="vkDonutCanPublishFreeCopy" value="1">
                         <span>Разрешить бесплатную копию (can_publish_free_copy)</span>
                     </label>
                 </div>
-                <div id="vkDonationFields" style="display:none;">
-                <div class="form-group" style="margin-bottom:8px;">
+                <div id="vkDonationFields" class="vk-publish-modal__fields">
+                <div class="form-group vk-publish-modal__group">
                     <label class="form-label" for="vkDonationGoalSelect">Цель доната</label>
                     <select class="form-select" id="vkDonationGoalSelect">
                         <option value="">Выберите цель доната</option>
                     </select>
                 </div>
-                <div id="vkDonationGoalCard" style="display:none; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:10px;">
-                    <div style="font-weight:600;" id="vkDonationGoalCardTitle">—</div>
-                    <div class="text-secondary" style="margin-top:4px; font-size:13px;" id="vkDonationGoalCardDescription">—</div>
-                    <div class="text-secondary" style="margin-top:6px; font-size:12px;">VK donate ID: <span id="vkDonationGoalCardVkId">—</span></div>
+                <div id="vkDonationGoalCard" class="vk-publish-modal__goal-card">
+                    <div class="vk-publish-modal__goal-title" id="vkDonationGoalCardTitle">—</div>
+                    <div class="text-secondary vk-publish-modal__goal-description" id="vkDonationGoalCardDescription">—</div>
+                    <div class="text-secondary vk-publish-modal__goal-id">VK donate ID: <span id="vkDonationGoalCardVkId">—</span></div>
                 </div>
                 </div>
             </div>
-            <div id="vkPublishPromptStatus" class="alert" style="display:none; margin-top:12px;"></div>
+            <div id="vkPublishPromptStatus" class="alert vk-publish-modal__status"></div>
         </div>
-        <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
+        <div class="modal__footer vk-publish-modal__footer">
             <button type="button" class="btn btn--primary" id="vkPublishPromptRun">Опубликовать</button>
             <button type="button" class="btn btn--secondary" id="vkPublishPromptSkip">Отмена</button>
-            <button type="button" class="btn btn--secondary" id="vkPublishPromptClose" style="display:none;">Закрыть</button>
+            <button type="button" class="btn btn--secondary is-hidden" id="vkPublishPromptClose">Закрыть</button>
         </div>
     </div>
 </div>
@@ -1197,7 +1007,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
 <textarea name="message" class="form-textarea" rows="5" required placeholder="Введите текст сообщения"></textarea>
 </div>
 </div>
-<div class="modal__footer flex gap-md" style="padding:20px; border-top:1px solid #E5E7EB; display:flex; justify-content:flex-end; gap:12px;">
+<div class="modal__footer flex gap-md application-message-modal__footer">
 <button type="button" class="btn btn--ghost" onclick="closeMessageModal()">Отмена</button>
 <button type="submit" class="btn btn--primary"><i class="fas fa-paper-plane"></i> Отправить</button>
 </div>
@@ -1218,17 +1028,17 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
 <button type="button" class="btn btn--secondary" onclick="rotateBy(45)">+45°</button>
 <button type="button" class="btn btn--secondary" onclick="rotateBy(-90)">-90°</button>
 <button type="button" class="btn btn--secondary" onclick="rotateBy(90)">+90°</button>
-<label style="display:flex;align-items:center;gap:8px;">Угол:
-<input type="number" id="rotationInput" value="0" step="1" style="width:90px;" class="form-input">
+<label class="drawing-editor-angle">Угол:
+<input type="number" id="rotationInput" value="0" step="1" class="form-input drawing-editor-angle__input">
 </label>
 </div>
 <div class="drawing-editor-stage">
-<img id="editorImage" src="" alt="Рисунок" style="max-width:100%; display:block;">
+<img id="editorImage" src="" alt="Рисунок">
 </div>
 </div>
 <div class="modal__footer">
-<button type="button" id="saveDrawingChanges" class="btn btn--primary" style="display:none;">Сохранить изменения</button>
-<button type="button" id="cancelDrawingChanges" class="btn btn--ghost" style="display:none;" onclick="resetDrawingEditor()">Отмена изменений</button>
+<button type="button" id="saveDrawingChanges" class="btn btn--primary is-hidden">Сохранить изменения</button>
+<button type="button" id="cancelDrawingChanges" class="btn btn--ghost is-hidden" onclick="resetDrawingEditor()">Отмена изменений</button>
 <button type="button" class="btn btn--secondary" onclick="closeDrawingEditor()">Закрыть</button>
 </div>
 </div>
@@ -1817,13 +1627,13 @@ ensureComplianceFieldsAvailable();
                     previewBox.innerHTML = '<div class="text-secondary">Нет работ для публикации.</div>';
                 } else {
                     previewBox.innerHTML = participants.map((item) => `
-                        <div style="display:flex; gap:10px; align-items:flex-start; border:1px solid #E5E7EB; border-radius:10px; padding:8px;">
-                            ${item.preview_image ? `<img src="${item.preview_image}" style="width:52px;height:52px;border-radius:8px;object-fit:cover;">` : '<div style="width:52px;height:52px;border-radius:8px;background:#EEF2FF;display:flex;align-items:center;justify-content:center;"><i class="fas fa-image"></i></div>'}
-                            <div style="display:grid; gap:4px;">
+                        <div class="vk-preview-item">
+                            ${item.preview_image ? `<img src="${item.preview_image}" class="vk-preview-item__thumb">` : '<div class="vk-preview-item__thumb-placeholder"><i class="fas fa-image"></i></div>'}
+                            <div class="vk-preview-item__content">
                                 <strong>${item.fio || 'Без имени'}</strong>
                                 <div>${item.work_title || 'Без названия'}</div>
                                 <span class="badge ${item.is_ready_for_publish ? 'badge--success' : 'badge--warning'}">${item.is_ready_for_publish ? 'Готово к публикации' : 'Не готово'}</span>
-                                ${item.skip_reason ? `<div class="text-secondary" style="font-size:12px;">${item.skip_reason}</div>` : ''}
+                                ${item.skip_reason ? `<div class="text-secondary vk-preview-item__reason">${item.skip_reason}</div>` : ''}
                             </div>
                         </div>
                     `).join('');

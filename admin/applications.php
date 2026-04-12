@@ -176,7 +176,7 @@ if ($publishPromptApplicationId > 0) {
             }
             $imagePath = '';
             if ($imageFile !== '') {
-                $imagePath = getParticipantDrawingWebPath((string) ($promptApplication['applicant_email'] ?? ''), $imageFile);
+                $imagePath = getParticipantDrawingPreviewWebPath((string) ($promptApplication['applicant_email'] ?? ''), $imageFile);
             }
 
             $publishPromptData['participants'][] = [

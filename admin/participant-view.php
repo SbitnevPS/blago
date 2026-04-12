@@ -84,6 +84,7 @@ $participantAge = (int) ($participant['age'] ?? 0);
 $workTitle = trim((string) ($participant['work_title'] ?? ''));
 $drawingFileName = trim((string) ($participant['drawing_file'] ?? ''));
 $drawingUrl = $drawingFileName !== '' ? getParticipantDrawingWebPath($participant['user_email'] ?? '', $drawingFileName) : '';
+$drawingPreviewUrl = $drawingFileName !== '' ? getParticipantDrawingPreviewWebPath($participant['user_email'] ?? '', $drawingFileName) : '';
 $emailHint = $participantEmail !== '' ? $participantEmail : null;
 $canShowDiplomaActions = canShowIndividualDiplomaActions(['status' => (string) ($participant['work_status'] ?? 'pending')]);
 
@@ -157,7 +158,8 @@ require_once __DIR__ . '/includes/header.php';
             <div class="card__body">
                 <?php if ($drawingUrl !== ''): ?>
                     <img
-                        src="<?= e($drawingUrl) ?>"
+                        src="<?= e($drawingPreviewUrl) ?>"
+                        data-full-src="<?= e($drawingUrl) ?>"
                         alt="Рисунок участника"
                         id="participantDrawingPreview"
                         class="participant-drawing-preview">
@@ -270,7 +272,7 @@ require_once __DIR__ . '/includes/header.php';
     };
 
     const openModal = () => {
-        modalImage.src = previewImage.src;
+        modalImage.src = previewImage.dataset.fullSrc || previewImage.src;
         modal.classList.add('active');
         document.body.style.overflow = 'hidden';
     };

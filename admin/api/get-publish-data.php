@@ -63,7 +63,7 @@ if (!empty($workIds)) {
             'fio' => trim((string) ($source['participant_fio'] ?? '')) ?: 'Без имени',
             'work_title' => trim((string) ($source['work_title'] ?? '')) ?: 'Без названия',
             'preview_image' => $imagePath !== ''
-                ? getParticipantDrawingWebPath((string) ($application['applicant_email'] ?? ''), $imagePath)
+                ? getParticipantDrawingPreviewWebPath((string) ($application['applicant_email'] ?? ''), $imagePath)
                 : '',
             'item_status' => (string) ($item['item_status'] ?? 'pending'),
             'skip_reason' => (string) ($item['skip_reason'] ?? ''),

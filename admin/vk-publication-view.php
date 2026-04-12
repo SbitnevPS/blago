@@ -211,8 +211,8 @@ require_once __DIR__ . '/includes/header.php';
                 <tr>
                     <td data-label="#">#<?= (int) $item['id'] ?></td>
                     <td data-label="Работа">
-                        <?php if (!empty($item['work_image_web_path'])): ?>
-                            <img src="<?= e($item['work_image_web_path']) ?>" alt="work" style="width:72px; height:72px; object-fit:cover; border-radius:8px; border:1px solid #E5E7EB;">
+                        <?php if (!empty($item['work_image_preview_web_path'])): ?>
+                            <img src="<?= e($item['work_image_preview_web_path']) ?>" alt="work" style="width:72px; height:72px; object-fit:cover; border-radius:8px; border:1px solid #E5E7EB;">
                         <?php else: ?>
                             <span class="text-secondary">Нет изображения</span>
                         <?php endif; ?>

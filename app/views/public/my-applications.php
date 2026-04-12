@@ -144,7 +144,7 @@ $filteredApplications = array_values(array_filter(
 
                     foreach ($works as $work) {
                         if ($imagePath === '/public/contest-hero-placeholder.svg' && !empty($work['drawing_file'])) {
-                            $imagePath = (string)(getParticipantDrawingWebPath($user['email'] ?? '', (string)$work['drawing_file']) ?? $imagePath);
+                            $imagePath = (string)(getParticipantDrawingPreviewWebPath($user['email'] ?? '', (string)$work['drawing_file']) ?? $imagePath);
                         }
                     }
 
