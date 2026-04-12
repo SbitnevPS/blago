@@ -555,18 +555,7 @@ require_once __DIR__ . '/includes/header.php';
             <div id="vkPublishModalSummary" class="text-secondary" style="margin-bottom:10px;"></div>
             <div id="vkPublishPreview" style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;"></div>
             <div style="margin-top: 14px; border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px;">
-                <div style="font-weight: 600; margin-bottom: 8px;">Донаты VK</div>
-                <label class="form-checkbox" style="margin-bottom:8px;">
-                    <input type="checkbox" id="vkDonationEnabled" value="1">
-                    <span class="form-checkbox__mark"></span>
-                    <span>Прикрепить донат</span>
-                </label>
-                <div class="form-group" style="margin-bottom:8px;">
-                    <label class="form-label" for="vkDonationGoalSelect">Цель доната</label>
-                    <select class="form-select" id="vkDonationGoalSelect" disabled>
-                        <option value="">Выберите цель доната</option>
-                    </select>
-                </div>
+                <div style="font-weight: 600; margin-bottom: 8px;">Будут опубликованы только принятые и ещё не опубликованные рисунки</div>
             </div>
             <div id="vkPublishPromptStatus" class="alert" style="display:none; margin-top:12px;"></div>
         </div>
@@ -688,8 +677,6 @@ require_once __DIR__ . '/includes/header.php';
     const statusBox = document.getElementById('vkPublishPromptStatus');
     const previewBox = document.getElementById('vkPublishPreview');
     const summaryBox = document.getElementById('vkPublishModalSummary');
-    const donationEnabledCheckbox = document.getElementById('vkDonationEnabled');
-    const donationGoalSelect = document.getElementById('vkDonationGoalSelect');
     let applicationId = <?= (int) $publishPromptApplicationId ?>;
     const csrfToken = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE) ?>;
     let publishInProgress = false;
@@ -721,7 +708,6 @@ require_once __DIR__ . '/includes/header.php';
                 ${item.preview_image ? `<img src="${item.preview_image}" style="width:52px;height:52px;border-radius:8px;object-fit:cover;">` : '<div style="width:52px;height:52px;border-radius:8px;background:#EEF2FF;display:flex;align-items:center;justify-content:center;"><i class="fas fa-image"></i></div>'}
                 <div style="display:grid; gap:4px;">
                     <strong>${item.fio || 'Без имени'}</strong>
-                    <div>${item.work_title || 'Без названия'}</div>
                     <span class="badge ${item.is_ready_for_publish ? 'badge--success' : 'badge--warning'}">${item.is_ready_for_publish ? 'Готово к публикации' : 'Не готово'}</span>
                     ${item.skip_reason ? `<div class="text-secondary" style="font-size:12px;">${item.skip_reason}</div>` : ''}
                 </div>
@@ -747,13 +733,6 @@ require_once __DIR__ . '/includes/header.php';
             }
             summaryBox.textContent = txt;
         }
-        donationGoalSelect.innerHTML = '<option value="">Выберите цель доната</option>';
-        (data.donation_goals || []).forEach((goal) => {
-            const option = document.createElement('option');
-            option.value = String(goal.id || '');
-            option.textContent = String(goal.title || '');
-            donationGoalSelect.appendChild(option);
-        });
     };
 
     document.querySelectorAll('.js-open-vk-publish-modal').forEach((button) => {
@@ -761,8 +740,6 @@ require_once __DIR__ . '/includes/header.php';
             applicationId = Number(button.dataset.applicationId || 0);
             modal.classList.add('active');
             if (statusBox) statusBox.style.display = 'none';
-            if (donationEnabledCheckbox) donationEnabledCheckbox.checked = false;
-            donationGoalSelect.disabled = true;
             try {
                 await loadPublishData();
             } catch (error) {
@@ -771,19 +748,9 @@ require_once __DIR__ . '/includes/header.php';
         });
     });
 
-    donationEnabledCheckbox?.addEventListener('change', () => {
-        donationGoalSelect.disabled = !donationEnabledCheckbox.checked;
-    });
-
     if (publishButton) {
         publishButton.addEventListener('click', async () => {
             if (publishInProgress || !applicationId) return;
-            const donationEnabled = !!donationEnabledCheckbox?.checked;
-            const donationGoalId = Number(donationGoalSelect?.value || 0);
-            if (donationEnabled && !donationGoalId) {
-                showStatus('Выберите цель доната.', 'error');
-                return;
-            }
             publishInProgress = true;
             publishButton.disabled = true;
             if (skipButton) skipButton.disabled = true;
@@ -798,8 +765,7 @@ require_once __DIR__ . '/includes/header.php';
                     },
                     body: JSON.stringify({
                         application_id: applicationId,
-                        donation_enabled: donationEnabled ? 1 : 0,
-                        donation_goal_id: donationGoalId,
+                        publication_type: 'standard',
                         csrf_token: csrfToken,
                     }),
                 });

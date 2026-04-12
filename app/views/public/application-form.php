@@ -46,19 +46,6 @@ if ($editingApplicationId > 0) {
     $editingParticipants = $stmt->fetchAll();
 
     if (!empty($editingParticipants)) {
-        $workStmt = $pdo->prepare("SELECT participant_id, title FROM works WHERE application_id = ?");
-        $workStmt->execute([$editingApplicationId]);
-        $workTitles = [];
-        foreach ($workStmt->fetchAll() as $workRow) {
-            $workTitles[(int)($workRow['participant_id'] ?? 0)] = (string)($workRow['title'] ?? '');
-        }
-        foreach ($editingParticipants as &$editingParticipant) {
-            $participantId = (int)($editingParticipant['id'] ?? 0);
-            if ($participantId > 0) {
-                $editingParticipant['work_title'] = $workTitles[$participantId] ?? '';
-            }
-        }
-        unset($editingParticipant);
     }
 }
 
@@ -345,7 +332,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if (empty($fio)) continue;
                     
  $age = intval($participant['age'] ??0);
- $workTitle = trim((string)($participant['work_title'] ?? ''));
+ $workTitle = '';
                     
  // Обработка временного файла рисунка
  $drawing_file = null;
@@ -605,6 +592,41 @@ generateCSRFToken();
                                 <textarea name="organization_address" class="form-textarea" rows="2" id="orgAddress" placeholder="Город, улица, дом"><?= htmlspecialchars($initialFormData['organization_address']) ?></textarea>
                             </div>
                         </div>
+                        <div class="form-section form-section--boxed">
+                            <h4 class="form-section__title">Дополнительная информация</h4>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label" for="sourceInfo">Поделитесь, пожалуйста, откуда вы узнали о конкурсе?</label>
+                                    <textarea
+                                        name="source_info"
+                                        class="form-textarea"
+                                        id="sourceInfo"
+                                        rows="2"
+                                        placeholder="Например: сайт конкурса, соцсети, рассылка, знакомые"
+                                    ><?= htmlspecialchars($initialFormData['source_info']) ?></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="colleaguesInfo">Рассказывали ли вы о конкурсе своим коллегам и знакомым из других организаций? Если да, укажите, пожалуйста, примерное количество</label>
+                                    <textarea
+                                        name="colleagues_info"
+                                        class="form-textarea"
+                                        id="colleaguesInfo"
+                                        rows="3"
+                                        placeholder="Например: Да, примерно 5-7 коллегам"
+                                    ><?= htmlspecialchars($initialFormData['colleagues_info']) ?></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="recommendationsWishes">Пожелания и рекомендации</label>
+                                    <textarea
+                                        name="recommendations_wishes"
+                                        class="form-textarea"
+                                        id="recommendationsWishes"
+                                        rows="3"
+                                        placeholder="Если хотите, напишите пожелания по конкурсу или рекомендации"
+                                    ><?= htmlspecialchars($initialFormData['recommendations_wishes']) ?></textarea>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -740,7 +762,6 @@ const initialParticipants = <?= json_encode(array_map(function($p) use ($user) {
         'name' => $parts[1] ?? '',
         'patronymic' => $parts[2] ?? '',
         'age' => $p['age'] ?? '',
-        'work_title' => $p['work_title'] ?? '',
         'temp_file' => '',
         'existing_drawing_file' => $p['drawing_file'] ?? '',
         'preview' => !empty($p['drawing_file']) ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $p['drawing_file']) : null,
@@ -1116,7 +1137,6 @@ function createParticipantForm(index, data = null) {
                 <div class="form-group"><label class="form-label form-label--required">Имя</label><input type="text" required name="participants[${index}][name]" class="form-input" value="${data?.name || ''}" placeholder="Иван"></div>
                 <div class="form-group"><label class="form-label form-label--required">Отчество</label><input type="text" required name="participants[${index}][patronymic]" class="form-input" value="${data?.patronymic || ''}" placeholder="Иванович"></div>
                 <div class="form-group"><label class="form-label form-label--required">Возраст</label><input type="number" required min="1" max="18" name="participants[${index}][age]" class="form-input" value="${data?.age || ''}"></div>
-                <div class="form-group" style="grid-column: span 2;"><label class="form-label form-label--required">Название рисунка</label><input type="text" required name="participants[${index}][work_title]" class="form-input" value="${data?.work_title || ''}" placeholder="Например: Весеннее настроение"></div>
             </div>
             <input type="hidden" name="participants[${index}][temp_file]" id="temp_file_${index}" value="${data?.temp_file || ''}">
             <input type="hidden" name="participants[${index}][existing_drawing_file]" id="existing_file_${index}" value="${data?.existing_drawing_file || ''}">
@@ -1193,7 +1213,6 @@ function removeParticipant(index) {
             name: f.querySelector(`[name="participants[${old}][name]"]`)?.value || '',
             patronymic: f.querySelector(`[name="participants[${old}][patronymic]"]`)?.value || '',
             age: f.querySelector(`[name="participants[${old}][age]"]`)?.value || '',
-            work_title: f.querySelector(`[name="participants[${old}][work_title]"]`)?.value || '',
             temp_file: f.querySelector(`#temp_file_${old}`)?.value || '',
             existing_drawing_file: f.querySelector(`#existing_file_${old}`)?.value || '',
             preview: f.querySelector(`#preview_img_${old}`)?.src || '',
@@ -1324,11 +1343,13 @@ function renderReview() {
     const review = document.getElementById('reviewContainer');
     const parentName = document.querySelector('[name="parent_surname"]').value + ' ' + document.querySelector('[name="parent_name"]').value;
     const parentEmail = document.querySelector('[name="organization_email"]').value || '—';
+    const sourceInfo = document.querySelector('[name="source_info"]')?.value?.trim() || '—';
+    const colleaguesInfo = document.querySelector('[name="colleagues_info"]')?.value?.trim() || '—';
+    const recommendationsWishes = document.querySelector('[name="recommendations_wishes"]')?.value?.trim() || '—';
     const paymentReceiptSource = needsPaymentReceipt ? getPaymentReceiptSource() : null;
     const participants = [...document.querySelectorAll('#participantsContainer .participant-form')].map((card, index) => {
         const fio = `${card.querySelector(`[name="participants[${index}][surname]"]`)?.value || ''} ${card.querySelector(`[name="participants[${index}][name]"]`)?.value || ''} ${card.querySelector(`[name="participants[${index}][patronymic]"]`)?.value || ''}`.trim();
         const age = card.querySelector(`[name="participants[${index}][age]"]`)?.value || '—';
-        const workTitle = card.querySelector(`[name="participants[${index}][work_title]"]`)?.value || '—';
         const hasDrawing = !!(document.getElementById(`temp_file_${index}`)?.value || document.getElementById(`existing_file_${index}`)?.value);
         const previewUrl = document.getElementById(`preview_img_${index}`)?.src || '';
         return `
@@ -1341,7 +1362,6 @@ function renderReview() {
                 <div class="review-item__meta">
                     <strong>${fio || 'Участник'}</strong>
                     <span>Возраст: ${age}</span>
-                    <span>Название рисунка: ${workTitle}</span>
                 </div>
                 <button type="button" class="btn btn--ghost" onclick="goStep(2)">Изменить</button>
             </li>
@@ -1354,6 +1374,12 @@ function renderReview() {
             <h4>Заявитель</h4>
             <p>${parentName}</p>
             <p>${parentEmail}</p>
+        </div>
+        <div class="review-block">
+            <h4>Дополнительная информация</h4>
+            <p><strong>Поделитесь, пожалуйста, откуда вы узнали о конкурсе?</strong> ${sourceInfo}</p>
+            <p><strong>Рассказывали ли вы о конкурсе своим коллегам и знакомым из других организаций? Если да, укажите, пожалуйста, примерное количество:</strong> ${colleaguesInfo}</p>
+            <p><strong>Пожелания и рекомендации:</strong> ${recommendationsWishes}</p>
         </div>
         <div class="review-block">
             <h4>Участники</h4>

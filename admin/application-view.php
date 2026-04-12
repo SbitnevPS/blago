@@ -205,6 +205,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $_SESSION['success_message'] = 'Некорректный статус работы';
             redirect('/admin/application/' . $application_id);
         }
+        $comment = trim((string) ($_POST['comment'] ?? ''));
+        if ($newStatus === 'reviewed_non_competitive' && $hasDrawingCommentColumn && $comment === '') {
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => 'Укажите комментарий, почему рисунок не принят и что нужно изменить'], 422);
+            }
+            $_SESSION['error_message'] = 'Укажите комментарий, почему рисунок не принят и что нужно изменить';
+            redirect('/admin/application/' . $application_id);
+        }
         updateWorkStatus($workId, $newStatus);
 
         if ($participantId > 0 && $hasDrawingCompliantColumn) {
@@ -212,9 +220,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($hasDrawingCommentColumn) {
                 $pdo->prepare("
                     UPDATE participants
-                    SET drawing_compliant = ?, drawing_comment = CASE WHEN ? = 1 THEN NULL ELSE drawing_comment END
+                    SET drawing_compliant = ?, drawing_comment = ?
                     WHERE id = ? AND application_id = ?
-                ")->execute([$isCompliant, $isCompliant, $participantId, $application_id]);
+                ")->execute([$isCompliant, $isCompliant ? null : $comment, $participantId, $application_id]);
             } else {
                 $pdo->prepare("
                     UPDATE participants
@@ -295,14 +303,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         exit;
     } elseif ($_POST['action'] === 'approve_application') {
         if ($hasDrawingCompliantColumn) {
-            $nonCompliantStmt = $pdo->prepare("
+            $unresolvedStmt = $pdo->prepare("
                 SELECT COUNT(*)
-                FROM participants
-                WHERE application_id = ? AND drawing_compliant = 0
+                FROM works w
+                LEFT JOIN participants p ON p.id = w.participant_id
+                WHERE w.application_id = ?
+                  AND (
+                    w.status NOT IN ('accepted', 'reviewed_non_competitive')
+                    OR (
+                        w.status = 'reviewed_non_competitive'
+                        AND TRIM(COALESCE(p.drawing_comment, '')) = ''
+                    )
+                  )
             ");
-            $nonCompliantStmt->execute([$application_id]);
-            if ((int)$nonCompliantStmt->fetchColumn() > 0) {
-                $errorMessage = 'Нельзя принять заявку: есть работы, не соответствующие условиям конкурса.';
+            $unresolvedStmt->execute([$application_id]);
+            if ((int)$unresolvedStmt->fetchColumn() > 0) {
+                $errorMessage = 'Нельзя принять заявку: не по всем рисункам принято решение или не заполнен комментарий по несоответствию.';
                 if ($isAjaxRequest) {
                     jsonResponse(['success' => false, 'error' => $errorMessage], 422);
                 }
@@ -314,12 +330,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt->execute([$application_id]);
         $application['status'] = 'approved';
         $isApplicationApproved = true;
-
-        $workIdsStmt = $pdo->prepare("SELECT id FROM works WHERE application_id = ?");
-        $workIdsStmt->execute([$application_id]);
-        foreach ($workIdsStmt->fetchAll(PDO::FETCH_COLUMN) as $workId) {
-            updateWorkStatus((int) $workId, 'accepted');
-        }
 
         $declinedSubject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
         $pdo->prepare("
@@ -333,6 +343,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $pdo->prepare("UPDATE application_corrections SET is_resolved = 1, resolved_at = NOW() WHERE application_id = ?")
             ->execute([$application_id]);
         disallowApplicationEdit($application_id);
+
+        if ($isAjaxRequest) {
+            jsonResponse([
+                'success' => true,
+                'message' => 'Заявка принята',
+            ]);
+        }
 
         $_SESSION['success_message'] = 'Заявка принята';
         $_SESSION['vk_publish_prompt_application_id'] = (int) $application_id;
@@ -386,7 +403,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $participantId = intval($_POST['participant_id'] ?? 0);
  $isCompliant = isset($_POST['drawing_compliant']) ? 1 : 0;
  $workId = findParticipantWorkId($works, $participantId);
- $newWorkStatus = $isCompliant ? 'accepted' : 'reviewed';
  $comment = trim($_POST['comment'] ?? '');
 
  if ($participantId <= 0) {
@@ -429,7 +445,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  }
 
  if ($workId > 0) {
-     updateWorkStatus($workId, $newWorkStatus);
+     updateWorkStatus($workId, $isCompliant ? 'accepted' : 'reviewed');
  }
 
  if ($isAjaxRequest) {
@@ -576,7 +592,7 @@ foreach ($works as $workRow) {
         $workStats['accepted']++;
     } elseif ($status === 'reviewed') {
         $workStats['reviewed']++;
-    } elseif ($status === 'rejected') {
+    } elseif ($status === 'reviewed_non_competitive' || $status === 'rejected') {
         $workStats['rejected']++;
     }
     if ($hasDrawingCompliantColumn && (int) ($workRow['drawing_compliant'] ?? 1) === 0) {
@@ -592,7 +608,7 @@ $latestMessageStmt = $pdo->prepare("
 ");
 $latestMessageStmt->execute([(int) $application['user_id'], (int) $admin['id']]);
 $latestMessage = $latestMessageStmt->fetch() ?: null;
-$approveButtonDisabled = $hasNonCompliantDrawings || $isApplicationApproved;
+$approveButtonDisabled = $isApplicationApproved;
 $approveButtonIcon = $isApplicationApproved ? 'fa-check-double' : 'fa-check';
 $approveButtonText = $isApplicationApproved ? 'Заявка принята' : 'Принять заявку';
 ?>
@@ -659,7 +675,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
 <?php if ($hasNonCompliantDrawings): ?>
     <div class="alert alert--warning mb-lg">
         <i class="fas fa-exclamation-triangle alert__icon"></i>
-        <div class="alert__content"><div class="alert__message">Заявку нельзя принять: есть работы, отмеченные как несоответствующие условиям конкурса.</div></div>
+        <div class="alert__content"><div class="alert__message">Есть работы с пометкой о несоответствии. Для таких рисунков нужен комментарий с причиной и перечнем исправлений.</div></div>
     </div>
 <?php endif; ?>
 
@@ -740,7 +756,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     <div class="application-summary-item"><span>На корректировке</span><strong><?= (int) $workStats['reviewed'] ?></strong></div>
                     <div class="application-summary-item"><span>Отклонено/не соответствует</span><strong><?= (int) ($workStats['rejected'] + $nonCompliantCount) ?></strong></div>
                 </div>
-                <?php if ($hasNonCompliantDrawings): ?><p class="application-summary-warning">Есть блокирующие причины для принятия всей заявки.</p><?php endif; ?>
+                <?php if ($hasNonCompliantDrawings): ?><p class="application-summary-warning">Проверьте, что по всем несоответствующим рисункам заполнен комментарий.</p><?php endif; ?>
             </div></div>
 
             <?php foreach ($works as $i => $p): ?>
@@ -774,9 +790,9 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                                 <?php endif; ?>
                             </div>
                             <div class="work-card__details">
-                                <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd><dt>Название рисунка</dt><dd><?= e(trim((string) ($p['title'] ?? '')) ?: '—') ?></dd></dl></section>
+                                <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd></dl></section>
                                 <section class="work-section"><h4>Организация</h4><dl class="application-kv-list"><dt>Организация</dt><dd><?= e($p['organization_name'] ?? '—') ?></dd><dt>Адрес</dt><dd><?= e($p['organization_address'] ?? '—') ?></dd></dl></section>
-                                <?php $isComplianceLocked = $isApplicationApproved || ((string) ($p['status'] ?? 'pending')) === 'accepted'; ?>
+                                <?php $isComplianceLocked = $isApplicationApproved; ?>
                                 <section class="work-section"><h4>Проверка работы</h4>
                                     <form method="POST" class="js-drawing-compliance-form work-compliance-form">
                                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -790,9 +806,9 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                                     </form>
                                 </section>
                                 <section class="work-section"><h4>Действия по работе с дипломами</h4>
-                                    <div class="work-actions" data-work-controls data-work-id="<?= (int) $p['id'] ?>">
-                                        <?php $canAcceptWork = !$isApplicationApproved && ((string) ($p['status'] ?? 'pending')) !== 'accepted'; ?>
-                                        <form method="POST" class="js-work-async-form" data-accept-work-form style="<?= $canAcceptWork ? '' : 'display:none;' ?>"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--primary btn--sm" type="submit">Принять работу</button></form>
+                                    <div class="work-actions" data-work-controls data-work-id="<?= (int) $p['id'] ?>" data-work-status="<?= e((string) ($p['status'] ?? 'pending')) ?>">
+                                        <form method="POST" class="js-work-async-form" data-accept-work-form><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--sm work-decision-btn <?= ((string) ($p['status'] ?? 'pending')) === 'accepted' ? 'work-decision-btn--accepted is-active' : '' ?>" type="submit" data-decision-button="accepted" <?= ((string) ($p['status'] ?? 'pending')) === 'reviewed_non_competitive' ? 'disabled aria-disabled="true"' : '' ?>>Рисунок принят</button></form>
+                                        <form method="POST" class="js-work-async-form" data-reject-work-form><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="reviewed_non_competitive"><input type="hidden" name="comment" value="<?= e((string) ($p['drawing_comment'] ?? '')) ?>" data-reject-comment-input><button class="btn btn--sm work-decision-btn <?= ((string) ($p['status'] ?? 'pending')) === 'reviewed_non_competitive' ? 'work-decision-btn--rejected is-active' : '' ?>" type="submit" data-decision-button="reviewed_non_competitive" <?= ((string) ($p['status'] ?? 'pending')) === 'accepted' ? 'disabled aria-disabled="true"' : '' ?>>Рисунок отклонён</button></form>
                                         <div class="work-diploma-actions" style="display:<?= mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null ? 'flex' : 'none' ?>;" data-diploma-actions>
                                             <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--primary btn--sm" type="submit">Скачать диплом</button></form>
                                             <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--secondary btn--sm" type="submit">Отправить на почту</button></form>
@@ -898,7 +914,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                         <a href="/admin/applications" class="btn btn--ghost"><i class="fas fa-list"></i> Закрыть</a>
                     <?php endif; ?>
                 </div>
-                <?php if ($hasNonCompliantDrawings): ?><p class="application-sidebar-hint">Недоступно: есть работы, не соответствующие условиям конкурса.</p><?php endif; ?>
+                <p class="application-sidebar-hint" style="<?= $approveButtonDisabled ? '' : 'display:none;' ?>">Кнопка станет активной, когда по каждой работе будет принято решение кнопкой «Рисунок принят» или «Рисунок отклонён». Если рисунок не соответствует условиям, выключите переключатель и заполните комментарий.</p>
             </div>
         </div>
     </aside>
@@ -913,39 +929,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
             <div id="vkPublishModalSummary" class="text-secondary vk-publish-modal__summary"></div>
             <div id="vkPublishPreview" class="vk-publish-modal__preview"></div>
             <div class="vk-publish-modal__section">
-                <div class="vk-publish-modal__section-title">Режим публикации</div>
-                <div class="form-group vk-publish-modal__group">
-                    <label class="form-label" for="vkPublicationType">Тип публикации</label>
-                    <select class="form-select" id="vkPublicationType">
-                        <option value="standard">Обычная публикация</option>
-                        <option value="vk_donut">VK Donut paywall (диагностика)</option>
-                        <option value="donation_goal">Публикация с целью сбора</option>
-                    </select>
-                </div>
-                <div id="vkDonationSupportHint" class="text-secondary vk-publish-modal__hint"></div>
-                <div id="vkDonutFields" class="vk-publish-modal__fields">
-                    <div class="form-group vk-publish-modal__group">
-                        <label class="form-label" for="vkDonutPaidDuration">paid_duration (сек.)</label>
-                        <input class="form-control" id="vkDonutPaidDuration" type="number" min="1" step="1" value="2592000">
-                    </div>
-                    <label class="vk-publish-modal__checkbox">
-                        <input type="checkbox" id="vkDonutCanPublishFreeCopy" value="1">
-                        <span>Разрешить бесплатную копию (can_publish_free_copy)</span>
-                    </label>
-                </div>
-                <div id="vkDonationFields" class="vk-publish-modal__fields">
-                <div class="form-group vk-publish-modal__group">
-                    <label class="form-label" for="vkDonationGoalSelect">Цель доната</label>
-                    <select class="form-select" id="vkDonationGoalSelect">
-                        <option value="">Выберите цель доната</option>
-                    </select>
-                </div>
-                <div id="vkDonationGoalCard" class="vk-publish-modal__goal-card">
-                    <div class="vk-publish-modal__goal-title" id="vkDonationGoalCardTitle">—</div>
-                    <div class="text-secondary vk-publish-modal__goal-description" id="vkDonationGoalCardDescription">—</div>
-                    <div class="text-secondary vk-publish-modal__goal-id">VK donate ID: <span id="vkDonationGoalCardVkId">—</span></div>
-                </div>
-                </div>
+                <div class="vk-publish-modal__section-title">Будут опубликованы только принятые и ещё не опубликованные рисунки</div>
             </div>
             <div id="vkPublishPromptStatus" class="alert vk-publish-modal__status"></div>
         </div>
@@ -1261,6 +1245,29 @@ document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
  alertEl.remove();
 });
 
+function updateDecisionButtons(controls, status) {
+ if (!controls) return;
+ const acceptButton = controls.querySelector('[data-decision-button="accepted"]');
+ const rejectButton = controls.querySelector('[data-decision-button="reviewed_non_competitive"]');
+ if (!acceptButton || !rejectButton) return;
+
+ acceptButton.classList.toggle('is-active', status === 'accepted');
+ acceptButton.classList.toggle('work-decision-btn--accepted', status === 'accepted');
+ rejectButton.classList.toggle('is-active', status === 'reviewed_non_competitive');
+ rejectButton.classList.toggle('work-decision-btn--rejected', status === 'reviewed_non_competitive');
+
+ const acceptedFinal = status === 'accepted';
+ const rejectedFinal = status === 'reviewed_non_competitive';
+
+ acceptButton.disabled = rejectedFinal;
+ acceptButton.setAttribute('aria-disabled', rejectedFinal ? 'true' : 'false');
+ acceptButton.classList.toggle('is-disabled', rejectedFinal);
+
+ rejectButton.disabled = acceptedFinal;
+ rejectButton.setAttribute('aria-disabled', acceptedFinal ? 'true' : 'false');
+ rejectButton.classList.toggle('is-disabled', acceptedFinal);
+}
+
 async function parseJsonResponse(response) {
  const rawBody = await response.text();
  if (!rawBody) {
@@ -1276,7 +1283,7 @@ async function parseJsonResponse(response) {
 document.querySelectorAll('.js-work-async-form').forEach((form) => {
  form.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const button = form.querySelector('button[type="submit"]');
+  const button = event.submitter || form.querySelector('button[type="submit"]');
   const defaultHtml = button ? button.innerHTML : '';
   if (button) {
    button.disabled = true;
@@ -1284,6 +1291,14 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
   }
 
   const formData = new FormData(form);
+  const controls = form.closest('[data-work-controls]');
+  if (formData.get('action') === 'set_work_status' && controls && button?.dataset?.decisionButton) {
+   const requestedStatus = String(formData.get('work_status') || '');
+   const currentStatus = String(controls.dataset.workStatus || 'pending');
+   if (requestedStatus !== '' && requestedStatus === currentStatus) {
+    formData.set('work_status', 'pending');
+   }
+  }
   formData.append('ajax', '1');
   const action = formData.get('action');
 
@@ -1298,8 +1313,8 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
     throw new Error(data.error || 'Операция не выполнена');
    }
 
-   const controls = form.closest('[data-work-controls]');
    if (action === 'set_work_status' && controls) {
+    controls.dataset.workStatus = data.work_status || formData.get('work_status') || controls.dataset.workStatus || 'pending';
     const card = controls.closest('.card');
     const badge = card?.querySelector('[data-work-status-badge]');
     if (badge) {
@@ -1310,22 +1325,18 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
     if (diplomaActions) {
       diplomaActions.style.display = data.diploma_available ? 'flex' : 'none';
     }
-    const acceptForm = controls.querySelector('[data-accept-work-form]');
-    if (acceptForm && formData.get('work_status') === 'accepted') {
-      acceptForm.style.display = 'none';
-    }
 
     const workStatus = formData.get('work_status');
     const compliantToggle = card?.querySelector('.js-drawing-compliant-toggle');
-    if (compliantToggle && (workStatus === 'accepted' || workStatus === 'reviewed' || workStatus === 'pending')) {
+    const commentField = card?.querySelector('.js-drawing-comment');
+    if (compliantToggle && (workStatus === 'accepted' || workStatus === 'reviewed' || workStatus === 'reviewed_non_competitive' || workStatus === 'pending')) {
       compliantToggle.checked = workStatus === 'accepted';
     }
-    syncApproveApplicationButtonState();
-
-    if (workStatus === 'accepted') {
-      location.reload();
-      return;
+    if (workStatus === 'accepted' && commentField) {
+      commentField.value = '';
     }
+    updateDecisionButtons(controls, workStatus);
+    syncApproveApplicationButtonState();
    }
 
    if (action === 'download_participant_diploma' && data.download_url) {
@@ -1374,7 +1385,12 @@ document.querySelectorAll('.js-subject-template').forEach((button) => {
 
 async function saveDrawingCompliance(form) {
  const toggle = form.querySelector('.js-drawing-compliant-toggle');
+ const comment = form.querySelector('.js-drawing-comment');
  if (!toggle) return;
+ if (!toggle.checked && !String(comment?.value || '').trim()) {
+  syncApproveApplicationButtonState();
+  return;
+ }
  const formData = new FormData(form);
  if (!toggle.checked) {
   formData.delete('drawing_compliant');
@@ -1397,8 +1413,13 @@ async function saveDrawingCompliance(form) {
 document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
  const toggle = form.querySelector('.js-drawing-compliant-toggle');
  const comment = form.querySelector('.js-drawing-comment');
+ const controls = form.closest('.card')?.querySelector('[data-work-controls]');
  if (toggle) {
   toggle.addEventListener('change', () => {
+   if (controls) {
+    controls.dataset.workStatus = toggle.checked ? 'accepted' : (String(comment?.value || '').trim() ? 'reviewed' : 'pending');
+    updateDecisionButtons(controls, controls.dataset.workStatus);
+   }
    saveDrawingCompliance(form);
    syncApproveApplicationButtonState();
   });
@@ -1406,8 +1427,17 @@ document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
  if (comment) {
   let commentTimer = null;
   comment.addEventListener('input', () => {
+   const rejectCommentInput = form.closest('.card')?.querySelector('[data-reject-comment-input]');
+   if (rejectCommentInput) {
+    rejectCommentInput.value = comment.value;
+   }
+   if (controls && toggle && !toggle.checked) {
+    controls.dataset.workStatus = comment.value.trim() ? 'reviewed' : 'pending';
+    updateDecisionButtons(controls, controls.dataset.workStatus);
+   }
    if (commentTimer) clearTimeout(commentTimer);
    commentTimer = setTimeout(() => saveDrawingCompliance(form), 500);
+   syncApproveApplicationButtonState();
   });
  }
  form.addEventListener('submit', (event) => event.preventDefault());
@@ -1432,11 +1462,13 @@ function syncApproveApplicationButtonState() {
  if (isApproved) {
   approveButton.disabled = true;
   approveButton.setAttribute('aria-disabled', 'true');
-  approveButton.setAttribute('tabindex', '-1');
+ approveButton.setAttribute('tabindex', '-1');
   return;
  }
- const toggles = Array.from(document.querySelectorAll('.js-drawing-compliant-toggle'));
- const hasInvalid = toggles.some((toggle) => !toggle.checked);
+ const hasInvalid = Array.from(document.querySelectorAll('[data-work-controls]')).some((controls) => {
+  const status = controls.dataset.workStatus || 'pending';
+  return status !== 'accepted' && status !== 'reviewed_non_competitive';
+ });
  approveButton.disabled = hasInvalid;
  approveButton.setAttribute('aria-disabled', hasInvalid ? 'true' : 'false');
  const hint = document.querySelector('.application-sidebar-hint');
@@ -1452,6 +1484,7 @@ function syncApproveApplicationButtonState() {
 
 syncApproveApplicationButtonState();
 ensureComplianceFieldsAvailable();
+document.querySelectorAll('[data-work-controls]').forEach((controls) => updateDecisionButtons(controls, controls.dataset.workStatus || 'pending'));
 
 (() => {
     const modal = document.getElementById('vkPublishPromptModal');
@@ -1465,22 +1498,9 @@ ensureComplianceFieldsAvailable();
     const previewBox = document.getElementById('vkPublishPreview');
     const summaryBox = document.getElementById('vkPublishModalSummary');
     const openModalButton = document.getElementById('openVkPublishModalBtn');
-    const publicationTypeSelect = document.getElementById('vkPublicationType');
-    const donationFields = document.getElementById('vkDonationFields');
-    const donationGoalSelect = document.getElementById('vkDonationGoalSelect');
-    const donationGoalCard = document.getElementById('vkDonationGoalCard');
-    const donationGoalCardTitle = document.getElementById('vkDonationGoalCardTitle');
-    const donationGoalCardDescription = document.getElementById('vkDonationGoalCardDescription');
-    const donationGoalCardVkId = document.getElementById('vkDonationGoalCardVkId');
-    const donationSupportHint = document.getElementById('vkDonationSupportHint');
-    const donutFields = document.getElementById('vkDonutFields');
-    const donutPaidDurationInput = document.getElementById('vkDonutPaidDuration');
-    const donutFreeCopyInput = document.getElementById('vkDonutCanPublishFreeCopy');
     const applicationId = Number(approveButton.dataset.id || 0);
     const csrfToken = approveButton.dataset.csrf || '';
     let publishInProgress = false;
-    let donationAttachmentMessage = '';
-    let publicationCapabilities = {};
 
     const showStatus = (message, type = 'success') => {
         if (!statusBox) return;
@@ -1511,71 +1531,6 @@ ensureComplianceFieldsAvailable();
         }
     };
 
-    const toggleDonationFields = () => {
-        const publicationType = publicationTypeSelect?.value || 'standard';
-        const isDonationMode = publicationType === 'donation_goal';
-        const isDonutMode = publicationType === 'vk_donut';
-        if (donationFields) {
-            donationFields.style.display = isDonationMode ? 'block' : 'none';
-        }
-        if (donutFields) {
-            donutFields.style.display = isDonutMode ? 'block' : 'none';
-        }
-        if (!isDonationMode && donationGoalCard) {
-            donationGoalCard.style.display = 'none';
-        }
-        const capability = publicationCapabilities[publicationType] || null;
-        const capabilityMessage = capability?.message ? String(capability.message) : '';
-        if (donationSupportHint) {
-            const parts = [donationAttachmentMessage, capabilityMessage]
-                .map((part) => String(part || '').trim())
-                .filter(Boolean);
-            const uniqueParts = parts.filter((part, index) => parts.indexOf(part) === index);
-            const message = uniqueParts.join(' ');
-            donationSupportHint.style.display = message ? 'block' : 'none';
-            donationSupportHint.textContent = message;
-        }
-    };
-
-    const renderDonationGoals = (goals) => {
-        if (!donationGoalSelect) return;
-        donationGoalSelect.innerHTML = '';
-        const placeholderOption = document.createElement('option');
-        placeholderOption.value = '';
-        placeholderOption.textContent = 'Выберите цель доната';
-        donationGoalSelect.appendChild(placeholderOption);
-        if (!Array.isArray(goals) || goals.length === 0) {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = 'Нет активных целей';
-            donationGoalSelect.appendChild(option);
-            return;
-        }
-
-        goals.forEach((item) => {
-            const option = document.createElement('option');
-            option.value = String(item.id ?? '');
-            option.textContent = String(item.title ?? '');
-            option.dataset.description = String(item.description ?? '');
-            option.dataset.vkDonateId = String(item.vk_donate_id ?? '');
-            donationGoalSelect.appendChild(option);
-        });
-    };
-
-    const updateDonationGoalCard = () => {
-        if (!donationGoalCard || !donationGoalSelect) return;
-        const selectedOption = donationGoalSelect.selectedOptions[0] || null;
-        const selectedGoalId = Number(donationGoalSelect.value || 0);
-        if (!selectedOption || selectedGoalId <= 0) {
-            donationGoalCard.style.display = 'none';
-            return;
-        }
-        donationGoalCard.style.display = 'block';
-        if (donationGoalCardTitle) donationGoalCardTitle.textContent = selectedOption.textContent || '—';
-        if (donationGoalCardDescription) donationGoalCardDescription.textContent = selectedOption.dataset.description || '—';
-        if (donationGoalCardVkId) donationGoalCardVkId.textContent = selectedOption.dataset.vkDonateId || '—';
-    };
-
     if (skipButton) {
         skipButton.addEventListener('click', closeModal);
     }
@@ -1595,15 +1550,6 @@ ensureComplianceFieldsAvailable();
         if (statusBox) {
             statusBox.style.display = 'none';
         }
-        if (publicationTypeSelect) {
-            publicationTypeSelect.value = 'standard';
-        }
-        if (donationGoalSelect) {
-            donationGoalSelect.innerHTML = '';
-        }
-        donationAttachmentMessage = '';
-        toggleDonationFields();
-        updateDonationGoalCard();
 
         try {
             const response = await fetch(`/admin/api/get-publish-data.php?id=${applicationId}`);
@@ -1631,7 +1577,6 @@ ensureComplianceFieldsAvailable();
                             ${item.preview_image ? `<img src="${item.preview_image}" class="vk-preview-item__thumb">` : '<div class="vk-preview-item__thumb-placeholder"><i class="fas fa-image"></i></div>'}
                             <div class="vk-preview-item__content">
                                 <strong>${item.fio || 'Без имени'}</strong>
-                                <div>${item.work_title || 'Без названия'}</div>
                                 <span class="badge ${item.is_ready_for_publish ? 'badge--success' : 'badge--warning'}">${item.is_ready_for_publish ? 'Готово к публикации' : 'Не готово'}</span>
                                 ${item.skip_reason ? `<div class="text-secondary vk-preview-item__reason">${item.skip_reason}</div>` : ''}
                             </div>
@@ -1639,12 +1584,6 @@ ensureComplianceFieldsAvailable();
                     `).join('');
                 }
             }
-            renderDonationGoals(data.donation_goals || []);
-            publicationCapabilities = data.publication_capabilities || {};
-            const support = data.donation_attachment_support || {};
-            donationAttachmentMessage = String(support.message || '');
-            toggleDonationFields();
-            updateDonationGoalCard();
         } catch (error) {
             if (previewBox) {
                 previewBox.innerHTML = '<div class="text-secondary">Данные недоступны.</div>';
@@ -1652,14 +1591,6 @@ ensureComplianceFieldsAvailable();
             showStatus(error.message || 'Ошибка загрузки данных публикации.', 'error');
         }
     };
-
-    publicationTypeSelect?.addEventListener('change', () => {
-        toggleDonationFields();
-        updateDonationGoalCard();
-    });
-    if (donationGoalSelect) {
-        donationGoalSelect.addEventListener('change', updateDonationGoalCard);
-    }
 
     approveButton.addEventListener('click', async () => {
         if (approveButton.disabled || !applicationId) {
@@ -1669,12 +1600,31 @@ ensureComplianceFieldsAvailable();
             approveButton.disabled = true;
             approveButton.setAttribute('aria-disabled', 'true');
             approveButton.setAttribute('tabindex', '-1');
-            document.querySelectorAll('.js-application-secondary-action').forEach((secondaryAction) => {
-                secondaryAction.style.display = 'none';
-            });
-            const approveForm = document.getElementById('approveApplicationForm');
-            if (approveForm) {
-                approveForm.submit();
+            try {
+                const formData = new FormData();
+                formData.append('action', 'approve_application');
+                formData.append('csrf_token', csrfToken);
+                formData.append('ajax', '1');
+                const response = await fetch('/admin/application/<?= e($application_id) ?>', {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData,
+                });
+                const data = await parseJsonResponse(response);
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось принять заявку.');
+                }
+                approveButton.dataset.approved = '1';
+                approveButton.innerHTML = '<i class="fas fa-check-double"></i> Заявка принята';
+                document.querySelectorAll('.js-application-secondary-action').forEach((secondaryAction) => {
+                    secondaryAction.style.display = 'none';
+                });
+                syncApproveApplicationButtonState();
+            } catch (error) {
+                approveButton.disabled = false;
+                approveButton.setAttribute('aria-disabled', 'false');
+                approveButton.removeAttribute('tabindex');
+                showToast(error.message || 'Не удалось принять заявку', 'error');
                 return;
             }
         }
@@ -1685,20 +1635,6 @@ ensureComplianceFieldsAvailable();
     if (publishButton) {
         publishButton.addEventListener('click', async () => {
             if (publishInProgress) {
-                return;
-            }
-            const publicationType = publicationTypeSelect?.value || 'standard';
-            const donationEnabled = publicationType === 'donation_goal';
-            const vkDonutEnabled = publicationType === 'vk_donut';
-            const donationGoalId = Number(donationGoalSelect?.value || 0);
-            const vkDonutPaidDuration = Number(donutPaidDurationInput?.value || 0);
-            const vkDonutCanPublishFreeCopy = !!donutFreeCopyInput?.checked;
-            if (donationEnabled && !donationGoalId) {
-                showStatus('Нельзя включить донат без выбора цели.', 'error');
-                return;
-            }
-            if (vkDonutEnabled && vkDonutPaidDuration <= 0) {
-                showStatus('Для VK Donut paywall укажите paid_duration > 0.', 'error');
                 return;
             }
             publishInProgress = true;
@@ -1717,12 +1653,7 @@ ensureComplianceFieldsAvailable();
                     },
                     body: JSON.stringify({
                         application_id: applicationId,
-                        publication_type: publicationType,
-                        donation_enabled: donationEnabled ? 1 : 0,
-                        donation_goal_id: donationGoalId,
-                        vk_donut_enabled: vkDonutEnabled ? 1 : 0,
-                        vk_donut_paid_duration: vkDonutPaidDuration,
-                        vk_donut_can_publish_free_copy: vkDonutCanPublishFreeCopy ? 1 : 0,
+                        publication_type: 'standard',
                         csrf_token: csrfToken,
                     }),
                 });
@@ -1732,10 +1663,7 @@ ensureComplianceFieldsAvailable();
                     setErrorState(true);
                     return;
                 }
-                const modeTitle = publicationType === 'vk_donut'
-                    ? 'VK Donut paywall (диагностика)'
-                    : (publicationType === 'donation_goal' ? 'Публикация с целью сбора' : 'Обычная публикация');
-                showStatus(`Итог: опубликовано ${data.published || 0} из ${data.total || 0}. Режим: ${modeTitle}.`, 'success');
+                showStatus(`Итог: опубликовано ${data.published || 0} из ${data.total || 0}.`, 'success');
                 window.location.assign('/admin/applications');
             } catch (e) {
                 showStatus('Ошибка сети при публикации. Попробуйте ещё раз.', 'error');

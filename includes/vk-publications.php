@@ -763,7 +763,6 @@ function defaultVkPostTemplate(): string
     return "🎨 Работа участника конкурса детского рисунка\n\n"
         . "Представляем рисунок участника:\n"
         . "👤 {participant_full_name}\n\n"
-        . "🖼 Работа: «{drawing_title}»\n"
         . "🏆 Конкурс: {contest_title}\n\n"
         . "📍 {region_name}\n"
         . "🏫 {organization_name}\n"
@@ -777,7 +776,6 @@ function compactVkPostTemplate(): string
 {
     return "🎨 Юный участник конкурса\n\n"
         . "👤 {participant_full_name}\n"
-        . "🖼 «{drawing_title}»\n"
         . "🏆 {contest_title}\n\n"
         . "📍 {region_name}\n"
         . "🏫 {organization_name}\n"

@@ -40,7 +40,6 @@ $publicationStatus = getApplicationVkPublicationStatus($applicationId);
 if (!empty($workIds)) {
     ensureVkPublicationSchema();
     $filters = normalizeVkTaskFilters([
-        'application_status' => 'approved',
         'work_status' => 'accepted',
         'exclude_vk_published' => 1,
         'required_data_only' => 1,
@@ -61,7 +60,6 @@ if (!empty($workIds)) {
             'participant_id' => (int) ($item['participant_id'] ?? 0),
             'work_id' => (int) ($item['work_id'] ?? 0),
             'fio' => trim((string) ($source['participant_fio'] ?? '')) ?: 'Без имени',
-            'work_title' => trim((string) ($source['work_title'] ?? '')) ?: 'Без названия',
             'preview_image' => $imagePath !== ''
                 ? getParticipantDrawingPreviewWebPath((string) ($application['applicant_email'] ?? ''), $imagePath)
                 : '',
@@ -73,118 +71,9 @@ if (!empty($workIds)) {
     }
 }
 
-$donationAttachmentSupport = getVkDonationAttachmentSupport();
-$publicationCapabilities = getVkPublicationCapabilities();
-$donationGoals = [];
-$donationGoalsSyncWarning = '';
-
-try {
-    $readiness = verifyVkPublicationReadiness(true);
-    if (empty($readiness['ok'])) {
-        throw new RuntimeException((string) ($readiness['issues'][0] ?? 'VK не готов к загрузке целей донатов.'));
-    }
-
-    $settings = $readiness['settings'];
-    $client = new VkApiClient((string) $settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version']);
-    $vkGoals = $client->getDonutGoals();
-
-    $seenVkDonateIds = [];
-
-    foreach ($vkGoals as $goal) {
-        if (!is_array($goal)) {
-            continue;
-        }
-
-        $vkDonateId = trim((string) ($goal['id'] ?? $goal['goal_id'] ?? $goal['vk_donate_id'] ?? ''));
-        if ($vkDonateId === '') {
-            continue;
-        }
-
-        $isActive = !array_key_exists('is_active', $goal) || (int) $goal['is_active'] === 1;
-        $title = trim((string) ($goal['title'] ?? $goal['name'] ?? ''));
-        $description = trim((string) ($goal['description'] ?? ''));
-
-        upsertVkDonate([
-            'vk_donate_id' => $vkDonateId,
-            'title' => $title,
-            'description' => $description,
-            'is_active' => $isActive ? 1 : 0,
-        ]);
-
-        $cachedGoal = getVkDonateByVkId($vkDonateId);
-        if ($cachedGoal) {
-            $seenVkDonateIds[] = $vkDonateId;
-        }
-
-        if (!$isActive) {
-            continue;
-        }
-
-        $donationGoals[] = [
-            'id' => (int) ($cachedGoal['id'] ?? 0),
-            'title' => $title !== '' ? $title : ('Цель #' . $vkDonateId),
-            'description' => $description,
-            'vk_donate_id' => $vkDonateId,
-        ];
-    }
-
-    if (empty($seenVkDonateIds)) {
-        $pdo->exec("UPDATE vk_donates SET is_active = 0");
-    } else {
-        $localActiveStmt = $pdo->query("SELECT vk_donate_id FROM vk_donates WHERE is_active = 1");
-        $localActiveVkIds = array_map('strval', array_column($localActiveStmt ? ($localActiveStmt->fetchAll() ?: []) : [], 'vk_donate_id'));
-        $missingInVk = array_values(array_diff($localActiveVkIds, $seenVkDonateIds));
-        if (!empty($missingInVk)) {
-            vkPublicationLog('donation_goals_sync_mismatch', [
-                'application_id' => $applicationId,
-                'missing_in_vk' => $missingInVk,
-            ]);
-        }
-
-        $placeholders = implode(',', array_fill(0, count($seenVkDonateIds), '?'));
-        $stmt = $pdo->prepare("UPDATE vk_donates SET is_active = 0 WHERE vk_donate_id NOT IN ($placeholders)");
-        $stmt->execute($seenVkDonateIds);
-    }
-
-    usort($donationGoals, static function (array $a, array $b): int {
-        return strcasecmp((string) ($a['title'] ?? ''), (string) ($b['title'] ?? ''));
-    });
-} catch (Throwable $e) {
-    $donationGoalsSyncWarning = 'Не удалось синхронизировать цели донатов из VK: ' . $e->getMessage();
-
-    $localGoalsStmt = $pdo->query("
-        SELECT id, title, description, vk_donate_id
-        FROM vk_donates
-        WHERE is_active = 1
-        ORDER BY title ASC, id ASC
-    ");
-
-    foreach ($localGoalsStmt->fetchAll() ?: [] as $goal) {
-        $goalVkDonateId = trim((string) ($goal['vk_donate_id'] ?? ''));
-        if ($goalVkDonateId === '') {
-            continue;
-        }
-        $donationGoals[] = [
-            'id' => (int) ($goal['id'] ?? 0),
-            'title' => trim((string) ($goal['title'] ?? '')) ?: ('Цель #' . $goalVkDonateId),
-            'description' => trim((string) ($goal['description'] ?? '')),
-            'vk_donate_id' => $goalVkDonateId,
-        ];
-    }
-
-    if ($donationAttachmentSupport['message'] === '') {
-        $donationAttachmentSupport['message'] = $donationGoalsSyncWarning;
-    } else {
-        $donationAttachmentSupport['message'] .= ' ' . $donationGoalsSyncWarning;
-    }
-}
-
 jsonResponse([
     'success' => true,
     'participants' => $participants,
     'summary' => $summary,
-    'donation_goals' => $donationGoals,
-    'donation_attachment_support' => $donationAttachmentSupport,
-    'publication_capabilities' => $publicationCapabilities,
     'application_vk_status' => $publicationStatus,
 ]);

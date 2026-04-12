@@ -334,18 +334,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
 
     $fio = trim((string)($_POST['fio'] ?? ''));
     $age = max(0, (int)($_POST['age'] ?? 0));
-    $workTitle = trim((string)($_POST['work_title'] ?? ''));
     if ($fio === '') {
         $message = 'Укажите ФИО участника.';
-        if ($isAjaxRequest) {
-            jsonResponse(['success' => false, 'error' => $message], 422);
-        }
-        $_SESSION['error_message'] = $message;
-        redirect('/application/' . $applicationId);
-    }
-
-    if ($workTitle === '') {
-        $message = 'Укажите название рисунка.';
         if ($isAjaxRequest) {
             jsonResponse(['success' => false, 'error' => $message], 422);
         }
@@ -415,8 +405,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
             SET fio = ?, age = ?, drawing_file = ?
             WHERE id = ? AND application_id = ?
         ")->execute([$fio, $age, $drawingFile, $participantId, $applicationId]);
-        $pdo->prepare("UPDATE works SET title = ?, updated_at = NOW() WHERE id = ? AND application_id = ?")
-            ->execute([$workTitle, $workId, $applicationId]);
+        $pdo->prepare("UPDATE works SET updated_at = NOW() WHERE id = ? AND application_id = ?")
+            ->execute([$workId, $applicationId]);
         $pdo->prepare("
             UPDATE application_corrections
             SET is_resolved = 1, resolved_at = NOW()
@@ -486,7 +476,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
                 'work_id' => $workId,
                 'fio' => $fio,
                 'age' => $age > 0 ? $age : '—',
-                'work_title' => $workTitle,
                 'drawing_url' => $updatedDrawingUrl,
                 'drawing_preview_url' => $updatedDrawingPreviewUrl,
             ],
@@ -731,7 +720,6 @@ $currentPage = 'applications';
                             $hasParticipantCorrection = !empty($participantCorrections[(int) ($participant['participant_id'] ?? 0)]);
                             $workStatus = (string)($participant['status'] ?? 'pending');
                             $isDiplomaAvailable = mapWorkStatusToDiplomaType($workStatus) !== null;
-                            $workTitle = trim((string) (($participant['work_title'] ?? $participant['title'] ?? '')));
                             $participantVkUrl = trim((string)($participant['vk_post_url'] ?? ''));
                             $drawingSrc = !empty($participant['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
                             $drawingPreviewSrc = !empty($participant['drawing_file']) ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
@@ -752,7 +740,7 @@ $currentPage = 'applications';
                                 <div class="participant-modern-card__header">
                                     <div>
                                         <h3 class="participant-modern-card__name"><?= e((string)($participant['fio'] ?? 'Без имени')) ?></h3>
-                                        <div class="participant-modern-card__subtitle js-participant-work-subtitle"><?= $workTitle !== '' ? '«' . e($workTitle) . '»' : 'Работа #' . ($index + 1) ?></div>
+                                        <div class="participant-modern-card__subtitle js-participant-work-subtitle">Работа #<?= (int) ($index + 1) ?></div>
                                     </div>
                                     <?php if ($effectiveApplicationStatus !== 'draft'): ?>
                                         <span class="badge <?= getWorkStatusBadgeClass($workStatus) ?>"><?= e(getWorkStatusLabel($workStatus)) ?></span>
@@ -763,7 +751,6 @@ $currentPage = 'applications';
                                     <div><strong>Возраст:</strong> <span class="js-participant-age"><?= e((string)($participant['age'] ?? '—')) ?></span></div>
                                     <div><strong>Регион:</strong> <?= e((string)($participant['region'] ?? '—')) ?></div>
                                     <div><strong>Организация:</strong> <?= e((string)($participant['organization_name'] ?? '—')) ?></div>
-                                    <div><strong>Название рисунка:</strong> <span class="js-participant-work-title"><?= e($workTitle !== '' ? $workTitle : '—') ?></span></div>
                                     <div><strong>ID участника:</strong> #<?= (int) ($participant['participant_id'] ?? 0) ?></div>
                                 </div>
                                 <?php if ($hasParticipantCorrection): ?>
@@ -779,7 +766,7 @@ $currentPage = 'applications';
                                         <button type="button" class="btn btn--ghost btn--sm js-gallery-open" data-gallery-index="<?= (int) $participantGalleryIndex ?>"><i class="fas fa-expand"></i> Увеличить</button>
                                     <?php endif; ?>
                                     <?php if ($hasParticipantCorrection): ?>
-                                        <button type="button" class="btn btn--primary btn--sm js-open-participant-edit" data-work-id="<?= (int)($participant['id'] ?? 0) ?>" data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>" data-age="<?= (int)($participant['age'] ?? 0) ?>" data-work-title="<?= htmlspecialchars($workTitle, ENT_QUOTES) ?>" data-drawing-url="<?= htmlspecialchars($drawingSrc, ENT_QUOTES) ?>" data-drawing-preview-url="<?= htmlspecialchars($drawingPreviewSrc, ENT_QUOTES) ?>"><i class="fas fa-pen"></i> Исправить</button>
+                                        <button type="button" class="btn btn--primary btn--sm js-open-participant-edit" data-work-id="<?= (int)($participant['id'] ?? 0) ?>" data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>" data-age="<?= (int)($participant['age'] ?? 0) ?>" data-drawing-url="<?= htmlspecialchars($drawingSrc, ENT_QUOTES) ?>" data-drawing-preview-url="<?= htmlspecialchars($drawingPreviewSrc, ENT_QUOTES) ?>"><i class="fas fa-pen"></i> Исправить</button>
                                     <?php endif; ?>
                                     <?php if ($isDiplomaAvailable): ?>
                                         <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_one"><input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>"><button class="btn btn--primary btn--sm" type="submit"><i class="fas fa-download"></i> Скачать диплом</button></form>
@@ -936,11 +923,10 @@ $currentPage = 'applications';
 $galleryImages = [];
 foreach ($participants as $participant) {
     if (!empty($participant['drawing_file'])) {
-        $galleryWorkTitle = trim((string) ($participant['work_title'] ?? $participant['title'] ?? ''));
         $galleryImages[] = [
             'src' => getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']),
             'preview' => getParticipantDrawingPreviewWebPath($user['email'] ?? '', $participant['drawing_file']),
-            'title' => $galleryWorkTitle !== '' ? $galleryWorkTitle : ($participant['fio'] ?? 'Рисунок'),
+            'title' => $participant['fio'] ?? 'Рисунок',
         ];
     }
 }
@@ -960,7 +946,6 @@ foreach ($participants as $participant) {
 <div class="modal__body">
     <div class="form-group"><label class="form-label">ФИО участника</label><input class="form-input" type="text" name="fio" id="participantEditFio" required></div>
     <div class="form-group"><label class="form-label">Возраст</label><input class="form-input" type="number" min="0" name="age" id="participantEditAge" required></div>
-    <div class="form-group"><label class="form-label">Название рисунка</label><input class="form-input" type="text" name="work_title" id="participantEditWorkTitle" required placeholder="Введите название рисунка"></div>
     <div class="participant-edit-drawing-row">
         <div class="participant-edit-drawing-box">
             <label class="form-label">Рисунок</label>
@@ -1081,7 +1066,6 @@ function openParticipantEditModal(button) {
  document.getElementById('participantEditWorkId').value = button.dataset.workId || '';
  document.getElementById('participantEditFio').value = button.dataset.fio || '';
  document.getElementById('participantEditAge').value = button.dataset.age || '';
- document.getElementById('participantEditWorkTitle').value = button.dataset.workTitle || '';
  clearParticipantDrawingObjectUrl();
  const drawingUrl = button.dataset.drawingUrl || '';
  if (drawingUrl) {
@@ -1152,17 +1136,10 @@ function updateParticipantCardAfterSave(participant) {
 
  const fio = (participant.fio || '').trim();
  const age = participant.age ?? '—';
- const workTitle = (participant.work_title || '').trim();
- const workTitleLabel = workTitle !== '' ? workTitle : '—';
 
  const nameNode = card.querySelector('.participant-modern-card__name');
  if (nameNode && fio !== '') {
   nameNode.textContent = fio;
- }
-
- const subtitleNode = card.querySelector('.js-participant-work-subtitle');
- if (subtitleNode) {
-  subtitleNode.textContent = workTitle !== '' ? `«${workTitle}»` : 'Без названия';
  }
 
  const ageNode = card.querySelector('.js-participant-age');
@@ -1170,16 +1147,10 @@ function updateParticipantCardAfterSave(participant) {
   ageNode.textContent = String(age);
  }
 
- const workTitleNode = card.querySelector('.js-participant-work-title');
- if (workTitleNode) {
-  workTitleNode.textContent = workTitleLabel;
- }
-
  const editButton = card.querySelector('.js-open-participant-edit');
  if (editButton) {
   editButton.dataset.fio = fio;
   editButton.dataset.age = String(age);
-  editButton.dataset.workTitle = workTitle;
   if (participant.drawing_url) {
    editButton.dataset.drawingUrl = participant.drawing_url;
   }

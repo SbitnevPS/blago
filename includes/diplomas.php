@@ -255,9 +255,9 @@ function getApplicationWorks(int $applicationId): array {
 function getWorkStatusLabel(string $status): string {
     $map = [
         'pending' => 'На рассмотрении',
-        'accepted' => 'Принята к участию',
-        'reviewed' => 'Работа рассмотрена',
-        'reviewed_non_competitive' => 'Работа рассмотрена',
+        'accepted' => 'Рисунок принят',
+        'reviewed' => 'Требует корректировки',
+        'reviewed_non_competitive' => 'Рисунок отклонён',
     ];
     return $map[$status] ?? ucfirst($status);
 }
@@ -265,9 +265,9 @@ function getWorkStatusLabel(string $status): string {
 function getWorkStatusHint(string $status): string {
     $map = [
         'pending' => 'Работа ожидает проверки жюри. Диплом станет доступен после рассмотрения.',
-        'accepted' => 'Работа принята к участию. Диплом уже доступен.',
-        'reviewed' => 'Работа рассмотрена. Для вас доступен благодарственный диплом.',
-        'reviewed_non_competitive' => 'Работа рассмотрена. Для вас доступен благодарственный диплом.',
+        'accepted' => 'По рисунку принято положительное решение. Его можно публиковать и выдавать по нему диплом.',
+        'reviewed' => 'По работе нужны исправления. Укажите, что нужно изменить, и отправьте заявку на корректировку.',
+        'reviewed_non_competitive' => 'По рисунку принято решение не допускать его к участию.',
     ];
     return $map[$status] ?? 'Статус работы обновляется после проверки.';
 }
@@ -277,7 +277,7 @@ function getWorkStatusBadgeClass(string $status): string {
         'pending' => 'badge--warning',
         'accepted' => 'badge--success',
         'reviewed' => 'badge--reviewed',
-        'reviewed_non_competitive' => 'badge--reviewed',
+        'reviewed_non_competitive' => 'badge--error',
     ];
     return $map[$status] ?? 'badge--secondary';
 }
@@ -305,7 +305,9 @@ function buildApplicationWorkSummary(array $works): array {
         $status = (string)($work['status'] ?? 'pending');
         if ($status === 'accepted') {
             $summary['accepted']++;
-        } elseif (in_array($status, ['reviewed', 'reviewed_non_competitive'], true)) {
+        } elseif ($status === 'reviewed') {
+            $summary['reviewed']++;
+        } elseif ($status === 'reviewed_non_competitive') {
             $summary['reviewed']++;
         } else {
             $summary['pending']++;
@@ -364,7 +366,7 @@ function mapWorkStatusToDiplomaType(string $status): ?string {
     if ($status === 'accepted') {
         return 'contest_participant';
     }
-    if (in_array($status, ['reviewed', 'reviewed_non_competitive'], true)) {
+    if ($status === 'reviewed') {
         return 'encouragement';
     }
     return null;
@@ -413,7 +415,9 @@ function aggregateApplicationStatusByWorks(int $applicationId): string {
     $counts = ['pending' => 0, 'accepted' => 0, 'reviewed' => 0];
     foreach ($works as $w) {
         $st = (string)($w['status'] ?? 'pending');
-        if (isset($counts[$st])) {
+        if ($st === 'reviewed_non_competitive') {
+            $counts['reviewed']++;
+        } elseif (isset($counts[$st])) {
             $counts[$st]++;
         }
     }

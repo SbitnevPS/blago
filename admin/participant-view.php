@@ -81,7 +81,6 @@ $organizationAddress = trim((string) ($participant['organization_address'] ?: ($
 $organizationRegion = trim((string) ($participant['user_organization_region'] ?? '')) ?: '—';
 $participantRegion = trim((string) ($participant['region'] ?? '')) ?: '—';
 $participantAge = (int) ($participant['age'] ?? 0);
-$workTitle = trim((string) ($participant['work_title'] ?? ''));
 $drawingFileName = trim((string) ($participant['drawing_file'] ?? ''));
 $drawingUrl = $drawingFileName !== '' ? getParticipantDrawingWebPath($participant['user_email'] ?? '', $drawingFileName) : '';
 $drawingPreviewUrl = $drawingFileName !== '' ? getParticipantDrawingPreviewWebPath($participant['user_email'] ?? '', $drawingFileName) : '';
@@ -93,7 +92,6 @@ $detailsMap = [
         ['label' => 'ФИО участника', 'value' => $participantName],
         ['label' => 'Возраст', 'value' => $participantAge > 0 ? $participantAge . ' лет' : '—'],
         ['label' => 'Регион', 'value' => $participantRegion],
-        ['label' => 'Название рисунка', 'value' => $workTitle !== '' ? $workTitle : '—'],
     ],
     'Заявитель' => [
         ['label' => 'ФИО заявителя', 'value' => $applicantName],

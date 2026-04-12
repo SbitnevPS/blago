@@ -136,14 +136,6 @@ require_once __DIR__ . '/includes/header.php';
 
             <div class="form-row">
                 <div class="form-group">
-                    <label class="form-label">Название рисунка</label>
-                    <input type="text" name="drawing_title" class="form-input" placeholder="Часть названия работы">
-                </div>
-                <div class="form-group"></div>
-            </div>
-
-            <div class="form-row">
-                <div class="form-group">
                     <label class="form-label">Дата подачи заявки: от</label>
                     <input type="date" name="submitted_from" class="form-input">
                 </div>
@@ -204,7 +196,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="form-group">
                 <label class="form-label">Шаблон текста поста</label>
                 <textarea name="post_template" id="postTemplate" class="form-input" rows="8"><?= e($settings['post_template']) ?></textarea>
-                <div class="form-hint">Переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {drawing_title}, {work_title}, {contest_title}, {participant_age}, {age_category}. Поддерживается legacy-переменная: {nomination}.</div>
+                <div class="form-hint">Переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {contest_title}, {participant_age}, {age_category}. Поддерживается legacy-переменная: {nomination}.</div>
                 <div class="form-hint" style="margin-top:8px;">Компактный вариант (для ручной вставки):</div>
                 <pre style="white-space:pre-wrap; background:#F8FAFC; padding:10px; border-radius:8px; border:1px solid #E2E8F0; margin-top:6px; font-size:12px;"><?= e(compactVkPostTemplate()) ?></pre>
                 <div style="margin-top:12px;">
@@ -348,8 +340,6 @@ function updateLiveTemplatePreview() {
         participant_full_name: 'Иванова Анна Сергеевна',
         organization_name: 'МБУ ДО «Детская школа искусств №1»',
         region_name: 'Московская область',
-        drawing_title: 'Весенний город',
-        work_title: 'Весенний город',
         contest_title: 'Мир глазами детей',
         participant_age: '9',
         age_category: '7-10 лет',

@@ -37,14 +37,6 @@ $messageTemplates = [
 
 $settings = getSystemSettings();
 $maskedSmtpPasswordPlaceholder = '••••••••';
-ensureVkDonatesSchema();
-$vkDonates = [];
-try {
-    $vkDonatesStmt = $pdo->query("SELECT id, title, description, vk_donate_id, is_active FROM vk_donates ORDER BY id DESC");
-    $vkDonates = $vkDonatesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-} catch (Throwable $e) {
-    $vkDonates = [];
-}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['action'] ?? '') === 'upload_homepage_hero_async') {
@@ -78,61 +70,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Ошибка безопасности';
     } else {
         $section = (string) ($_POST['settings_section'] ?? 'notifications');
-        $allowedSections = ['notifications', 'email-delivery', 'vk-integration', 'vk-publication', 'vk-donates', 'homepage-banner'];
+        $allowedSections = ['notifications', 'email-delivery', 'vk-integration', 'vk-publication', 'homepage-banner'];
         if (!in_array($section, $allowedSections, true)) {
             $section = 'notifications';
-        }
-
-        if ($section === 'vk-donates') {
-            $donateAction = (string) ($_POST['donate_action'] ?? ($_POST['action'] ?? ''));
-            $donateId = max(0, (int) ($_POST['donate_id'] ?? 0));
-            $donateTitle = trim((string) ($_POST['donate_title'] ?? ''));
-            $donateDescription = trim((string) ($_POST['donate_description'] ?? ''));
-            $donateVkId = trim((string) ($_POST['donate_vk_id'] ?? ''));
-
-            try {
-                if ($donateAction === 'sync_vk_donates') {
-                    $syncResult = syncVkDonatesFromVk();
-                    $_SESSION['success_message'] = 'Синхронизация завершена: получено целей — ' . (int) ($syncResult['fetched'] ?? 0) . ', активных — ' . (int) ($syncResult['active_count'] ?? 0);
-                    $_SESSION['settings_active_tab'] = 'vk-donates';
-                    redirect('/admin/settings#vk-donates');
-                } elseif ($donateAction === 'create') {
-                    if ($donateTitle === '' || $donateVkId === '') {
-                        throw new RuntimeException('Для доната нужно указать название и VK Donut ID.');
-                    }
-                    $stmt = $pdo->prepare("INSERT INTO vk_donates (title, description, vk_donate_id, is_active) VALUES (?, ?, ?, 1)");
-                    $stmt->execute([$donateTitle, $donateDescription !== '' ? $donateDescription : null, $donateVkId]);
-                } elseif ($donateAction === 'update') {
-                    if ($donateId <= 0) {
-                        throw new RuntimeException('Не выбран донат для редактирования.');
-                    }
-                    if ($donateTitle === '' || $donateVkId === '') {
-                        throw new RuntimeException('Для доната нужно указать название и VK Donut ID.');
-                    }
-                    $stmt = $pdo->prepare("UPDATE vk_donates SET title = ?, description = ?, vk_donate_id = ? WHERE id = ? LIMIT 1");
-                    $stmt->execute([$donateTitle, $donateDescription !== '' ? $donateDescription : null, $donateVkId, $donateId]);
-                } elseif ($donateAction === 'toggle') {
-                    if ($donateId <= 0) {
-                        throw new RuntimeException('Не выбран донат для изменения статуса.');
-                    }
-                    $stmt = $pdo->prepare("UPDATE vk_donates SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ? LIMIT 1");
-                    $stmt->execute([$donateId]);
-                } elseif ($donateAction === 'delete') {
-                    if ($donateId <= 0) {
-                        throw new RuntimeException('Не выбран донат для удаления.');
-                    }
-                    $stmt = $pdo->prepare("DELETE FROM vk_donates WHERE id = ? LIMIT 1");
-                    $stmt->execute([$donateId]);
-                } else {
-                    throw new RuntimeException('Неизвестное действие для донатов.');
-                }
-
-                $_SESSION['success_message'] = 'Настройки донатов сохранены';
-                $_SESSION['settings_active_tab'] = 'vk-donates';
-                redirect('/admin/settings#vk-donates');
-            } catch (Throwable $e) {
-                $error = $e->getMessage() !== '' ? $e->getMessage() : 'Не удалось сохранить донат.';
-            }
         }
 
         $payload = [
@@ -276,7 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $activeSettingsTab = (string) ($_SESSION['settings_active_tab'] ?? 'notifications');
-if (!in_array($activeSettingsTab, ['notifications', 'email-delivery', 'vk-integration', 'vk-publication', 'vk-donates', 'homepage-banner'], true)) {
+if (!in_array($activeSettingsTab, ['notifications', 'email-delivery', 'vk-integration', 'vk-publication', 'homepage-banner'], true)) {
     $activeSettingsTab = 'notifications';
 }
 unset($_SESSION['settings_active_tab']);
@@ -330,9 +270,6 @@ unset($_SESSION['success_message']);
         </button>
         <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'vk-publication' ? ' is-active' : '' ?>" data-settings-tab="vk-publication" role="tab">
             <i class="fas fa-bullhorn"></i> Публикация в VK
-        </button>
-        <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'vk-donates' ? ' is-active' : '' ?>" data-settings-tab="vk-donates" role="tab">
-            <i class="fas fa-hand-holding-heart"></i> Донаты VK
         </button>
         <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'homepage-banner' ? ' is-active' : '' ?>" data-settings-tab="homepage-banner" role="tab">
             <i class="fas fa-image"></i> Главная страница
@@ -644,7 +581,7 @@ unset($_SESSION['success_message']);
                         <div class="form-group">
                             <label class="form-label">Шаблон подписи поста VK</label>
                             <textarea name="vk_publication_post_template" id="vkPublicationTemplateInput" class="form-input" rows="8"><?= htmlspecialchars($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()) ?></textarea>
-                            <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {drawing_title}, {work_title}, {contest_title}, {participant_age}, {age_category}. Legacy: {nomination}.</div>
+                            <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {contest_title}, {participant_age}, {age_category}. Legacy: {nomination}.</div>
                             <div class="form-hint" style="margin-top:8px;">Компактный шаблон (готовая альтернатива):</div>
                             <pre style="white-space:pre-wrap; background:#F8FAFC; padding:10px; border-radius:8px; border:1px solid #E2E8F0; margin-top:6px; font-size:12px;"><?= htmlspecialchars(compactVkPostTemplate()) ?></pre>
                             <div style="margin-top:12px;">
@@ -659,99 +596,6 @@ unset($_SESSION['success_message']);
                         </button>
                     </div>
             </form>
-        </section>
-
-        <section id="vk-donates" class="settings-tab-panel<?= $activeSettingsTab === 'vk-donates' ? ' is-active' : '' ?>" data-settings-panel="vk-donates">
-            <div class="settings-form">
-                <div class="settings-section__header">
-                    <h4><i class="fas fa-hand-holding-heart"></i> Донаты VK для публикаций</h4>
-                    <p>Здесь задаются варианты донатов, которые можно выбрать при публикации заявки в VK.</p>
-                </div>
-                <form method="POST" class="settings-actions" style="justify-content:flex-start; margin-bottom:10px;">
-                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                    <input type="hidden" name="settings_section" value="vk-donates">
-                    <input type="hidden" name="action" value="sync_vk_donates">
-                    <button type="submit" class="btn btn--secondary">
-                        <i class="fab fa-vk"></i> Синхронизировать цели из VK
-                    </button>
-                </form>
-                <div class="form-hint" style="margin-bottom:12px;">
-                    Цели, созданные непосредственно во VK, появляются здесь после синхронизации.
-                </div>
-
-                <div class="settings-vk-card" style="margin-bottom:14px;">
-                    <?php if (empty($vkDonates)): ?>
-                        <div class="text-secondary">Пока нет созданных донатов. Добавьте первый вариант ниже.</div>
-                    <?php else: ?>
-                        <div style="display:grid; gap:10px;">
-                            <?php foreach ($vkDonates as $donate): ?>
-                                <form method="POST" class="settings-message-card" style="padding:14px; border:1px solid #e5e7eb; border-radius:12px;">
-                                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                                    <input type="hidden" name="settings_section" value="vk-donates">
-                                    <input type="hidden" name="donate_id" value="<?= (int) ($donate['id'] ?? 0) ?>">
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label class="form-label">Название</label>
-                                            <input type="text" name="donate_title" class="form-input" value="<?= htmlspecialchars((string) ($donate['title'] ?? '')) ?>" required>
-                                        </div>
-                                        <div class="form-group">
-                                            <label class="form-label">VK Donut ID</label>
-                                            <input type="text" name="donate_vk_id" class="form-input" value="<?= htmlspecialchars((string) ($donate['vk_donate_id'] ?? '')) ?>" required>
-                                        </div>
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label">Описание (необязательно)</label>
-                                        <textarea name="donate_description" class="form-input" rows="2"><?= htmlspecialchars((string) ($donate['description'] ?? '')) ?></textarea>
-                                    </div>
-                                    <div class="settings-actions" style="justify-content:flex-start;">
-                                        <button type="submit" name="donate_action" value="update" class="btn btn--primary btn--sm">
-                                            <i class="fas fa-save"></i> Сохранить
-                                        </button>
-                                        <button type="submit" name="donate_action" value="toggle" class="btn btn--ghost btn--sm">
-                                            <i class="fas <?= (int) ($donate['is_active'] ?? 0) === 1 ? 'fa-toggle-on' : 'fa-toggle-off' ?>"></i>
-                                            <?= (int) ($donate['is_active'] ?? 0) === 1 ? 'Отключить' : 'Включить' ?>
-                                        </button>
-                                        <button type="submit" name="donate_action" value="delete" class="btn btn--danger btn--sm" onclick="return confirm('Удалить этот донат?');">
-                                            <i class="fas fa-trash"></i> Удалить
-                                        </button>
-                                    </div>
-                                </form>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php endif; ?>
-                </div>
-
-                <form method="POST" class="settings-vk-card">
-                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                    <input type="hidden" name="settings_section" value="vk-donates">
-                    <input type="hidden" name="donate_action" value="create">
-                    <div class="settings-section__header" style="margin-bottom:12px;">
-                        <h5 style="margin:0;">Добавить новый донат</h5>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Название</label>
-                            <input type="text" name="donate_title" class="form-input" placeholder="Например: Поддержка проекта" required>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">VK Donut ID</label>
-                            <input type="text" name="donate_vk_id" class="form-input" placeholder="Например: 123456789" required>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Описание (необязательно)</label>
-                        <textarea name="donate_description" class="form-input" rows="2" placeholder="Короткое описание для админов"></textarea>
-                    </div>
-                    <div class="settings-actions">
-                        <button type="submit" class="btn btn--primary">
-                            <i class="fas fa-plus"></i> Добавить донат
-                        </button>
-                    </div>
-                </form>
-            </div>
         </section>
 
         <section id="homepage-banner" class="settings-tab-panel<?= $activeSettingsTab === 'homepage-banner' ? ' is-active' : '' ?>" data-settings-panel="homepage-banner">
@@ -1013,8 +857,6 @@ unset($_SESSION['success_message']);
             participant_full_name: 'Иванова Анна Сергеевна',
             organization_name: 'МБУ ДО «Детская школа искусств №1»',
             region_name: 'Московская область',
-            drawing_title: 'Весенний город',
-            work_title: 'Весенний город',
             contest_title: 'Мир глазами детей',
             participant_age: '9',
             age_category: '7-10 лет',

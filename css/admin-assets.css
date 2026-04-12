@@ -1323,6 +1323,40 @@ body:has(#application-actions) .admin-content {
   flex-wrap: wrap;
 }
 
+.work-decision-btn {
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid #d1d5db;
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease, opacity .18s ease;
+}
+
+.work-decision-btn:hover:not(:disabled) {
+  border-color: #94a3b8;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+}
+
+.work-decision-btn--accepted.is-active {
+  background: #dcfce7;
+  border-color: #22c55e;
+  color: #166534;
+}
+
+.work-decision-btn--rejected.is-active {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+
+.work-decision-btn:disabled,
+.work-decision-btn.is-disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  box-shadow: none;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
 .application-sidebar .card {
   border-radius: 14px;
 }
