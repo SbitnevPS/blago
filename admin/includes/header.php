@@ -37,6 +37,9 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 <span class="badge badge--warning" style="margin-left:8px;"><?= (int) $adminUnreadDisputes ?></span>
 <?php endif; ?>
 </a>
+<a href="/admin/mailings" class="admin-sidebar__link <?= $currentPage === 'mailings' ? 'admin-sidebar__link--active' : '' ?>">
+<i class="fas fa-paper-plane"></i> Рассылки
+</a>
 
 <div class="admin-sidebar__section">Конкурсы</div>
 <a href="/admin/contests.php" class="admin-sidebar__link <?= $currentPage === 'contests' ? 'admin-sidebar__link--active' : '' ?>">
