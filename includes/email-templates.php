@@ -238,3 +238,133 @@ function buildEmailVerificationText(array $data): string {
         $siteUrl,
     ]);
 }
+
+/**
+ * @param array<string,mixed> $data
+ */
+function buildPasswordResetRequestEmailTemplate(array $data): string
+{
+    $brandName = trim((string) ($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $siteUrl = trim((string) ($data['site_url'] ?? SITE_URL));
+    $userName = trim((string) ($data['user_name'] ?? ''));
+    $resetUrl = trim((string) ($data['reset_url'] ?? ''));
+    $greeting = $userName !== '' ? 'Здравствуйте, ' . $userName . '!' : 'Здравствуйте!';
+
+    $safeBrandName = emailTemplateEscape($brandName);
+    $safeSiteUrl = emailTemplateEscape($siteUrl);
+    $safeGreeting = emailTemplateEscape($greeting);
+    $safeResetUrl = emailTemplateEscape($resetUrl);
+
+    return '<!doctype html><html lang="ru"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Восстановление пароля</title></head><body style="margin:0;padding:0;background:#f3f4f6;">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 12px;"><tr><td align="center">'
+        . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;">'
+        . '<tr><td style="padding:24px;font-family:Arial,sans-serif;">'
+        . '<div style="font-size:24px;font-weight:700;color:#111827;">' . $safeBrandName . '</div>'
+        . '<p style="font-size:16px;color:#111827;line-height:1.6;margin:20px 0 0;">' . $safeGreeting . '</p>'
+        . '<p style="font-size:15px;color:#374151;line-height:1.7;margin:12px 0 0;">Вы запросили восстановление пароля. Перейдите по ссылке ниже, чтобы получить временный пароль для входа.</p>'
+        . '<p style="font-size:15px;color:#374151;line-height:1.7;margin:12px 0 0;">Временный пароль будет действовать 1 час. Если вы не смените его вовремя, восстановление отменится и снова будет действовать ваш старый пароль.</p>'
+        . '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0 0;"><tr><td bgcolor="#2563eb" style="border-radius:10px;">'
+        . '<a href="' . $safeResetUrl . '" style="display:inline-block;padding:14px 24px;color:#ffffff;text-decoration:none;font-family:Arial,sans-serif;font-size:16px;font-weight:700;">Получить временный пароль</a>'
+        . '</td></tr></table>'
+        . '<p style="font-size:13px;color:#4b5563;line-height:1.7;margin:18px 0 0;">Если кнопка не работает, перейдите по ссылке:<br><a href="' . $safeResetUrl . '" style="color:#2563eb;word-break:break-all;">' . $safeResetUrl . '</a></p>'
+        . '<p style="font-size:12px;color:#6b7280;line-height:1.6;margin:20px 0 0;">Если вы не запрашивали восстановление пароля, просто проигнорируйте это письмо.</p>'
+        . '<p style="font-size:12px;color:#6b7280;line-height:1.6;margin:16px 0 0;">С уважением,<br>команда ' . $safeBrandName . '<br><a href="' . $safeSiteUrl . '" style="color:#2563eb;">' . $safeSiteUrl . '</a></p>'
+        . '</td></tr></table></td></tr></table></body></html>';
+}
+
+/**
+ * @param array<string,mixed> $data
+ */
+function buildPasswordResetRequestEmailText(array $data): string
+{
+    $brandName = trim((string) ($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $siteUrl = trim((string) ($data['site_url'] ?? SITE_URL));
+    $userName = trim((string) ($data['user_name'] ?? ''));
+    $resetUrl = trim((string) ($data['reset_url'] ?? ''));
+    $greeting = $userName !== '' ? 'Здравствуйте, ' . $userName . '!' : 'Здравствуйте!';
+
+    return implode("\n", [
+        $greeting,
+        '',
+        'Вы запросили восстановление пароля.',
+        'Перейдите по ссылке, чтобы получить временный пароль для входа:',
+        $resetUrl,
+        '',
+        'Временный пароль будет действовать 1 час.',
+        'Если не сменить его вовремя, восстановление отменится и снова будет действовать старый пароль.',
+        '',
+        'Если вы не запрашивали восстановление, просто проигнорируйте это письмо.',
+        'С уважением, команда ' . $brandName,
+        $siteUrl,
+    ]);
+}
+
+/**
+ * @param array<string,mixed> $data
+ */
+function buildTemporaryPasswordEmailTemplate(array $data): string
+{
+    $brandName = trim((string) ($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $siteUrl = trim((string) ($data['site_url'] ?? SITE_URL));
+    $userName = trim((string) ($data['user_name'] ?? ''));
+    $login = trim((string) ($data['login'] ?? ''));
+    $temporaryPassword = trim((string) ($data['temporary_password'] ?? ''));
+    $expiresAt = trim((string) ($data['expires_at'] ?? ''));
+    $greeting = $userName !== '' ? 'Здравствуйте, ' . $userName . '!' : 'Здравствуйте!';
+
+    $safeBrandName = emailTemplateEscape($brandName);
+    $safeSiteUrl = emailTemplateEscape($siteUrl);
+    $safeGreeting = emailTemplateEscape($greeting);
+    $safeLogin = emailTemplateEscape($login);
+    $safeTemporaryPassword = emailTemplateEscape($temporaryPassword);
+    $safeExpiresAt = emailTemplateEscape($expiresAt);
+
+    return '<!doctype html><html lang="ru"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Временный пароль</title></head><body style="margin:0;padding:0;background:#f3f4f6;">'
+        . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 12px;"><tr><td align="center">'
+        . '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;">'
+        . '<tr><td style="padding:24px;font-family:Arial,sans-serif;">'
+        . '<div style="font-size:24px;font-weight:700;color:#111827;">' . $safeBrandName . '</div>'
+        . '<p style="font-size:16px;color:#111827;line-height:1.6;margin:20px 0 0;">' . $safeGreeting . '</p>'
+        . '<p style="font-size:15px;color:#374151;line-height:1.7;margin:12px 0 0;">Для вашего аккаунта сформирован временный пароль. Используйте его для входа и сразу смените на постоянный в профиле.</p>'
+        . '<div style="margin-top:20px;border:1px solid #dbe3f1;border-radius:14px;padding:18px 20px;background:#f8fbff;">'
+        . '<div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">Логин</div>'
+        . '<div style="margin-top:4px;font-size:16px;font-weight:700;color:#111827;">' . $safeLogin . '</div>'
+        . '<div style="margin-top:16px;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">Временный пароль</div>'
+        . '<div style="margin-top:4px;font-size:22px;font-weight:700;color:#111827;word-break:break-all;">' . $safeTemporaryPassword . '</div>'
+        . '<div style="margin-top:16px;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">Действует до</div>'
+        . '<div style="margin-top:4px;font-size:15px;font-weight:700;color:#111827;">' . $safeExpiresAt . '</div>'
+        . '</div>'
+        . '<div style="margin-top:18px;padding:14px 16px;background:#fff7ed;border:1px solid #fdba74;border-radius:12px;font-size:14px;line-height:1.7;color:#7c2d12;">Временный пароль действует 1 час. Если не сменить его вовремя, восстановление отменится и снова будет действовать старый пароль.</div>'
+        . '<p style="font-size:12px;color:#6b7280;line-height:1.6;margin:20px 0 0;">С уважением,<br>команда ' . $safeBrandName . '<br><a href="' . $safeSiteUrl . '" style="color:#2563eb;">' . $safeSiteUrl . '</a></p>'
+        . '</td></tr></table></td></tr></table></body></html>';
+}
+
+/**
+ * @param array<string,mixed> $data
+ */
+function buildTemporaryPasswordEmailText(array $data): string
+{
+    $brandName = trim((string) ($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $siteUrl = trim((string) ($data['site_url'] ?? SITE_URL));
+    $userName = trim((string) ($data['user_name'] ?? ''));
+    $login = trim((string) ($data['login'] ?? ''));
+    $temporaryPassword = trim((string) ($data['temporary_password'] ?? ''));
+    $expiresAt = trim((string) ($data['expires_at'] ?? ''));
+    $greeting = $userName !== '' ? 'Здравствуйте, ' . $userName . '!' : 'Здравствуйте!';
+
+    return implode("\n", [
+        $greeting,
+        '',
+        'Для вашего аккаунта сформирован временный пароль.',
+        'Логин: ' . $login,
+        'Временный пароль: ' . $temporaryPassword,
+        'Действует до: ' . $expiresAt,
+        '',
+        'Пароль действует 1 час.',
+        'Обязательно смените его после входа.',
+        'Если не сменить пароль вовремя, восстановление отменится и снова будет действовать старый пароль.',
+        '',
+        'С уважением, команда ' . $brandName,
+        $siteUrl,
+    ]);
+}

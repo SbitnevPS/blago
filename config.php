@@ -148,6 +148,56 @@ function ensureEmailVerificationSchema(PDO $pdo): void
 
 ensureEmailVerificationSchema($pdo);
 
+function ensurePasswordRecoverySchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    $requiredUserColumns = [
+        'recovery_old_password_hash' => "ADD COLUMN recovery_old_password_hash VARCHAR(255) NULL AFTER password",
+        'recovery_expires_at' => "ADD COLUMN recovery_expires_at DATETIME NULL AFTER recovery_old_password_hash",
+    ];
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT COLUMN_NAME
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'users'
+              AND COLUMN_NAME IN ('recovery_old_password_hash', 'recovery_expires_at')
+        ");
+        $stmt->execute();
+        $existingColumns = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+        foreach ($requiredUserColumns as $columnName => $definition) {
+            if (!in_array($columnName, $existingColumns, true)) {
+                $pdo->exec("ALTER TABLE users {$definition}");
+            }
+        }
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS password_resets (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            token VARCHAR(255) NOT NULL,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_password_resets_token (token),
+            INDEX idx_password_resets_user (user_id),
+            INDEX idx_password_resets_email (email),
+            CONSTRAINT fk_password_resets_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Throwable $e) {
+        error_log('[SCHEMA] Password recovery schema check failed: ' . $e->getMessage());
+    }
+}
+
+ensurePasswordRecoverySchema($pdo);
+
 function ensureApplicationStatusSchema(PDO $pdo): void
 {
     static $checked = false;
@@ -508,6 +558,293 @@ function buildEmailVerificationUrl(string $token, int $userId): string
 {
     $baseUrl = rtrim((string) SITE_URL, '/');
     return $baseUrl . '/email/verify?token=' . urlencode($token) . '&uid=' . $userId;
+}
+
+function buildPasswordResetUrl(string $token): string
+{
+    return rtrim((string) SITE_URL, '/') . '/reset-password?token=' . urlencode($token);
+}
+
+function generatePasswordResetToken(): string
+{
+    return bin2hex(random_bytes(32));
+}
+
+function generateTemporaryPassword(int $length = 12): string
+{
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+    $maxIndex = strlen($alphabet) - 1;
+    $password = '';
+    for ($i = 0; $i < max(10, $length); $i++) {
+        $password .= $alphabet[random_int(0, $maxIndex)];
+    }
+    return $password;
+}
+
+function isPasswordRecoveryActive(array $user): bool
+{
+    return trim((string) ($user['recovery_old_password_hash'] ?? '')) !== '' && !empty($user['recovery_expires_at']);
+}
+
+function clearPasswordRecoverySessionFlags(?int $userId = null): void
+{
+    if ($userId === null || (int) ($_SESSION['force_password_change_user_id'] ?? 0) === $userId) {
+        unset($_SESSION['force_password_change'], $_SESSION['force_password_change_user_id']);
+    }
+}
+
+function cancelExpiredPasswordRecovery(int $userId): bool
+{
+    global $pdo;
+
+    $stmt = $pdo->prepare('SELECT id, password, recovery_old_password_hash, recovery_expires_at FROM users WHERE id = ? LIMIT 1');
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch();
+    if (!$user || !isPasswordRecoveryActive($user)) {
+        return false;
+    }
+
+    $expiresAt = strtotime((string) $user['recovery_expires_at']);
+    if ($expiresAt === false || $expiresAt > time()) {
+        return false;
+    }
+
+    $restoreHash = (string) ($user['recovery_old_password_hash'] ?? '');
+    $restoreStmt = $pdo->prepare("
+        UPDATE users
+        SET password = ?, recovery_old_password_hash = NULL, recovery_expires_at = NULL, updated_at = NOW()
+        WHERE id = ?
+    ");
+    $restoreStmt->execute([$restoreHash, $userId]);
+    clearPasswordRecoverySessionFlags($userId);
+    return true;
+}
+
+function requestPasswordResetForEmail(string $email): void
+{
+    global $pdo;
+
+    $normalizedEmail = trim(mb_strtolower($email));
+    if ($normalizedEmail === '' || !filter_var($normalizedEmail, FILTER_VALIDATE_EMAIL)) {
+        return;
+    }
+
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
+    $stmt->execute([$normalizedEmail]);
+    $user = $stmt->fetch();
+
+    if (!$user || empty($user['password'])) {
+        return;
+    }
+
+    $pdo->prepare('DELETE FROM password_resets WHERE user_id = ? OR (email = ? AND used_at IS NULL)')->execute([(int) $user['id'], $normalizedEmail]);
+
+    $token = generatePasswordResetToken();
+    $expiresAt = date('Y-m-d H:i:s', time() + 3600);
+    $insert = $pdo->prepare('INSERT INTO password_resets (user_id, email, token, expires_at) VALUES (?, ?, ?, ?)');
+    $insert->execute([(int) $user['id'], $normalizedEmail, password_hash($token, PASSWORD_DEFAULT), $expiresAt]);
+
+    $userName = trim((string) (($user['name'] ?? '') . ' ' . ($user['surname'] ?? '')));
+    $resetUrl = buildPasswordResetUrl($token);
+    $html = buildPasswordResetRequestEmailTemplate([
+        'user_name' => $userName,
+        'reset_url' => $resetUrl,
+        'brand_name' => 'ДетскиеКонкурсы.рф',
+        'site_url' => SITE_URL,
+    ]);
+    $text = buildPasswordResetRequestEmailText([
+        'user_name' => $userName,
+        'reset_url' => $resetUrl,
+        'brand_name' => 'ДетскиеКонкурсы.рф',
+        'site_url' => SITE_URL,
+    ]);
+
+    sendEmail($normalizedEmail, 'Восстановление пароля', $html, ['text' => $text]);
+}
+
+function findPasswordResetByToken(string $token): ?array
+{
+    global $pdo;
+
+    $token = trim($token);
+    if ($token === '') {
+        return null;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT pr.*, u.name, u.surname, u.password, u.recovery_old_password_hash, u.recovery_expires_at
+        FROM password_resets pr
+        INNER JOIN users u ON u.id = pr.user_id
+        WHERE pr.used_at IS NULL
+        ORDER BY pr.id DESC
+    ");
+    $stmt->execute();
+    $rows = $stmt->fetchAll() ?: [];
+
+    foreach ($rows as $row) {
+        if (!password_verify($token, (string) ($row['token'] ?? ''))) {
+            continue;
+        }
+        return $row;
+    }
+
+    return null;
+}
+
+function activateTemporaryPasswordByResetToken(string $token): array
+{
+    global $pdo;
+
+    $resetRow = findPasswordResetByToken($token);
+    if (!$resetRow) {
+        return ['success' => false, 'message' => 'Ссылка для восстановления недействительна или уже использована.'];
+    }
+
+    if (strtotime((string) ($resetRow['expires_at'] ?? '')) <= time()) {
+        return ['success' => false, 'message' => 'Срок действия ссылки для восстановления истёк.'];
+    }
+
+    $userId = (int) ($resetRow['user_id'] ?? 0);
+    if ($userId <= 0) {
+        return ['success' => false, 'message' => 'Некорректный пользователь для восстановления пароля.'];
+    }
+
+    cancelExpiredPasswordRecovery($userId);
+
+    $currentUserStmt = $pdo->prepare('SELECT * FROM users WHERE id = ? LIMIT 1');
+    $currentUserStmt->execute([$userId]);
+    $user = $currentUserStmt->fetch();
+    if (!$user || empty($user['password'])) {
+        return ['success' => false, 'message' => 'Восстановление пароля для этого аккаунта недоступно.'];
+    }
+
+    $temporaryPassword = generateTemporaryPassword(12);
+    $temporaryPasswordHash = password_hash($temporaryPassword, PASSWORD_DEFAULT);
+    $backupHash = trim((string) ($user['recovery_old_password_hash'] ?? '')) !== ''
+        ? (string) $user['recovery_old_password_hash']
+        : (string) $user['password'];
+    $recoveryExpiresAt = date('Y-m-d H:i:s', time() + 3600);
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare("
+            UPDATE users
+            SET password = ?, recovery_old_password_hash = ?, recovery_expires_at = ?, updated_at = NOW()
+            WHERE id = ?
+        ")->execute([$temporaryPasswordHash, $backupHash, $recoveryExpiresAt, $userId]);
+
+        $pdo->prepare('UPDATE password_resets SET used_at = NOW() WHERE id = ?')->execute([(int) $resetRow['id']]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        return ['success' => false, 'message' => 'Не удалось активировать временный пароль. Попробуйте ещё раз.'];
+    }
+
+    $userName = trim((string) (($user['name'] ?? '') . ' ' . ($user['surname'] ?? '')));
+    $html = buildTemporaryPasswordEmailTemplate([
+        'user_name' => $userName,
+        'login' => (string) ($user['email'] ?? ''),
+        'temporary_password' => $temporaryPassword,
+        'expires_at' => $recoveryExpiresAt,
+        'brand_name' => 'ДетскиеКонкурсы.рф',
+        'site_url' => SITE_URL,
+    ]);
+    $text = buildTemporaryPasswordEmailText([
+        'user_name' => $userName,
+        'login' => (string) ($user['email'] ?? ''),
+        'temporary_password' => $temporaryPassword,
+        'expires_at' => $recoveryExpiresAt,
+        'brand_name' => 'ДетскиеКонкурсы.рф',
+        'site_url' => SITE_URL,
+    ]);
+    sendEmail((string) ($user['email'] ?? ''), 'Временный пароль для входа', $html, ['text' => $text]);
+
+    return ['success' => true, 'message' => 'Временный пароль отправлен на почту.', 'user_id' => $userId];
+}
+
+function authenticateUserByPassword(string $email, string $password): array
+{
+    global $pdo;
+
+    $normalizedEmail = trim(mb_strtolower($email));
+    if ($normalizedEmail === '' || $password === '') {
+        return ['success' => false, 'message' => 'Неверный email или пароль'];
+    }
+
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
+    $stmt->execute([$normalizedEmail]);
+    $user = $stmt->fetch();
+    if (!$user || empty($user['password'])) {
+        return ['success' => false, 'message' => 'Неверный email или пароль'];
+    }
+
+    cancelExpiredPasswordRecovery((int) $user['id']);
+    $stmt->execute([$normalizedEmail]);
+    $user = $stmt->fetch();
+    if (!$user || empty($user['password'])) {
+        return ['success' => false, 'message' => 'Неверный email или пароль'];
+    }
+
+    if (!password_verify($password, (string) $user['password'])) {
+        return ['success' => false, 'message' => 'Неверный email или пароль'];
+    }
+
+    $temporaryLogin = isPasswordRecoveryActive($user) && !empty($user['recovery_expires_at']) && strtotime((string) $user['recovery_expires_at']) > time();
+    if ($temporaryLogin) {
+        $_SESSION['force_password_change'] = true;
+        $_SESSION['force_password_change_user_id'] = (int) $user['id'];
+    } else {
+        clearPasswordRecoverySessionFlags((int) $user['id']);
+    }
+
+    return [
+        'success' => true,
+        'user' => $user,
+        'used_temporary_password' => $temporaryLogin,
+    ];
+}
+
+function isForcedPasswordChangeRequiredForCurrentSession(): bool
+{
+    $userId = (int) ($_SESSION['force_password_change_user_id'] ?? 0);
+    if (empty($_SESSION['force_password_change']) || $userId <= 0) {
+        return false;
+    }
+
+    $user = resolveSessionUser($userId);
+    if (!$user || !isPasswordRecoveryActive($user)) {
+        clearPasswordRecoverySessionFlags($userId);
+        return false;
+    }
+
+    if (!empty($user['recovery_expires_at']) && strtotime((string) $user['recovery_expires_at']) <= time()) {
+        cancelExpiredPasswordRecovery($userId);
+        return false;
+    }
+
+    return true;
+}
+
+function enforceForcedPasswordChangeRedirect(): void
+{
+    if (!isForcedPasswordChangeRequiredForCurrentSession()) {
+        return;
+    }
+
+    $currentPath = rawurldecode(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/');
+    $allowedPaths = ['/profile', '/logout', '/admin/logout'];
+    if (in_array($currentPath, $allowedPaths, true)) {
+        return;
+    }
+
+    if (strpos($currentPath, '/email/') === 0 || $currentPath === '/forgot-password' || $currentPath === '/reset-password') {
+        return;
+    }
+
+    $_SESSION['error_message'] = 'Вы вошли по временному паролю. Обязательно смените пароль, чтобы продолжить работу.';
+    redirect('/profile?force_password_change=1');
 }
 
 function requireVerifiedEmailOrRedirect($user = null): void

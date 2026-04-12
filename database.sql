@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(100) NOT NULL,
     surname VARCHAR(100),
     email VARCHAR(255),
+    password VARCHAR(255) NULL,
+    recovery_old_password_hash VARCHAR(255) NULL,
+    recovery_expires_at DATETIME NULL,
     email_verified TINYINT(1) NOT NULL DEFAULT 0,
     email_verified_at DATETIME NULL,
     email_verification_token VARCHAR(255) NULL,
@@ -21,6 +24,20 @@ CREATE TABLE IF NOT EXISTS users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_vk_id (vk_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS password_resets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    token VARCHAR(255) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_password_resets_token (token),
+    INDEX idx_password_resets_user (user_id),
+    INDEX idx_password_resets_email (email),
+    CONSTRAINT fk_password_resets_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Таблица конкурсов
@@ -98,5 +115,5 @@ CREATE TABLE IF NOT EXISTS participants (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Создание администратора (пароль: admin123)
-INSERT INTO users (vk_id, name, surname, email, is_admin) 
-VALUES ('admin', 'Администратор', '', 'admin@kids-contests.ru', 1);
+INSERT INTO users (vk_id, name, surname, email, password, is_admin) 
+VALUES ('admin', 'Администратор', '', 'admin@kids-contests.ru', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 1);

@@ -15,6 +15,7 @@ $error = '';
 $success = '';
 $missingRequiredFields = [];
 $missingRequiredLabels = [];
+$forcePasswordChange = isForcedPasswordChangeRequiredForCurrentSession() || (string) ($_GET['force_password_change'] ?? '') === '1';
 
 $requiredFieldMeta = [
     'name' => 'Имя',
@@ -55,10 +56,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
  'organization_name' => $organization_name,
  ];
 
+ if (!$forcePasswordChange) {
  foreach ($requiredValues as $fieldKey => $fieldValue) {
  if ($fieldValue === '') {
  $missingRequiredFields[] = $fieldKey;
  $missingRequiredLabels[] = $requiredFieldMeta[$fieldKey];
+ }
  }
  }
 
@@ -79,8 +82,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
  if ($stmt->fetch()) {
  $error = 'Этот email уже используется другим пользователем';
  } else {
+ // При входе по временному паролю требуем задать новый постоянный пароль.
+ if (empty($error) && $forcePasswordChange && $newPassword === '') {
+ $error = 'После входа по временному паролю необходимо сразу задать новый постоянный пароль.';
+ }
+
  // Проверяем пароль при смене email
- if ($email !== (string) ($user['email'] ?? '')) {
+ if (empty($error) && !$forcePasswordChange && $email !== (string) ($user['email'] ?? '')) {
  if (empty($user['password']) && $newPassword === '') {
  $error = 'Для смены email необходимо сначала установить пароль';
  } elseif (!empty($user['password']) && empty($_POST['current_password'])) {
@@ -101,15 +109,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
  if (empty($error)) {
  // Обновляем данные
- $emailChanged = $email !== (string) ($user['email'] ?? '');
+ $emailChanged = !$forcePasswordChange && $email !== (string) ($user['email'] ?? '');
  $verificationUpdateSql = $emailChanged
  ? ', email_verified = 0, email_verified_at = NULL, email_verification_token = NULL, email_verification_sent_at = NULL'
  : '';
 
  if ($newPassword !== '') {
  $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
- $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, password = ?, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
+ $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, password = ?, recovery_old_password_hash = NULL, recovery_expires_at = NULL, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
  $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $passwordHash, $user['id']]);
+ clearPasswordRecoverySessionFlags((int) $user['id']);
  } else {
  $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
  $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $user['id']]);
@@ -118,6 +127,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
  // Обновляем сессию
  $user = getCurrentUser();
  $emailVerified = isUserEmailVerified($user);
+ if ($newPassword !== '') {
+ redirect('/profile?password_changed=1');
+ }
+ $forcePasswordChange = isForcedPasswordChangeRequiredForCurrentSession() || (string) ($_GET['force_password_change'] ?? '') === '1';
  $success = 'Данные успешно сохранены';
  }
  }
@@ -138,6 +151,10 @@ if ($hasVkCompletionHint) {
     if (!empty($missingRequiredLabels) && $error === '') {
         $error = 'Заполните обязательные поля: ' . implode(', ', array_values(array_unique($missingRequiredLabels))) . '.';
     }
+}
+
+if ((string) ($_GET['password_changed'] ?? '') === '1' && $success === '') {
+    $success = 'Пароль успешно изменён';
 }
 
 $missingRequiredFields = array_values(array_unique($missingRequiredFields));
@@ -163,6 +180,15 @@ generateCSRFToken();
     <i class="fas fa-exclamation-triangle alert__icon"></i>
     <div class="alert__content">
         <div class="alert__message">Ваш адрес электронной почты не подтверждён. Пока адрес не будет подтверждён, отправка заявок на участие в конкурсах недоступна.</div>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($forcePasswordChange): ?>
+<div class="alert mb-lg" style="max-width:600px; margin:0 auto var(--space-lg); background:#eff6ff; border:1px solid #93c5fd; color:#1d4ed8;">
+    <i class="fas fa-shield-alt alert__icon"></i>
+    <div class="alert__content">
+        <div class="alert__message">Вы вошли по временному паролю. Обязательно задайте новый постоянный пароль, чтобы продолжить пользоваться сайтом.</div>
     </div>
 </div>
 <?php endif; ?>
@@ -282,7 +308,7 @@ generateCSRFToken();
 <div class="profile-section">
 <div class="profile-section__title">Смена пароля</div>
 
- <?php if (!empty($user['password'])): ?>
+ <?php if (!empty($user['password']) && !$forcePasswordChange): ?>
 <div class="form-group">
 <label class="form-label">Текущий пароль</label>
 <input type="password" name="current_password" class="form-input" placeholder="Введите текущий пароль">
@@ -298,6 +324,9 @@ generateCSRFToken();
 <label class="form-label">Подтверждение пароля</label>
 <input type="password" name="confirm_password" class="form-input" placeholder="Повторите новый пароль">
 </div>
+<?php if ($forcePasswordChange): ?>
+<div class="form-hint" style="color:#1d4ed8;">После сохранения временный пароль станет недействительным, а вход будет работать только по новому паролю.</div>
+<?php endif; ?>
 </div>
 
 <button type="submit" class="btn btn--primary btn--lg" style="width:100%;">

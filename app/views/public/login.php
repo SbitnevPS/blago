@@ -34,18 +34,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($email === '' || $password === '') {
         $error = 'Заполните все поля';
     } else {
-        $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
-        $stmt->execute([$email]);
-        $user = $stmt->fetch();
-
-        if ($user && !empty($user['password']) && password_verify($password, $user['password'])) {
+        $authResult = authenticateUserByPassword($email, $password);
+        $user = $authResult['user'] ?? null;
+        if (!empty($authResult['success']) && is_array($user)) {
             $_SESSION['user_id'] = (int) $user['id'];
-            $target = sanitize_internal_redirect($_SESSION['user_auth_redirect'] ?? '/contests', '/contests');
+            $target = !empty($authResult['used_temporary_password'])
+                ? '/profile?force_password_change=1'
+                : sanitize_internal_redirect($_SESSION['user_auth_redirect'] ?? '/contests', '/contests');
             unset($_SESSION['user_auth_redirect']);
             redirect($target);
         }
 
-        $error = 'Неверный email или пароль';
+        $error = (string) ($authResult['message'] ?? 'Неверный email или пароль');
     }
 }
 ?>
@@ -92,6 +92,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <div class="form-group">
 <label class="form-label">Пароль</label>
 <input type="password" name="password" class="form-input" required placeholder="••••••••">
+</div>
+
+<div class="form-group" style="margin-top:-4px; text-align:right;">
+    <a href="/forgot-password" style="font-size:14px; color:var(--color-primary);">Забыли пароль?</a>
 </div>
 
 <button type="submit" class="btn-primary">

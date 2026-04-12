@@ -36,25 +36,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($email === '' || $password === '') {
         $error = 'Заполните все поля';
     } else {
-        $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
-        $stmt->execute([$email]);
-        $admin = $stmt->fetch();
+        $authResult = authenticateUserByPassword($email, $password);
+        $admin = $authResult['user'] ?? null;
 
         if (!$admin) {
-            $error = 'Пользователь с таким email не найден';
+            $error = (string) ($authResult['message'] ?? 'Неверный пароль');
         } elseif (empty($admin['password'])) {
             $error = 'Для этого аккаунта не установлен пароль. Используйте вход через VK или создайте пароль.';
-        } elseif (!password_verify($password, $admin['password'])) {
-            $error = 'Неверный пароль';
         } elseif ((int) ($admin['is_admin'] ?? 0) !== 1) {
             $error = 'У вас нет доступа к админ-панели';
         } else {
             $_SESSION['admin_user_id'] = (int) $admin['id'];
             $_SESSION['is_admin'] = true;
 
-            $target = sanitize_internal_redirect($_SESSION['admin_auth_redirect'] ?? '/admin', '/admin');
+            $target = !empty($authResult['used_temporary_password'])
+                ? '/profile?force_password_change=1'
+                : sanitize_internal_redirect($_SESSION['admin_auth_redirect'] ?? '/admin', '/admin');
             if (strpos($target, '/admin') !== 0) {
-                $target = '/admin';
+                $target = !empty($authResult['used_temporary_password']) ? '/profile?force_password_change=1' : '/admin';
             }
             unset($_SESSION['admin_auth_redirect']);
             redirect($target);
