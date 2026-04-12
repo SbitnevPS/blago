@@ -22,6 +22,7 @@ if ($status === 'draft') {
 }
 $contest_id = $_GET['contest_id'] ?? '';
 $search = $_GET['search'] ?? '';
+$searchApplicationId = max(0, (int) ($_GET['search_application_id'] ?? 0));
 $searchUserId = max(0, (int) ($_GET['search_user_id'] ?? 0));
 $participantId = max(0, (int) ($_GET['participant_id'] ?? 0));
 $participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
@@ -225,7 +226,10 @@ if ($contest_id) {
     $params[] = $contest_id;
 }
 
-if ($searchUserId > 0) {
+if ($searchApplicationId > 0) {
+    $where[] = 'a.id = ?';
+    $params[] = $searchApplicationId;
+} elseif ($searchUserId > 0) {
     $where[] = 'a.user_id = ?';
     $params[] = $searchUserId;
 } elseif ($search) {
@@ -338,18 +342,19 @@ require_once __DIR__ . '/includes/header.php';
             <div
                 style="flex: 1; min-width: 200px; max-width: 300px; position:relative;"
                 <?= admin_live_search_attrs([
-                    'endpoint' => '/admin/search-users',
-                    'primary_template' => '{{surname + name||Без имени}}',
-                    'secondary_template' => '{{email||Email не указан}}',
-                    'value_template' => '{{surname + name||Без имени}} · {{email||Email не указан}}',
+                    'endpoint' => '/admin/search-applications',
+                    'primary_template' => '#{{id}} · {{surname + name||Без имени}}',
+                    'secondary_template' => '{{contest_title||Конкурс не указан}} · {{email||Email не указан}}',
+                    'value_template' => '#{{id}} · {{surname + name||Без имени}}',
                     'limit' => 7,
                     'min_length' => 2,
                     'min_length_numeric' => 1,
                     'debounce' => 220,
                 ]) ?>>
-                <label class="form-label">Поиск</label>
+                <label class="form-label">Поиск по заявке</label>
                 <input type="text" id="applicationsSearchInput" name="search" class="form-input" data-live-search-input
-                       placeholder="ID, имя, email..." value="<?= htmlspecialchars($search) ?>">
+                       placeholder="ID заявки, ФИО заявителя, email, конкурс" value="<?= htmlspecialchars($search) ?>">
+                <input type="hidden" name="search_application_id" id="applicationsSearchApplicationId" data-live-search-hidden value="<?= (int) $searchApplicationId ?>">
                 <input type="hidden" name="search_user_id" id="applicationsSearchUserId" data-live-search-hidden value="<?= (int) $searchUserId ?>">
                 <div id="applicationsSearchResults" class="user-results" data-live-search-results></div>
             </div>
@@ -380,7 +385,7 @@ require_once __DIR__ . '/includes/header.php';
             <button type="submit" class="btn btn--primary">
                 <i class="fas fa-filter"></i> Фильтр
             </button>
-            <?php if ($status || $contest_id || $search || $searchUserId > 0 || $participantId > 0 || $participantQuery !== '' || $queue): ?>
+            <?php if ($status || $contest_id || $search || $searchApplicationId > 0 || $searchUserId > 0 || $participantId > 0 || $participantQuery !== '' || $queue): ?>
                 <a href="applications.php" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
@@ -526,12 +531,12 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="flex gap-sm">
                 <?php if ($page > 1): ?>
-                    <a href="?page=<?= $page - 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
+                    <a href="?page=<?= $page - 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_application_id=<?= (int) $searchApplicationId ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-left"></i>
                     </a>
                 <?php endif; ?>
                 <?php if ($page < $totalPages): ?>
-                    <a href="?page=<?= $page + 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
+                    <a href="?page=<?= $page + 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_application_id=<?= (int) $searchApplicationId ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-right"></i>
                     </a>
                 <?php endif; ?>

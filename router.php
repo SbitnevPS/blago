@@ -130,6 +130,7 @@ $routes = [
  '/admin/vk-publication/{id}' => ['file' => 'admin/vk-publication-view.php', 'name' => 'admin-vk-publication-view'],
  '/admin/diploma-template/{id}' => ['file' => 'admin/diploma-template.php', 'name' => 'admin-diploma-template'],
  '/admin/search-users' => ['file' => 'admin/search-users.php', 'name' => 'admin-search-users'],
+ '/admin/search-applications' => ['file' => 'admin/search-applications.php', 'name' => 'admin-search-applications'],
  '/admin/search-message-users' => ['file' => 'admin/search-message-users.php', 'name' => 'admin-search-message-users'],
  '/admin/search-participants' => ['file' => 'admin/search-participants.php', 'name' => 'admin-search-participants'],
  '/admin/search-contests' => ['file' => 'admin/search-contests.php', 'name' => 'admin-search-contests'],
