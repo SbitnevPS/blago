@@ -19,5 +19,7 @@ require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/email-templates.php';
 require_once __DIR__ . '/diplomas.php';
 require_once __DIR__ . '/vk-publications.php';
+require_once __DIR__ . '/mailings.php';
 
+ensureMailingsSchema();
 enforceForcedPasswordChangeRedirect();
