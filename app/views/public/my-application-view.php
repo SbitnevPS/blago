@@ -638,7 +638,7 @@ $currentPage = 'applications';
 .participant-modern-card__name {margin:0; font-size:20px; line-height:1.2;}
 .participant-modern-card__subtitle {color:#475569; font-size:14px;}
 .participant-modern-card__facts {display:grid; grid-template-columns:1fr; gap:6px; color:#334155; font-size:14px;}
-.participant-modern-card__actions {display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;}
+.participant-modern-card__actions {display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; align-items: center;}
 .app-highlight {background:#FEF9C3; border:1px solid #FDE68A; color:#92400E; border-radius:12px; padding:12px;}
 .app-empty {text-align:center; padding:30px 16px; color:#64748B;}
 .app-skeleton {display:grid; gap:12px;}
