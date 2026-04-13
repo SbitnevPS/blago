@@ -1428,16 +1428,34 @@ body:has(#application-actions) .admin-content {
   border-color: #fcd34d;
 }
 
+.application-btn--warning.is-current {
+  background: #f59e0b;
+  color: #ffffff;
+  border-color: #d97706;
+}
+
 .application-btn--danger {
   background: #fee2e2;
   color: #991b1b;
   border-color: #fca5a5;
 }
 
+.application-btn--danger.is-current {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #b91c1c;
+}
+
 .application-btn--success {
   background: #d1fae5;
   color: #065f46;
   border-color: #6ee7b7;
+}
+
+.application-btn--success.is-current {
+  background: #16a34a;
+  color: #ffffff;
+  border-color: #15803d;
 }
 
 .application-btn--success:disabled {

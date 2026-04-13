@@ -198,6 +198,37 @@ function ensurePasswordRecoverySchema(PDO $pdo): void
 
 ensurePasswordRecoverySchema($pdo);
 
+function ensureUserTypeSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT COLUMN_NAME
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'users'
+              AND COLUMN_NAME = 'user_type'
+        ");
+        $stmt->execute();
+        $hasColumn = (bool) $stmt->fetchColumn();
+
+        if (!$hasColumn) {
+            $pdo->exec("ALTER TABLE users ADD COLUMN user_type VARCHAR(32) NOT NULL DEFAULT 'parent' AFTER organization_region");
+        }
+
+        $pdo->exec("UPDATE users SET user_type = 'parent' WHERE user_type IS NULL OR TRIM(user_type) = ''");
+    } catch (Throwable $e) {
+        error_log('[SCHEMA] User type schema check failed: ' . $e->getMessage());
+    }
+}
+
+ensureUserTypeSchema($pdo);
+
 function ensureApplicationStatusSchema(PDO $pdo): void
 {
     static $checked = false;
@@ -347,6 +378,41 @@ if (session_status() === PHP_SESSION_NONE) {
 // Функции
 function e($value) {
     return htmlspecialchars((string) ($value ?? ''), ENT_QUOTES, 'UTF-8');
+}
+
+function normalizeRegionName(string $region): string {
+    $region = trim($region);
+    if ($region === '') {
+        return '';
+    }
+
+    return preg_replace('/^\d{2}\.\s*/u', '', $region) ?? $region;
+}
+
+function getRegionSelectLabel(string $region): string {
+    $region = trim($region);
+    if ($region === '') {
+        return '';
+    }
+
+    if (preg_match('/^(\d{2})\.\s*(.+)$/u', $region, $matches)) {
+        return $matches[1] . ' ' . trim((string) ($matches[2] ?? ''));
+    }
+
+    return $region;
+}
+
+function getUserTypeOptions(): array {
+    return [
+        'parent' => 'Родитель',
+        'curator' => 'Педагог/куратор',
+    ];
+}
+
+function getUserTypeLabel(?string $userType): string {
+    $options = getUserTypeOptions();
+    $normalizedUserType = trim((string) $userType);
+    return $options[$normalizedUserType] ?? $options['parent'];
 }
 
 function render_html_attrs(array $attrs): string

@@ -31,6 +31,7 @@ $viewParam = (string) ($_GET['view'] ?? '');
 $messagesView = in_array($viewParam, ['main', 'disputes', 'disputes_archive'], true) ? $viewParam : 'main';
 $disputeThreadsCount = 0;
 $disputeUnreadTotal = 0;
+$messageWelcomeTemplate = (string) getSystemSetting('message_welcome_template', "Здравствуйте, {name}!\n\n");
 
 if (!function_exists('adminMessagesHasDisputeChatClosedColumn')) {
     function adminMessagesHasDisputeChatClosedColumn(PDO $pdo): bool {
@@ -1031,9 +1032,21 @@ foreach ($messages as $msg) {
 <?php else: ?>
 <div class="admin-list-cards">
 <?php foreach ($displayMessages as $msg): ?>
+<?php
+    $messageApplicationId = 0;
+    if (preg_match('/Номер заявки:\s*#(\d+)/u', (string) ($msg['message'] ?? ''), $messageAppMatch)) {
+        $messageApplicationId = (int) ($messageAppMatch[1] ?? 0);
+    } elseif (preg_match('/заявк[аеи]\s*#(\d+)/ui', (string) ($msg['subject'] ?? ''), $subjectAppMatch)) {
+        $messageApplicationId = (int) ($subjectAppMatch[1] ?? 0);
+    }
+?>
 <article class="admin-list-card message-row"
     data-message-id="<?= (int) $msg['id'] ?>"
     data-admin-id="<?= (int) ($msg['admin_id'] ?? 0) ?>"
+    data-user-id="<?= (int) ($msg['user_id'] ?? 0) ?>"
+    data-user-name="<?= e(trim((string) (($msg['user_name'] ?? '') . ' ' . ($msg['user_surname'] ?? '')))) ?>"
+    data-user-email="<?= e((string) ($msg['user_email'] ?? '')) ?>"
+    data-application-id="<?= $messageApplicationId ?>"
     data-message-subject="<?= e($msg['subject']) ?>"
     data-message-content="<?= e($msg['message']) ?>"
     data-message-priority="<?= e($msg['priority']) ?>"
@@ -1201,6 +1214,10 @@ foreach ($messages as $msg) {
 <div id="viewMessageContent" style="white-space:pre-wrap; line-height:1.6;"></div>
 </div>
 <div class="modal__footer">
+<a href="#" class="btn btn--ghost" id="viewMessageApplicationBtn" style="display:none;">
+<i class="fas fa-external-link-alt"></i> Открыть заявку
+</a>
+<button type="button" class="btn btn--secondary" id="replyFromViewMessageBtn" onclick="openSendModalFromViewedMessage()">Написать сообщение пользователю</button>
 <button type="button" class="btn btn--primary" onclick="closeViewModal()">Закрыть</button>
 </div>
 </div>
@@ -1209,6 +1226,8 @@ foreach ($messages as $msg) {
 <script>
 const csrfTokenValue = document.querySelector('input[name="csrf_token"]')?.value || '';
 const selectedDisputeApplicationId = Number(<?= (int) $selectedDisputeApplicationId ?>);
+const messageWelcomeTemplate = <?= json_encode($messageWelcomeTemplate, JSON_UNESCAPED_UNICODE) ?>;
+let currentViewedMessage = null;
 let isDisputeChatOpen = Boolean(document.getElementById('disputeChatModal')?.classList.contains('active'));
 let pollTimerId = null;
 let latestDisputeMessageId = Math.max(
@@ -1229,9 +1248,13 @@ function filterByPriority(priority) {
  window.location.href = url.toString();
 }
 
-function viewMessage(subject, message, priority) {
+function viewMessage(subject, message, priority, options = {}) {
+ currentViewedMessage = options;
  document.getElementById('viewMessageSubject').textContent = subject;
- document.getElementById('viewMessageContent').textContent = message;
+ const cleanedMessage = Number(options.applicationId || 0) > 0
+  ? String(message || '').replace(/\n?Номер заявки:\s*#\d+\s*/u, '').trim()
+  : message;
+ document.getElementById('viewMessageContent').textContent = cleanedMessage;
 
  let priorityBadge = '';
  if (priority === 'critical') {
@@ -1242,12 +1265,29 @@ function viewMessage(subject, message, priority) {
   priorityBadge = '<span class="badge" style="background:#6B7280; color:white; padding:4px 12px;">Обычное</span>';
  }
  document.getElementById('viewMessagePriority').innerHTML = priorityBadge;
+ const replyButton = document.getElementById('replyFromViewMessageBtn');
+ if (replyButton) {
+  const hasUser = Number(options.userId || 0) > 0 && !options.isBroadcast;
+  replyButton.style.display = hasUser ? '' : 'none';
+ }
+ const applicationButton = document.getElementById('viewMessageApplicationBtn');
+ if (applicationButton) {
+  const applicationId = Number(options.applicationId || 0);
+  if (applicationId > 0) {
+   applicationButton.href = `/admin/application/${applicationId}`;
+   applicationButton.style.display = '';
+  } else {
+   applicationButton.href = '#';
+   applicationButton.style.display = 'none';
+  }
+ }
 
  document.getElementById('viewMessageModal').classList.add('active');
  document.body.style.overflow = 'hidden';
 }
 
 function closeViewModal() {
+ currentViewedMessage = null;
  document.getElementById('viewMessageModal').classList.remove('active');
  restoreBodyScrollIfNoModals();
 }
@@ -1379,13 +1419,15 @@ async function deleteSelectedMessages() {
  }
 }
 
-function openSendModal() {
+function openSendModal(prefill = null) {
  document.getElementById('sendMessageModal').classList.add('active');
  document.body.style.overflow = 'hidden';
 
  const userSearch = document.getElementById('userSearch');
  const userId = document.getElementById('userId');
  const sendToAll = document.getElementById('sendToAll');
+ const subjectInput = document.querySelector('#sendMessageForm input[name="subject"]');
+ const messageInput = document.querySelector('#sendMessageForm textarea[name="message"]');
 
  userSearch.value = '';
  userSearch.disabled = false;
@@ -1393,11 +1435,46 @@ function openSendModal() {
  userSearch.style.pointerEvents = 'auto';
  userId.value = '';
  sendToAll.checked = false;
+ if (subjectInput) {
+  subjectInput.value = '';
+ }
+ if (messageInput) {
+  messageInput.value = '';
+ }
+ toggleUserSelect();
+
+ if (prefill && Number(prefill.userId || 0) > 0) {
+  const userLabel = (prefill.userName || '').trim();
+  const emailLabel = (prefill.userEmail || '').trim();
+  userId.value = String(prefill.userId);
+  userSearch.value = emailLabel ? `${userLabel} (${emailLabel})` : userLabel;
+  if (subjectInput) {
+   const baseSubject = String(prefill.subject || '').trim();
+   subjectInput.value = baseSubject === '' ? '' : (baseSubject.startsWith('Re: ') ? baseSubject : `Re: ${baseSubject}`);
+  }
+  if (messageInput) {
+   const firstName = userLabel.split(/\s+/).filter(Boolean).slice(0, 1).join(' ');
+   const fullName = userLabel || 'пользователь';
+   messageInput.value = String(messageWelcomeTemplate || '')
+    .replaceAll('{name}', firstName || fullName)
+    .replaceAll('{full_name}', fullName)
+    .replaceAll('{email}', emailLabel);
+   messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+ }
 }
 
 function closeSendModal() {
- document.getElementById('sendMessageModal').classList.remove('active');
- restoreBodyScrollIfNoModals();
+document.getElementById('sendMessageModal').classList.remove('active');
+restoreBodyScrollIfNoModals();
+}
+
+function openSendModalFromViewedMessage() {
+ if (!currentViewedMessage || Number(currentViewedMessage.userId || 0) <= 0 || currentViewedMessage.isBroadcast) {
+  return;
+ }
+ closeViewModal();
+ openSendModal(currentViewedMessage);
 }
 
 function closeDisputeChatModal() {
@@ -1674,7 +1751,15 @@ document.addEventListener('DOMContentLoaded', function() {
    viewMessage(
     row.dataset.messageSubject || '',
     row.dataset.messageContent || '',
-    row.dataset.messagePriority || 'normal'
+    row.dataset.messagePriority || 'normal',
+    {
+     userId: Number(row.dataset.userId || 0),
+     userName: row.dataset.userName || '',
+     userEmail: row.dataset.userEmail || '',
+     subject: row.dataset.messageSubject || '',
+     applicationId: Number(row.dataset.applicationId || 0),
+     isBroadcast: row.dataset.messageBroadcast === '1'
+    }
    );
   });
  });
@@ -1687,7 +1772,15 @@ document.addEventListener('DOMContentLoaded', function() {
    viewMessage(
     row.dataset.messageSubject || '',
     row.dataset.messageContent || '',
-    row.dataset.messagePriority || 'normal'
+    row.dataset.messagePriority || 'normal',
+    {
+     userId: Number(row.dataset.userId || 0),
+     userName: row.dataset.userName || '',
+     userEmail: row.dataset.userEmail || '',
+     subject: row.dataset.messageSubject || '',
+     applicationId: Number(row.dataset.applicationId || 0),
+     isBroadcast: row.dataset.messageBroadcast === '1'
+    }
    );
   });
  });

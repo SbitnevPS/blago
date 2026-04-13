@@ -49,6 +49,37 @@ if ($editingApplicationId > 0) {
     }
 }
 
+function shouldAutoApproveApplicationAfterCorrection(int $applicationId): bool
+{
+    global $pdo;
+
+    $stmt = $pdo->prepare("
+        SELECT status
+        FROM works
+        WHERE application_id = ?
+        ORDER BY id ASC
+    ");
+    $stmt->execute([$applicationId]);
+    $works = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    if (empty($works)) {
+        return false;
+    }
+
+    $hasAccepted = false;
+    foreach ($works as $work) {
+        $status = (string) ($work['status'] ?? 'pending');
+        if (!in_array($status, ['accepted', 'reviewed_non_competitive'], true)) {
+            return false;
+        }
+        if ($status === 'accepted') {
+            $hasAccepted = true;
+        }
+    }
+
+    return $hasAccepted;
+}
+
 // Директория пользователя для рисунков
 $userUploadPath = DRAWINGS_PATH . '/' . normalizeDrawingOwner($user['email'] ?? '');
 $tempPath = DRAWINGS_PATH . '/temp';
@@ -173,6 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $error = 'Ошибка безопасности. Обновите страницу.';
  } else {
  $action = $_POST['action'];
+ $existingParticipantsById = [];
         
  if ($action === 'save_draft' || $action === 'submit') {
  try {
@@ -211,6 +243,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
  if (!$existingApplication) {
  throw new Exception('Заявка для редактирования не найдена');
+ }
+
+ $existingParticipantsStmt = $pdo->prepare("
+     SELECT *
+     FROM participants
+     WHERE application_id = ?
+     ORDER BY id ASC
+ ");
+ $existingParticipantsStmt->execute([$application_id]);
+ $existingParticipantsRows = $existingParticipantsStmt->fetchAll() ?: [];
+ $existingParticipantsById = [];
+ foreach ($existingParticipantsRows as $existingParticipantRow) {
+     $existingParticipantsById[(int) ($existingParticipantRow['id'] ?? 0)] = $existingParticipantRow;
  }
 
  $paymentReceipt = trim((string)($existingApplication['payment_receipt'] ?? ''));
@@ -269,7 +314,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $user['id']
  ]);
                     
- $pdo->prepare("DELETE FROM participants WHERE application_id = ?")->execute([$application_id]);
  } else {
                 if (isset($_FILES['payment_receipt']) && (int)($_FILES['payment_receipt']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
                     $receiptUpload = uploadFile($_FILES['payment_receipt'], DOCUMENTS_PATH, ['jpg', 'jpeg', 'png', 'webp', 'pdf']);
@@ -306,15 +350,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
      throw new Exception('Приложите квитанцию или скриншот об оплате участия, чтобы отправить заявку.');
  }
                 
- // Данные организации (общие для всех участников)
- $org_region = trim($_POST['organization_region'] ?? '');
- $org_name = trim($_POST['organization_name'] ?? '');
- $org_address = trim($_POST['organization_address'] ?? '');
- $org_email = trim($_POST['organization_email'] ?? '');
+// Данные организации (общие для всех участников)
+$org_region = normalizeRegionName(trim($_POST['organization_region'] ?? ''));
+$org_name = trim($_POST['organization_name'] ?? '');
+$requestedUserType = trim((string) ($_POST['user_type'] ?? (string) ($user['user_type'] ?? 'parent')));
+$userTypeOptions = getUserTypeOptions();
+$user_type = array_key_exists($requestedUserType, $userTypeOptions) ? $requestedUserType : 'parent';
+$org_address = $user_type === 'parent' ? '' : trim($_POST['organization_address'] ?? '');
+$org_email = trim($_POST['organization_email'] ?? '');
+
+$pdo->prepare("
+ UPDATE users
+ SET name = ?, patronymic = ?, surname = ?, organization_region = ?, organization_name = ?, organization_address = ?, user_type = ?, updated_at = NOW()
+ WHERE id = ?
+ ")->execute([
+ $parent_name,
+ $parent_patronymic,
+ $parent_surname,
+ $org_region,
+ $org_name,
+ $org_address,
+ $user_type,
+ (int) $user['id']
+ ]);
+ $user['name'] = $parent_name;
+ $user['patronymic'] = $parent_patronymic;
+ $user['surname'] = $parent_surname;
+$user['organization_region'] = $org_region;
+$user['organization_name'] = $org_name;
+$user['organization_address'] = $org_address;
+$user['user_type'] = $user_type;
                 
  // Участники
  $participants = $_POST['participants'] ?? [];
  $participant_count =0;
+ $keptParticipantIds = [];
+ $drawingFilesToDelete = [];
                 
  foreach ($participants as $pIndex => $participant) {
  $surname = trim($participant['surname'] ?? '');
@@ -333,6 +404,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     
  $age = intval($participant['age'] ??0);
  $workTitle = '';
+ $existingParticipantId = (int) ($participant['participant_id'] ?? 0);
                     
  // Обработка временного файла рисунка
  $drawing_file = null;
@@ -368,7 +440,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if (empty($drawing_file) && !empty($existingDrawing)) {
  $drawing_file = $existingDrawing;
  }
-                    
+
+ if ($action === 'submit' && empty($drawing_file)) {
+ throw new Exception('Загрузите рисунок для участника "' . ($fio !== '' ? $fio : ('#' . ($pIndex + 1))) . '", чтобы отправить заявку.');
+ }
+
+ $participant_id = 0;
+ if (!empty($existingParticipantsById) && $existingParticipantId > 0 && isset($existingParticipantsById[$existingParticipantId])) {
+ $existingParticipantRow = $existingParticipantsById[$existingParticipantId];
+ $oldDrawingFile = trim((string) ($existingParticipantRow['drawing_file'] ?? ''));
+ if ($oldDrawingFile !== '' && $drawing_file !== '' && $oldDrawingFile !== $drawing_file) {
+     $drawingFilesToDelete[] = getParticipantDrawingFsPath($user['email'] ?? '', $oldDrawingFile);
+     $drawingFilesToDelete[] = getParticipantDrawingThumbFsPath($user['email'] ?? '', $oldDrawingFile);
+ }
+ $stmt = $pdo->prepare("
+ UPDATE participants
+ SET fio = ?, age = ?, region = ?, organization_name = ?, organization_address = ?, organization_email = ?, drawing_file = ?
+ WHERE id = ? AND application_id = ?
+ ");
+ $stmt->execute([
+ $fio,
+ $age,
+ $org_region,
+ $org_name,
+ $org_address,
+ $org_email,
+ $drawing_file,
+ $existingParticipantId,
+ $application_id
+ ]);
+ $participant_id = $existingParticipantId;
+ $keptParticipantIds[] = $participant_id;
+ } else {
  $stmt = $pdo->prepare("
  INSERT INTO participants (
  application_id, fio, age, region, organization_name, organization_address,
@@ -386,6 +489,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $drawing_file
  ]);
  $participant_id = (int)$pdo->lastInsertId();
+ }
 
  if ($participant_id > 0) {
  try {
@@ -393,6 +497,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  INSERT INTO works (contest_id, application_id, participant_id, title, image_path, status, created_at, updated_at)
  VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW())
  ON DUPLICATE KEY UPDATE
+ contest_id = VALUES(contest_id),
+ application_id = VALUES(application_id),
  title = COALESCE(NULLIF(VALUES(title), ''), works.title),
  image_path = VALUES(image_path),
  updated_at = NOW()
@@ -410,8 +516,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     
  $participant_count++;
  }
+
+ if (!empty($existingParticipantsById)) {
+ $participantIdsToDelete = array_diff(array_keys($existingParticipantsById), $keptParticipantIds);
+ if (!empty($participantIdsToDelete)) {
+     foreach ($participantIdsToDelete as $participantIdToDelete) {
+         $participantRow = $existingParticipantsById[(int) $participantIdToDelete] ?? null;
+         $drawingFileToDelete = trim((string) ($participantRow['drawing_file'] ?? ''));
+         if ($drawingFileToDelete !== '') {
+             $drawingFilesToDelete[] = getParticipantDrawingFsPath($user['email'] ?? '', $drawingFileToDelete);
+             $drawingFilesToDelete[] = getParticipantDrawingThumbFsPath($user['email'] ?? '', $drawingFileToDelete);
+         }
+     }
+     $deletePlaceholders = implode(',', array_fill(0, count($participantIdsToDelete), '?'));
+     $deleteParams = array_merge([(int) $application_id], array_map('intval', array_values($participantIdsToDelete)));
+     $pdo->prepare("
+         DELETE FROM participants
+         WHERE application_id = ?
+           AND id IN ($deletePlaceholders)
+     ")->execute($deleteParams);
+ }
+ }
+
+ if ($action === 'submit' && $participant_count === 0) {
+ throw new Exception('Добавьте хотя бы одного участника с рисунком, чтобы отправить заявку.');
+ }
+
+ if (!empty($application_id)) {
+ $pdo->prepare("
+ UPDATE application_corrections ac
+ LEFT JOIN participants p
+   ON p.id = ac.participant_id
+  AND p.application_id = ac.application_id
+ SET ac.is_resolved = 1,
+     ac.resolved_at = NOW()
+ WHERE ac.application_id = ?
+   AND ac.participant_id IS NOT NULL
+   AND ac.is_resolved = 0
+   AND p.id IS NULL
+ ")->execute([$application_id]);
+ }
+
+ if ($shouldMarkAsCorrected && shouldAutoApproveApplicationAfterCorrection((int) $application_id)) {
+ $pdo->prepare("
+ UPDATE applications
+ SET status = 'approved', allow_edit = 0, updated_at = NOW()
+ WHERE id = ? AND user_id = ?
+ ")->execute([(int) $application_id, (int) $user['id']]);
+ }
                 
  $pdo->commit();
+ foreach ($drawingFilesToDelete as $drawingFilePath) {
+ if (is_string($drawingFilePath) && $drawingFilePath !== '' && is_file($drawingFilePath)) {
+ @unlink($drawingFilePath);
+ }
+ }
  foreach ($receiptFilesToDelete as $receiptFilePath) {
  if (is_file($receiptFilePath)) {
  @unlink($receiptFilePath);
@@ -451,6 +610,7 @@ if ($editingApplication) {
         'organization_region' => $editingParticipants[0]['region'] ?? ($user['organization_region'] ?? ''),
         'organization_name' => $editingParticipants[0]['organization_name'] ?? ($user['organization_name'] ?? ''),
         'organization_address' => $editingParticipants[0]['organization_address'] ?? ($user['organization_address'] ?? ''),
+        'user_type' => $user['user_type'] ?? 'parent',
 	        'organization_email' => $editingParticipants[0]['organization_email'] ?? ($user['email'] ?? ''),
 	        'source_info' => $editingApplication['source_info'] ?? '',
 	        'colleagues_info' => $editingApplication['colleagues_info'] ?? '',
@@ -464,6 +624,7 @@ if ($editingApplication) {
         'organization_region' => $user['organization_region'] ?? '',
         'organization_name' => $user['organization_name'] ?? '',
         'organization_address' => $user['organization_address'] ?? '',
+        'user_type' => $user['user_type'] ?? 'parent',
 	        'organization_email' => $user['email'] ?? '',
 	        'source_info' => '',
 	        'colleagues_info' => '',
@@ -540,6 +701,7 @@ generateCSRFToken();
                 <input type="hidden" name="application_id" value="<?= $editingApplication ? intval($editingApplication['id']) : '' ?>">
                 <input type="hidden" name="existing_payment_receipt" id="existingPaymentReceipt" value="<?= e($existingPaymentReceipt) ?>">
                 <input type="hidden" name="remove_payment_receipt" id="removePaymentReceipt" value="0">
+                <input type="hidden" name="user_type" id="applicationUserType" value="<?= e((string) ($initialFormData['user_type'] ?? 'parent')) ?>">
 
                 <section class="wizard-progress card mb-lg">
                     <div class="card__body">
@@ -575,7 +737,8 @@ generateCSRFToken();
                                 <select name="organization_region" class="form-select" id="orgRegion">
                                     <option value="">Выберите регион</option>
                                     <?php foreach ($regions as $r): ?>
-                                        <option value="<?= e($r) ?>" <?= ($initialFormData['organization_region'] ?? '') === $r ? 'selected' : '' ?>><?= e($r) ?></option>
+                                        <?php $regionValue = normalizeRegionName((string) $r); ?>
+                                        <option value="<?= e($regionValue) ?>" <?= ($initialFormData['organization_region'] ?? '') === $regionValue ? 'selected' : '' ?>><?= e(getRegionSelectLabel((string) $r)) ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
@@ -584,11 +747,11 @@ generateCSRFToken();
                                 <input type="email" name="organization_email" class="form-input" id="orgEmail" value="<?= htmlspecialchars($initialFormData['organization_email']) ?>" placeholder="school@example.ru">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Название организации</label>
+                                <label class="form-label">Название и адрес образовательного учреждения</label>
                                 <input type="text" name="organization_name" class="form-input" id="orgName" placeholder="Например: ДШИ №1" value="<?= htmlspecialchars($initialFormData['organization_name']) ?>">
                             </div>
-                            <div class="form-group">
-                                <label class="form-label">Адрес организации</label>
+                            <div class="form-group" id="orgAddressGroup" <?= (($initialFormData['user_type'] ?? 'parent') === 'parent') ? 'style="display:none;"' : '' ?>>
+                                <label class="form-label">Контактная информация организации</label>
                                 <textarea name="organization_address" class="form-textarea" rows="2" id="orgAddress" placeholder="Город, улица, дом"><?= htmlspecialchars($initialFormData['organization_address']) ?></textarea>
                             </div>
                         </div>
@@ -722,7 +885,6 @@ generateCSRFToken();
                     <div class="sidebar-stat" id="statReceipt">Квитанция: не добавлена</div>
                 <?php endif; ?>
                 <div class="sidebar-stat" id="statConfidence">Заполнено: 0%</div>
-                <button type="button" class="btn btn--ghost btn--block mt-md" id="goReviewBtn">Перейти к проверке</button>
             </div>
         </aside>
     </div>
@@ -762,6 +924,7 @@ const initialParticipants = <?= json_encode(array_map(function($p) use ($user) {
         'name' => $parts[1] ?? '',
         'patronymic' => $parts[2] ?? '',
         'age' => $p['age'] ?? '',
+        'participant_id' => (int) ($p['id'] ?? 0),
         'temp_file' => '',
         'existing_drawing_file' => $p['drawing_file'] ?? '',
         'preview' => !empty($p['drawing_file']) ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $p['drawing_file']) : null,
@@ -1138,6 +1301,7 @@ function createParticipantForm(index, data = null) {
                 <div class="form-group"><label class="form-label form-label--required">Отчество</label><input type="text" required name="participants[${index}][patronymic]" class="form-input" value="${data?.patronymic || ''}" placeholder="Иванович"></div>
                 <div class="form-group"><label class="form-label form-label--required">Возраст</label><input type="number" required min="1" max="18" name="participants[${index}][age]" class="form-input" value="${data?.age || ''}"></div>
             </div>
+            <input type="hidden" name="participants[${index}][participant_id]" value="${data?.participant_id || ''}">
             <input type="hidden" name="participants[${index}][temp_file]" id="temp_file_${index}" value="${data?.temp_file || ''}">
             <input type="hidden" name="participants[${index}][existing_drawing_file]" id="existing_file_${index}" value="${data?.existing_drawing_file || ''}">
             <div class="form-section form-section--boxed">
@@ -1213,6 +1377,7 @@ function removeParticipant(index) {
             name: f.querySelector(`[name="participants[${old}][name]"]`)?.value || '',
             patronymic: f.querySelector(`[name="participants[${old}][patronymic]"]`)?.value || '',
             age: f.querySelector(`[name="participants[${old}][age]"]`)?.value || '',
+            participant_id: f.querySelector(`[name="participants[${old}][participant_id]"]`)?.value || '',
             temp_file: f.querySelector(`#temp_file_${old}`)?.value || '',
             existing_drawing_file: f.querySelector(`#existing_file_${old}`)?.value || '',
             preview: f.querySelector(`#preview_img_${old}`)?.src || '',
@@ -1377,9 +1542,20 @@ function renderReview() {
         </div>
         <div class="review-block">
             <h4>Дополнительная информация</h4>
-            <p><strong>Поделитесь, пожалуйста, откуда вы узнали о конкурсе?</strong> ${sourceInfo}</p>
-            <p><strong>Рассказывали ли вы о конкурсе своим коллегам и знакомым из других организаций? Если да, укажите, пожалуйста, примерное количество:</strong> ${colleaguesInfo}</p>
-            <p><strong>Пожелания и рекомендации:</strong> ${recommendationsWishes}</p>
+            <div class="review-info-list">
+                <div class="review-info-item">
+                    <div class="review-info-item__label">Поделитесь, пожалуйста, откуда вы узнали о конкурсе?</div>
+                    <div class="review-info-item__value">${sourceInfo}</div>
+                </div>
+                <div class="review-info-item">
+                    <div class="review-info-item__label">Рассказывали ли вы о конкурсе своим коллегам и знакомым из других организаций? Если да, укажите, пожалуйста, примерное количество</div>
+                    <div class="review-info-item__value">${colleaguesInfo}</div>
+                </div>
+                <div class="review-info-item">
+                    <div class="review-info-item__label">Пожелания и рекомендации</div>
+                    <div class="review-info-item__value">${recommendationsWishes}</div>
+                </div>
+            </div>
         </div>
         <div class="review-block">
             <h4>Участники</h4>
@@ -1470,6 +1646,17 @@ function closeDrawingPreviewModal() {
 function goToMyApplications() { window.location.href = '/my-applications'; }
 
 document.addEventListener('DOMContentLoaded', function () {
+    const applicationUserType = document.getElementById('applicationUserType');
+    const orgAddressGroup = document.getElementById('orgAddressGroup');
+    const orgAddress = document.getElementById('orgAddress');
+    if (applicationUserType && orgAddressGroup) {
+        const isParent = String(applicationUserType.value || 'parent') === 'parent';
+        orgAddressGroup.style.display = isParent ? 'none' : '';
+        if (isParent && orgAddress) {
+            orgAddress.value = '';
+        }
+    }
+
     if (needsPaymentReceipt) {
         const {area, input, viewBtn, removeBtn, existingInput, removeInput} = getPaymentReceiptElements();
         if (area && input) {
@@ -1524,7 +1711,6 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('addParticipantBtn').addEventListener('click', () => {
         addParticipant(null, { scrollIntoView: true });
     });
-    document.getElementById('goReviewBtn').addEventListener('click', () => goStep(finalReviewStep));
     document.getElementById('nextStepBtn').addEventListener('click', () => goStep(Math.min(currentStep + 1, steps.length)));
     document.getElementById('prevStepBtn').addEventListener('click', () => goStep(Math.max(currentStep - 1, 1)));
     document.getElementById('applicationForm').addEventListener('input', (e) => {

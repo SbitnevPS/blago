@@ -141,6 +141,10 @@ require_once __DIR__ . '/includes/header.php';
 <p><?= htmlspecialchars($user['email'] ?: 'Не указан') ?></p>
 </div>
 <div class="form-group">
+<label class="form-label">Тип профиля</label>
+<p><?= htmlspecialchars(getUserTypeLabel((string) ($user['user_type'] ?? 'parent'))) ?></p>
+</div>
+<div class="form-group">
 <label class="form-label">Регион</label>
 <p><?= htmlspecialchars($user['organization_region'] ?? 'Не указан') ?></p>
 </div>
@@ -149,7 +153,7 @@ require_once __DIR__ . '/includes/header.php';
 <p><?= htmlspecialchars($user['organization_name'] ?? 'Не указано') ?></p>
 </div>
 <div class="form-group">
-<label class="form-label">Адрес организации</label>
+<label class="form-label">Контактная информация организации</label>
 <p><?= htmlspecialchars($user['organization_address'] ?? 'Не указан') ?></p>
 </div>
 <div class="form-group">

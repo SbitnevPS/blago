@@ -550,7 +550,15 @@ $applicationProgressLabels = $statusCode === 'draft'
     : ['Подана', 'Проверка', 'Принята'];
 $applicationDateCaption = $statusCode === 'draft' ? 'Создана' : 'Подана';
 $userFullName = trim((string) (($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? '')));
-$userRegion = (string) ($user['region'] ?? $application['region'] ?? '—');
+$firstParticipantRegion = '';
+foreach ($participants as $participantRow) {
+    $candidateRegion = trim((string) ($participantRow['region'] ?? ''));
+    if ($candidateRegion !== '') {
+        $firstParticipantRegion = $candidateRegion;
+        break;
+    }
+}
+$userRegion = (string) ($user['organization_region'] ?? $application['organization_region'] ?? $firstParticipantRegion ?? '—');
 $userOrganization = (string) ($user['organization_name'] ?? $application['organization_name'] ?? '');
 $applicationDateLabel = date('d.m.Y H:i', strtotime((string) $application['created_at']));
 
@@ -772,7 +780,14 @@ $currentPage = 'applications';
                                         <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_one"><input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>"><button class="btn btn--primary btn--sm" type="submit"><i class="fas fa-download"></i> Скачать диплом</button></form>
                                     <?php endif; ?>
                                     <?php if ($participantVkUrl !== ''): ?>
-                                        <a class="btn btn--secondary btn--sm" href="<?= e($participantVkUrl) ?>" target="_blank" rel="noopener"><i class="fab fa-vk"></i> Публикация</a>
+                                        <div class="participant-vk-card">
+                                            <div class="participant-vk-card__label"><i class="fab fa-vk"></i> Публикация</div>
+                                            <div class="participant-vk-card__actions">
+                                                <a class="btn btn--secondary btn--sm" href="<?= e($participantVkUrl) ?>" target="_blank" rel="noopener">Перейти</a>
+                                                <button type="button" class="btn btn--ghost btn--sm js-copy-vk-link" data-vk-url="<?= e($participantVkUrl) ?>">Скопировать ссылку</button>
+                                            </div>
+                                            <div class="participant-vk-card__copied" aria-live="polite" hidden>Ссылка скопирована</div>
+                                        </div>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -791,6 +806,7 @@ $currentPage = 'applications';
                 <div class="app-profile__meta">
                     <div class="app-profile__name"><?= e($userFullName !== '' ? $userFullName : 'Пользователь') ?></div>
                     <div><?= !empty($user['email']) ? e((string) $user['email']) : 'Email не указан' ?></div>
+                    <div><?= e(getUserTypeLabel((string) ($user['user_type'] ?? 'parent'))) ?></div>
                     <div><?= e($userRegion !== '' ? $userRegion : 'Регион не указан') ?></div>
                     <?php if ($userOrganization !== ''): ?><div><?= e($userOrganization) ?></div><?php endif; ?>
                 </div>
@@ -1027,6 +1043,47 @@ document.querySelectorAll('.js-gallery-open').forEach((button) => {
  button.addEventListener('click', () => {
   const galleryIndex = Number(button.dataset.galleryIndex || 0);
   openGallery(galleryIndex);
+ });
+});
+
+async function copyTextToClipboard(text) {
+ if (navigator.clipboard?.writeText) {
+  await navigator.clipboard.writeText(text);
+  return;
+ }
+
+ const tempInput = document.createElement('textarea');
+ tempInput.value = text;
+ tempInput.setAttribute('readonly', 'readonly');
+ tempInput.style.position = 'absolute';
+ tempInput.style.left = '-9999px';
+ document.body.appendChild(tempInput);
+ tempInput.select();
+ document.execCommand('copy');
+ tempInput.remove();
+}
+
+document.querySelectorAll('.js-copy-vk-link').forEach((button) => {
+ let copiedTimer = null;
+ button.addEventListener('click', async () => {
+  const url = String(button.dataset.vkUrl || '').trim();
+  if (!url) return;
+
+  try {
+   await copyTextToClipboard(url);
+   const card = button.closest('.participant-vk-card');
+   const copiedNote = card?.querySelector('.participant-vk-card__copied');
+   if (!copiedNote) return;
+   copiedNote.hidden = false;
+   if (copiedTimer) {
+    clearTimeout(copiedTimer);
+   }
+   copiedTimer = setTimeout(() => {
+    copiedNote.hidden = true;
+   }, 1800);
+  } catch (error) {
+   // no-op: keep the UI quiet if copying is blocked
+  }
  });
 });
 

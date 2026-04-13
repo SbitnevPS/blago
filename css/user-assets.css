@@ -461,6 +461,11 @@
 .form-input.is-invalid, .form-select.is-invalid, .form-textarea.is-invalid, .upload-area.is-invalid { border-color:var(--color-error) !important; box-shadow:0 0 0 2px var(--color-error-light); }
 .sidebar-stat { padding:10px 12px; background:var(--color-bg); border-radius:10px; margin-top:8px; }
 .review-block { border:1px solid var(--color-border); border-radius:14px; padding:14px; margin-bottom:12px; }
+.review-block h4 { margin-bottom:12px; }
+.review-info-list { display:grid; gap:10px; }
+.review-info-item { border:1px solid var(--color-border); border-radius:12px; padding:12px 14px; background:linear-gradient(180deg, #FFFFFF 0%, #FAFCFF 100%); }
+.review-info-item__label { font-size:var(--font-size-sm); font-weight:600; color:var(--color-text); margin-bottom:6px; line-height:1.45; }
+.review-info-item__value { color:var(--color-text-secondary); line-height:1.6; white-space:pre-wrap; }
 .review-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; }
 .review-item { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; padding:10px; border-radius:10px; background:var(--color-bg); }
 .review-item--card { align-items:center; gap:12px; border:1px solid var(--color-border); background:#fff; border-radius:12px; padding:12px; }
@@ -469,6 +474,10 @@
 .review-item__thumb--empty { background:var(--color-bg); }
 .review-item__meta { min-width:0; display:flex; flex-direction:column; gap:4px; flex:1 1 auto; color:var(--color-text-secondary); font-size:var(--font-size-sm); }
 .review-item__meta strong { color:var(--color-text); font-size:var(--font-size-base); }
+.participant-vk-card { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border:1px solid rgba(0, 119, 255, 0.16); border-radius:12px; background:linear-gradient(180deg, #F8FBFF 0%, #EEF5FF 100%); }
+.participant-vk-card__label { display:flex; align-items:center; gap:8px; font-size:var(--font-size-sm); font-weight:600; color:#0F3D91; }
+.participant-vk-card__actions { display:flex; flex-wrap:wrap; gap:8px; }
+.participant-vk-card__copied { font-size:var(--font-size-xs); color:#166534; }
 
 @media (max-width: 1024px) {
   .application-layout { grid-template-columns:1fr; }

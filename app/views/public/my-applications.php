@@ -35,6 +35,7 @@ function getStatusGroup(array $application): string {
     $statusCode = (string) (getApplicationCardStatusMeta($application)['status_code'] ?? 'draft');
 
     return match ($statusCode) {
+        'draft' => 'draft',
         'submitted', 'partial_reviewed', 'reviewed', 'corrected' => 'pending',
         'revision' => 'revision',
         'approved' => 'accepted',
@@ -50,6 +51,7 @@ $currentPage = 'applications';
 
 $stats = [
     'total' => count($applications),
+    'draft' => 0,
     'pending' => 0,
     'revision' => 0,
     'accepted' => 0,
@@ -64,10 +66,61 @@ foreach ($applications as $application) {
 }
 
 $activeFilter = (string)($_GET['status'] ?? 'all');
-$allowedFilters = ['all', 'pending', 'revision', 'accepted', 'rejected'];
+$allowedFilters = ['all', 'draft', 'pending', 'revision', 'accepted', 'rejected'];
 if (!in_array($activeFilter, $allowedFilters, true)) {
     $activeFilter = 'all';
 }
+
+$filterConfig = [
+    'all' => [
+        'label' => 'Все',
+        'href' => '/my-applications',
+        'active_class' => 'bg-gray-900 text-white',
+        'inactive_class' => 'bg-gray-200 text-gray-800',
+        'count' => (int) ($stats['total'] ?? 0),
+        'always_show' => true,
+    ],
+    'draft' => [
+        'label' => 'Черновики',
+        'href' => '/my-applications?status=draft',
+        'active_class' => 'bg-gray-700 text-white',
+        'inactive_class' => 'bg-gray-100 text-gray-700',
+        'count' => (int) ($stats['draft'] ?? 0),
+    ],
+    'pending' => [
+        'label' => 'На рассмотрении',
+        'href' => '/my-applications?status=pending',
+        'active_class' => 'bg-yellow-600 text-white',
+        'inactive_class' => 'bg-yellow-100 text-yellow-700',
+        'count' => (int) ($stats['pending'] ?? 0),
+    ],
+    'revision' => [
+        'label' => 'Требует исправлений',
+        'href' => '/my-applications?status=revision',
+        'active_class' => 'bg-blue-600 text-white',
+        'inactive_class' => 'bg-blue-100 text-blue-700',
+        'count' => (int) ($stats['revision'] ?? 0),
+    ],
+    'accepted' => [
+        'label' => 'Приняты',
+        'href' => '/my-applications?status=accepted',
+        'active_class' => 'bg-indigo-600 text-white',
+        'inactive_class' => 'bg-indigo-100 text-indigo-700',
+        'count' => (int) ($stats['accepted'] ?? 0),
+    ],
+    'rejected' => [
+        'label' => 'Отклонены',
+        'href' => '/my-applications?status=rejected',
+        'active_class' => 'bg-red-600 text-white',
+        'inactive_class' => 'bg-red-100 text-red-700',
+        'count' => (int) ($stats['rejected'] ?? 0),
+    ],
+];
+
+$visibleFilters = array_filter(
+    $filterConfig,
+    static fn(array $filter): bool => !empty($filter['always_show']) || (int) ($filter['count'] ?? 0) > 0
+);
 
 $filteredApplications = array_values(array_filter(
     $applications,
@@ -123,11 +176,13 @@ $filteredApplications = array_values(array_filter(
         </div>
 
         <div class="flex gap-2 mb-6 flex-wrap">
-            <a href="/my-applications" class="px-4 py-2 rounded-full <?= $activeFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-200' ?>">Все</a>
-            <a href="/my-applications?status=pending" class="px-4 py-2 rounded-full <?= $activeFilter === 'pending' ? 'bg-yellow-600 text-white' : 'bg-yellow-100 text-yellow-700' ?>">На рассмотрении</a>
-            <a href="/my-applications?status=revision" class="px-4 py-2 rounded-full <?= $activeFilter === 'revision' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700' ?>">Требует исправлений</a>
-            <a href="/my-applications?status=accepted" class="px-4 py-2 rounded-full <?= $activeFilter === 'accepted' ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700' ?>">Приняты</a>
-            <a href="/my-applications?status=rejected" class="px-4 py-2 rounded-full <?= $activeFilter === 'rejected' ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700' ?>">Отклонены</a>
+            <?php foreach ($visibleFilters as $filterKey => $filter): ?>
+                <?php $isActive = $activeFilter === $filterKey; ?>
+                <a href="<?= htmlspecialchars((string) $filter['href']) ?>" class="px-4 py-2 rounded-full inline-flex items-center gap-2 <?= $isActive ? (string) $filter['active_class'] : (string) $filter['inactive_class'] ?>">
+                    <span><?= htmlspecialchars((string) $filter['label']) ?></span>
+                    <span class="text-xs font-semibold opacity-80"><?= (int) ($filter['count'] ?? 0) ?></span>
+                </a>
+            <?php endforeach; ?>
         </div>
 
         <?php if (empty($filteredApplications)): ?>

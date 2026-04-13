@@ -12,7 +12,7 @@ check_csrf();
 $admin = getCurrentUser();
 $participantId = (int) ($_GET['id'] ?? 0);
 
-$stmt = $pdo->prepare("\n    SELECT p.*,\n           a.id AS application_id, a.status AS application_status, a.allow_edit, a.parent_fio, a.source_info, a.colleagues_info,\n           c.id AS contest_id, c.title AS contest_title,\n           u.id AS user_id, u.name AS user_name, u.surname AS user_surname, u.patronymic AS user_patronymic, u.email AS user_email,\n           u.organization_region AS user_organization_region, u.organization_name AS user_organization_name, u.organization_address AS user_organization_address,\n           w.id AS work_id, w.status AS work_status, w.title AS work_title\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    WHERE p.id = ?\n");
+$stmt = $pdo->prepare("\n    SELECT p.*,\n           a.id AS application_id, a.status AS application_status, a.allow_edit, a.parent_fio, a.source_info, a.colleagues_info,\n           c.id AS contest_id, c.title AS contest_title,\n           u.id AS user_id, u.name AS user_name, u.surname AS user_surname, u.patronymic AS user_patronymic, u.email AS user_email,\n           u.organization_region AS user_organization_region, u.organization_name AS user_organization_name, u.organization_address AS user_organization_address, u.user_type AS user_type,\n           w.id AS work_id, w.status AS work_status, w.title AS work_title\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    WHERE p.id = ?\n");
 $stmt->execute([$participantId]);
 $participant = $stmt->fetch();
 
@@ -96,10 +96,11 @@ $detailsMap = [
     'Заявитель' => [
         ['label' => 'ФИО заявителя', 'value' => $applicantName],
         ['label' => 'Email заявителя', 'value' => $participantEmail !== '' ? '<a href="mailto:' . e($participantEmail) . '">' . e($participantEmail) . '</a>' : '—', 'is_html' => true],
+        ['label' => 'Тип профиля', 'value' => getUserTypeLabel((string) ($participant['user_type'] ?? 'parent'))],
     ],
     'Организация' => [
-        ['label' => 'Название организации', 'value' => $organizationName],
-        ['label' => 'Адрес организации', 'value' => $organizationAddress],
+        ['label' => 'Название и адрес образовательного учреждения', 'value' => $organizationName],
+        ['label' => 'Контактная информация организации', 'value' => $organizationAddress],
         ['label' => 'Регион организации', 'value' => $organizationRegion],
     ],
     'Конкурс и заявка' => [

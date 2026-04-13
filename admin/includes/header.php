@@ -76,7 +76,14 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 <main class="admin-content">
 <div class="admin-header">
 <div>
+<div class="flex items-center gap-md">
 <h1 class="admin-header__title"><?= $safeHeaderTitle ?></h1>
+<?php if (!empty($headerBackUrl) && !empty($headerBackLabel)): ?>
+<a href="<?= htmlspecialchars((string) $headerBackUrl, ENT_QUOTES, 'UTF-8') ?>" class="btn btn--secondary">
+<i class="fas fa-arrow-left"></i> <?= htmlspecialchars((string) $headerBackLabel, ENT_QUOTES, 'UTF-8') ?>
+</a>
+<?php endif; ?>
+</div>
  <?php if (isset($breadcrumb)): ?>
 <div class="admin-header__breadcrumb"><?= $safeBreadcrumb ?></div>
  <?php endif; ?>

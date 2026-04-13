@@ -23,11 +23,12 @@ $requiredFieldMeta = [
     'surname' => 'Фамилия',
     'email' => 'Адрес электронной почты',
     'organization_region' => 'Регион',
-    'organization_address' => 'Адрес учебного заведения',
-    'organization_name' => 'Название учебного заведения',
+    'organization_address' => 'Контактная информация организации',
+    'organization_name' => 'Название и адрес образовательного учреждения',
 ];
 
 $isSiteRegisteredAccount = empty($user['vk_id']);
+$userTypeOptions = getUserTypeOptions();
 
 check_csrf();
 
@@ -43,6 +44,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
  $organization_region = trim((string) ($_POST['organization_region'] ?? ''));
  $organization_name = trim((string) ($_POST['organization_name'] ?? ''));
  $organization_address = trim((string) ($_POST['organization_address'] ?? ''));
+ $requestedUserType = trim((string) ($_POST['user_type'] ?? 'parent'));
+ $user_type = array_key_exists($requestedUserType, $userTypeOptions) ? $requestedUserType : 'parent';
  $newPassword = (string) ($_POST['new_password'] ?? '');
  $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
 
@@ -116,12 +119,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
  if ($newPassword !== '') {
  $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
- $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, password = ?, recovery_old_password_hash = NULL, recovery_expires_at = NULL, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
- $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $passwordHash, $user['id']]);
+ $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, user_type = ?, password = ?, recovery_old_password_hash = NULL, recovery_expires_at = NULL, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
+ $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $user_type, $passwordHash, $user['id']]);
  clearPasswordRecoverySessionFlags((int) $user['id']);
  } else {
- $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
- $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $user['id']]);
+ $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, user_type = ?, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
+ $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $user_type, $user['id']]);
  }
 
  // Обновляем сессию
@@ -232,6 +235,18 @@ generateCSRFToken();
 <div class="profile-section">
 <div class="profile-section__title">Основные данные</div>
 
+<div class="register-role-switch profile-role-switch" role="radiogroup" aria-label="Кто вы?">
+<div class="register-role-switch__title">Кто вы?</div>
+<div class="register-role-switch__options">
+<?php foreach ($userTypeOptions as $value => $label): ?>
+<label class="register-role-switch__option <?= (($user['user_type'] ?? 'parent') === $value) ? 'is-active' : '' ?>">
+<input type="radio" name="user_type" value="<?= e($value) ?>" <?= (($user['user_type'] ?? 'parent') === $value) ? 'checked' : '' ?>>
+<span><?= e($label) ?></span>
+</label>
+<?php endforeach; ?>
+</div>
+</div>
+
 <div class="form-group">
 <label class="form-label form-label--required">Имя</label>
 <input type="text" id="profile-name" name="name" class="form-input" data-required-key="name" value="<?= htmlspecialchars($user['name'] ?? '') ?>" required>
@@ -287,19 +302,20 @@ generateCSRFToken();
 <select id="profile-organization-region" name="organization_region" class="form-select" data-required-key="organization_region" required>
 <option value="">Выберите регион</option>
 <?php foreach ($regions as $r): ?>
-<option value="<?= e($r) ?>" <?= ($user['organization_region'] ?? '') === $r ? 'selected' : '' ?>><?= e($r) ?></option>
+<?php $regionValue = normalizeRegionName((string) $r); ?>
+<option value="<?= e($regionValue) ?>" <?= ($user['organization_region'] ?? '') === $regionValue ? 'selected' : '' ?>><?= e(getRegionSelectLabel((string) $r)) ?></option>
 <?php endforeach; ?>
 </select>
 </div>
 
 <div class="form-group">
-<label class="form-label form-label--required">Название образовательного учреждения</label>
+<label class="form-label form-label--required">Название и адрес образовательного учреждения</label>
 <input type="text" id="profile-organization-name" name="organization_name" class="form-input" data-required-key="organization_name" value="<?= htmlspecialchars($user['organization_name'] ?? '') ?>" placeholder="Детская художественная школа №1" required>
 <div class="form-hint">Название может отображаться в дипломах и карточках работ.</div>
 </div>
 
 <div class="form-group">
-<label class="form-label form-label--required">Фактический адрес организации</label>
+<label class="form-label form-label--required">Контактная информация организации</label>
 <textarea id="profile-organization-address" name="organization_address" class="form-textarea" data-required-key="organization_address" rows="2" placeholder="г. Москва, ул. Примерная, д.1" required><?= htmlspecialchars($user['organization_address'] ?? '') ?></textarea>
 </div>
 </div>
@@ -419,6 +435,14 @@ generateCSRFToken();
         window.addEventListener('focus', checkVerificationStatus);
     }
 })();
+</script>
+<script>
+document.querySelectorAll('.register-role-switch__option input').forEach((input) => {
+    input.addEventListener('change', () => {
+        document.querySelectorAll('.register-role-switch__option').forEach((el) => el.classList.remove('is-active'));
+        input.closest('.register-role-switch__option')?.classList.add('is-active');
+    });
+});
 </script>
 </body>
 </html>

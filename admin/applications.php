@@ -400,6 +400,7 @@ require_once __DIR__ . '/includes/header.php';
         'submitted' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted'")->fetchColumn(),
         'revision' => $pdo->query("SELECT COUNT(*) FROM applications WHERE allow_edit = 1 AND status <> 'approved'")->fetchColumn(),
         'corrected' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'corrected'")->fetchColumn(),
+        'rejected' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'rejected'")->fetchColumn(),
     ];
     if ($hasOpenedByAdminColumn) {
         $statCounts['new'] = $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted' AND opened_by_admin = 0")->fetchColumn();
@@ -426,6 +427,9 @@ require_once __DIR__ . '/includes/header.php';
     </a>
     <a href="?status=corrected" class="stat-pill <?= $status === 'corrected' ? 'stat-pill--active' : '' ?>">
         Исправлена, и отправлена на проверку <span class="stat-pill__count"><?= $statCounts['corrected'] ?></span>
+    </a>
+    <a href="?status=rejected" class="stat-pill <?= $status === 'rejected' ? 'stat-pill--active' : '' ?>">
+        Отклонённые заявки <span class="stat-pill__count"><?= $statCounts['rejected'] ?></span>
     </a>
 </div>
 
@@ -464,7 +468,10 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="admin-list-card__accent <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>"></div>
                     <div class="admin-list-card__header">
                         <div class="admin-list-card__title-wrap">
-                            <h4 class="admin-list-card__title">Заявка #<?= (int) $app['id'] ?></h4>
+                            <div class="flex items-center gap-sm flex-wrap">
+                                <h4 class="admin-list-card__title">Заявка #<?= (int) $app['id'] ?></h4>
+                                <span class="text-secondary">Подача: <?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></span>
+                            </div>
                             <div class="admin-list-card__subtitle">
                                 <?= htmlspecialchars(trim(($app['name'] ?? '') . ' ' . ($app['surname'] ?? '')) ?: 'Без имени') ?>
                                 <?php if (!empty($app['email'])): ?>
@@ -479,9 +486,6 @@ require_once __DIR__ . '/includes/header.php';
                             <span class="badge <?= e((string) ($receiptMeta['badge_class'] ?? 'badge--secondary')) ?>">
                                 <?= e((string) ($receiptMeta['label'] ?? '—')) ?>
                             </span>
-                            <span class="badge <?= e((string) ($vkStatus['badge_class'] ?? 'badge--secondary')) ?>">
-                                VK: <?= e((string) ($vkStatus['status_code'] === 'partial' ? 'Частично' : ($vkStatus['status_code'] === 'published' ? 'Опублик.' : ($vkStatus['status_code'] === 'failed' ? 'Ошибка' : 'Не опублик.')))) ?>
-                            </span>
                         </div>
                     </div>
                     <div class="admin-list-card__meta">
@@ -490,9 +494,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                         <span><strong>Конкурс:</strong> <?= htmlspecialchars($app['contest_title'] ?? '—') ?></span>
                         <span><strong>Участников:</strong> <?= (int) $app['participants_count'] ?></span>
-                        <span><strong>Оплата:</strong> <?= e((string) ($receiptMeta['label'] ?? '—')) ?></span>
-                        <span><strong>VK:</strong> <?= (int) ($vkStatus['published_count'] ?? 0) ?>/<?= (int) ($vkStatus['total_count'] ?? 0) ?></span>
-                        <span><strong>Подача:</strong> <?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></span>
+                        <span><strong>Опубликовано:</strong> <?= (int) ($vkStatus['published_count'] ?? 0) ?> из <?= (int) ($app['participants_count'] ?? 0) ?></span>
                     </div>
                     <div class="admin-list-card__actions">
                         <label class="select-col" style="display:none;">

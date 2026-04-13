@@ -37,6 +37,18 @@ $messageTemplates = [
 
 $settings = getSystemSettings();
 $maskedSmtpPasswordPlaceholder = '••••••••';
+$defaultWelcomeMessageTemplate = "Здравствуйте, {name}!\n\n";
+$defaultDrawingCommentPresets = implode("\n", [
+    'Пожалуйста, загрузите более качественное изображение рисунка без затемнений и бликов.',
+    'Пожалуйста, проверьте соответствие работы теме конкурса и при необходимости замените рисунок.',
+    'Пожалуйста, убедитесь, что на изображении нет посторонних элементов, подписей и рамок.',
+]);
+$resolvedWelcomeMessageTemplate = trim((string) ($settings['message_welcome_template'] ?? '')) !== ''
+    ? (string) $settings['message_welcome_template']
+    : $defaultWelcomeMessageTemplate;
+$resolvedDrawingCommentPresets = trim((string) ($settings['drawing_comment_presets'] ?? '')) !== ''
+    ? (string) $settings['drawing_comment_presets']
+    : $defaultDrawingCommentPresets;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['action'] ?? '') === 'upload_homepage_hero_async') {
@@ -70,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Ошибка безопасности';
     } else {
         $section = (string) ($_POST['settings_section'] ?? 'notifications');
-        $allowedSections = ['notifications', 'email-delivery', 'vk-integration', 'vk-publication', 'homepage-banner'];
+        $allowedSections = ['notifications', 'message-templates', 'email-delivery', 'vk-integration', 'vk-publication', 'homepage-banner'];
         if (!in_array($section, $allowedSections, true)) {
             $section = 'notifications';
         }
@@ -101,6 +113,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'email_smtp_password' => (string) ($settings['email_smtp_password'] ?? ''),
             'email_smtp_timeout' => (int) ($settings['email_smtp_timeout'] ?? 15),
             'homepage_hero_image' => (string) ($settings['homepage_hero_image'] ?? ''),
+            'message_welcome_template' => $resolvedWelcomeMessageTemplate,
+            'drawing_comment_presets' => $resolvedDrawingCommentPresets,
         ];
 
         if ($section === 'notifications') {
@@ -112,6 +126,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['application_declined_message'] = trim($_POST['application_declined_message'] ?? '');
             $payload['application_revision_subject'] = trim($_POST['application_revision_subject'] ?? '');
             $payload['application_revision_message'] = trim($_POST['application_revision_message'] ?? '');
+        } elseif ($section === 'message-templates') {
+            $payload['message_welcome_template'] = trim((string) ($_POST['message_welcome_template'] ?? $defaultWelcomeMessageTemplate));
+            $payload['drawing_comment_presets'] = trim((string) ($_POST['drawing_comment_presets'] ?? $defaultDrawingCommentPresets));
+            if ($payload['message_welcome_template'] === '') {
+                $payload['message_welcome_template'] = $defaultWelcomeMessageTemplate;
+            }
+            if ($payload['drawing_comment_presets'] === '') {
+                $payload['drawing_comment_presets'] = $defaultDrawingCommentPresets;
+            }
         } elseif ($section === 'email-delivery') {
             $payload['email_notifications_enabled'] = isset($_POST['email_notifications_enabled']) ? 1 : 0;
             $payload['email_from_name'] = trim($_POST['email_from_name'] ?? '');
@@ -216,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $activeSettingsTab = (string) ($_SESSION['settings_active_tab'] ?? 'notifications');
-if (!in_array($activeSettingsTab, ['notifications', 'email-delivery', 'vk-integration', 'vk-publication', 'homepage-banner'], true)) {
+if (!in_array($activeSettingsTab, ['notifications', 'message-templates', 'email-delivery', 'vk-integration', 'vk-publication', 'homepage-banner'], true)) {
     $activeSettingsTab = 'notifications';
 }
 unset($_SESSION['settings_active_tab']);
@@ -264,6 +287,9 @@ unset($_SESSION['success_message']);
         </button>
         <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'email-delivery' ? ' is-active' : '' ?>" data-settings-tab="email-delivery" role="tab">
             <i class="fas fa-envelope"></i> Email-отправка
+        </button>
+        <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'message-templates' ? ' is-active' : '' ?>" data-settings-tab="message-templates" role="tab">
+            <i class="fas fa-comment-dots"></i> Шаблоны сообщений
         </button>
         <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'vk-integration' ? ' is-active' : '' ?>" data-settings-tab="vk-integration" role="tab">
             <i class="fab fa-vk"></i> Интеграция VK
@@ -458,6 +484,38 @@ unset($_SESSION['success_message']);
                             <i class="fas fa-save"></i> Сохранить
                         </button>
                     </div>
+            </form>
+        </section>
+
+        <section id="message-templates" class="settings-tab-panel<?= $activeSettingsTab === 'message-templates' ? ' is-active' : '' ?>" data-settings-panel="message-templates">
+            <form method="POST" class="settings-form">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="settings_section" value="message-templates">
+                <div class="settings-section__header">
+                    <h4><i class="fas fa-comment-dots"></i> Шаблоны сообщений</h4>
+                    <p>Здесь можно настроить приветствие для ручных сообщений администратора и список типовых замечаний по рисункам.</p>
+                </div>
+
+                <div class="settings-vk-card">
+                    <div class="form-group">
+                        <label class="form-label">Приветственное сообщение</label>
+                        <textarea name="message_welcome_template" class="form-input" rows="5"><?= htmlspecialchars($resolvedWelcomeMessageTemplate) ?></textarea>
+                        <div class="form-hint">Доступные подстановки: <code>{name}</code>, <code>{full_name}</code>, <code>{email}</code>.</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Варианты сообщений для рисунка, не соответствующего условиям конкурса</label>
+                        <textarea name="drawing_comment_presets" class="form-input" rows="8"><?= htmlspecialchars($resolvedDrawingCommentPresets) ?></textarea>
+                        <div class="form-hint">Каждый вариант указывайте с новой строки. На странице проверки рисунка они появятся в выпадающем списке.</div>
+                    </div>
+                </div>
+
+                <div class="settings-actions">
+                    <button type="submit" class="btn btn--primary">
+                        <i class="fas fa-save"></i> Сохранить
+                    </button>
+                </div>
             </form>
         </section>
 
