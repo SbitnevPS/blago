@@ -17,6 +17,26 @@ $breadcrumb = 'Конкурсы / Участники';
 $contest_id = $_GET['contest_id'] ?? '';
 $participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
 $participantId = (int) ($_GET['participant_id'] ?? 0);
+$ageCategory = trim((string) ($_GET['age_category'] ?? ''));
+
+$hasParticipantOvzColumn = false;
+try {
+    $hasParticipantOvzColumn = (bool) $pdo->query("SHOW COLUMNS FROM participants LIKE 'has_ovz'")->fetch(PDO::FETCH_ASSOC);
+} catch (Throwable $ignored) {
+}
+
+$participantCategoryFilters = [
+    '' => ['label' => 'Все', 'type' => 'default'],
+    '5-7' => ['label' => '5-7 лет', 'type' => 'age'],
+    '8-10' => ['label' => '8-10 лет', 'type' => 'age'],
+    '11-13' => ['label' => '11-13 лет', 'type' => 'age'],
+    '14-17' => ['label' => '14-17 лет', 'type' => 'age'],
+    'ovz' => ['label' => 'С ОВЗ', 'type' => 'special'],
+];
+
+if (!array_key_exists($ageCategory, $participantCategoryFilters)) {
+    $ageCategory = '';
+}
 
 $where = [];
 $params = [];
@@ -38,7 +58,62 @@ if ($participantId > 0) {
     $params[] = $searchTerm;
 }
 
+if ($ageCategory !== '') {
+    switch ($ageCategory) {
+        case '5-7':
+            $where[] = 'p.age BETWEEN 5 AND 7';
+            break;
+        case '8-10':
+            $where[] = 'p.age BETWEEN 8 AND 10';
+            break;
+        case '11-13':
+            $where[] = 'p.age BETWEEN 11 AND 13';
+            break;
+        case '14-17':
+            $where[] = 'p.age BETWEEN 14 AND 17';
+            break;
+        case 'ovz':
+            if ($hasParticipantOvzColumn) {
+                $where[] = 'COALESCE(p.has_ovz, 0) = 1';
+            } else {
+                $ovzPatterns = ['%овз%', '%ограничен%', '%инвалид%'];
+                $where[] = '('
+                    . 'LOWER(COALESCE(a.recommendations_wishes, \'\')) LIKE ? OR '
+                    . 'LOWER(COALESCE(a.source_info, \'\')) LIKE ? OR '
+                    . 'LOWER(COALESCE(a.colleagues_info, \'\')) LIKE ? OR '
+                    . 'LOWER(COALESCE(p.organization_name, \'\')) LIKE ? OR '
+                    . 'LOWER(COALESCE(p.organization_address, \'\')) LIKE ?'
+                    . ')';
+                $params[] = $ovzPatterns[0];
+                $params[] = $ovzPatterns[1];
+                $params[] = $ovzPatterns[2];
+                $params[] = $ovzPatterns[0];
+                $params[] = $ovzPatterns[1];
+            }
+            break;
+    }
+}
+
 $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+$buildParticipantsUrl = static function (array $overrides = []) use ($contest_id, $participantQuery, $participantId, $ageCategory): string {
+    $query = [
+        'contest_id' => $contest_id !== '' ? (string) $contest_id : null,
+        'participant_query' => $participantQuery !== '' ? $participantQuery : null,
+        'participant_id' => $participantId > 0 ? $participantId : null,
+        'age_category' => $ageCategory !== '' ? $ageCategory : null,
+        'page' => null,
+    ];
+
+    foreach ($overrides as $key => $value) {
+        $query[$key] = $value;
+    }
+
+    $query = array_filter($query, static fn ($value) => $value !== null && $value !== '');
+    $queryString = http_build_query($query);
+
+    return '/admin/participants' . ($queryString !== '' ? '?' . $queryString : '');
+};
 
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = 25;
@@ -49,7 +124,8 @@ $countStmt->execute($params);
 $totalParticipants = (int) $countStmt->fetchColumn();
 $totalPages = max(1, (int) ceil($totalParticipants / $perPage));
 
-$listStmt = $pdo->prepare("\n    SELECT p.id, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           a.status AS application_status, a.allow_edit,\n           c.title AS contest_title,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $whereClause\n    ORDER BY p.created_at DESC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
+$ovzSelect = $hasParticipantOvzColumn ? 'COALESCE(p.has_ovz, 0) AS has_ovz,' : '0 AS has_ovz,';
+$listStmt = $pdo->prepare("\n    SELECT p.id, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           $ovzSelect\n           a.status AS application_status, a.allow_edit,\n           c.title AS contest_title,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $whereClause\n    ORDER BY p.created_at DESC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
 $listStmt->execute($params);
 $participants = $listStmt->fetchAll();
 
@@ -98,10 +174,31 @@ require_once __DIR__ . '/includes/header.php';
                 <div id="participantSearchResults" class="user-results" data-live-search-results></div>
             </div>
             <button type="submit" class="btn btn--primary"><i class="fas fa-filter"></i> Применить</button>
-            <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0): ?>
+            <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0 || $ageCategory !== ''): ?>
                 <a href="/admin/participants" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+            <?php foreach ($participantCategoryFilters as $filterKey => $filterMeta): ?>
+                <?php
+                    $isActiveFilter = $ageCategory === $filterKey;
+                    $buttonStyle = $isActiveFilter
+                        ? 'background:#0F766E;color:#fff;border-color:#0F766E;'
+                        : 'background:#fff;color:#0F172A;border-color:#CBD5E1;';
+                ?>
+                <a
+                    href="<?= e($buildParticipantsUrl(['age_category' => $filterKey !== '' ? $filterKey : null])) ?>"
+                    class="btn btn--sm"
+                    style="<?= $buttonStyle ?>">
+                    <?= e((string) $filterMeta['label']) ?>
+                </a>
+            <?php endforeach; ?>
+        </div>
+        <div class="form-hint" style="margin-top:8px;">
+            <?= $hasParticipantOvzColumn
+                ? 'Фильтр `С ОВЗ` работает по отдельной отметке участника в заявке.'
+                : 'Фильтр `С ОВЗ` ищет отметки в тексте заявки по ключевым словам: `ОВЗ`, `ограничен`, `инвалид`.' ?>
+        </div>
     </div>
 </div>
 
@@ -120,6 +217,8 @@ require_once __DIR__ . '/includes/header.php';
                         'status' => (string) ($participant['application_status'] ?? 'draft'),
                         'allow_edit' => (int) ($participant['allow_edit'] ?? 0),
                     ]);
+                    $participantAge = (int) ($participant['age'] ?? 0);
+                    $participantAgeCategory = getParticipantAgeCategoryLabel($participantAge);
                     $drawingUrl = !empty($participant['drawing_file'])
                         ? getParticipantDrawingPreviewWebPath((string) ($participant['applicant_email'] ?? ''), (string) $participant['drawing_file'])
                         : '';
@@ -143,7 +242,11 @@ require_once __DIR__ . '/includes/header.php';
                         </span>
                     </div>
                     <div class="admin-list-card__meta">
-                        <span><strong>Возраст:</strong> <?= (int) ($participant['age'] ?? 0) ?: '—' ?></span>
+                        <span><strong>Возраст:</strong> <?= $participantAge ?: '—' ?></span>
+                        <?php if ($participantAgeCategory !== ''): ?>
+                            <span><strong>Категория:</strong> <?= e($participantAgeCategory) ?></span>
+                        <?php endif; ?>
+                        <span><strong>ОВЗ:</strong> <?= !empty($participant['has_ovz']) ? 'Да' : 'Нет' ?></span>
                         <span><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?: '—') ?></span>
                     </div>
                     <div class="admin-list-card__actions">
@@ -162,10 +265,10 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="text-secondary" style="font-size: 14px;">Страница <?= $page ?> из <?= $totalPages ?></div>
                 <div class="flex gap-sm">
                     <?php if ($page > 1): ?>
-                        <a class="btn btn--ghost btn--sm" href="?page=<?= $page - 1 ?>&contest_id=<?= urlencode((string) $contest_id) ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>"><i class="fas fa-chevron-left"></i></a>
+                        <a class="btn btn--ghost btn--sm" href="<?= e($buildParticipantsUrl(['page' => $page - 1])) ?>"><i class="fas fa-chevron-left"></i></a>
                     <?php endif; ?>
                     <?php if ($page < $totalPages): ?>
-                        <a class="btn btn--ghost btn--sm" href="?page=<?= $page + 1 ?>&contest_id=<?= urlencode((string) $contest_id) ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>"><i class="fas fa-chevron-right"></i></a>
+                        <a class="btn btn--ghost btn--sm" href="<?= e($buildParticipantsUrl(['page' => $page + 1])) ?>"><i class="fas fa-chevron-right"></i></a>
                     <?php endif; ?>
                 </div>
             </div>

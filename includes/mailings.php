@@ -77,6 +77,73 @@ function ensureMailingsSchema(): void
     }
 }
 
+function mailingNormalizeEmail(string $email): string
+{
+    return mb_strtolower(trim($email));
+}
+
+function mailingGetBlacklistEntry(string $email): ?array
+{
+    global $pdo;
+
+    $normalizedEmail = mailingNormalizeEmail($email);
+    if ($normalizedEmail === '') {
+        return null;
+    }
+
+    $stmt = $pdo->prepare("SELECT * FROM email_blacklist WHERE LOWER(email) = ? LIMIT 1");
+    $stmt->execute([$normalizedEmail]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    return $row ?: null;
+}
+
+function mailingIsEmailBlacklisted(string $email): bool
+{
+    return mailingGetBlacklistEntry($email) !== null;
+}
+
+function mailingAddEmailToBlacklist(string $email, ?string $reason = null): array
+{
+    global $pdo;
+
+    $normalizedEmail = mailingNormalizeEmail($email);
+    if ($normalizedEmail === '') {
+        throw new RuntimeException('Email не указан.');
+    }
+
+    $existing = mailingGetBlacklistEntry($normalizedEmail);
+    if ($existing) {
+        return $existing;
+    }
+
+    $stmt = $pdo->prepare("INSERT INTO email_blacklist (email, reason) VALUES (?, ?)");
+    $stmt->execute([
+        $normalizedEmail,
+        trim((string) $reason) !== '' ? trim((string) $reason) : null,
+    ]);
+
+    return mailingGetBlacklistEntry($normalizedEmail) ?? [
+        'email' => $normalizedEmail,
+        'reason' => trim((string) $reason) !== '' ? trim((string) $reason) : null,
+    ];
+}
+
+function mailingRemoveEmailFromBlacklist(string $email): bool
+{
+    global $pdo;
+
+    $normalizedEmail = mailingNormalizeEmail($email);
+    if ($normalizedEmail === '') {
+        throw new RuntimeException('Email не указан.');
+    }
+
+    $stmt = $pdo->prepare("DELETE FROM email_blacklist WHERE LOWER(email) = ?");
+    $stmt->execute([$normalizedEmail]);
+
+    return $stmt->rowCount() > 0;
+}
+
 function mailingNormalizeFilters(array $input): array
 {
     return [
@@ -164,7 +231,8 @@ function mailingCountRecipients(array $filters, string $search = ''): int
     $clause = mailingBuildRecipientWhere($filters, $search);
     $sql = "SELECT COUNT(*)
         FROM users u
-        LEFT JOIN email_blacklist eb ON LOWER(eb.email) = LOWER(u.email)
+        LEFT JOIN email_blacklist eb
+            ON eb.email COLLATE utf8mb4_unicode_ci = u.email COLLATE utf8mb4_unicode_ci
         WHERE {$clause['sql']}";
 
     $stmt = $pdo->prepare($sql);
@@ -199,7 +267,8 @@ function mailingFetchRecipientsPage(array $filters, string $search, int $page, i
                 WHERE ax.user_id = u.id
             ) AS max_participants
         FROM users u
-        LEFT JOIN email_blacklist eb ON LOWER(eb.email) = LOWER(u.email)
+        LEFT JOIN email_blacklist eb
+            ON eb.email COLLATE utf8mb4_unicode_ci = u.email COLLATE utf8mb4_unicode_ci
         WHERE {$clause['sql']}
         ORDER BY u.id DESC
         LIMIT {$perPage} OFFSET {$offset}";
@@ -241,7 +310,8 @@ function mailingResolveRecipientIds(array $mailing): array
     $clause = mailingBuildRecipientWhere($filters, '');
     $sql = "SELECT u.id, u.email
         FROM users u
-        LEFT JOIN email_blacklist eb ON LOWER(eb.email) = LOWER(u.email)
+        LEFT JOIN email_blacklist eb
+            ON eb.email COLLATE utf8mb4_unicode_ci = u.email COLLATE utf8mb4_unicode_ci
         WHERE {$clause['sql']}
         ORDER BY u.id ASC";
 

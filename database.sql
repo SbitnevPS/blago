@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS participants (
     application_id INT NOT NULL,
     fio VARCHAR(255) NOT NULL,
     age INT,
+    has_ovz TINYINT(1) NOT NULL DEFAULT 0,
     region VARCHAR(255),
     organization_name VARCHAR(255),
     organization_address TEXT,

@@ -18,11 +18,9 @@ if (!$diploma) {
 }
 
 if (empty($diploma['file_path']) || !is_file(ROOT_PATH . '/' . $diploma['file_path'])) {
-    if (!empty($diploma['work_id'])) {
-        $diploma = generateWorkDiploma((int)$diploma['work_id'], true);
-    } else {
-        $diploma = generateParticipantDiploma((int)$diploma['participant_id'], true);
-    }
+    http_response_code(404);
+    echo 'Файл диплома ещё не сформирован';
+    exit;
 }
 
 $file = ROOT_PATH . '/' . $diploma['file_path'];

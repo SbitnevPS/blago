@@ -31,7 +31,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if (!canShowIndividualDiplomaActions(['status' => (string) ($participant['work_status'] ?? 'pending')])) {
                 throw new RuntimeException('Для этой работы диплом недоступен.');
             }
-            $diploma = generateWorkDiploma((int) ($participant['work_id'] ?? 0), false);
+            $diploma = findExistingWorkDiploma((int) ($participant['work_id'] ?? 0), trim((string)($_POST['diploma_type'] ?? '')) ?: null);
+            if (!$diploma) {
+                throw new RuntimeException('Диплом ещё не сформирован в просмотре заявки.');
+            }
             $file = ROOT_PATH . '/' . $diploma['file_path'];
             header('Content-Type: application/pdf');
             header('Content-Disposition: attachment; filename="diploma_participant_' . $participantId . '.pdf"');
@@ -43,7 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if (!canShowIndividualDiplomaActions(['status' => (string) ($participant['work_status'] ?? 'pending')])) {
                 throw new RuntimeException('Для этой работы диплом недоступен.');
             }
-            $diploma = generateWorkDiploma((int) ($participant['work_id'] ?? 0), false);
+            $diploma = findExistingWorkDiploma((int) ($participant['work_id'] ?? 0), trim((string)($_POST['diploma_type'] ?? '')) ?: null);
+            if (!$diploma) {
+                throw new RuntimeException('Диплом ещё не сформирован в просмотре заявки.');
+            }
             $ctx = getWorkDiplomaContext((int) ($participant['work_id'] ?? 0));
             $ok = $ctx && sendDiplomaByEmail($ctx, $diploma);
             $_SESSION['success_message'] = $ok ? 'Диплом отправлен по почте' : 'Не удалось отправить диплом';
@@ -54,7 +60,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if (!canShowIndividualDiplomaActions(['status' => (string) ($participant['work_status'] ?? 'pending')])) {
                 throw new RuntimeException('Для этой работы диплом недоступен.');
             }
-            $diploma = generateWorkDiploma((int) ($participant['work_id'] ?? 0), false);
+            $diploma = findExistingWorkDiploma((int) ($participant['work_id'] ?? 0), trim((string)($_POST['diploma_type'] ?? '')) ?: null);
+            if (!$diploma) {
+                throw new RuntimeException('Диплом ещё не сформирован в просмотре заявки.');
+            }
             $_SESSION['success_message'] = 'Публичная ссылка: ' . getPublicDiplomaUrl($diploma['public_token']);
             redirect('/admin/participant/' . $participantId);
         }
@@ -86,6 +95,8 @@ $drawingUrl = $drawingFileName !== '' ? getParticipantDrawingWebPath($participan
 $drawingPreviewUrl = $drawingFileName !== '' ? getParticipantDrawingPreviewWebPath($participant['user_email'] ?? '', $drawingFileName) : '';
 $emailHint = $participantEmail !== '' ? $participantEmail : null;
 $canShowDiplomaActions = canShowIndividualDiplomaActions(['status' => (string) ($participant['work_status'] ?? 'pending')]);
+$availableDiplomaTypes = getAllowedDiplomaTypesForWorkStatus((string) ($participant['work_status'] ?? 'pending'));
+$templateLabels = diplomaTemplateTypes();
 
 $detailsMap = [
     'Участник' => [
@@ -192,23 +203,36 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="card__body">
                 <?php if ($canShowDiplomaActions): ?>
+                <?php if ($availableDiplomaTypes): ?>
+                    <div class="form-group" style="max-width:320px;margin-bottom:12px;">
+                        <label class="form-label" for="participantDiplomaType">Шаблон документа</label>
+                        <select class="form-select" id="participantDiplomaType" name="diploma_type">
+                            <?php foreach ($availableDiplomaTypes as $type): ?>
+                                <option value="<?= e($type) ?>"><?= e($templateLabels[$type] ?? $type) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                <?php endif; ?>
                 <div class="participant-diploma-actions">
                     <form method="POST">
                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                         <input type="hidden" name="action" value="download_diploma">
+                        <input type="hidden" name="diploma_type" value="<?= e($availableDiplomaTypes[0] ?? '') ?>" data-diploma-type-input>
                         <button class="btn btn--primary participant-diploma-actions__btn" type="submit"><i class="fas fa-download"></i> Скачать диплом</button>
                     </form>
                     <form method="POST">
                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                         <input type="hidden" name="action" value="send_diploma_email">
+                        <input type="hidden" name="diploma_type" value="<?= e($availableDiplomaTypes[0] ?? '') ?>" data-diploma-type-input>
                         <button class="btn btn--secondary participant-diploma-actions__btn" type="submit"><i class="fas fa-envelope"></i> Отправить по почте</button>
                     </form>
                     <form method="POST">
                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                         <input type="hidden" name="action" value="get_diploma_link">
+                        <input type="hidden" name="diploma_type" value="<?= e($availableDiplomaTypes[0] ?? '') ?>" data-diploma-type-input>
                         <button class="btn btn--ghost participant-diploma-actions__btn" type="submit"><i class="fas fa-link"></i> Получить публичную ссылку</button>
                     </form>
                 </div>
@@ -257,6 +281,17 @@ require_once __DIR__ . '/includes/header.php';
 
 <script>
 (() => {
+    const diplomaTypeSelect = document.getElementById('participantDiplomaType');
+    const diplomaTypeInputs = document.querySelectorAll('[data-diploma-type-input]');
+    const syncDiplomaType = () => {
+        const value = diplomaTypeSelect?.value || '';
+        diplomaTypeInputs.forEach((input) => {
+            input.value = value;
+        });
+    };
+    diplomaTypeSelect?.addEventListener('change', syncDiplomaType);
+    syncDiplomaType();
+
     const previewImage = document.getElementById('participantDrawingPreview');
     const openButton = document.getElementById('participantDrawingOpenBtn');
     const modal = document.getElementById('participantDrawingModal');

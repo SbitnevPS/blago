@@ -49,6 +49,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'save') {
         $tid = (int)($_POST['template_id'] ?? 0);
+        $templateRow = null;
+        foreach ($templates as $tpl) {
+            if ((int)$tpl['id'] === $tid) {
+                $templateRow = $tpl;
+                break;
+            }
+        }
+
+        $assets = json_decode((string)($_POST['assets_json'] ?? '{}'), true);
+        if (!is_array($assets)) {
+            $assets = [];
+        }
+
+        if (!empty($_FILES['background_image']['name'] ?? '')) {
+            ensureDiplomaStorage();
+            $uploadResult = uploadFile($_FILES['background_image'], DIPLOMAS_PATH, ['jpg', 'jpeg', 'png', 'webp']);
+            if (empty($uploadResult['success'])) {
+                throw new RuntimeException((string)($uploadResult['message'] ?? 'Не удалось загрузить фон шаблона'));
+            }
+            $assets['background_image'] = (string)$uploadResult['filename'];
+        }
+
+        if (isset($_POST['remove_background_image'])) {
+            $assets['background_image'] = null;
+        }
+
+        $layoutInput = json_decode((string)($_POST['layout_json'] ?? '{}'), true);
+        if (!is_array($layoutInput)) {
+            $layoutInput = [];
+        }
+        if (!isset($layoutInput['participant_name']) || !is_array($layoutInput['participant_name'])) {
+            $layoutInput['participant_name'] = defaultDiplomaLayout((string)($templateRow['template_type'] ?? 'contest_participant'))['participant_name'] ?? [];
+        }
+
+        if (($templateRow['template_type'] ?? '') === 'participant_certificate') {
+            foreach ($layoutInput as $key => $cfg) {
+                if (!is_array($cfg)) {
+                    continue;
+                }
+                $layoutInput[$key]['visible'] = $key === 'participant_name' ? 1 : 0;
+            }
+            unset($layoutInput['name_line']);
+        }
+
+        $layoutInput['participant_name']['y'] = (float)($_POST['name_top'] ?? ($layoutInput['participant_name']['y'] ?? 38));
+        $layoutInput['participant_name']['x'] = (float)($_POST['name_left'] ?? ($layoutInput['participant_name']['x'] ?? 10));
+        $layoutInput['participant_name']['w'] = (float)($_POST['name_width'] ?? ($layoutInput['participant_name']['w'] ?? 80));
+        $layoutInput['participant_name']['font_size'] = (int)($_POST['name_font_size'] ?? ($layoutInput['participant_name']['font_size'] ?? 18));
+        $layoutInput['participant_name']['line_height'] = (float)($_POST['name_line_height'] ?? ($layoutInput['participant_name']['line_height'] ?? 1.25));
+        $layoutInput['participant_name']['align'] = trim((string)($_POST['name_text_align'] ?? ($layoutInput['participant_name']['align'] ?? 'center')));
+        $layoutInput['participant_name']['font_family'] = trim((string)($_POST['name_font_family'] ?? ($layoutInput['participant_name']['font_family'] ?? 'dejavuserif')));
+        $layoutInput['participant_name']['color'] = trim((string)($_POST['name_color'] ?? ($layoutInput['participant_name']['color'] ?? '#334155')));
+
+        $styles = json_decode((string)($_POST['styles_json'] ?? '{}'), true);
+        if (!is_array($styles)) {
+            $styles = [];
+        }
+        $styles['sheet_rotation'] = ((int)($_POST['sheet_rotation'] ?? 0) === 90) ? 90 : 0;
+
+        $_POST['layout_json'] = json_encode($layoutInput, JSON_UNESCAPED_UNICODE);
+        $_POST['assets_json'] = json_encode($assets, JSON_UNESCAPED_UNICODE);
+        $_POST['styles_json'] = json_encode($styles, JSON_UNESCAPED_UNICODE);
+        $_POST['show_background'] = '1';
+        unset($_POST['show_frame'], $_POST['show_date'], $_POST['show_number'], $_POST['show_signatures']);
         saveDiplomaTemplate($tid, $_POST);
         $_SESSION['success_message'] = 'Шаблон диплома сохранён';
         redirect('/admin/diploma-template/' . $contestId . '?template_id=' . $tid);
@@ -69,6 +133,7 @@ if (!$selectedTemplate) {
 $selectedTemplateId = (int)$selectedTemplate['id'];
 
 if (isset($_GET['preview']) && (int)$_GET['preview'] === 1) {
+    $selectedTemplate = getDiplomaTemplateById($selectedTemplateId) ?? $selectedTemplate;
     $workStmt = $pdo->prepare("SELECT w.id
         FROM works w
         INNER JOIN applications a ON a.id = w.application_id
@@ -85,16 +150,11 @@ if (isset($_GET['preview']) && (int)$_GET['preview'] === 1) {
     }
 
     if ($workId > 0) {
-        $ctx = getWorkDiplomaContext($workId);
-        if ($ctx && ($ctx['work_status'] ?? '') === 'pending') {
-            updateWorkStatus($workId, $selectedTemplate['template_type'] === 'encouragement' ? 'reviewed' : 'accepted');
-        }
-        $diploma = generateWorkDiploma($workId, true);
-        $file = ROOT_PATH . '/' . $diploma['file_path'];
-        if (is_file($file)) {
+        $pdf = generateWorkDiplomaPreviewPdf($workId, $selectedTemplate);
+        if ($pdf !== '') {
             header('Content-Type: application/pdf');
             header('Content-Disposition: inline; filename="preview.pdf"');
-            readfile($file);
+            echo $pdf;
             exit;
         }
     }
@@ -102,8 +162,16 @@ if (isset($_GET['preview']) && (int)$_GET['preview'] === 1) {
 
 $layout = json_decode((string)($selectedTemplate['layout_json'] ?? ''), true);
 if (!is_array($layout) || !$layout) {
-    $layout = defaultDiplomaLayout();
+    $layout = defaultDiplomaLayout((string)($selectedTemplate['template_type'] ?? 'contest_participant'));
 }
+$assets = json_decode((string)($selectedTemplate['assets_json'] ?? '{}'), true);
+if (!is_array($assets)) {
+    $assets = [];
+}
+$styles = getDiplomaTemplateStyles($selectedTemplate);
+$sheetRotation = getDiplomaSheetRotation($selectedTemplate);
+$participantNameLayout = is_array($layout['participant_name'] ?? null) ? $layout['participant_name'] : [];
+$backgroundImageUrl = !empty($assets['background_image']) ? getDiplomaAssetWebPath((string)$assets['background_image']) : '';
 
 $currentPage = 'diplomas';
 $pageTitle = 'Шаблоны дипломов';
@@ -154,7 +222,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card">
     <div class="card__header"><h3>Визуальный редактор шаблона</h3></div>
     <div class="card__body">
-        <form method="POST" id="templateEditorForm">
+        <form method="POST" id="templateEditorForm" enctype="multipart/form-data">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
             <input type="hidden" name="action" value="save">
@@ -163,51 +231,48 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="styles_json" id="stylesJsonInput" value='<?= e((string)($selectedTemplate['styles_json'] ?? '{}')) ?>'>
             <input type="hidden" name="assets_json" id="assetsJsonInput" value='<?= e((string)($selectedTemplate['assets_json'] ?? '{}')) ?>'>
 
-            <div class="grid grid--2">
-                <div class="form-group"><label class="form-label">Название шаблона</label><input class="form-input" name="title" value="<?= e($selectedTemplate['title']) ?>"></div>
-                <div class="form-group"><label class="form-label">Тип</label><input class="form-input" value="<?= e($templateTypes[$selectedTemplate['template_type']] ?? $selectedTemplate['template_type']) ?>" disabled></div>
-                <div class="form-group"><label class="form-label">Заголовок</label><input class="form-input" name="subtitle" value="<?= e($selectedTemplate['subtitle']) ?>"></div>
-                <div class="form-group"><label class="form-label">Префикс номера</label><input class="form-input" name="diploma_prefix" value="<?= e($selectedTemplate['diploma_prefix']) ?>"></div>
-                <div class="form-group"><label class="form-label">Формулировка награждения</label><textarea class="form-textarea" name="award_text" rows="2"><?= e($selectedTemplate['award_text']) ?></textarea></div>
-                <div class="form-group"><label class="form-label">Название конкурса (текст)</label><input class="form-input" name="contest_name_text" value="<?= e($selectedTemplate['contest_name_text']) ?>"></div>
-                <div class="form-group"><label class="form-label">Основной текст</label><textarea class="form-textarea" name="body_text" rows="4"><?= e($selectedTemplate['body_text']) ?></textarea></div>
-                <div class="form-group"><label class="form-label">Дружелюбное сообщение</label><textarea class="form-textarea" name="easter_text" rows="4"><?= e($selectedTemplate['easter_text']) ?></textarea></div>
-                <div class="form-group"><label class="form-label">Подпись 1</label><input class="form-input" name="signature_1" value="<?= e($selectedTemplate['signature_1']) ?>"></div>
-                <div class="form-group"><label class="form-label">Подпись 2</label><input class="form-input" name="signature_2" value="<?= e($selectedTemplate['signature_2']) ?>"></div>
-                <div class="form-group"><label class="form-label">Должность 1</label><input class="form-input" name="position_1" value="<?= e($selectedTemplate['position_1']) ?>"></div>
-                <div class="form-group"><label class="form-label">Должность 2</label><input class="form-input" name="position_2" value="<?= e($selectedTemplate['position_2']) ?>"></div>
-                <div class="form-group"><label class="form-label">Footer</label><textarea class="form-textarea" name="footer_text" rows="3"><?= e($selectedTemplate['footer_text']) ?></textarea></div>
-                <div class="form-group"><label class="form-label">Город</label><input class="form-input" name="city" value="<?= e($selectedTemplate['city']) ?>"></div>
-                <div class="form-group"><label class="form-label">Дата</label><input type="date" class="form-input" name="issue_date" value="<?= e($selectedTemplate['issue_date']) ?>"></div>
-                <div class="form-group">
-                    <label class="form-label">Фон/рамка (assets_json)</label>
-                    <textarea class="form-textarea" name="assets_json_manual" id="assetsJsonManual" rows="3"><?= e((string)($selectedTemplate['assets_json'] ?? '{}')) ?></textarea>
-                </div>
-            </div>
-
-            <div class="flex gap-lg" style="margin:16px 0; flex-wrap:wrap;">
-                <label><input type="checkbox" name="show_date" value="1" <?= (int)$selectedTemplate['show_date'] === 1 ? 'checked' : '' ?>> Показывать дату</label>
-                <label><input type="checkbox" name="show_number" value="1" <?= (int)$selectedTemplate['show_number'] === 1 ? 'checked' : '' ?>> Показывать номер</label>
-                <label><input type="checkbox" name="show_signatures" value="1" <?= (int)$selectedTemplate['show_signatures'] === 1 ? 'checked' : '' ?>> Подписи</label>
-                <label><input type="checkbox" name="show_background" value="1" <?= (int)$selectedTemplate['show_background'] === 1 ? 'checked' : '' ?>> Фон</label>
-                <label><input type="checkbox" name="show_frame" value="1" <?= (int)$selectedTemplate['show_frame'] === 1 ? 'checked' : '' ?>> Рамка</label>
-            </div>
+            <input type="hidden" name="name_top" id="nameTopInput" value="<?= e((string)($participantNameLayout['y'] ?? 0)) ?>">
+            <input type="hidden" name="name_left" id="nameLeftInput" value="<?= e((string)($participantNameLayout['x'] ?? 0)) ?>">
+            <input type="hidden" name="name_width" value="<?= e((string)($participantNameLayout['w'] ?? 0)) ?>">
+            <input type="hidden" name="name_line_height" value="<?= e((string)($participantNameLayout['line_height'] ?? 1.1)) ?>">
+            <input type="hidden" name="name_text_align" value="<?= e((string)($participantNameLayout['align'] ?? 'center')) ?>">
+            <input type="hidden" name="name_font_family" value="<?= e((string)($participantNameLayout['font_family'] ?? 'dejavuserif')) ?>">
+            <input type="hidden" name="name_color" value="<?= e((string)($participantNameLayout['color'] ?? '#334155')) ?>">
 
             <div style="display:grid;grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);gap:18px;align-items:start;">
                 <div>
-                    <h4 class="mb-md">Холст A4 (предпросмотр)</h4>
-                    <div id="diplomaCanvas" style="position:relative;width:100%;aspect-ratio:1/1.414;background:linear-gradient(180deg,#FFF9E6 0%, #F7FBFF 50%, #FFF1F2 100%);border:6px solid #EAB308;border-radius:8px;overflow:hidden;">
+                    <h4 class="mb-md">Предпросмотр шаблона</h4>
+                    <div class="text-secondary" style="margin-bottom:10px;font-size:13px;">Перетащите блок с ФИО мышкой, чтобы изменить его положение на сертификате.</div>
+                    <div id="diplomaCanvas" style="position:relative;width:100%;aspect-ratio:<?= $sheetRotation === 90 ? '1.414/1' : '1/1.414' ?>;background:linear-gradient(180deg,#FFF9E6 0%, #F7FBFF 50%, #FFF1F2 100%);border:6px solid #EAB308;border-radius:8px;overflow:hidden;">
                     </div>
                 </div>
                 <div>
-                    <h4 class="mb-md">Элементы и свойства</h4>
                     <div class="form-group">
-                        <label class="form-label">Элемент</label>
-                        <select id="elementSelect" class="form-select"></select>
+                        <label class="form-label">Фон шаблона</label>
+                        <input type="file" class="form-input" name="background_image" accept=".jpg,.jpeg,.png,.webp">
+                        <?php if ($backgroundImageUrl !== ''): ?>
+                            <div class="form-hint" style="margin-top:6px;">
+                                Текущий фон: <a href="<?= e($backgroundImageUrl) ?>" target="_blank" rel="noopener">открыть изображение</a>
+                            </div>
+                            <label style="display:block;margin-top:6px;"><input type="checkbox" name="remove_background_image" value="1"> Удалить текущий фон</label>
+                        <?php endif; ?>
                     </div>
-                    <div id="elementProps" class="grid grid--2"></div>
+
+                    <div class="form-group">
+                        <label class="form-label">Поворот листа</label>
+                        <select class="form-select" name="sheet_rotation" id="sheetRotationInput">
+                            <option value="0" <?= $sheetRotation === 0 ? 'selected' : '' ?>>Без поворота</option>
+                            <option value="90" <?= $sheetRotation === 90 ? 'selected' : '' ?>>Повернуть на 90°</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Размер шрифта ФИО</label>
+                        <input class="form-input" type="number" min="8" max="72" step="1" name="name_font_size" id="nameFontSizeInput" value="<?= e((string)($participantNameLayout['font_size'] ?? 18)) ?>">
+                    </div>
+
                     <div class="alert" style="margin-top:10px;background:#EEF2FF;border:1px solid #C7D2FE;color:#3730A3;">
-                        Поддержка кириллицы в PDF: используйте шрифт <strong>dejavusans</strong> (по умолчанию).
+                        Доступно только: смена фона, поворот листа, перемещение блока ФИО и изменение размера шрифта.
                     </div>
                 </div>
             </div>
@@ -222,31 +287,37 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <script>
-const defaults = <?= json_encode(defaultDiplomaLayout(), JSON_UNESCAPED_UNICODE) ?>;
+const defaults = <?= json_encode(defaultDiplomaLayout((string)($selectedTemplate['template_type'] ?? 'contest_participant')), JSON_UNESCAPED_UNICODE) ?>;
 let layout = JSON.parse(document.getElementById('layoutJsonInput').value || '{}');
 if (!layout || typeof layout !== 'object') layout = {...defaults};
+let assets = JSON.parse(document.getElementById('assetsJsonInput').value || '{}');
+if (!assets || typeof assets !== 'object') assets = {};
+let styles = JSON.parse(document.getElementById('stylesJsonInput').value || '{}');
+if (!styles || typeof styles !== 'object') styles = {};
 
 const samples = {
-  title: 'Благодарственный диплом',
-  subtitle: 'Награждается',
   participant_name: 'Иванов Иван Иванович',
-  award_text: 'за творческое старание и фантазию',
-  body_text: 'Спасибо за участие в конкурсе детского рисунка!',
-  contest_title: 'Весенняя палитра',
-  diploma_number: '№ TEST-00001',
-  date: '01.04.2026',
-  city: 'Москва',
-  signatures: 'Председатель / Куратор',
-  footer: 'Доступен благодарственный диплом',
 };
 
 const canvas = document.getElementById('diplomaCanvas');
-const elementSelect = document.getElementById('elementSelect');
-const elementProps = document.getElementById('elementProps');
 const layoutInput = document.getElementById('layoutJsonInput');
-const assetsManual = document.getElementById('assetsJsonManual');
+const stylesInput = document.getElementById('stylesJsonInput');
+const nameTopInput = document.getElementById('nameTopInput');
+const nameLeftInput = document.getElementById('nameLeftInput');
+const nameFontSizeInput = document.getElementById('nameFontSizeInput');
+const sheetRotationInput = document.getElementById('sheetRotationInput');
+let dragState = null;
 
-let selectedKey = Object.keys(layout)[0] || 'title';
+function resolvePreviewFontFamily(fontFamily) {
+  const normalized = String(fontFamily || '').trim().toLowerCase();
+  if (normalized === 'dejavuserif') {
+    return '"DejaVu Serif", Georgia, "Times New Roman", serif';
+  }
+  if (normalized === 'dejavusans') {
+    return '"DejaVu Sans", "Segoe UI", Arial, sans-serif';
+  }
+  return fontFamily || '"DejaVu Serif", Georgia, "Times New Roman", serif';
+}
 
 function ensureLayout() {
   Object.keys(defaults).forEach((key) => {
@@ -256,24 +327,45 @@ function ensureLayout() {
 
 function persistLayout() {
   layoutInput.value = JSON.stringify(layout);
-  if (assetsManual) {
-    document.getElementById('assetsJsonInput').value = assetsManual.value || '{}';
+  stylesInput.value = JSON.stringify(styles);
+  if (nameTopInput) nameTopInput.value = String(layout.participant_name?.y ?? 0);
+  if (nameLeftInput) nameLeftInput.value = String(layout.participant_name?.x ?? 0);
+}
+
+function syncNameFontSize() {
+  const value = Number(nameFontSizeInput?.value || layout.participant_name?.font_size || 18);
+  if (layout.participant_name) {
+    layout.participant_name.font_size = value;
   }
+  persistLayout();
+  renderCanvas();
+}
+
+function syncSheetRotation() {
+  styles.sheet_rotation = Number(sheetRotationInput?.value || 0) === 90 ? 90 : 0;
+  canvas.style.aspectRatio = styles.sheet_rotation === 90 ? '1.414 / 1' : '1 / 1.414';
+  persistLayout();
 }
 
 function renderCanvas() {
   ensureLayout();
   canvas.innerHTML = '';
-  Object.entries(layout).forEach(([key, cfg]) => {
+  syncSheetRotation();
+  canvas.style.backgroundImage = assets.background_image ? `url(${<?= json_encode('/uploads/diplomas/', JSON_UNESCAPED_UNICODE) ?>}${encodeURIComponent(String(assets.background_image))})` : '';
+  canvas.style.backgroundSize = assets.background_image ? '100% 100%' : '';
+  canvas.style.backgroundPosition = assets.background_image ? 'center center' : '';
+  ['participant_name'].forEach((key) => {
+    const cfg = layout[key];
+    if (!cfg || (cfg.visible ?? 1) !== 1) return;
     const el = document.createElement('div');
     el.dataset.key = key;
-    el.className = 'tpl-item' + (key === selectedKey ? ' tpl-item--selected' : '');
+    el.className = 'tpl-item tpl-item--selected';
     el.style.position = 'absolute';
     el.style.left = `${cfg.x}%`;
     el.style.top = `${cfg.y}%`;
     el.style.width = `${cfg.w}%`;
     el.style.height = `${cfg.h}%`;
-    el.style.fontFamily = cfg.font_family || 'dejavusans';
+    el.style.fontFamily = resolvePreviewFontFamily(cfg.font_family);
     el.style.fontSize = `${cfg.font_size || 12}px`;
     el.style.color = cfg.color || '#334155';
     el.style.textAlign = cfg.align || 'left';
@@ -281,123 +373,46 @@ function renderCanvas() {
     el.style.cursor = 'move';
     el.style.userSelect = 'none';
     el.style.overflow = 'hidden';
-    el.style.padding = '2px';
-    el.style.border = key === selectedKey ? '1px dashed #2563EB' : '1px dashed transparent';
+    el.style.padding = '0';
+    el.style.outline = '1px dashed #2563EB';
+    el.style.outlineOffset = '0';
     el.textContent = samples[key] || key;
 
     if ((cfg.visible ?? 1) !== 1) {
       el.style.opacity = '0.25';
     }
 
-    let dragging = false;
-    let startX = 0;
-    let startY = 0;
-
     el.addEventListener('mousedown', (e) => {
-      selectedKey = key;
-      dragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
+      dragState = { startX: e.clientX, startY: e.clientY };
       e.preventDefault();
-      renderAll();
     });
-
-    window.addEventListener('mousemove', (e) => {
-      if (!dragging || selectedKey !== key) return;
-      const rect = canvas.getBoundingClientRect();
-      const dx = ((e.clientX - startX) / rect.width) * 100;
-      const dy = ((e.clientY - startY) / rect.height) * 100;
-      layout[key].x = Math.max(0, Math.min(99, Number(layout[key].x) + dx));
-      layout[key].y = Math.max(0, Math.min(99, Number(layout[key].y) + dy));
-      startX = e.clientX;
-      startY = e.clientY;
-      persistLayout();
-      renderAll();
-    });
-
-    window.addEventListener('mouseup', () => { dragging = false; });
     canvas.appendChild(el);
   });
 }
 
-function renderSelector() {
-  elementSelect.innerHTML = '';
-  Object.keys(layout).forEach((key) => {
-    const option = document.createElement('option');
-    option.value = key;
-    option.textContent = key;
-    if (key === selectedKey) option.selected = true;
-    elementSelect.appendChild(option);
-  });
-}
-
-function buildField(label, key, type = 'number', step = '1') {
-  const cfg = layout[selectedKey];
-  const wrap = document.createElement('div');
-  wrap.className = 'form-group';
-  const lbl = document.createElement('label');
-  lbl.className = 'form-label';
-  lbl.textContent = label;
-  const inp = document.createElement('input');
-  inp.className = 'form-input';
-  inp.type = type;
-  if (type === 'number') inp.step = step;
-  inp.value = cfg[key] ?? '';
-  inp.addEventListener('input', () => {
-    let value = inp.value;
-    if (type === 'number') value = Number(value);
-    layout[selectedKey][key] = value;
-    persistLayout();
-    renderCanvas();
-  });
-  wrap.appendChild(lbl);
-  wrap.appendChild(inp);
-  return wrap;
-}
-
-function renderProps() {
-  elementProps.innerHTML = '';
-  elementProps.appendChild(buildField('X (%)', 'x', 'number', '0.1'));
-  elementProps.appendChild(buildField('Y (%)', 'y', 'number', '0.1'));
-  elementProps.appendChild(buildField('Width (%)', 'w', 'number', '0.1'));
-  elementProps.appendChild(buildField('Height (%)', 'h', 'number', '0.1'));
-  elementProps.appendChild(buildField('Font', 'font_family', 'text'));
-  elementProps.appendChild(buildField('Size', 'font_size', 'number', '1'));
-  elementProps.appendChild(buildField('Color (#RRGGBB)', 'color', 'text'));
-  elementProps.appendChild(buildField('Align (left/center/right)', 'align', 'text'));
-  elementProps.appendChild(buildField('Line-height', 'line_height', 'number', '0.1'));
-
-  const visWrap = document.createElement('div');
-  visWrap.className = 'form-group';
-  const visLbl = document.createElement('label');
-  visLbl.className = 'form-label';
-  visLbl.textContent = 'Visible';
-  const vis = document.createElement('input');
-  vis.type = 'checkbox';
-  vis.checked = Number(layout[selectedKey].visible ?? 1) === 1;
-  vis.addEventListener('change', () => {
-    layout[selectedKey].visible = vis.checked ? 1 : 0;
-    persistLayout();
-    renderCanvas();
-  });
-  visWrap.appendChild(visLbl);
-  visWrap.appendChild(vis);
-  elementProps.appendChild(visWrap);
-}
-
-function renderAll() {
-  renderSelector();
-  renderProps();
+window.addEventListener('mousemove', (e) => {
+  if (!dragState) return;
+  const rect = canvas.getBoundingClientRect();
+  const dx = ((e.clientX - dragState.startX) / rect.width) * 100;
+  const dy = ((e.clientY - dragState.startY) / rect.height) * 100;
+  layout.participant_name.x = Math.max(0, Math.min(99, Number(layout.participant_name.x) + dx));
+  layout.participant_name.y = Math.max(0, Math.min(99, Number(layout.participant_name.y) + dy));
+  dragState = { startX: e.clientX, startY: e.clientY };
+  persistLayout();
   renderCanvas();
-}
+});
 
-elementSelect.addEventListener('change', () => {
-  selectedKey = elementSelect.value;
-  renderAll();
+window.addEventListener('mouseup', () => {
+  dragState = null;
+});
+nameFontSizeInput?.addEventListener('input', syncNameFontSize);
+sheetRotationInput?.addEventListener('change', () => {
+  syncSheetRotation();
+  renderCanvas();
 });
 
 persistLayout();
-renderAll();
+renderCanvas();
 </script>
 
 <style>

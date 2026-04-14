@@ -98,6 +98,14 @@ if (!is_dir($tempPath)) {
  mkdir($tempPath,0777, true);
 }
 
+try {
+    $hasOvzColumn = (bool) $pdo->query("SHOW COLUMNS FROM participants LIKE 'has_ovz'")->fetch(PDO::FETCH_ASSOC);
+    if (!$hasOvzColumn) {
+        $pdo->exec("ALTER TABLE participants ADD COLUMN has_ovz TINYINT(1) NOT NULL DEFAULT 0 AFTER age");
+    }
+} catch (Throwable $ignored) {
+}
+
 function deleteTempDrawingArtifacts(string $tempDirectory, string $tempFile): void
 {
  $tempFile = basename(trim($tempFile));
@@ -403,6 +411,10 @@ $user['user_type'] = $user_type;
  if (empty($fio)) continue;
                     
  $age = intval($participant['age'] ??0);
+ if ($age < 5 || $age > 17) {
+ throw new Exception('Возраст участника "' . ($fio !== '' ? $fio : ('#' . ($pIndex + 1))) . '" должен быть от 5 до 17 лет.');
+ }
+ $hasOvz = !empty($participant['has_ovz']) ? 1 : 0;
  $workTitle = '';
  $existingParticipantId = (int) ($participant['participant_id'] ?? 0);
                     
@@ -455,12 +467,13 @@ $user['user_type'] = $user_type;
  }
  $stmt = $pdo->prepare("
  UPDATE participants
- SET fio = ?, age = ?, region = ?, organization_name = ?, organization_address = ?, organization_email = ?, drawing_file = ?
+ SET fio = ?, age = ?, has_ovz = ?, region = ?, organization_name = ?, organization_address = ?, organization_email = ?, drawing_file = ?
  WHERE id = ? AND application_id = ?
  ");
  $stmt->execute([
  $fio,
  $age,
+ $hasOvz,
  $org_region,
  $org_name,
  $org_address,
@@ -474,14 +487,15 @@ $user['user_type'] = $user_type;
  } else {
  $stmt = $pdo->prepare("
  INSERT INTO participants (
- application_id, fio, age, region, organization_name, organization_address,
+ application_id, fio, age, has_ovz, region, organization_name, organization_address,
  organization_email, drawing_file
- ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
  ");
  $stmt->execute([
  $application_id,
  $fio,
  $age,
+ $hasOvz,
  $org_region,
  $org_name,
  $org_address,
@@ -924,6 +938,7 @@ const initialParticipants = <?= json_encode(array_map(function($p) use ($user) {
         'name' => $parts[1] ?? '',
         'patronymic' => $parts[2] ?? '',
         'age' => $p['age'] ?? '',
+        'has_ovz' => !empty($p['has_ovz']),
         'participant_id' => (int) ($p['id'] ?? 0),
         'temp_file' => '',
         'existing_drawing_file' => $p['drawing_file'] ?? '',
@@ -937,6 +952,8 @@ const contestId = <?= e($contest_id) ?>;
 const needsPaymentReceipt = <?= $contestRequiresPaymentReceipt ? 'true' : 'false' ?>;
 const paymentStepNumber = <?= $contestRequiresPaymentReceipt ? (int) $paymentStepNumber : 'null' ?>;
 const finalReviewStep = <?= (int) $reviewStepNumber ?>;
+const minParticipantAge = 5;
+const maxParticipantAge = 17;
 const steps = needsPaymentReceipt
     ? ['Заявитель', 'Участники и рисунки', 'Квитанция об оплате', 'Проверка и отправка']
     : ['Заявитель', 'Участники и рисунки', 'Проверка и отправка'];
@@ -966,6 +983,34 @@ function clearFieldError(input) {
     const error = input.parentElement.querySelector('.field-error');
     if (error) error.remove();
     input.classList.remove('is-invalid');
+}
+
+function getParticipantAgeError(value) {
+    if (value === '') {
+        return 'Это поле обязательно.';
+    }
+
+    const age = Number(value);
+    if (!Number.isInteger(age) || age < minParticipantAge || age > maxParticipantAge) {
+        return `Возраст участника должен быть от ${minParticipantAge} до ${maxParticipantAge} лет.`;
+    }
+
+    return '';
+}
+
+function validateAgeField(input) {
+    if (!input || !input.matches('input[name^="participants["][name$="[age]"]')) {
+        return true;
+    }
+
+    const message = getParticipantAgeError(String(input.value || '').trim());
+    if (message) {
+        createFieldError(input, message);
+        return false;
+    }
+
+    clearFieldError(input);
+    return true;
 }
 
 function getPaymentReceiptElements() {
@@ -1119,13 +1164,14 @@ function openPaymentReceiptPreview() {
 
 function isApplicationReadyToSubmit() {
     const requiredFieldsFilled = [...document.querySelectorAll('#applicationForm [required]')].every((input) => String(input.value || '').trim());
+    const agesValid = [...document.querySelectorAll('input[name^="participants["][name$="[age]"]')].every((input) => !getParticipantAgeError(String(input.value || '').trim()));
     const participantsReady = participantCount > 0 && [...document.querySelectorAll('[id^="temp_file_"]')].every((field) => {
         const idx = field.id.split('_').pop();
         const existing = document.getElementById(`existing_file_${idx}`);
         return !!(field.value || (existing && existing.value));
     });
 
-    return requiredFieldsFilled && participantsReady && (!needsPaymentReceipt || hasPaymentReceipt());
+    return requiredFieldsFilled && agesValid && participantsReady && (!needsPaymentReceipt || hasPaymentReceipt());
 }
 
 function validateStep(step) {
@@ -1136,6 +1182,8 @@ function validateStep(step) {
         if (!String(input.value || '').trim()) {
             createFieldError(input, 'Это поле обязательно.');
             valid = false;
+        } else if (input.matches('input[name^="participants["][name$="[age]"]')) {
+            if (!validateAgeField(input)) valid = false;
         } else {
             clearFieldError(input);
         }
@@ -1299,7 +1347,14 @@ function createParticipantForm(index, data = null) {
                 <div class="form-group"><label class="form-label form-label--required">Фамилия</label><input type="text" required name="participants[${index}][surname]" class="form-input" value="${data?.surname || ''}" placeholder="Иванов"></div>
                 <div class="form-group"><label class="form-label form-label--required">Имя</label><input type="text" required name="participants[${index}][name]" class="form-input" value="${data?.name || ''}" placeholder="Иван"></div>
                 <div class="form-group"><label class="form-label form-label--required">Отчество</label><input type="text" required name="participants[${index}][patronymic]" class="form-input" value="${data?.patronymic || ''}" placeholder="Иванович"></div>
-                <div class="form-group"><label class="form-label form-label--required">Возраст</label><input type="number" required min="1" max="18" name="participants[${index}][age]" class="form-input" value="${data?.age || ''}"></div>
+                <div class="form-group"><label class="form-label form-label--required">Возраст</label><input type="number" required min="5" max="17" name="participants[${index}][age]" class="form-input" value="${data?.age || ''}"></div>
+                <div class="form-group">
+                    <span class="form-label">Особенности</span>
+                    <label class="field-correction-checkbox">
+                        <input type="checkbox" name="participants[${index}][has_ovz]" value="1" ${data?.has_ovz ? 'checked' : ''}>
+                        <span>Ребёнок с ОВЗ</span>
+                    </label>
+                </div>
             </div>
             <input type="hidden" name="participants[${index}][participant_id]" value="${data?.participant_id || ''}">
             <input type="hidden" name="participants[${index}][temp_file]" id="temp_file_${index}" value="${data?.temp_file || ''}">
@@ -1377,6 +1432,7 @@ function removeParticipant(index) {
             name: f.querySelector(`[name="participants[${old}][name]"]`)?.value || '',
             patronymic: f.querySelector(`[name="participants[${old}][patronymic]"]`)?.value || '',
             age: f.querySelector(`[name="participants[${old}][age]"]`)?.value || '',
+            has_ovz: f.querySelector(`[name="participants[${old}][has_ovz]"]`)?.checked || false,
             participant_id: f.querySelector(`[name="participants[${old}][participant_id]"]`)?.value || '',
             temp_file: f.querySelector(`#temp_file_${old}`)?.value || '',
             existing_drawing_file: f.querySelector(`#existing_file_${old}`)?.value || '',
@@ -1515,6 +1571,7 @@ function renderReview() {
     const participants = [...document.querySelectorAll('#participantsContainer .participant-form')].map((card, index) => {
         const fio = `${card.querySelector(`[name="participants[${index}][surname]"]`)?.value || ''} ${card.querySelector(`[name="participants[${index}][name]"]`)?.value || ''} ${card.querySelector(`[name="participants[${index}][patronymic]"]`)?.value || ''}`.trim();
         const age = card.querySelector(`[name="participants[${index}][age]"]`)?.value || '—';
+        const hasOvz = !!card.querySelector(`[name="participants[${index}][has_ovz]"]`)?.checked;
         const hasDrawing = !!(document.getElementById(`temp_file_${index}`)?.value || document.getElementById(`existing_file_${index}`)?.value);
         const previewUrl = document.getElementById(`preview_img_${index}`)?.src || '';
         return `
@@ -1527,6 +1584,7 @@ function renderReview() {
                 <div class="review-item__meta">
                     <strong>${fio || 'Участник'}</strong>
                     <span>Возраст: ${age}</span>
+                    <span>${hasOvz ? 'Ребёнок с ОВЗ' : 'Без отметки ОВЗ'}</span>
                 </div>
                 <button type="button" class="btn btn--ghost" onclick="goStep(2)">Изменить</button>
             </li>
@@ -1619,7 +1677,12 @@ function tryRestoreDraft() {
     const data = JSON.parse(raw);
     Object.entries(data).forEach(([key, value]) => {
         const field = document.querySelector(`[name="${CSS.escape(key)}"]`);
-        if (field && field.type !== 'file') field.value = value;
+        if (!field || field.type === 'file') return;
+        if (field.type === 'checkbox') {
+            field.checked = value === '1' || value === 1 || value === true || value === 'true';
+            return;
+        }
+        field.value = value;
     });
     currentStep = Math.min(Math.max(Number(data.currentStep || 1), 1), steps.length);
     const note = document.createElement('div');
@@ -1714,7 +1777,11 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('nextStepBtn').addEventListener('click', () => goStep(Math.min(currentStep + 1, steps.length)));
     document.getElementById('prevStepBtn').addEventListener('click', () => goStep(Math.max(currentStep - 1, 1)));
     document.getElementById('applicationForm').addEventListener('input', (e) => {
-        if (e.target.matches('[required]') && String(e.target.value || '').trim()) clearFieldError(e.target);
+        if (e.target.matches('input[name^="participants["][name$="[age]"]')) {
+            validateAgeField(e.target);
+        } else if (e.target.matches('[required]') && String(e.target.value || '').trim()) {
+            clearFieldError(e.target);
+        }
         updateSidebar();
         saveLocalDraft();
     });

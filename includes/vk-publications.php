@@ -1033,19 +1033,7 @@ function buildVkPostText(array $workRow, string $template): string
 
 function resolveAgeCategory(int $age): string
 {
-    if ($age <= 0) {
-        return '';
-    }
-    if ($age <= 6) {
-        return 'до 6 лет';
-    }
-    if ($age <= 10) {
-        return '7-10 лет';
-    }
-    if ($age <= 14) {
-        return '11-14 лет';
-    }
-    return '15+ лет';
+    return getParticipantAgeCategoryLabel($age);
 }
 
 function buildVkTaskPreview(array $filters, ?string $template = null): array

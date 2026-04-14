@@ -288,17 +288,31 @@ require_once __DIR__ . '/includes/header.php';
             query: state.query,
         };
 
-        const response = await fetch('/admin/mailings-api', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        const data = await response.json();
-        state.total = Number(data.total || 0);
-        renderInfo();
-        renderRecipients(Array.isArray(data.items) ? data.items : []);
-        pagination.style.display = 'flex';
-        document.getElementById('pageInfo').textContent = `Страница ${state.page} из ${Math.max(1, Math.ceil(state.total / state.perPage))}`;
+        try {
+            const response = await fetch('/admin/mailings-api', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json().catch(() => null);
+            if (!response.ok || !data || !data.success) {
+                const message = (data && (data.message || data.error)) ? (data.message || data.error) : `Не удалось загрузить список (HTTP ${response.status}).`;
+                recContainer.innerHTML = `<div class="mailing-empty">Ошибка: ${message}</div>`;
+                pagination.style.display = 'none';
+                infoBlock.style.display = 'none';
+                return;
+            }
+
+            state.total = Number(data.total || 0);
+            renderInfo();
+            renderRecipients(Array.isArray(data.items) ? data.items : []);
+            pagination.style.display = 'flex';
+            document.getElementById('pageInfo').textContent = `Страница ${state.page} из ${Math.max(1, Math.ceil(state.total / state.perPage))}`;
+        } catch (error) {
+            recContainer.innerHTML = '<div class="mailing-empty">Ошибка: не удалось загрузить список. Проверьте логи сервера.</div>';
+            pagination.style.display = 'none';
+            infoBlock.style.display = 'none';
+        }
     };
 
     const buildSaveFormData = (withClose) => {

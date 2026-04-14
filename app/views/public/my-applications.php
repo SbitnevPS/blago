@@ -7,17 +7,8 @@ if (!isAuthenticated()) {
 }
 
 function getStatusClassByAdminStatus(string $status): string {
-    return match ($status) {
-        'draft' => 'bg-gray-100 text-gray-700',
-        'submitted' => 'bg-emerald-100 text-emerald-700',
-        'corrected' => 'bg-sky-100 text-sky-800',
-        'revision' => 'bg-yellow-100 text-yellow-700',
-        'approved' => 'bg-green-600 text-white',
-        'declined', 'rejected', 'cancelled' => 'bg-red-100 text-red-700',
-        'pending', 'partial_reviewed' => 'bg-amber-100 text-amber-700',
-        'reviewed' => 'bg-slate-100 text-slate-700',
-        default => 'bg-gray-100 text-gray-700',
-    };
+    // legacy helper: Tailwind-based status styles used to live here.
+    return 'badge--secondary';
 }
 
 function getApplicationCardStatusMeta(array $application): array {
@@ -27,7 +18,7 @@ function getApplicationCardStatusMeta(array $application): array {
     return [
         'status_code' => $statusCode,
         'status_label' => (string) ($statusMeta['label'] ?? $statusCode),
-        'status_class' => getStatusClassByAdminStatus($statusCode),
+        'badge_class' => (string) ($statusMeta['badge_class'] ?? 'badge--secondary'),
     ];
 }
 
@@ -75,44 +66,32 @@ $filterConfig = [
     'all' => [
         'label' => 'Все',
         'href' => '/my-applications',
-        'active_class' => 'bg-gray-900 text-white',
-        'inactive_class' => 'bg-gray-200 text-gray-800',
         'count' => (int) ($stats['total'] ?? 0),
         'always_show' => true,
     ],
     'draft' => [
         'label' => 'Черновики',
         'href' => '/my-applications?status=draft',
-        'active_class' => 'bg-gray-700 text-white',
-        'inactive_class' => 'bg-gray-100 text-gray-700',
         'count' => (int) ($stats['draft'] ?? 0),
     ],
     'pending' => [
         'label' => 'На рассмотрении',
         'href' => '/my-applications?status=pending',
-        'active_class' => 'bg-yellow-600 text-white',
-        'inactive_class' => 'bg-yellow-100 text-yellow-700',
         'count' => (int) ($stats['pending'] ?? 0),
     ],
     'revision' => [
         'label' => 'Требует исправлений',
         'href' => '/my-applications?status=revision',
-        'active_class' => 'bg-blue-600 text-white',
-        'inactive_class' => 'bg-blue-100 text-blue-700',
         'count' => (int) ($stats['revision'] ?? 0),
     ],
     'accepted' => [
         'label' => 'Приняты',
         'href' => '/my-applications?status=accepted',
-        'active_class' => 'bg-indigo-600 text-white',
-        'inactive_class' => 'bg-indigo-100 text-indigo-700',
         'count' => (int) ($stats['accepted'] ?? 0),
     ],
     'rejected' => [
         'label' => 'Отклонены',
         'href' => '/my-applications?status=rejected',
-        'active_class' => 'bg-red-600 text-white',
-        'inactive_class' => 'bg-red-100 text-red-700',
         'count' => (int) ($stats['rejected'] ?? 0),
     ],
 ];
@@ -139,114 +118,107 @@ $filteredApplications = array_values(array_filter(
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Мои заявки - ДетскиеКонкурсы.рф</title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
-<script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-50">
+<body>
 <?php include dirname(__DIR__) . '/partials/header.php'; ?>
 
-<main>
-    <div class="max-w-6xl mx-auto px-4 py-6">
-        <div class="flex items-center justify-between gap-4 mb-6 flex-wrap">
-            <h1 class="text-2xl font-bold">Мои заявки</h1>
-            <a href="/contests" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 hover:text-white transition">
-                Подать новую заявку
+<main class="page-section">
+    <div class="container">
+        <div class="flex items-center justify-between gap-md mb-lg" style="flex-wrap:wrap;">
+            <div>
+                <h1 style="margin:0;">Мои заявки</h1>
+            </div>
+            <a href="/contests" class="btn btn--primary btn--lg">
+                <i class="fas fa-plus"></i> Подать новую заявку
             </a>
         </div>
 
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div class="bg-white p-4 rounded-2xl shadow">
-                <p class="text-gray-500 text-sm">Всего</p>
-                <p class="text-2xl font-bold"><?= (int)$stats['total'] ?></p>
-            </div>
-
-            <div class="bg-yellow-50 p-4 rounded-2xl shadow">
-                <p class="text-sm">На рассмотрении</p>
-                <p class="text-2xl font-bold text-yellow-600"><?= (int)$stats['pending'] ?></p>
-            </div>
-
-            <div class="bg-blue-50 p-4 rounded-2xl shadow">
-                <p class="text-sm">Требуют исправлений</p>
-                <p class="text-2xl font-bold text-blue-600"><?= (int)$stats['revision'] ?></p>
-            </div>
-
-            <div class="bg-indigo-50 p-4 rounded-2xl shadow">
-                <p class="text-sm">Приняты</p>
-                <p class="text-2xl font-bold text-indigo-600"><?= (int)$stats['accepted'] ?></p>
-            </div>
-        </div>
-
-        <div class="flex gap-2 mb-6 flex-wrap">
+        <nav class="my-applications-filters" aria-label="Фильтры">
             <?php foreach ($visibleFilters as $filterKey => $filter): ?>
                 <?php $isActive = $activeFilter === $filterKey; ?>
-                <a href="<?= htmlspecialchars((string) $filter['href']) ?>" class="px-4 py-2 rounded-full inline-flex items-center gap-2 <?= $isActive ? (string) $filter['active_class'] : (string) $filter['inactive_class'] ?>">
-                    <span><?= htmlspecialchars((string) $filter['label']) ?></span>
-                    <span class="text-xs font-semibold opacity-80"><?= (int) ($filter['count'] ?? 0) ?></span>
+                <a href="<?= htmlspecialchars((string) $filter['href']) ?>" class="my-applications-filter<?= $isActive ? ' is-active' : '' ?>">
+                    <span class="my-applications-filter__label"><?= htmlspecialchars((string) $filter['label']) ?></span>
+                    <span class="my-applications-filter__count"><?= (int) ($filter['count'] ?? 0) ?></span>
                 </a>
             <?php endforeach; ?>
-        </div>
+        </nav>
 
         <?php if (empty($filteredApplications)): ?>
-            <div class="text-center py-20 bg-white rounded-2xl shadow-sm">
-                <p class="text-gray-500 mb-4">У вас пока нет заявок</p>
-                <a href="/contests" class="inline-block px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Подать заявку</a>
-            </div>
+            <section class="card my-applications-empty">
+                <div class="card__body">
+                    <div class="my-applications-empty__icon"><i class="fas fa-folder-open"></i></div>
+                    <h2 class="my-applications-empty__title">Заявок пока нет</h2>
+                    <p class="my-applications-empty__subtitle">Выберите конкурс и подайте первую заявку. Это займёт несколько минут.</p>
+                    <a href="/contests" class="btn btn--primary btn--lg"><i class="fas fa-plus"></i> Подать заявку</a>
+                </div>
+            </section>
         <?php else: ?>
-            <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <div class="my-applications-grid">
                 <?php foreach ($filteredApplications as $app): ?>
                     <?php
-                    $works = getApplicationWorks((int)$app['id']);
-                    $imagePath = '/public/contest-hero-placeholder.svg';
+                        $works = getApplicationWorks((int) $app['id']);
+                        $imagePath = '/public/contest-hero-placeholder.svg';
 
-                    foreach ($works as $work) {
-                        if ($imagePath === '/public/contest-hero-placeholder.svg' && !empty($work['drawing_file'])) {
-                            $imagePath = (string)(getParticipantDrawingPreviewWebPath($user['email'] ?? '', (string)$work['drawing_file']) ?? $imagePath);
+                        foreach ($works as $work) {
+                            if ($imagePath === '/public/contest-hero-placeholder.svg' && !empty($work['drawing_file'])) {
+                                $imagePath = (string) (getParticipantDrawingPreviewWebPath($user['email'] ?? '', (string) $work['drawing_file']) ?? $imagePath);
+                            }
                         }
-                    }
 
-                    $statusMeta = getApplicationCardStatusMeta($app);
-                    $statusLabel = (string) ($statusMeta['status_label'] ?? '—');
-                    $statusClass = (string) ($statusMeta['status_class'] ?? 'bg-gray-100 text-gray-700');
-                    $isRevision = getStatusGroup($app) === 'revision';
-                    $isCorrected = (string) ($statusMeta['status_code'] ?? '') === 'corrected';
+                        $statusMeta = getApplicationCardStatusMeta($app);
+                        $statusLabel = (string) ($statusMeta['status_label'] ?? '—');
+                        $badgeClass = (string) ($statusMeta['badge_class'] ?? 'badge--secondary');
+                        $statusCode = (string) ($statusMeta['status_code'] ?? '');
+                        $isRevision = getStatusGroup($app) === 'revision';
+                        $isCorrected = $statusCode === 'corrected';
+                        $unreadCount = (int) ($unreadByApplication[(int) ($app['id'] ?? 0)] ?? 0);
                     ?>
-                    <div class="bg-white rounded-2xl shadow hover:shadow-lg transition overflow-hidden <?= $isRevision ? 'border-2 border-yellow-400 bg-yellow-50' : '' ?> <?= $isCorrected ? 'border border-sky-300 bg-sky-50/60' : '' ?>">
-                        <img src="<?= htmlspecialchars($imagePath) ?>" alt="<?= htmlspecialchars((string)$app['contest_title']) ?>" class="w-full h-56 object-cover">
+                    <article class="application-card application-card--dashboard my-application-card<?= $isRevision ? ' my-application-card--revision' : '' ?><?= $isCorrected ? ' my-application-card--corrected' : '' ?>">
+                        <a class="my-application-card__media" href="/application/<?= (int) $app['id'] ?>" aria-label="Открыть заявку #<?= (int) ($app['id'] ?? 0) ?>">
+                            <img src="<?= htmlspecialchars($imagePath) ?>" alt="<?= htmlspecialchars((string) $app['contest_title']) ?>" loading="lazy">
+                        </a>
 
-                        <div class="p-4">
-                            <div class="mb-2">
-                                <div class="mb-2 flex items-center justify-between gap-3 flex-wrap">
-                                    <span class="text-xs px-2 py-1 rounded-full inline-flex <?= htmlspecialchars($statusClass) ?>">
-                                        <?= htmlspecialchars($statusLabel) ?>
-                                    </span>
-                                    <span class="text-xs text-gray-500 whitespace-nowrap">Заявка #<?= (int) ($app['id'] ?? 0) ?></span>
+                        <div class="my-application-card__body">
+                            <div class="my-application-card__top">
+                                <div class="application-card__badges-row">
+                                    <span class="badge <?= e($badgeClass) ?>"><?= e($statusLabel) ?></span>
+                                    <?php if ($unreadCount > 0): ?>
+                                        <span class="badge badge--error">Сообщения: <?= (int) $unreadCount ?></span>
+                                    <?php endif; ?>
                                 </div>
-
-                                <h3 class="font-semibold text-lg leading-tight"><?= htmlspecialchars((string)$app['contest_title']) ?></h3>
+                                <div class="my-application-card__id">Заявка #<?= (int) ($app['id'] ?? 0) ?></div>
                             </div>
+
+                            <h3 class="my-application-card__title"><?= htmlspecialchars((string) $app['contest_title']) ?></h3>
 
                             <?php if ($isRevision): ?>
-                                <p class="text-sm text-yellow-700 mb-2">Требует исправлений</p>
-                            <?php endif; ?>
-                            <?php if ($isCorrected): ?>
-                                <p class="text-sm text-sky-700 mb-2">Повторно отправлена на проверку после исправлений</p>
-                            <?php endif; ?>
-
-                            <?php if (!empty($unreadByApplication[(int)$app['id']])): ?>
-                                <p class="text-sm text-red-600 mb-2">Новые сообщения: <?= (int)$unreadByApplication[(int)$app['id']] ?></p>
+                                <div class="my-application-card__note my-application-card__note--revision">Нужны исправления: откройте заявку и следуйте комментариям организатора.</div>
+                            <?php elseif ($isCorrected): ?>
+                                <div class="my-application-card__note my-application-card__note--corrected">Исправления отправлены. Заявка снова на проверке.</div>
                             <?php endif; ?>
 
-                            <p class="text-sm text-gray-500 mb-2">Участников: <?= (int)($app['participants_count'] ?? 0) ?></p>
-                            <p class="text-sm text-gray-500 mb-4"><?= date('d.m.Y', strtotime((string)$app['created_at'])) ?></p>
+                            <div class="my-application-card__meta">
+                                <div class="my-application-card__meta-item">
+                                    <div class="my-application-card__meta-label">Участников</div>
+                                    <div class="my-application-card__meta-value"><?= (int) ($app['participants_count'] ?? 0) ?></div>
+                                </div>
+                                <div class="my-application-card__meta-item">
+                                    <div class="my-application-card__meta-label">Дата</div>
+                                    <div class="my-application-card__meta-value"><?= date('d.m.Y', strtotime((string) $app['created_at'])) ?></div>
+                                </div>
+                            </div>
 
-                            <div class="flex gap-2">
-                                <a href="/application/<?= (int)$app['id'] ?>" class="flex-1 text-center px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 hover:text-white transition">Просмотреть заявку</a>
+                            <div class="my-application-card__actions">
+                                <a href="/application/<?= (int) $app['id'] ?>" class="btn btn--primary btn--open-application">
+                                    Открыть заявку <i class="fas fa-arrow-right"></i>
+                                </a>
                             </div>
                         </div>
-                    </div>
+                    </article>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
-    </div>
+</div>
 </main>
 
 <?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>
