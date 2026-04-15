@@ -208,7 +208,7 @@ function initVkIdWidget() {
         redirectUrl: <?= json_encode(VK_USER_REDIRECT_URI, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
-        scope: '',
+        scope: <?= json_encode(VKID_USER_SCOPE, JSON_UNESCAPED_UNICODE) ?>,
     });
 
     const oneTap = new VKID.OneTap();
@@ -225,7 +225,10 @@ function initVkIdWidget() {
             const deviceId = payload?.device_id || '';
 
             VKID.Auth.exchangeCode(code, deviceId)
-                .then(finishVkLoginViaSdk)
+                .then(function (tokens) {
+                    // Persist device_id for server-side refresh in the active PHP session.
+                    finishVkLoginViaSdk(Object.assign({}, tokens || {}, { device_id: deviceId }));
+                })
                 .catch(function () {
                     setAuthError('Не удалось завершить вход через VK ID. Попробуйте снова.');
                 });

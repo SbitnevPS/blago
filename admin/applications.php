@@ -574,6 +574,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="modal__content" style="max-width:700px;">
         <div class="modal__header">
             <h3 class="modal__title">Публикация в VK</h3>
+            <button type="button" class="modal__close vk-publish-modal__close" aria-label="Закрыть" id="vkPublishPromptModalClose">&times;</button>
         </div>
         <div class="modal__body">
             <div id="vkPublishModalSummary" class="text-secondary" style="margin-bottom:10px;"></div>
@@ -586,6 +587,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
             <button type="button" class="btn btn--primary" id="vkPublishPromptRun">Опубликовать</button>
             <button type="button" class="btn btn--secondary" id="vkPublishPromptSkip">Отмена</button>
+            <button type="button" class="btn btn--secondary is-hidden" id="vkPublishPromptClose">Закрыть</button>
         </div>
     </div>
 </div>
@@ -698,12 +700,15 @@ require_once __DIR__ . '/includes/header.php';
 
     const publishButton = document.getElementById('vkPublishPromptRun');
     const skipButton = document.getElementById('vkPublishPromptSkip');
+    const closeButton = document.getElementById('vkPublishPromptClose');
+    const closeIconButton = document.getElementById('vkPublishPromptModalClose');
     const statusBox = document.getElementById('vkPublishPromptStatus');
     const previewBox = document.getElementById('vkPublishPreview');
     const summaryBox = document.getElementById('vkPublishModalSummary');
     let applicationId = <?= (int) $publishPromptApplicationId ?>;
     const csrfToken = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE) ?>;
     let publishInProgress = false;
+    let errorState = false;
 
     const showStatus = (message, type = 'success') => {
         if (!statusBox) return;
@@ -715,11 +720,43 @@ require_once __DIR__ . '/includes/header.php';
     const closeModal = () => {
         if (publishInProgress) return;
         modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        setErrorState(false);
+    };
+
+    const setErrorState = (nextState) => {
+        errorState = Boolean(nextState);
+        if (!publishButton || !skipButton || !closeButton) {
+            return;
+        }
+        publishButton.classList.toggle('is-hidden', errorState);
+        skipButton.classList.toggle('is-hidden', errorState);
+        closeButton.classList.toggle('is-hidden', !errorState);
+        publishButton.disabled = false;
+        skipButton.disabled = false;
+        closeButton.disabled = false;
     };
 
     if (skipButton) {
         skipButton.addEventListener('click', closeModal);
     }
+    if (closeButton) {
+        closeButton.addEventListener('click', closeModal);
+    }
+    if (closeIconButton) {
+        closeIconButton.addEventListener('click', closeModal);
+    }
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeModal();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && modal.classList.contains('active')) {
+            closeModal();
+        }
+    });
 
     const renderParticipants = (items) => {
         if (!previewBox) return;
@@ -762,12 +799,16 @@ require_once __DIR__ . '/includes/header.php';
     document.querySelectorAll('.js-open-vk-publish-modal').forEach((button) => {
         button.addEventListener('click', async () => {
             applicationId = Number(button.dataset.applicationId || 0);
+            setErrorState(false);
             modal.classList.add('active');
+            modal.setAttribute('aria-hidden', 'false');
+            document.body.style.overflow = 'hidden';
             if (statusBox) statusBox.style.display = 'none';
             try {
                 await loadPublishData();
             } catch (error) {
                 showStatus(error.message, 'error');
+                setErrorState(true);
             }
         });
     });
@@ -796,7 +837,7 @@ require_once __DIR__ . '/includes/header.php';
                 const data = await response.json();
                 if (!response.ok || !data.success) {
                     showStatus(data.error || 'Не удалось выполнить публикацию.', 'error');
-                    publishButton.disabled = false;
+                    setErrorState(true);
                     return;
                 }
 
@@ -804,17 +845,29 @@ require_once __DIR__ . '/includes/header.php';
                 location.reload();
             } catch (e) {
                 showStatus('Ошибка сети при публикации. Попробуйте ещё раз.', 'error');
+                setErrorState(true);
             } finally {
                 publishInProgress = false;
-                publishButton.disabled = false;
-                if (skipButton) skipButton.disabled = false;
+                if (!errorState) {
+                    publishButton.disabled = false;
+                    if (skipButton) skipButton.disabled = false;
+                }
+                if (closeButton) {
+                    closeButton.disabled = false;
+                }
             }
         });
     }
 
     if (applicationId > 0) {
+        setErrorState(false);
         modal.classList.add('active');
-        loadPublishData().catch((error) => showStatus(error.message, 'error'));
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        loadPublishData().catch((error) => {
+            showStatus(error.message, 'error');
+            setErrorState(true);
+        });
     }
 })();
 

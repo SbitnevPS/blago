@@ -1193,6 +1193,7 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
     <div class="modal__content vk-publish-modal__content">
         <div class="modal__header">
             <h3 class="modal__title">Публикация в VK</h3>
+            <button type="button" class="modal__close vk-publish-modal__close" aria-label="Закрыть" id="vkPublishPromptModalClose">&times;</button>
         </div>
         <div class="modal__body">
             <div id="vkPublishModalSummary" class="text-secondary vk-publish-modal__summary"></div>
@@ -2089,6 +2090,7 @@ document.querySelectorAll('[data-work-controls]').forEach((controls) => {
     const publishButton = document.getElementById('vkPublishPromptRun');
     const skipButton = document.getElementById('vkPublishPromptSkip');
     const closeButton = document.getElementById('vkPublishPromptClose');
+    const closeIconButton = document.getElementById('vkPublishPromptModalClose');
     const statusBox = document.getElementById('vkPublishPromptStatus');
     const previewBox = document.getElementById('vkPublishPreview');
     const summaryBox = document.getElementById('vkPublishModalSummary');
@@ -2109,21 +2111,20 @@ document.querySelectorAll('[data-work-controls]').forEach((controls) => {
             return;
         }
         modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
     };
 
     const setErrorState = (isErrorState) => {
         if (!publishButton || !skipButton || !closeButton) {
             return;
         }
-        publishButton.style.display = isErrorState ? 'none' : '';
-        skipButton.style.display = isErrorState ? 'none' : '';
-        closeButton.style.display = isErrorState ? '' : 'none';
-        if (!isErrorState) {
-            publishButton.disabled = false;
-            skipButton.disabled = false;
-        } else {
-            closeButton.disabled = false;
-        }
+        publishButton.classList.toggle('is-hidden', isErrorState);
+        skipButton.classList.toggle('is-hidden', isErrorState);
+        closeButton.classList.toggle('is-hidden', !isErrorState);
+        publishButton.disabled = false;
+        skipButton.disabled = false;
+        closeButton.disabled = false;
     };
 
     if (skipButton) {
@@ -2132,6 +2133,19 @@ document.querySelectorAll('[data-work-controls]').forEach((controls) => {
     if (closeButton) {
         closeButton.addEventListener('click', closeModal);
     }
+    if (closeIconButton) {
+        closeIconButton.addEventListener('click', closeModal);
+    }
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeModal();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && modal.classList.contains('active')) {
+            closeModal();
+        }
+    });
 
     const openPublishModal = async () => {
         if (!applicationId) {
@@ -2139,6 +2153,8 @@ document.querySelectorAll('[data-work-controls]').forEach((controls) => {
         }
         setErrorState(false);
         modal.classList.add('active');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
         if (previewBox) {
             previewBox.innerHTML = '<div class="text-secondary">Загрузка списка участников...</div>';
         }
@@ -2267,10 +2283,10 @@ document.querySelectorAll('[data-work-controls]').forEach((controls) => {
                 setErrorState(true);
             } finally {
                 publishInProgress = false;
-                if (publishButton.style.display !== 'none') {
+                if (!publishButton.classList.contains('is-hidden')) {
                     publishButton.disabled = false;
                 }
-                if (skipButton && skipButton.style.display !== 'none') {
+                if (skipButton && !skipButton.classList.contains('is-hidden')) {
                     skipButton.disabled = false;
                 }
             }

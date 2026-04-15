@@ -304,7 +304,7 @@ function syncVkDonatesFromVk(): array
     global $pdo;
     ensureVkDonatesSchema();
 
-    $readiness = verifyVkPublicationReadiness(true);
+    $readiness = verifyVkPublicationReadiness(true, true);
     if (empty($readiness['ok'])) {
         throw new RuntimeException((string) ($readiness['issues'][0] ?? 'VK не готов к синхронизации донатов.'));
     }
@@ -607,6 +607,38 @@ function getVkPublicationSettings(): array
     ];
 }
 
+function getVkPublicationRuntimeSettings(bool $preferSessionToken = false): array
+{
+    $settings = getVkPublicationSettings();
+
+    if (!$preferSessionToken) {
+        return $settings;
+    }
+
+    // If admin is logged in via VK ID SDK, prefer the token stored in the active PHP session.
+    if (trim((string) ($settings['publication_token'] ?? '')) === '' && function_exists('isAdmin') && isAdmin()) {
+        $sessionToken = vkid_session_get_access_token('admin', true);
+        if (trim($sessionToken) !== '') {
+            $meta = vkid_session_get_tokens('admin');
+            $settings['publication_token'] = $sessionToken;
+            $settings['token_masked'] = maskVkPublicationToken($sessionToken);
+            $settings['token_type'] = 'session_user';
+            $expiresAtTs = (int) ($meta['expires_at_ts'] ?? 0);
+            if ($expiresAtTs > 0) {
+                $settings['token_expires_at'] = date('Y-m-d H:i:s', $expiresAtTs);
+            }
+            $scope = trim((string) ($meta['scope'] ?? ''));
+            if ($scope !== '') {
+                $settings['token_scope'] = $scope;
+                $settings['token_scope_items'] = array_values(array_filter(array_map('trim', preg_split('/[\\s,]+/', $scope) ?: [])));
+            }
+            $settings['vk_user_id'] = trim((string) ($meta['user_id'] ?? $settings['vk_user_id']));
+        }
+    }
+
+    return $settings;
+}
+
 function maskVkPublicationToken(string $token): string
 {
     $token = trim($token);
@@ -652,9 +684,9 @@ function getVkPublicationTokenDiagnostics(array $settings): array
     ];
 }
 
-function verifyVkPublicationReadiness(bool $attemptRefresh = true): array
+function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferSessionToken = false): array
 {
-    $settings = getVkPublicationSettings();
+    $settings = getVkPublicationRuntimeSettings($preferSessionToken);
     $issues = [];
     $checks = [];
     $groupName = '';
@@ -675,7 +707,9 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true): array
 
     $diagnostics = getVkPublicationTokenDiagnostics($settings);
     if ($diagnostics['status'] === 'expired') {
-        $issues[] = 'Публикационный токен VK истёк, обновите token вручную в настройках.';
+        $issues[] = ($settings['token_type'] ?? '') === 'session_user'
+            ? 'Токен VK из текущей сессии истёк. Перезайдите в админку через VK ID.'
+            : 'Публикационный токен VK истёк, обновите token вручную в настройках.';
         $checks[] = 'Токен истёк';
     }
 
@@ -1470,7 +1504,7 @@ function buildVkPublicationCapabilities(array $readiness): array
 
 function getVkPublicationCapabilities(): array
 {
-    $readiness = verifyVkPublicationReadiness(true);
+    $readiness = verifyVkPublicationReadiness(true, true);
     $capabilities = buildVkPublicationCapabilities($readiness);
 
     $settings = getSystemSettings();
@@ -1601,7 +1635,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         'build_donut_params' => buildVkDonutWallParamsFromTask($item),
     ]);
 
-    $readiness = verifyVkPublicationReadiness(true);
+    $readiness = verifyVkPublicationReadiness(true, true);
     if (empty($readiness['ok'])) {
         $failureStage = 'validation';
         $error = (string) ($readiness['issues'][0] ?? 'VK не готов к публикации');
@@ -1907,7 +1941,7 @@ function publishVkTask(int $taskId, array $options = []): array
         ];
     }
 
-    $readiness = verifyVkPublicationReadiness(true);
+    $readiness = verifyVkPublicationReadiness(true, true);
     if (empty($readiness['ok'])) {
         return [
             'total' => 0,

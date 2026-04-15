@@ -972,6 +972,23 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
 
     $_SESSION['user_id'] = $userId;
     $_SESSION['vk_token'] = $accessToken;
+    $expiresIn = (int) ($claims['expires_in'] ?? ($claims['expiresIn'] ?? 0));
+    $scope = trim((string) ($claims['scope'] ?? ''));
+    $tokenType = trim((string) ($claims['token_type'] ?? ($claims['tokenType'] ?? '')));
+    $deviceId = trim((string) ($claims['device_id'] ?? ($claims['deviceId'] ?? '')));
+    $obtainedAt = time();
+    $expiresAt = $expiresIn > 0 ? ($obtainedAt + $expiresIn) : 0;
+    vkid_session_set_tokens('user', [
+        'access_token' => $accessToken,
+        'refresh_token' => $refreshToken,
+        'expires_in' => $expiresIn,
+        'obtained_at_ts' => $obtainedAt,
+        'expires_at_ts' => $expiresAt,
+        'scope' => $scope,
+        'token_type' => $tokenType,
+        'user_id' => $vkUserId,
+        'device_id' => $deviceId,
+    ]);
     vk_log_attempt('user', 'session_set', [
         'session_keys' => ['user_id', 'vk_token'],
         'user_id' => $userId,
@@ -1055,6 +1072,24 @@ function vk_admin_login_by_access_token(PDO $pdo, string $accessToken, string $r
     $_SESSION['admin_user_id'] = (int) $admin['id'];
     $_SESSION['is_admin'] = true;
     unset($_SESSION['admin_auth_redirect']);
+
+    $expiresIn = (int) ($claims['expires_in'] ?? ($claims['expiresIn'] ?? 0));
+    $scope = trim((string) ($claims['scope'] ?? ''));
+    $tokenType = trim((string) ($claims['token_type'] ?? ($claims['tokenType'] ?? '')));
+    $deviceId = trim((string) ($claims['device_id'] ?? ($claims['deviceId'] ?? '')));
+    $obtainedAt = time();
+    $expiresAt = $expiresIn > 0 ? ($obtainedAt + $expiresIn) : 0;
+    vkid_session_set_tokens('admin', [
+        'access_token' => $accessToken,
+        'refresh_token' => $refreshToken,
+        'expires_in' => $expiresIn,
+        'obtained_at_ts' => $obtainedAt,
+        'expires_at_ts' => $expiresAt,
+        'scope' => $scope,
+        'token_type' => $tokenType,
+        'user_id' => $vkUserId,
+        'device_id' => $deviceId,
+    ]);
 
     return ['ok' => true, 'redirect_to' => $safeRedirect];
 }

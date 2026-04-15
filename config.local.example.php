@@ -21,6 +21,13 @@ return [
         'user_redirect_uri' => 'https://example.com/auth/vk/user/callback',
     ],
 
+    // VK ID SDK scopes (used on login pages).
+    // Admin scope should include publication permissions if you want to publish to VK while admin session is active.
+    'vkid' => [
+        'user_scope' => 'email',
+        'admin_scope' => 'email wall groups photos offline',
+    ],
+
     'secrets' => [
         'github_webhook_secret' => '',
     ],

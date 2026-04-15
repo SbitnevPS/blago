@@ -73,6 +73,9 @@ define('VK_CLIENT_SECRET', (string) config_require($config, 'vk.client_secret'))
 define('VK_API_VERSION', (string) config_get($config, 'vk.api_version', '5.131'));
 define('VK_ADMIN_REDIRECT_URI', (string) config_get($config, 'vk.admin_redirect_uri', SITE_URL . '/auth/vk/admin/callback'));
 define('VK_USER_REDIRECT_URI', (string) config_get($config, 'vk.user_redirect_uri', SITE_URL . '/auth/vk/user/callback'));
+// VK ID SDK scopes. Use admin scope for publication permissions.
+define('VKID_USER_SCOPE', (string) config_get($config, 'vkid.user_scope', 'email'));
+define('VKID_ADMIN_SCOPE', (string) config_get($config, 'vkid.admin_scope', 'email wall groups photos offline'));
 
 // Обратная совместимость со старым кодом
 define('VK_REDIRECT_URI', VK_ADMIN_REDIRECT_URI);
@@ -378,6 +381,181 @@ if (session_status() === PHP_SESSION_NONE) {
 // Функции
 function e($value) {
     return htmlspecialchars((string) ($value ?? ''), ENT_QUOTES, 'UTF-8');
+}
+
+// -----------------------------------------------------------------------------
+// VK ID session tokens (access/refresh) storage for the lifetime of PHP session.
+// -----------------------------------------------------------------------------
+const VKID_SESSION_TOKENS_KEY = 'vkid_session_tokens';
+
+function vkid_session_get_tokens(string $flow): array
+{
+    $flowKey = $flow === 'admin' ? 'admin' : 'user';
+    $container = $_SESSION[VKID_SESSION_TOKENS_KEY] ?? null;
+    if (!is_array($container) || !isset($container[$flowKey]) || !is_array($container[$flowKey])) {
+        return [];
+    }
+    return $container[$flowKey];
+}
+
+function vkid_session_set_tokens(string $flow, array $data): void
+{
+    $flowKey = $flow === 'admin' ? 'admin' : 'user';
+    if (!isset($_SESSION[VKID_SESSION_TOKENS_KEY]) || !is_array($_SESSION[VKID_SESSION_TOKENS_KEY])) {
+        $_SESSION[VKID_SESSION_TOKENS_KEY] = [];
+    }
+    $_SESSION[VKID_SESSION_TOKENS_KEY][$flowKey] = $data;
+}
+
+function vkid_session_clear_tokens(string $flow): void
+{
+    $flowKey = $flow === 'admin' ? 'admin' : 'user';
+    if (!isset($_SESSION[VKID_SESSION_TOKENS_KEY]) || !is_array($_SESSION[VKID_SESSION_TOKENS_KEY])) {
+        return;
+    }
+    unset($_SESSION[VKID_SESSION_TOKENS_KEY][$flowKey]);
+    if (empty($_SESSION[VKID_SESSION_TOKENS_KEY])) {
+        unset($_SESSION[VKID_SESSION_TOKENS_KEY]);
+    }
+}
+
+function vkid_session_is_expired(array $tokens, int $leewaySeconds = 60): bool
+{
+    $expiresAt = (int) ($tokens['expires_at_ts'] ?? 0);
+    if ($expiresAt <= 0) {
+        return false;
+    }
+    return $expiresAt <= (time() + max(0, $leewaySeconds));
+}
+
+function vkid_http_get_json(string $url, int $timeoutSeconds = 20): array
+{
+    $ch = curl_init($url);
+    if ($ch === false) {
+        return ['ok' => false, 'http_code' => 0, 'raw' => '', 'json' => null, 'curl_error' => 'curl_init_failed'];
+    }
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => $timeoutSeconds,
+        CURLOPT_HTTPHEADER => ['Accept: application/json'],
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = $response === false ? (string) curl_error($ch) : '';
+    curl_close($ch);
+
+    $raw = $response === false ? '' : (string) $response;
+    $json = json_decode($raw, true);
+
+    return [
+        'ok' => $curlError === '' && $httpCode >= 200 && $httpCode < 300,
+        'http_code' => $httpCode,
+        'raw' => $raw,
+        'json' => is_array($json) ? $json : null,
+        'curl_error' => $curlError,
+    ];
+}
+
+function vkid_refresh_tokens_via_oauth(string $refreshToken, string $deviceId = ''): array
+{
+    $refreshToken = trim($refreshToken);
+    if ($refreshToken === '') {
+        return ['ok' => false, 'error' => 'missing_refresh_token', 'payload' => []];
+    }
+
+    // Best-effort refresh via oauth.vk.com (VK ID SDK also exposes refreshToken(refreshToken, deviceId)).
+    $query = [
+        'client_id' => VK_CLIENT_ID,
+        'client_secret' => VK_CLIENT_SECRET,
+        'grant_type' => 'refresh_token',
+        'refresh_token' => $refreshToken,
+        'v' => VK_API_VERSION,
+    ];
+    $deviceId = trim($deviceId);
+    if ($deviceId !== '') {
+        $query['device_id'] = $deviceId;
+    }
+
+    $url = 'https://oauth.vk.com/access_token?' . http_build_query($query);
+    $response = vkid_http_get_json($url);
+    $json = is_array($response['json']) ? $response['json'] : [];
+    $hasError = !empty($json['error']);
+    $hasAccess = !empty($json['access_token']);
+
+    if (!$response['ok'] || $hasError || !$hasAccess) {
+        error_log('[VKID] refresh token failed http=' . (int) $response['http_code'] . ' curl=' . ($response['curl_error'] ?? '') . ' raw=' . mb_substr((string) ($response['raw'] ?? ''), 0, 500));
+        return ['ok' => false, 'error' => (string) ($json['error'] ?? 'refresh_failed'), 'payload' => $json];
+    }
+
+    return ['ok' => true, 'error' => '', 'payload' => $json];
+}
+
+function vkid_session_refresh_access_token(string $flow): bool
+{
+    $tokens = vkid_session_get_tokens($flow);
+    $refreshToken = trim((string) ($tokens['refresh_token'] ?? ''));
+    $deviceId = trim((string) ($tokens['device_id'] ?? ''));
+    if ($refreshToken === '') {
+        return false;
+    }
+
+    $result = vkid_refresh_tokens_via_oauth($refreshToken, $deviceId);
+    if (empty($result['ok'])) {
+        return false;
+    }
+
+    $payload = is_array($result['payload'] ?? null) ? $result['payload'] : [];
+    $accessToken = trim((string) ($payload['access_token'] ?? ''));
+    if ($accessToken === '') {
+        return false;
+    }
+
+    $expiresIn = (int) ($payload['expires_in'] ?? 0);
+    $scope = trim((string) ($payload['scope'] ?? ($tokens['scope'] ?? '')));
+    $tokenType = trim((string) ($payload['token_type'] ?? ($tokens['token_type'] ?? '')));
+    $userId = trim((string) ($payload['user_id'] ?? ($tokens['user_id'] ?? '')));
+    $newRefreshToken = trim((string) ($payload['refresh_token'] ?? $refreshToken));
+    $obtainedAt = time();
+    $expiresAt = $expiresIn > 0 ? ($obtainedAt + $expiresIn) : (int) ($tokens['expires_at_ts'] ?? 0);
+
+    $next = array_merge($tokens, [
+        'access_token' => $accessToken,
+        'refresh_token' => $newRefreshToken !== '' ? $newRefreshToken : $refreshToken,
+        'expires_in' => $expiresIn > 0 ? $expiresIn : (int) ($tokens['expires_in'] ?? 0),
+        'obtained_at_ts' => $obtainedAt,
+        'expires_at_ts' => $expiresAt,
+        'scope' => $scope,
+        'token_type' => $tokenType,
+        'user_id' => $userId,
+    ]);
+    vkid_session_set_tokens($flow, $next);
+
+    // Backward compatibility for existing code.
+    if ($flow !== 'admin') {
+        $_SESSION['vk_token'] = $accessToken;
+    }
+
+    return true;
+}
+
+function vkid_session_get_access_token(string $flow, bool $refreshIfNeeded = true): string
+{
+    $tokens = vkid_session_get_tokens($flow);
+    $accessToken = trim((string) ($tokens['access_token'] ?? ''));
+    if ($accessToken === '') {
+        return '';
+    }
+
+    if ($refreshIfNeeded && vkid_session_is_expired($tokens)) {
+        if (vkid_session_refresh_access_token($flow)) {
+            $tokens = vkid_session_get_tokens($flow);
+            $accessToken = trim((string) ($tokens['access_token'] ?? ''));
+        }
+    }
+
+    return $accessToken;
 }
 
 function normalizeRegionName(string $region): string {

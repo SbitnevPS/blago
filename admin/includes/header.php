@@ -4,6 +4,18 @@ $safePageTitle = htmlspecialchars($pageTitle ?? 'Админ-панель', ENT_Q
 $safeHeaderTitle = htmlspecialchars($pageTitle ?? 'Панель управления', ENT_QUOTES, 'UTF-8');
 $safeBreadcrumb = isset($breadcrumb) ? htmlspecialchars($breadcrumb, ENT_QUOTES, 'UTF-8') : null;
 $adminUnreadDisputes = function_exists('getAdminUnreadDisputeCount') ? getAdminUnreadDisputeCount() : 0;
+$adminNewApplications = 0;
+$hasOpenedByAdminColumn = function_exists('db_table_has_column') ? db_table_has_column('applications', 'opened_by_admin') : false;
+try {
+    if ($hasOpenedByAdminColumn) {
+        $adminNewApplications = (int) ($pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted' AND opened_by_admin = 0")->fetchColumn() ?: 0);
+    } else {
+        // Fallback for old installations: show all submitted as "new".
+        $adminNewApplications = (int) ($pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted'")->fetchColumn() ?: 0);
+    }
+} catch (Throwable $ignored) {
+    $adminNewApplications = 0;
+}
 $adminAvatar = getUserAvatarData($admin ?? []);
 ?>
 <!DOCTYPE html>
@@ -47,6 +59,9 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 </a>
 <a href="/admin/applications.php" class="admin-sidebar__link <?= $currentPage === 'applications' ? 'admin-sidebar__link--active' : '' ?>">
 <i class="fas fa-file-alt"></i> Заявки
+<?php if ($adminNewApplications > 0): ?>
+<span class="badge badge--warning" style="margin-left:8px;"><?= (int) $adminNewApplications ?></span>
+<?php endif; ?>
 </a>
 <a href="/admin/participants" class="admin-sidebar__link <?= $currentPage === 'participants' ? 'admin-sidebar__link--active' : '' ?>">
 <i class="fas fa-user-friends"></i> Участники

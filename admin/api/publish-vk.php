@@ -45,13 +45,13 @@ if (empty($workIds)) {
 }
 
 ensureVkPublicationSchema();
-$settings = getVkPublicationSettings();
-if ((int) ($settings['group_id'] ?? 0) <= 0) {
-    jsonResponse(['success' => false, 'error' => 'Не указан group_id сообщества VK. Проверьте настройки публикации.'], 422);
+$readiness = verifyVkPublicationReadiness(true, true);
+if (empty($readiness['ok'])) {
+    $issues = $readiness['issues'] ?? [];
+    $message = is_array($issues) && !empty($issues) ? (string) $issues[0] : 'VK не готов к публикации.';
+    jsonResponse(['success' => false, 'error' => $message], 422);
 }
-if (trim((string) ($settings['publication_token'] ?? '')) === '') {
-    jsonResponse(['success' => false, 'error' => 'Не задан токен публикации VK. Проверьте настройки публикации.'], 422);
-}
+$settings = $readiness['settings'] ?? getVkPublicationSettings();
 
 $extraWallParams = [];
 $publicationMeta = [
