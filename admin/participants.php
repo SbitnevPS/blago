@@ -352,10 +352,14 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="form-hint">Если выбрать “только принятые”, в таблицу попадут участники, у которых статус работы = “Рисунок принят”.</div>
                 </div>
             </form>
+
+            <div id="participantsDocxStatus" class="alert alert--success" style="display:none; margin: 0;">
+                Файл сформирован. Можете закрыть окно.
+            </div>
         </div>
         <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
             <button type="button" class="btn btn--ghost" id="participantsDocxModalCancel">Отмена</button>
-            <button type="submit" form="participantsDocxForm" class="btn btn--primary">
+            <button type="submit" form="participantsDocxForm" class="btn btn--primary" id="participantsDocxModalSubmit">
                 <i class="fas fa-download"></i> Скачать
             </button>
         </div>
@@ -368,15 +372,59 @@ require_once __DIR__ . '/includes/header.php';
     const openBtn = document.getElementById('exportParticipantsDocxBtn');
     const closeBtn = document.getElementById('participantsDocxModalClose');
     const cancelBtn = document.getElementById('participantsDocxModalCancel');
+    const submitBtn = document.getElementById('participantsDocxModalSubmit');
+    const form = document.getElementById('participantsDocxForm');
+    const status = document.getElementById('participantsDocxStatus');
     if (!modal || !openBtn) return;
+
+    const initialCancelText = cancelBtn?.textContent || 'Отмена';
+
+    const resetUi = () => {
+        if (status) status.style.display = 'none';
+        if (submitBtn) {
+            submitBtn.style.display = '';
+            submitBtn.disabled = false;
+        }
+        if (cancelBtn) {
+            cancelBtn.textContent = initialCancelText;
+            cancelBtn.disabled = false;
+        }
+        if (closeBtn) closeBtn.disabled = false;
+        if (form) {
+            form.querySelectorAll('input, select, textarea, button').forEach((el) => {
+                // Keep the footer buttons controlled separately.
+                if (el === submitBtn || el === cancelBtn || el === closeBtn) return;
+                if (el instanceof HTMLInputElement && el.type === 'hidden') return;
+                el.disabled = false;
+            });
+        }
+    };
+
+    const setBusy = (busy) => {
+        if (submitBtn) submitBtn.disabled = busy;
+        if (cancelBtn) cancelBtn.disabled = busy;
+        if (closeBtn) closeBtn.disabled = busy;
+        if (form) {
+            form.querySelectorAll('input, select, textarea, button').forEach((el) => {
+                if (el === submitBtn || el === cancelBtn || el === closeBtn) return;
+                // Keep hidden fields (csrf/action) enabled so they are included in FormData.
+                if (el instanceof HTMLInputElement && el.type === 'hidden') return;
+                el.disabled = busy;
+            });
+        }
+    };
 
     const close = () => {
         modal.classList.remove('active');
         document.body.style.overflow = '';
+        modal.setAttribute('aria-hidden', 'true');
+        resetUi();
     };
     const open = () => {
+        resetUi();
         modal.classList.add('active');
         document.body.style.overflow = 'hidden';
+        modal.setAttribute('aria-hidden', 'false');
     };
 
     openBtn.addEventListener('click', open);
@@ -387,6 +435,72 @@ require_once __DIR__ . '/includes/header.php';
     });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.classList.contains('active')) close();
+    });
+
+    const guessFilename = (response) => {
+        const raw = response.headers.get('content-disposition') || '';
+        // RFC 6266-ish: filename="..."
+        const match = raw.match(/filename=\"?([^\";]+)\"?/i);
+        return match && match[1] ? match[1] : 'participants.docx';
+    };
+
+    const downloadBlob = (blob, filename) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    form?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        resetUi();
+        const formData = new FormData(form);
+        setBusy(true);
+        if (status) {
+            status.className = 'alert alert--success';
+            status.style.display = 'none';
+        }
+
+        try {
+            const response = await fetch(window.location.href, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin',
+            });
+
+            if (!response.ok) {
+                const text = (await response.text()).trim();
+                throw new Error(text || `HTTP ${response.status}`);
+            }
+
+            const blob = await response.blob();
+            downloadBlob(blob, guessFilename(response));
+
+            if (status) {
+                status.className = 'alert alert--success';
+                status.textContent = 'Файл сформирован и скачивание началось. Можете закрыть окно.';
+                status.style.display = 'block';
+            }
+            if (submitBtn) submitBtn.style.display = 'none';
+            if (cancelBtn) cancelBtn.textContent = 'Закрыть';
+        } catch (error) {
+            if (status) {
+                status.className = 'alert alert--error';
+                const details = (error && error.message) ? String(error.message).trim() : '';
+                status.textContent = details !== ''
+                    ? `Не удалось сформировать файл: ${details}`
+                    : 'Не удалось сформировать файл. Попробуйте ещё раз.';
+                status.style.display = 'block';
+            }
+        } finally {
+            setBusy(false);
+        }
     });
 })();
 </script>
