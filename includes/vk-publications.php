@@ -734,6 +734,41 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
             }
             $checks[] = 'groups.getById выполнен';
 
+            // Check that token owner is a manager of the group (owner/admin/editor).
+            if ($vkUserId !== '0') {
+                $managersResponse = $client->apiRequestForDiagnostics('groups.getMembers', [
+                    'group_id' => (int) $settings['group_id'],
+                    'filter' => 'managers',
+                    'count' => 1000,
+                    'offset' => 0,
+                ]);
+                $items = [];
+                if (isset($managersResponse['items']) && is_array($managersResponse['items'])) {
+                    $items = $managersResponse['items'];
+                } elseif (is_array($managersResponse)) {
+                    $items = $managersResponse;
+                }
+
+                $isManager = false;
+                $role = '';
+                foreach ($items as $item) {
+                    if (is_array($item) && (string) ((int) ($item['id'] ?? 0)) === $vkUserId) {
+                        $isManager = true;
+                        $role = (string) ($item['role'] ?? '');
+                        break;
+                    }
+                    if (is_int($item) && (string) $item === $vkUserId) {
+                        $isManager = true;
+                        break;
+                    }
+                }
+                if ($isManager) {
+                    $checks[] = 'groups.getMembers(managers) выполнен' . ($role !== '' ? ' (role=' . $role . ')' : '');
+                } else {
+                    $issues[] = 'Владелец токена (VK user_id=' . $vkUserId . ') не является администратором/редактором сообщества ' . (int) $settings['group_id'] . '.';
+                }
+            }
+
             $uploadResponse = $client->apiRequestForDiagnostics('photos.getWallUploadServer', [
                 'group_id' => (int) $settings['group_id'],
             ]);

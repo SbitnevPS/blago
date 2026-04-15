@@ -179,6 +179,14 @@ class VkApiClient
             );
         }
 
+        $vkUserId = (int) ($response[0]['id'] ?? 0);
+        if ($vkUserId <= 0) {
+            throw new VkApiException(
+                'Не удалось определить VK user_id владельца токена.',
+                'users.get returned empty id'
+            );
+        }
+
         $groupsResponse = $this->apiRequest('groups.getById', [
             'group_id' => $this->groupId,
         ]);
@@ -187,6 +195,42 @@ class VkApiClient
             throw new VkApiException(
                 'Не удалось проверить доступ к сообществу VK.',
                 'groups.getById returned empty response for group_id=' . $this->groupId
+            );
+        }
+
+        // Verify that the token owner is a manager of the target group.
+        // This gives a clearer error than failing later on photos.getWallUploadServer/wall.post.
+        $managers = $this->apiRequest('groups.getMembers', [
+            'group_id' => $this->groupId,
+            'filter' => 'managers',
+            'count' => 1000,
+            'offset' => 0,
+        ]);
+        $items = [];
+        if (isset($managers['items']) && is_array($managers['items'])) {
+            $items = $managers['items'];
+        } elseif (is_array($managers)) {
+            $items = $managers;
+        }
+
+        $isManager = false;
+        $role = '';
+        foreach ($items as $item) {
+            if (is_array($item) && (int) ($item['id'] ?? 0) === $vkUserId) {
+                $isManager = true;
+                $role = (string) ($item['role'] ?? '');
+                break;
+            }
+            if (is_int($item) && $item === $vkUserId) {
+                $isManager = true;
+                break;
+            }
+        }
+
+        if (!$isManager) {
+            throw new VkApiException(
+                'Недостаточно прав для публикации: текущий VK аккаунт не является администратором/редактором указанного сообщества.',
+                'token owner is not manager for group_id=' . $this->groupId . ', vk_user_id=' . $vkUserId
             );
         }
     }
@@ -357,15 +401,18 @@ class VkApiClient
         }
 
         if (str_contains($msg, 'method is unavailable with group auth')) {
-            return 'Указан токен сообщества. Для публикации рисунков нужен пользовательский токен администратора сообщества с правами photos, wall, groups и offline.';
+            return 'VK вернул group auth. Для публикации нужен user-токен администратора из VK ID (вход в админку через VK ID) с правами wall, photos, groups.';
         }
 
         if ($errorCode === 5) {
-            return 'Невалидный VK токен или у токена нет необходимых прав (photos, wall, groups, offline).';
+            if (str_contains($msg, 'another ip address')) {
+                return 'VK отклонил токен из-за привязки к IP. Перезайдите в админку через VK ID и повторите проверку.';
+            }
+            return 'Невалидный VK токен или у токена нет необходимых прав (wall, photos, groups). Перезайдите в админку через VK ID и подтвердите доступ.';
         }
 
         if ($errorCode === 7 || $errorCode === 15) {
-            return 'Недостаточно прав для публикации: убедитесь, что владелец токена администратор нужного сообщества VK.';
+            return 'Недостаточно прав для публикации: убедитесь, что вы вошли в админку тем VK аккаунтом, который является администратором/редактором этого сообщества, и что разрешены права wall/photos/groups.';
         }
 
         if ($errorCode === 100) {
