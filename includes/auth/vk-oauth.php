@@ -280,6 +280,70 @@ function vk_http_post_form(string $url, array $postFields = [], array $headers =
     ];
 }
 
+function vkid_exchange_sdk_code_for_tokens(string $code, string $deviceId, string $codeVerifier, string $redirectUri, string $state): array
+{
+    $code = trim($code);
+    $deviceId = trim($deviceId);
+    $codeVerifier = trim($codeVerifier);
+    $redirectUri = trim($redirectUri);
+    $state = trim($state);
+
+    if ($code === '' || $deviceId === '' || $codeVerifier === '' || $redirectUri === '' || $state === '') {
+        return ['ok' => false, 'error' => 'invalid_callback', 'payload' => []];
+    }
+
+    $response = vk_http_post_form('https://id.vk.ru/oauth2/auth', [
+        'grant_type' => 'authorization_code',
+        'client_id' => VK_CLIENT_ID,
+        'device_id' => $deviceId,
+        'redirect_uri' => $redirectUri,
+        'state' => $state,
+        'code' => $code,
+        'code_verifier' => $codeVerifier,
+    ]);
+
+    $json = is_array($response['json']) ? $response['json'] : [];
+    if (!$response['ok'] || !empty($json['error']) || empty($json['access_token'])) {
+        vk_auth_log('sdk_code_exchange_failed', [
+            'http_code' => $response['http_code'],
+            'curl_error' => $response['curl_error'],
+            'vk_error' => $json['error'] ?? '',
+            'vk_error_description' => $json['error_description'] ?? '',
+        ]);
+        return ['ok' => false, 'error' => 'exchange_failed', 'payload' => $json];
+    }
+
+    return ['ok' => true, 'error' => '', 'payload' => $json];
+}
+
+function vkid_refresh_token(string $refreshToken, string $deviceId, string $state = ''): array
+{
+    $refreshToken = trim($refreshToken);
+    $deviceId = trim($deviceId);
+    $state = trim($state);
+    if ($refreshToken === '' || $deviceId === '') {
+        return ['ok' => false, 'error' => 'missing_refresh_token', 'payload' => []];
+    }
+
+    $fields = [
+        'grant_type' => 'refresh_token',
+        'client_id' => VK_CLIENT_ID,
+        'device_id' => $deviceId,
+        'refresh_token' => $refreshToken,
+    ];
+    if ($state !== '') {
+        $fields['state'] = $state;
+    }
+
+    $response = vk_http_post_form('https://id.vk.ru/oauth2/auth', $fields);
+    $json = is_array($response['json']) ? $response['json'] : [];
+    if (!$response['ok'] || !empty($json['error']) || empty($json['access_token'])) {
+        return ['ok' => false, 'error' => (string) ($json['error'] ?? 'refresh_failed'), 'payload' => $json];
+    }
+
+    return ['ok' => true, 'error' => '', 'payload' => $json];
+}
+
 function vk_error_message(string $code): string
 {
     $messages = [

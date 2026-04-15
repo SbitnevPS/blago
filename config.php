@@ -458,6 +458,39 @@ function vkid_http_get_json(string $url, int $timeoutSeconds = 20): array
     ];
 }
 
+function vkid_http_post_form_json(string $url, array $postFields = [], int $timeoutSeconds = 20): array
+{
+    $ch = curl_init($url);
+    if ($ch === false) {
+        return ['ok' => false, 'http_code' => 0, 'raw' => '', 'json' => null, 'curl_error' => 'curl_init_failed'];
+    }
+
+    $headers = ['Accept: application/json', 'Content-Type: application/x-www-form-urlencoded'];
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => $timeoutSeconds,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => http_build_query($postFields),
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = $response === false ? (string) curl_error($ch) : '';
+    curl_close($ch);
+
+    $raw = $response === false ? '' : (string) $response;
+    $json = json_decode($raw, true);
+
+    return [
+        'ok' => $curlError === '' && $httpCode >= 200 && $httpCode < 300,
+        'http_code' => $httpCode,
+        'raw' => $raw,
+        'json' => is_array($json) ? $json : null,
+        'curl_error' => $curlError,
+    ];
+}
+
 function vkid_refresh_tokens_via_oauth(string $refreshToken, string $deviceId = ''): array
 {
     $refreshToken = trim($refreshToken);
@@ -465,26 +498,20 @@ function vkid_refresh_tokens_via_oauth(string $refreshToken, string $deviceId = 
         return ['ok' => false, 'error' => 'missing_refresh_token', 'payload' => []];
     }
 
-    // Best-effort refresh via oauth.vk.com (VK ID SDK also exposes refreshToken(refreshToken, deviceId)).
-    $query = [
-        'client_id' => VK_CLIENT_ID,
-        'client_secret' => VK_CLIENT_SECRET,
-        'grant_type' => 'refresh_token',
-        'refresh_token' => $refreshToken,
-        'v' => VK_API_VERSION,
-    ];
     $deviceId = trim($deviceId);
-    if ($deviceId !== '') {
-        $query['device_id'] = $deviceId;
+    if ($deviceId === '') {
+        return ['ok' => false, 'error' => 'missing_device_id', 'payload' => []];
     }
 
-    $url = 'https://oauth.vk.com/access_token?' . http_build_query($query);
-    $response = vkid_http_get_json($url);
+    $response = vkid_http_post_form_json('https://id.vk.ru/oauth2/auth', [
+        'grant_type' => 'refresh_token',
+        'client_id' => VK_CLIENT_ID,
+        'device_id' => $deviceId,
+        'refresh_token' => $refreshToken,
+    ]);
     $json = is_array($response['json']) ? $response['json'] : [];
-    $hasError = !empty($json['error']);
-    $hasAccess = !empty($json['access_token']);
 
-    if (!$response['ok'] || $hasError || !$hasAccess) {
+    if (!$response['ok'] || !empty($json['error']) || empty($json['access_token'])) {
         error_log('[VKID] refresh token failed http=' . (int) $response['http_code'] . ' curl=' . ($response['curl_error'] ?? '') . ' raw=' . mb_substr((string) ($response['raw'] ?? ''), 0, 500));
         return ['ok' => false, 'error' => (string) ($json['error'] ?? 'refresh_failed'), 'payload' => $json];
     }
@@ -556,6 +583,63 @@ function vkid_session_get_access_token(string $flow, bool $refreshIfNeeded = tru
     }
 
     return $accessToken;
+}
+
+// -----------------------------------------------------------------------------
+// VK ID SDK (OneTap) login handshake: keep state + code_verifier in session so
+// the backend can exchange `code` for tokens (avoids IP-binding issues).
+// -----------------------------------------------------------------------------
+const VKID_SDK_FLOW_SESSION_KEY = 'vkid_sdk_flows';
+const VKID_SDK_FLOW_TTL = 900;
+
+function vkid_sdk_flow_prepare(string $flow): array
+{
+    $flowKey = $flow === 'admin' ? 'admin' : 'user';
+    $container = $_SESSION[VKID_SDK_FLOW_SESSION_KEY] ?? null;
+    if (!is_array($container)) {
+        $container = [];
+    }
+
+    $existing = isset($container[$flowKey]) && is_array($container[$flowKey]) ? $container[$flowKey] : null;
+    $createdAt = is_array($existing) ? (int) ($existing['created_at'] ?? 0) : 0;
+    if ($createdAt > 0 && (time() - $createdAt) <= VKID_SDK_FLOW_TTL) {
+        return $existing;
+    }
+
+    $flowData = [
+        'state' => bin2hex(random_bytes(16)),
+        'code_verifier' => rtrim(strtr(base64_encode(random_bytes(64)), '+/', '-_'), '='),
+        'created_at' => time(),
+    ];
+
+    $container[$flowKey] = $flowData;
+    $_SESSION[VKID_SDK_FLOW_SESSION_KEY] = $container;
+    return $flowData;
+}
+
+function vkid_sdk_flow_consume(string $flow, string $state): array
+{
+    $flowKey = $flow === 'admin' ? 'admin' : 'user';
+    $container = $_SESSION[VKID_SDK_FLOW_SESSION_KEY] ?? null;
+    $data = is_array($container) && isset($container[$flowKey]) && is_array($container[$flowKey]) ? $container[$flowKey] : null;
+    if (!is_array($data)) {
+        return [];
+    }
+
+    $createdAt = (int) ($data['created_at'] ?? 0);
+    if ($createdAt <= 0 || (time() - $createdAt) > VKID_SDK_FLOW_TTL) {
+        unset($_SESSION[VKID_SDK_FLOW_SESSION_KEY][$flowKey]);
+        return [];
+    }
+
+    $expectedState = (string) ($data['state'] ?? '');
+    if ($expectedState === '' || $state === '' || !hash_equals($expectedState, $state)) {
+        return [];
+    }
+
+    // one-time use
+    unset($_SESSION[VKID_SDK_FLOW_SESSION_KEY][$flowKey]);
+    return $data;
 }
 
 function normalizeRegionName(string $region): string {

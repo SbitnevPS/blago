@@ -26,6 +26,7 @@ if (strpos($redirectAfterAuth, '/admin') !== 0) {
     $redirectAfterAuth = '/admin';
 }
 $_SESSION['admin_auth_redirect'] = $redirectAfterAuth;
+$vkidSdkFlow = vkid_sdk_flow_prepare('admin');
 
 check_csrf();
 
@@ -212,6 +213,8 @@ function initVkAdminIdWidget() {
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
         scope: <?= json_encode(VKID_ADMIN_SCOPE, JSON_UNESCAPED_UNICODE) ?>,
+        state: <?= json_encode((string) ($vkidSdkFlow['state'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
+        codeVerifier: <?= json_encode((string) ($vkidSdkFlow['code_verifier'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
     });
 
     const oneTap = new VKID.OneTap();
@@ -224,17 +227,7 @@ function initVkAdminIdWidget() {
             setAdminAuthError('Не удалось загрузить VK ID. Попробуйте обновить страницу или войдите по email.');
         })
         .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
-            const code = payload?.code || '';
-            const deviceId = payload?.device_id || '';
-
-            VKID.Auth.exchangeCode(code, deviceId)
-                .then(function (tokens) {
-                    // Persist device_id for server-side refresh in the active PHP session.
-                    finishAdminVkLoginViaSdk(Object.assign({}, tokens || {}, { device_id: deviceId }));
-                })
-                .catch(function () {
-                    setAdminAuthError('Не удалось завершить вход через VK ID. Попробуйте снова.');
-                });
+            finishAdminVkLoginViaSdk(payload || {});
         });
 }
 </script>

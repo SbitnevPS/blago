@@ -1916,6 +1916,9 @@ function normalizeVkPublicationError(Throwable $e): array
     if (str_contains($lower, 'group authorization failed') || str_contains($lower, 'group auth') || str_contains($lower, 'method is unavailable with group auth')) {
         $message = 'VK вернул ошибку group auth. Для публикации нужен user-токен администратора из VK ID. Перезайдите в админку через VK ID и повторите проверку.';
     }
+    if (str_contains($lower, 'another ip address')) {
+        $message = 'VK отклонил токен из-за привязки к IP. Перезайдите в админку через VK ID и повторите проверку.';
+    }
 
     return [
         'message' => $message,

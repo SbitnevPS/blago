@@ -24,6 +24,7 @@ if ($authErrorCode !== '' && isset($authErrorMessages[$authErrorCode])) {
 $rawRedirect = (string) ($_GET['redirect'] ?? ($_POST['redirect'] ?? ($_SESSION['user_auth_redirect'] ?? '/contests')));
 $redirectAfterAuth = sanitize_internal_redirect($rawRedirect, '/contests');
 $_SESSION['user_auth_redirect'] = $redirectAfterAuth;
+$vkidSdkFlow = vkid_sdk_flow_prepare('user');
 
 check_csrf();
 
@@ -209,6 +210,8 @@ function initVkIdWidget() {
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
         scope: <?= json_encode(VKID_USER_SCOPE, JSON_UNESCAPED_UNICODE) ?>,
+        state: <?= json_encode((string) ($vkidSdkFlow['state'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
+        codeVerifier: <?= json_encode((string) ($vkidSdkFlow['code_verifier'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
     });
 
     const oneTap = new VKID.OneTap();
@@ -221,17 +224,7 @@ function initVkIdWidget() {
             setAuthError('Не удалось загрузить VK ID. Попробуйте обновить страницу или войдите по email.');
         })
         .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
-            const code = payload?.code || '';
-            const deviceId = payload?.device_id || '';
-
-            VKID.Auth.exchangeCode(code, deviceId)
-                .then(function (tokens) {
-                    // Persist device_id for server-side refresh in the active PHP session.
-                    finishVkLoginViaSdk(Object.assign({}, tokens || {}, { device_id: deviceId }));
-                })
-                .catch(function () {
-                    setAuthError('Не удалось завершить вход через VK ID. Попробуйте снова.');
-                });
+            finishVkLoginViaSdk(payload || {});
         });
 }
 </script>
