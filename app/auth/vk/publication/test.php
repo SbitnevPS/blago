@@ -15,7 +15,7 @@ if (!verifyCSRFToken($csrfToken)) {
     jsonResponse(['success' => false, 'error' => 'Ошибка безопасности'], 403);
 }
 
-$readiness = verifyVkPublicationReadiness(true, true);
+$readiness = verifyVkPublicationReadiness(true, true, 'diagnostic');
 $status = !empty($readiness['ok']) ? 'ok' : 'error';
 $message = !empty($readiness['ok'])
     ? 'VK ID токен из текущей сессии прошёл проверку. Публикация доступна.'

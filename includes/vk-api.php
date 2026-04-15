@@ -50,6 +50,13 @@ class VkApiClient
 
     public function publishPhotoPost(string $imageFsPath, string $message, bool $fromGroup = true, array $extraWallParams = []): array
     {
+        if ($this->authMode === 'group') {
+            throw new VkApiException(
+                'Используется community token. Публикация нового локального изображения на стену недоступна в этом режиме.',
+                'community token mode: upload chain photos.getWallUploadServer/photos.saveWallPhoto is user-only'
+            );
+        }
+
         if (!is_file($imageFsPath) || !is_readable($imageFsPath)) {
             throw new VkApiException('Файл изображения недоступен для публикации.');
         }
@@ -180,6 +187,37 @@ class VkApiClient
             'readback_raw' => $readbackRaw,
             'readback_post' => $postData,
             'post_data_excerpt' => is_array($postData) ? $this->extractPostVerificationExcerpt($postData) : [],
+        ];
+    }
+
+    public function publishTextPost(string $message, bool $fromGroup = true, array $extraWallParams = []): array
+    {
+        $wallPostParams = [
+            'owner_id' => -1 * $this->groupId,
+            'from_group' => $fromGroup ? 1 : 0,
+            'message' => $message,
+        ];
+
+        foreach ($extraWallParams as $paramKey => $paramValue) {
+            $normalizedKey = trim((string) $paramKey);
+            if ($normalizedKey === '' || str_starts_with($normalizedKey, '_') || in_array($normalizedKey, ['access_token', 'v'], true)) {
+                continue;
+            }
+            $wallPostParams[$normalizedKey] = $paramValue;
+        }
+
+        $post = $this->apiRequest('wall.post', $wallPostParams);
+        $postId = (int) ($post['post_id'] ?? 0);
+        if ($postId <= 0) {
+            throw new VkApiException('VK не вернул post_id опубликованной записи.');
+        }
+
+        return [
+            'post_id' => $postId,
+            'post_url' => 'https://vk.com/wall-' . $this->groupId . '_' . $postId,
+            'owner_id' => (int) ($wallPostParams['owner_id'] ?? (-1 * $this->groupId)),
+            'wall_post_params' => $this->sanitizeParamsForLog($wallPostParams),
+            'wall_post_response' => $post,
         ];
     }
 

@@ -45,7 +45,7 @@ if (empty($workIds)) {
 }
 
 ensureVkPublicationSchema();
-$readiness = verifyVkPublicationReadiness(true, true);
+$readiness = verifyVkPublicationReadiness(true, true, 'publish_local_image');
 if (empty($readiness['ok'])) {
     $issues = $readiness['issues'] ?? [];
     $message = is_array($issues) && !empty($issues) ? (string) $issues[0] : 'VK не готов к публикации.';
