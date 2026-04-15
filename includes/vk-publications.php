@@ -902,7 +902,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
     }
 
     $scopeItems = (array) ($settings['token_scope_items'] ?? []);
-    $requiredScopes = getVkPublicationRequiredScopes($isGroupToken);
+    $requiredScopes = $scenario === 'publish_text_links' ? ['wall', 'groups'] : getVkPublicationRequiredScopes($isGroupToken);
     $scopeCheck = [];
     foreach ($requiredScopes as $scopeName) {
         $scopeCheck[$scopeName] = vkScopeHas($scopeItems, $scopeName);
@@ -997,20 +997,24 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
                 }
             }
 
-            // Pre-check scope before attempting photo upload server.
-            if (!array_key_exists('photos_getWallUploadServer', $steps)) {
-                if ($runtime['token_scope_raw'] !== '' && empty($scopeCheck['photos'])) {
-                    $steps['photos_getWallUploadServer'] = ['ok' => false, 'skipped' => true, 'message' => 'SKIPPED: нет scope photos', 'token_id' => $runtime['token_id'] ?? ''];
-                } else {
-                    $uploadResponse = $client->apiRequestForDiagnostics('photos.getWallUploadServer', [
-                        'group_id' => (int) $settings['group_id'],
-                    ]);
-                    if (empty($uploadResponse['upload_url'])) {
-                        $issues[] = 'photos.getWallUploadServer не вернул upload_url.';
-                        $steps['photos_getWallUploadServer'] = ['ok' => false, 'message' => 'upload_url пустой', 'token_id' => $runtime['token_id'] ?? ''];
+            // Photo upload probe is needed only when publication scenario requires image upload.
+            if ($scenario === 'publish_text_links') {
+                $steps['photos_getWallUploadServer'] = ['ok' => null, 'message' => 'NOT NEEDED: publish_text_links'];
+            } else {
+                if (!array_key_exists('photos_getWallUploadServer', $steps)) {
+                    if ($runtime['token_scope_raw'] !== '' && empty($scopeCheck['photos'])) {
+                        $steps['photos_getWallUploadServer'] = ['ok' => false, 'skipped' => true, 'message' => 'SKIPPED: нет scope photos', 'token_id' => $runtime['token_id'] ?? ''];
                     } else {
-                        $checks[] = 'photos.getWallUploadServer выполнен';
-                        $steps['photos_getWallUploadServer'] = ['ok' => true, 'message' => 'OK', 'token_id' => $runtime['token_id'] ?? ''];
+                        $uploadResponse = $client->apiRequestForDiagnostics('photos.getWallUploadServer', [
+                            'group_id' => (int) $settings['group_id'],
+                        ]);
+                        if (empty($uploadResponse['upload_url'])) {
+                            $issues[] = 'photos.getWallUploadServer не вернул upload_url.';
+                            $steps['photos_getWallUploadServer'] = ['ok' => false, 'message' => 'upload_url пустой', 'token_id' => $runtime['token_id'] ?? ''];
+                        } else {
+                            $checks[] = 'photos.getWallUploadServer выполнен';
+                            $steps['photos_getWallUploadServer'] = ['ok' => true, 'message' => 'OK', 'token_id' => $runtime['token_id'] ?? ''];
+                        }
                     }
                 }
             }
@@ -1219,11 +1223,12 @@ function verifyVkPublicationReadinessCommunityToken(array $settings, string $sce
                 'messages' => vkScopeHas($permItems, 'messages'),
                 'docs' => vkScopeHas($permItems, 'docs'),
             ];
+            $required = $scenario === 'publish_text_links' ? ['wall'] : ['wall', 'photos'];
             $steps['token_scope'] = [
                 'ok' => true,
                 'message' => $runtime['token_scope_raw'] !== '' ? $runtime['token_scope_raw'] : 'permissions неизвестны',
                 'scope_known' => $runtime['token_scope_known'],
-                'required' => ['wall', 'photos'],
+                'required' => $required,
                 'has' => $has,
             ];
 
@@ -1235,11 +1240,10 @@ function verifyVkPublicationReadinessCommunityToken(array $settings, string $sce
             if (!$runtime['token_scope_known']) {
                 $issues[] = 'Не удалось определить права community token (groups.getTokenPermissions вернул пустой список).';
             } else {
-                if (empty($has['wall'])) {
-                    $issues[] = 'У community token отсутствует право wall.';
-                }
-                if (empty($has['photos'])) {
-                    $issues[] = 'У community token отсутствует право photos.';
+                foreach ($required as $req) {
+                    if (empty($has[$req])) {
+                        $issues[] = 'У community token отсутствует право ' . $req . '.';
+                    }
                 }
             }
 
@@ -1991,10 +1995,20 @@ function buildVkPublicationCapabilities(array $readiness): array
 
     $authMode = (string) (($readiness['runtime']['auth_mode'] ?? '') !== '' ? $readiness['runtime']['auth_mode'] : (($readiness['settings']['auth_mode'] ?? '') ?: 'user_session'));
     if ($authMode === 'community_token') {
-        $message = 'Используется community token. Текущая реализация публикации требует загрузки локального изображения (user-only upload chain), поэтому режим публикации работ считается неподдерживаемым.';
-        foreach ($base as $mode => $meta) {
-            $base[$mode] = ['status' => 'unsupported', 'message' => $message];
+        if (empty($readiness['ok'])) {
+            $message = implode('; ', $readiness['issues'] ?? ['VK не готов к публикации.']);
+            foreach ($base as $mode => $meta) {
+                $base[$mode] = ['status' => 'unsupported', 'message' => $message];
+            }
+            return $base;
         }
+
+        $base['standard'] = [
+            'status' => 'supported',
+            'message' => 'Community token режим: текстовая публикация доступна. Загрузка локального изображения в VK не используется.',
+        ];
+        $base['vk_donut'] = ['status' => 'not_checked', 'message' => 'В community token режиме donut не проверяется по умолчанию.'];
+        $base['donation_goal'] = ['status' => 'not_checked', 'message' => 'В community token режиме donation goal не проверяется по умолчанию.'];
         return $base;
     }
 
@@ -2146,7 +2160,9 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         'build_donut_params' => buildVkDonutWallParamsFromTask($item),
     ]);
 
-    $readiness = verifyVkPublicationReadiness(true, true, 'publish_local_image');
+    $strategy = (string) ($options['strategy'] ?? '');
+    $scenario = $strategy === 'text_with_links' ? 'publish_text_links' : 'publish_local_image';
+    $readiness = verifyVkPublicationReadiness(true, true, $scenario);
     if (empty($readiness['ok'])) {
         $failureStage = 'validation';
         $error = (string) ($readiness['issues'][0] ?? 'VK не готов к публикации');
@@ -2165,12 +2181,25 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         return ['success' => false, 'error' => $normalized['message']];
     }
 
-    $imageFsPath = getParticipantDrawingFsPath((string) ($item['applicant_email'] ?? ''), (string) ($item['work_image_path'] ?? ''));
-    if (!$imageFsPath || !is_file($imageFsPath)) {
-        $failureStage = 'validation';
-        $error = 'Изображение для публикации не найдено';
-        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
-        return ['success' => false, 'error' => $error];
+    $imageFsPath = null;
+    $imageUrl = '';
+    if ($strategy === 'text_with_links') {
+        $rel = getParticipantDrawingWebPath((string) ($item['applicant_email'] ?? ''), (string) ($item['work_image_path'] ?? ''));
+        $imageUrl = vkMakeAbsoluteUrl($rel);
+        if ($imageUrl === '') {
+            $failureStage = 'validation';
+            $error = 'Ссылка на изображение для публикации не найдена';
+            markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
+            return ['success' => false, 'error' => $error];
+        }
+    } else {
+        $imageFsPath = getParticipantDrawingFsPath((string) ($item['applicant_email'] ?? ''), (string) ($item['work_image_path'] ?? ''));
+        if (!$imageFsPath || !is_file($imageFsPath)) {
+            $failureStage = 'validation';
+            $error = 'Изображение для публикации не найдено';
+            markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
+            return ['success' => false, 'error' => $error];
+        }
     }
 
     $extraWallParams = buildVkWallParamsByMode($item, $options);
@@ -2199,17 +2228,29 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         'publication_type' => $publicationType,
         'message' => (string) ($item['post_text'] ?? ''),
         'image_path' => (string) ($item['work_image_path'] ?? ''),
+        'strategy' => $strategy !== '' ? $strategy : 'photo_upload',
+        'image_url' => $imageUrl,
         'extra_wall_params' => sanitizeVkExtraWallParamsForLog($extraWallParams),
     ];
 
     try {
         $failureStage = 'wall_post';
-        $published = $client->publishPhotoPost(
-            $imageFsPath,
-            (string) ($item['post_text'] ?? ''),
-            (bool) $settings['from_group'],
-            $extraWallParams
-        );
+        if ($strategy === 'text_with_links') {
+            $message = trim((string) ($item['post_text'] ?? ''));
+            $message = $message !== '' ? ($message . "\n\n" . $imageUrl) : $imageUrl;
+            $published = $client->publishTextPost(
+                $message,
+                (bool) $settings['from_group'],
+                $extraWallParams
+            );
+        } else {
+            $published = $client->publishPhotoPost(
+                (string) $imageFsPath,
+                (string) ($item['post_text'] ?? ''),
+                (bool) $settings['from_group'],
+                $extraWallParams
+            );
+        }
         $responsePayload = $published;
         $readbackOk = !empty($published['readback_ok']);
         $readbackError = trim((string) ($published['readback_error'] ?? ''));
@@ -2221,7 +2262,14 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             'detected_features' => [],
         ];
 
-        if ($readbackOk) {
+        if ($strategy === 'text_with_links') {
+            $verification = [
+                'verification_status' => 'text_with_links_post_created',
+                'verification_message' => 'Пост создан (режим text_with_links).',
+                'detected_mode' => 'standard',
+                'detected_features' => [],
+            ];
+        } elseif ($readbackOk) {
             $verification = verifyVkPublicationReadback($publicationType, $readbackPost);
         } elseif ($publicationType === 'standard') {
             $verification = [
@@ -2461,7 +2509,9 @@ function publishVkTask(int $taskId, array $options = []): array
         ];
     }
 
-    $readiness = verifyVkPublicationReadiness(true, true, 'diagnostic');
+    $strategy = (string) ($options['strategy'] ?? '');
+    $scenario = $strategy === 'text_with_links' ? 'publish_text_links' : 'publish_local_image';
+    $readiness = verifyVkPublicationReadiness(true, true, $scenario);
     if (empty($readiness['ok'])) {
         return [
             'total' => 0,
@@ -2579,6 +2629,21 @@ function sanitizeVkExtraWallParamsForLog(array $params): array
         $out[$normalizedKey] = $value;
     }
     return $out;
+}
+
+function vkMakeAbsoluteUrl(?string $pathOrUrl): string
+{
+    $value = trim((string) ($pathOrUrl ?? ''));
+    if ($value === '') {
+        return '';
+    }
+    if (preg_match('~^https?://~i', $value)) {
+        return $value;
+    }
+    if ($value[0] !== '/') {
+        $value = '/' . $value;
+    }
+    return rtrim((string) SITE_URL, '/') . $value;
 }
 
 function detectVkPostFeatures(array $post): array

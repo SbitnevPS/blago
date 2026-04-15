@@ -17,9 +17,18 @@ if (!verifyCSRFToken($csrfToken)) {
 
 $readiness = verifyVkPublicationReadiness(true, true, 'diagnostic');
 $status = !empty($readiness['ok']) ? 'ok' : 'error';
-$message = !empty($readiness['ok'])
-    ? 'VK ID токен из текущей сессии прошёл проверку. Публикация доступна.'
-    : implode('; ', $readiness['issues'] ?? ['Ошибка проверки VK']);
+$runtime = is_array($readiness['runtime'] ?? null) ? $readiness['runtime'] : [];
+$authMode = (string) ($runtime['auth_mode'] ?? '');
+$message = '';
+if (!empty($readiness['ok'])) {
+    if ($authMode === 'community_token') {
+        $message = 'Community token прошёл проверку. Важно: публикация работ с загрузкой локальных изображений в этом режиме недоступна.';
+    } else {
+        $message = 'VK ID токен из текущей сессии прошёл проверку. Публикация доступна.';
+    }
+} else {
+    $message = implode('; ', $readiness['issues'] ?? ['Ошибка проверки VK']);
+}
 $checks = $readiness['checks'] ?? [];
 vkPublicationLog('publication_token_test_completed', [
     'ok' => !empty($readiness['ok']),

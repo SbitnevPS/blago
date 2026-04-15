@@ -256,7 +256,16 @@ $vkStatusLabel = $vkStatus === 'connected'
     ? 'Публикационный токен готов'
     : ($vkStatus === 'attention'
         ? 'Требуется внимание'
-        : ($vkTokenSourceSetting === 'stored_group' ? 'Ключ доступа сообщества для публикации не задан' : 'Токен VK ID для публикации не получен'));
+        : ($vkAuthModeSetting === 'community_token' ? 'Ключ доступа сообщества для публикации не задан' : 'Токен VK ID для публикации не получен'));
+
+// If community_token is selected, make status honest for "publish works" scenario:
+// token can be valid, but image-upload publication is unsupported by current implementation.
+if ($vkAuthModeSetting === 'community_token' && $vkStatus === 'connected') {
+    if (isset($vkCapabilityMatrix['upload_local_image_to_wall']) && ($vkCapabilityMatrix['upload_local_image_to_wall']['supported'] ?? null) === false) {
+        $vkStatus = 'attention';
+        $vkStatusLabel = 'Community token подключён, но публикация работ с загрузкой локальных изображений недоступна.';
+    }
+}
 $vkScopeDisplay = trim((string) ($vkRuntime['token_scope_raw'] ?? '')) !== ''
     ? (string) $vkRuntime['token_scope_raw']
     : ($vkPublicationSettings['token_scope'] !== '' ? $vkPublicationSettings['token_scope'] : 'scope неизвестен');
@@ -273,6 +282,40 @@ if (!in_array($vkAuthModeSetting, ['user_session', 'community_token'], true)) {
     }
     $vkAuthModeSetting = $vkTokenSourceSetting === 'stored_group' ? 'community_token' : 'user_session';
 }
+
+$vkStepShortStatus = static function (array $steps, string $key): string {
+    if (!array_key_exists($key, $steps) || !is_array($steps[$key])) {
+        return '—';
+    }
+    $step = $steps[$key];
+    $ok = $step['ok'] ?? null;
+    $skipped = !empty($step['skipped']);
+    $msg = mb_strtolower(trim((string) ($step['message'] ?? '')));
+
+    if ($ok === true) {
+        return 'OK';
+    }
+    if ($ok === false) {
+        if ($skipped && (str_contains($msg, 'unsupported') || str_contains($msg, 'n/a'))) {
+            return 'UNSUPPORTED';
+        }
+        return $skipped ? 'SKIPPED' : 'ERROR';
+    }
+    // ok === null
+    if ($skipped && str_contains($msg, 'unsupported')) {
+        return 'UNSUPPORTED';
+    }
+    if ($skipped) {
+        return 'SKIPPED';
+    }
+    if (str_contains($msg, 'not tested')) {
+        return 'NOT TESTED';
+    }
+    if (str_contains($msg, 'n/a')) {
+        return 'N/A';
+    }
+    return '—';
+};
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -569,7 +612,11 @@ unset($_SESSION['success_message']);
                             <div class="vk-connection-card__header">
                                 <div>
                                     <strong>Публикация работ в VK</strong>
-                                    <div class="form-hint">Токен для публикации берётся из активной сессии админа (вход через VK ID SDK).</div>
+                                    <div class="form-hint">
+                                        <?= htmlspecialchars($vkAuthModeSetting === 'community_token'
+                                            ? 'В режиме community_token используется сохранённый ключ доступа сообщества.'
+                                            : 'В режиме user_session токен для публикации берётся из активной сессии админа (вход через VK ID SDK).') ?>
+                                    </div>
                                 </div>
                                 <span class="badge <?= $vkStatus === 'connected' ? 'badge--success' : ($vkStatus === 'attention' ? 'badge--warning' : 'badge--secondary') ?>">
                                     <?= htmlspecialchars($vkStatus === 'connected' ? 'Connected' : ($vkStatus === 'attention' ? 'Attention' : 'Disconnected')) ?>
@@ -590,21 +637,21 @@ unset($_SESSION['success_message']);
                                 <?php if (!empty($vkSteps['token_scope_mismatch']['message'])): ?>
                                     <div><strong>Консистентность scope:</strong> <?= htmlspecialchars((string) $vkSteps['token_scope_mismatch']['message']) ?></div>
                                 <?php endif; ?>
-                                <div><strong>VK user ID владельца токена:</strong> <?= htmlspecialchars($vkPublicationSettings['vk_user_id'] !== '' ? $vkPublicationSettings['vk_user_id'] : '—') ?></div>
-                                <div><strong>Имя владельца токена:</strong> <?= htmlspecialchars($vkPublicationSettings['vk_user_name'] !== '' ? $vkPublicationSettings['vk_user_name'] : '—') ?></div>
+                                <div><strong>VK user ID владельца токена:</strong> <?= htmlspecialchars($vkAuthModeSetting === 'user_session' && $vkPublicationSettings['vk_user_id'] !== '' ? $vkPublicationSettings['vk_user_id'] : '—') ?></div>
+                                <div><strong>Имя владельца токена:</strong> <?= htmlspecialchars($vkAuthModeSetting === 'user_session' && $vkPublicationSettings['vk_user_name'] !== '' ? $vkPublicationSettings['vk_user_name'] : '—') ?></div>
 
                                 <div style="margin:10px 0 6px; font-weight:600;">Права пользователя в сообществе</div>
                                 <div><strong>ID сообщества:</strong> <?= htmlspecialchars($settings['vk_publication_group_id'] ?? '—') ?></div>
                                 <div><strong>Название сообщества:</strong> <?= htmlspecialchars(trim((string)($settings['vk_publication_group_name'] ?? '')) !== '' ? (string)$settings['vk_publication_group_name'] : '—') ?></div>
-                                <div><strong>Роль пользователя в сообществе:</strong> <?= htmlspecialchars(!empty($vkSteps['group_role']['ok']) ? (string) ($vkSteps['group_role']['role'] ?? 'manager') : '—') ?></div>
-                                <div><strong>users.get:</strong> <?= htmlspecialchars(!empty($vkSteps['users_get']['ok']) ? 'OK' : '—') ?></div>
-                                <div><strong>groups.getById:</strong> <?= htmlspecialchars(!empty($vkSteps['groups_getById']['ok']) ? 'OK' : '—') ?></div>
-                                <div><strong>groups.getMembers(managers):</strong> <?= htmlspecialchars(array_key_exists('group_role', $vkSteps) ? (!empty($vkSteps['group_role']['ok']) ? 'OK' : 'ERROR') : '—') ?></div>
+                                <div><strong>Роль пользователя в сообществе:</strong> <?= htmlspecialchars($vkAuthModeSetting === 'community_token' ? 'N/A' : (!empty($vkSteps['group_role']['ok']) ? (string) ($vkSteps['group_role']['role'] ?? 'manager') : '—')) ?></div>
+                                <div><strong>users.get:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'users_get')) ?></div>
+                                <div><strong>groups.getById:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'groups_getById')) ?></div>
+                                <div><strong>groups.getMembers(managers):</strong> <?= htmlspecialchars($vkAuthModeSetting === 'community_token' ? 'N/A' : $vkStepShortStatus($vkSteps, 'group_role')) ?></div>
 
                                 <div style="margin:10px 0 6px; font-weight:600;">Права публикации</div>
-                                <div><strong>photos.getWallUploadServer:</strong> <?= htmlspecialchars(array_key_exists('photos_getWallUploadServer', $vkSteps) ? (!empty($vkSteps['photos_getWallUploadServer']['ok']) ? 'OK' : 'ERROR') : '—') ?></div>
-                                <div><strong>photos.saveWallPhoto:</strong> <?= htmlspecialchars(array_key_exists('photos_saveWallPhoto', $vkSteps) ? (isset($vkSteps['photos_saveWallPhoto']['ok']) && $vkSteps['photos_saveWallPhoto']['ok'] === null ? 'NOT TESTED' : (!empty($vkSteps['photos_saveWallPhoto']['ok']) ? 'OK' : 'ERROR')) : '—') ?></div>
-                                <div><strong>wall.post:</strong> <?= htmlspecialchars(array_key_exists('wall_post', $vkSteps) ? (isset($vkSteps['wall_post']['ok']) && $vkSteps['wall_post']['ok'] === null ? 'NOT TESTED' : (!empty($vkSteps['wall_post']['ok']) ? 'OK' : 'ERROR')) : '—') ?></div>
+                                <div><strong>photos.getWallUploadServer:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'photos_getWallUploadServer')) ?></div>
+                                <div><strong>photos.saveWallPhoto:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'photos_saveWallPhoto')) ?></div>
+                                <div><strong>wall.post:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'wall_post')) ?></div>
                                 <?php if (!empty($vkCapabilityMatrix)): ?>
                                     <div style="margin-top:10px;"><strong>Сценарии:</strong></div>
                                     <?php
@@ -983,16 +1030,28 @@ unset($_SESSION['success_message']);
                     lines.push(`Scope groups: ${has.groups ? 'да' : 'нет'}`);
                 }
             }
-            lines.push(`users.get: ${steps.users_get && steps.users_get.ok ? 'OK' : 'ERROR'}`);
-            lines.push(`groups.getById: ${steps.groups_getById && steps.groups_getById.ok ? 'OK' : 'ERROR'}`);
+            const fmtStep = (step) => {
+                if (!step) return '—';
+                if (step.ok === true) return 'OK';
+                if (step.ok === false) return step.skipped ? 'SKIPPED' : 'ERROR';
+                if (step.ok === null) {
+                    if (step.skipped) return 'SKIPPED';
+                    if (String(step.message || '').toLowerCase().includes('n/a')) return 'N/A';
+                    if (String(step.message || '').toLowerCase().includes('not tested')) return 'NOT TESTED';
+                    return '—';
+                }
+                return '—';
+            };
+            lines.push(`users.get: ${fmtStep(steps.users_get)}`);
+            lines.push(`groups.getById: ${fmtStep(steps.groups_getById)}`);
             if (steps.group_role) {
-                lines.push(`groups.getMembers(managers): ${steps.group_role.ok ? 'OK' : 'ERROR'}${steps.group_role.role ? ', role=' + steps.group_role.role : ''}`);
+                lines.push(`groups.getMembers(managers): ${fmtStep(steps.group_role)}${steps.group_role.role ? ', role=' + steps.group_role.role : ''}`);
             } else {
                 lines.push('groups.getMembers(managers): —');
             }
             if (steps.photos_getWallUploadServer) {
                 const skipped = steps.photos_getWallUploadServer.skipped ? ' (SKIPPED)' : '';
-                lines.push(`photos.getWallUploadServer: ${steps.photos_getWallUploadServer.ok ? 'OK' : 'ERROR'}${skipped}`);
+                lines.push(`photos.getWallUploadServer: ${fmtStep(steps.photos_getWallUploadServer)}${skipped}`);
                 if (!steps.photos_getWallUploadServer.ok && steps.photos_getWallUploadServer.message) {
                     lines.push(`  причина: ${steps.photos_getWallUploadServer.message}`);
                 }
@@ -1000,10 +1059,10 @@ unset($_SESSION['success_message']);
                 lines.push('photos.getWallUploadServer: —');
             }
             if (steps.photos_saveWallPhoto) {
-                lines.push(`photos.saveWallPhoto: ${steps.photos_saveWallPhoto.ok === null ? 'NOT TESTED' : (steps.photos_saveWallPhoto.ok ? 'OK' : 'ERROR')}`);
+                lines.push(`photos.saveWallPhoto: ${fmtStep(steps.photos_saveWallPhoto)}`);
             }
             if (steps.wall_post) {
-                lines.push(`wall.post: ${steps.wall_post.ok === null ? 'NOT TESTED' : (steps.wall_post.ok ? 'OK' : 'ERROR')}`);
+                lines.push(`wall.post: ${fmtStep(steps.wall_post)}`);
             }
             if (steps.token_scope_mismatch && steps.token_scope_mismatch.message) {
                 lines.push('');
