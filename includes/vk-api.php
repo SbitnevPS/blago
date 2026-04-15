@@ -348,6 +348,14 @@ class VkApiClient
     {
         $msg = mb_strtolower($errorMessage);
 
+        if (str_contains($msg, 'application is blocked')) {
+            return 'Приложение VK, через которое получен токен, заблокировано VK. Создайте новый пользовательский токен через другое приложение VK и сохраните его в настройках публикации.';
+        }
+
+        if (str_contains($msg, 'invalid request')) {
+            return 'VK отклонил запрос как некорректный. Проверьте актуальность токена, ID сообщества и параметры публикации.';
+        }
+
         if (str_contains($msg, 'method is unavailable with group auth')) {
             return 'Указан токен сообщества. Для публикации рисунков нужен пользовательский токен администратора сообщества с правами photos, wall, groups и offline.';
         }
