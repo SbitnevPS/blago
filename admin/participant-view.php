@@ -27,6 +27,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 
     try {
+        if ($_POST['action'] === 'update_participant_profile') {
+            $fio = trim((string) ($_POST['fio'] ?? ''));
+            $age = (int) ($_POST['age'] ?? 0);
+            if ($fio === '') {
+                throw new RuntimeException('Укажите ФИО участника.');
+            }
+            if ($age < 5 || $age > 17) {
+                throw new RuntimeException('Возраст участника должен быть от 5 до 17 лет.');
+            }
+
+            $pdo->prepare("UPDATE participants SET fio = ?, age = ? WHERE id = ? LIMIT 1")
+                ->execute([$fio, $age, $participantId]);
+
+            // Keep work title in sync when it matches a trivial placeholder.
+            $pdo->prepare("
+                UPDATE works
+                SET title = ?
+                WHERE participant_id = ?
+                  AND application_id = ?
+                  AND (title IS NULL OR TRIM(title) = '' OR title LIKE 'Рисунок участника #%')
+            ")->execute([$fio, $participantId, (int) ($participant['application_id'] ?? 0)]);
+
+            if (strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1') {
+                jsonResponse([
+                    'success' => true,
+                    'fio' => $fio,
+                    'age' => $age,
+                ]);
+            }
+
+            $_SESSION['success_message'] = 'Данные участника обновлены';
+            redirect('/admin/participant/' . $participantId);
+        }
+
         if ($_POST['action'] === 'download_diploma') {
             if (!canShowIndividualDiplomaActions(['status' => (string) ($participant['work_status'] ?? 'pending')])) {
                 throw new RuntimeException('Для этой работы диплом недоступен.');
@@ -68,13 +102,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             redirect('/admin/participant/' . $participantId);
         }
     } catch (Throwable $e) {
+        if (strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1') {
+            jsonResponse(['success' => false, 'error' => $e->getMessage()], 422);
+        }
         $_SESSION['error_message'] = $e->getMessage();
         redirect('/admin/participant/' . $participantId);
     }
 }
 
 $currentPage = 'participants';
-$pageTitle = 'Участник #' . $participantId;
+$pageTitle = 'Участник #' . getParticipantDisplayNumber((array) $participant);
 $breadcrumb = 'Участники / Просмотр';
 $pageStyles = ['admin-participant.css'];
 
@@ -129,22 +166,27 @@ require_once __DIR__ . '/includes/header.php';
     <span>/</span>
     <a href="/admin/participants">Участники</a>
     <span>/</span>
-    <span>Участник #<?= (int) $participant['id'] ?></span>
+    <span>Участник #<?= e(getParticipantDisplayNumber((array) $participant)) ?></span>
 </nav>
 
 <section class="participant-hero card">
     <div class="participant-hero__body">
         <div class="participant-hero__summary">
-            <p class="participant-hero__eyebrow"><i class="fas fa-id-badge"></i> Карточка участника</p>
-            <h2 class="participant-hero__title"><?= e($participantName) ?></h2>
+            <p class="participant-hero__eyebrow" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                <span><i class="fas fa-id-badge"></i> Карточка участника</span>
+                <button type="button" class="btn btn--ghost btn--sm" id="openParticipantEditBtn" title="Редактировать ФИО и возраст">
+                    <i class="fas fa-pen"></i>
+                </button>
+            </p>
+            <h2 class="participant-hero__title" id="participantFioTitle"><?= e($participantName) ?></h2>
             <p class="participant-hero__meta">
-                <span><i class="fas fa-child"></i> <?= $participantAge > 0 ? (int) $participantAge . ' лет' : 'Возраст не указан' ?></span>
+                <span><i class="fas fa-child"></i> <span id="participantAgeHero"><?= $participantAge > 0 ? (int) $participantAge . ' лет' : 'Возраст не указан' ?></span></span>
                 <span><i class="fas fa-map-marker-alt"></i> <?= e($participantRegion) ?></span>
             </p>
             <p class="participant-hero__contest"><i class="fas fa-trophy"></i> <?= e(trim((string) ($participant['contest_title'] ?? '')) ?: 'Конкурс не указан') ?></p>
             <div class="participant-hero__chips">
                 <span class="badge <?= e($statusMeta['badge_class']) ?>"><?= e($statusMeta['label']) ?></span>
-                <span class="participant-chip">ID участника: #<?= (int) $participant['id'] ?></span>
+                <span class="participant-chip">Номер участника: #<?= e(getParticipantDisplayNumber((array) $participant)) ?></span>
                 <span class="participant-chip">ID заявки: #<?= (int) $participant['application_id'] ?></span>
             </div>
         </div>
@@ -256,7 +298,15 @@ require_once __DIR__ . '/includes/header.php';
                                 <?php if (!empty($item['is_html'])): ?>
                                     <?= $item['value'] ?>
                                 <?php else: ?>
-                                    <?= e($item['value'] !== '' ? $item['value'] : '—') ?>
+                                    <?php
+                                        $valueAttrs = '';
+                                        if ($sectionTitle === 'Участник' && (string) ($item['label'] ?? '') === 'ФИО участника') {
+                                            $valueAttrs = ' id="participantFioValue"';
+                                        } elseif ($sectionTitle === 'Участник' && (string) ($item['label'] ?? '') === 'Возраст') {
+                                            $valueAttrs = ' id="participantAgeValue"';
+                                        }
+                                    ?>
+                                    <span<?= $valueAttrs ?>><?= e($item['value'] !== '' ? $item['value'] : '—') ?></span>
                                 <?php endif; ?>
                             </div>
                         </article>
@@ -275,6 +325,37 @@ require_once __DIR__ . '/includes/header.php';
         </div>
         <div class="modal__body participant-drawing-modal__body">
             <img src="" alt="Рисунок участника" id="participantDrawingModalImage" class="participant-drawing-modal__image">
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="participantEditModal" aria-hidden="true">
+    <div class="modal__content" style="max-width:560px;">
+        <div class="modal__header">
+            <h3 class="modal__title">Редактировать участника</h3>
+            <button type="button" class="modal__close" id="participantEditModalClose" aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="modal__body">
+            <form id="participantEditForm">
+                <input type="hidden" name="csrf_token" value="<?= e(generateCSRFToken()) ?>">
+                <input type="hidden" name="action" value="update_participant_profile">
+                <input type="hidden" name="ajax" value="1">
+                <div class="form-group">
+                    <label class="form-label form-label--required">ФИО участника</label>
+                    <input type="text" class="form-input" name="fio" id="participantEditFio" value="<?= e($participantName) ?>" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label form-label--required">Возраст</label>
+                    <input type="number" class="form-input" name="age" id="participantEditAge" value="<?= (int) $participantAge ?>" min="5" max="17" required>
+                </div>
+                <div class="form-hint">Сохранение происходит без перезагрузки страницы.</div>
+            </form>
+        </div>
+        <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
+            <button type="button" class="btn btn--ghost" id="participantEditCancelBtn">Отмена</button>
+            <button type="button" class="btn btn--primary" id="participantEditSaveBtn">
+                <i class="fas fa-save"></i> Сохранить
+            </button>
         </div>
     </div>
 </div>
@@ -326,6 +407,90 @@ require_once __DIR__ . '/includes/header.php';
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && modal.classList.contains('active')) {
             closeModal();
+        }
+    });
+})();
+
+(() => {
+    const openBtn = document.getElementById('openParticipantEditBtn');
+    const modal = document.getElementById('participantEditModal');
+    const closeBtn = document.getElementById('participantEditModalClose');
+    const cancelBtn = document.getElementById('participantEditCancelBtn');
+    const saveBtn = document.getElementById('participantEditSaveBtn');
+    const form = document.getElementById('participantEditForm');
+    const fioInput = document.getElementById('participantEditFio');
+    const ageInput = document.getElementById('participantEditAge');
+    if (!openBtn || !modal || !form || !fioInput || !ageInput || !saveBtn) return;
+
+    const toast = (message, type = 'success') => {
+        const el = document.createElement('div');
+        el.className = 'alert ' + (type === 'error' ? 'alert--error' : 'alert--success');
+        el.style.cssText = 'position:fixed; top:20px; right:20px; z-index:3200; min-width:260px; max-width:420px; box-shadow:0 12px 30px rgba(0,0,0,.12); opacity:0; transform:translateY(-8px); transition:opacity .25s ease, transform .25s ease;';
+        el.textContent = message;
+        document.body.appendChild(el);
+        requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; });
+        setTimeout(() => {
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(-8px)';
+            setTimeout(() => el.remove(), 260);
+        }, 2600);
+    };
+
+    const open = () => {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        setTimeout(() => fioInput.focus(), 0);
+    };
+    const close = () => {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+    };
+
+    openBtn.addEventListener('click', open);
+    closeBtn?.addEventListener('click', close);
+    cancelBtn?.addEventListener('click', close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('active')) close(); });
+
+    const applyUi = (fio, age) => {
+        const title = document.getElementById('participantFioTitle');
+        const ageHero = document.getElementById('participantAgeHero');
+        const fioValue = document.getElementById('participantFioValue');
+        const ageValue = document.getElementById('participantAgeValue');
+        if (title) title.textContent = fio;
+        if (fioValue) fioValue.textContent = fio;
+        if (ageHero) ageHero.textContent = `${age} лет`;
+        if (ageValue) ageValue.textContent = `${age} лет`;
+    };
+
+    saveBtn.addEventListener('click', async () => {
+        const fio = String(fioInput.value || '').trim();
+        const age = Number(ageInput.value || 0);
+        if (!fio) { toast('Укажите ФИО участника.', 'error'); fioInput.focus(); return; }
+        if (!Number.isInteger(age) || age < 5 || age > 17) { toast('Возраст должен быть от 5 до 17 лет.', 'error'); ageInput.focus(); return; }
+
+        const fd = new FormData(form);
+        saveBtn.disabled = true;
+        const oldHtml = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Сохраняем...';
+        try {
+            const resp = await fetch('/admin/participant/<?= (int) $participantId ?>', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: fd,
+            });
+            const data = await resp.json().catch(() => null);
+            if (!resp.ok || !data || !data.success) {
+                throw new Error((data && (data.error || data.message)) ? (data.error || data.message) : 'Не удалось сохранить');
+            }
+            applyUi(String(data.fio || fio), Number(data.age || age));
+            toast('Данные участника обновлены', 'success');
+            close();
+        } catch (err) {
+            toast(err.message || 'Не удалось сохранить', 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = oldHtml;
         }
     });
 })();

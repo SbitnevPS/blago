@@ -787,7 +787,7 @@ $currentPage = 'applications';
                                     <div><strong>Возраст:</strong> <span class="js-participant-age"><?= e((string)($participant['age'] ?? '—')) ?></span></div>
                                     <div><strong>Регион:</strong> <?= e((string)($participant['region'] ?? '—')) ?></div>
                                     <div><strong>Организация:</strong> <?= e((string)($participant['organization_name'] ?? '—')) ?></div>
-                                    <div><strong>ID участника:</strong> #<?= (int) ($participant['participant_id'] ?? 0) ?></div>
+                                    <div><strong>Номер участника:</strong> #<?= e(getParticipantDisplayNumber($participant)) ?></div>
                                 </div>
                                 <?php if ($hasParticipantCorrection): ?>
                                     <div class="app-highlight">

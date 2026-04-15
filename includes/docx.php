@@ -1,0 +1,222 @@
+<?php
+
+/**
+ * Minimal .docx generator (WordprocessingML) without external libraries.
+ * Produces a DOCX containing a single table.
+ */
+
+function docxEscapeText(string $text): string
+{
+    return htmlspecialchars($text, ENT_XML1 | ENT_COMPAT, 'UTF-8');
+}
+
+function docxCell(string $text, int $widthTwips = 0, bool $bold = false): string
+{
+    $safe = docxEscapeText($text);
+    $w = $widthTwips > 0 ? '<w:tcW w:w="' . (int) $widthTwips . '" w:type="dxa"/>' : '<w:tcW w:w="0" w:type="auto"/>';
+    $rPr = $bold ? '<w:rPr><w:b/></w:rPr>' : '';
+
+    return '<w:tc>'
+        . '<w:tcPr>' . $w . '</w:tcPr>'
+        . '<w:p><w:r>' . $rPr . '<w:t xml:space="preserve">' . $safe . '</w:t></w:r></w:p>'
+        . '</w:tc>';
+}
+
+function docxTableRow(array $cellsXml): string
+{
+    return '<w:tr>' . implode('', $cellsXml) . '</w:tr>';
+}
+
+function docxBuildDocumentXmlWithTable(string $title, array $headers, array $rows, array $columnWidthsTwips = []): string
+{
+    $title = trim($title);
+    $titleXml = $title !== ''
+        ? '<w:p><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">' . docxEscapeText($title) . '</w:t></w:r></w:p>'
+        : '';
+
+    $tblGrid = '';
+    if (!empty($columnWidthsTwips)) {
+        $gridCols = array_map(static function ($w): string {
+            $w = (int) $w;
+            return $w > 0 ? '<w:gridCol w:w="' . $w . '"/>' : '<w:gridCol/>';
+        }, $columnWidthsTwips);
+        $tblGrid = '<w:tblGrid>' . implode('', $gridCols) . '</w:tblGrid>';
+    }
+
+    $headerCells = [];
+    foreach ($headers as $i => $h) {
+        $headerCells[] = docxCell((string) $h, (int) ($columnWidthsTwips[$i] ?? 0), true);
+    }
+    $bodyRowsXml = [docxTableRow($headerCells)];
+
+    foreach ($rows as $row) {
+        $cells = [];
+        foreach ($headers as $i => $_) {
+            $cells[] = docxCell((string) ($row[$i] ?? ''), (int) ($columnWidthsTwips[$i] ?? 0), false);
+        }
+        $bodyRowsXml[] = docxTableRow($cells);
+    }
+
+    $tbl = '<w:tbl>'
+        . '<w:tblPr>'
+        . '<w:tblW w:w="0" w:type="auto"/>'
+        . '<w:tblLook w:val="04A0"/>'
+        . '</w:tblPr>'
+        . $tblGrid
+        . implode('', $bodyRowsXml)
+        . '</w:tbl>';
+
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        . 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        . '<w:body>'
+        . $titleXml
+        . $tbl
+        . '<w:sectPr/>'
+        . '</w:body>'
+        . '</w:document>';
+}
+
+function docxBuildBytes(string $documentXml): string
+{
+    if (!class_exists('ZipArchive')) {
+        throw new RuntimeException('ZipArchive не доступен (нужно расширение PHP zip).');
+    }
+
+    $tmp = tempnam(sys_get_temp_dir(), 'docx_');
+    if ($tmp === false) {
+        throw new RuntimeException('Не удалось создать временный файл.');
+    }
+    $tmpDocx = $tmp . '.docx';
+    @unlink($tmp);
+
+    $zip = new ZipArchive();
+    if ($zip->open($tmpDocx, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        throw new RuntimeException('Не удалось создать DOCX архив.');
+    }
+
+    $zip->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        . '<Default Extension="xml" ContentType="application/xml"/>'
+        . '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        . '</Types>');
+
+    $zip->addFromString('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+        . '</Relationships>');
+
+    $zip->addFromString('word/document.xml', $documentXml);
+    $zip->addFromString('word/_rels/document.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>');
+
+    $zip->close();
+
+    $bytes = (string) file_get_contents($tmpDocx);
+    @unlink($tmpDocx);
+
+    if ($bytes === '') {
+        throw new RuntimeException('DOCX получился пустым.');
+    }
+
+    return $bytes;
+}
+
+/**
+ * Build a DOCX table for participants export.
+ *
+ * Expected row keys:
+ * - participant_number
+ * - applicant_email
+ * - applicant_fio
+ * - organization_name
+ * - age
+ * - work_status (code or label)
+ */
+function buildParticipantsDocxBytes(array $rows, string $title = 'Список участников'): string
+{
+    $headers = [
+        'Номер участника',
+        'Email заявителя',
+        'ФИО заявителя',
+        'Название организации',
+        'Возраст',
+        'Статус работы',
+    ];
+
+    $tableRows = [];
+    foreach ($rows as $row) {
+        $status = trim((string) ($row['work_status'] ?? ''));
+        if ($status !== '' && function_exists('getWorkStatusLabel')) {
+            // If status is a known code, convert to label; otherwise keep as-is.
+            $maybe = getWorkStatusLabel($status);
+            $status = $maybe !== '' ? $maybe : $status;
+        }
+
+        $tableRows[] = [
+            (string) ($row['participant_number'] ?? ''),
+            (string) ($row['applicant_email'] ?? ''),
+            (string) ($row['applicant_fio'] ?? ''),
+            (string) ($row['organization_name'] ?? ''),
+            (string) ($row['age'] ?? ''),
+            $status,
+        ];
+    }
+
+    // Rough widths in twips (1/20 pt). Total around A4 portrait content width.
+    $widths = [1500, 2400, 3200, 3400, 1100, 2500];
+    $xml = docxBuildDocumentXmlWithTable($title, $headers, $tableRows, $widths);
+    return docxBuildBytes($xml);
+}
+
+/**
+ * Fetch participant rows for export.
+ * Optional filters:
+ * - contest_id
+ * - application_id
+ * - only_accepted (bool)
+ */
+function fetchParticipantsRowsForDocxExport(array $filters = []): array
+{
+    global $pdo;
+
+    $contestId = max(0, (int) ($filters['contest_id'] ?? 0));
+    $applicationId = max(0, (int) ($filters['application_id'] ?? 0));
+    $onlyAccepted = !empty($filters['only_accepted']);
+
+    $where = [];
+    $params = [];
+    if ($contestId > 0) {
+        $where[] = 'a.contest_id = ?';
+        $params[] = $contestId;
+    }
+    if ($applicationId > 0) {
+        $where[] = 'a.id = ?';
+        $params[] = $applicationId;
+    }
+    if ($onlyAccepted) {
+        $where[] = "COALESCE(w.status, 'pending') = 'accepted'";
+    }
+    $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+    $sql = "
+        SELECT
+            p.id AS participant_number,
+            u.email AS applicant_email,
+            COALESCE(NULLIF(TRIM(a.parent_fio), ''), NULLIF(TRIM(CONCAT_WS(' ', u.surname, u.name, u.patronymic)), ''), u.email) AS applicant_fio,
+            COALESCE(NULLIF(TRIM(p.organization_name), ''), NULLIF(TRIM(u.organization_name), ''), '') AS organization_name,
+            p.age AS age,
+            COALESCE(w.status, 'pending') AS work_status
+        FROM participants p
+        INNER JOIN applications a ON a.id = p.application_id
+        INNER JOIN users u ON u.id = a.user_id
+        LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id
+        $whereSql
+        ORDER BY p.id ASC
+    ";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}

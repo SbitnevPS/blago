@@ -233,32 +233,54 @@ if ($searchApplicationId > 0) {
     $where[] = 'a.user_id = ?';
     $params[] = $searchUserId;
 } elseif ($search) {
-    $userSearchConditions = build_user_search_conditions('u');
-    $where[] = "(
-        " . implode("
-        OR ", $userSearchConditions) . "
-        OR a.id LIKE ?
-    )";
-    $params = array_merge($params, array_fill(0, count($userSearchConditions), "%$search%"), ["%$search%"]);
+    $searchValue = trim((string) $search);
+    if ($searchValue !== '' && ctype_digit($searchValue)) {
+        $where[] = 'a.id = ?';
+        $params[] = (int) $searchValue;
+    } else {
+        $term = '%' . $searchValue . '%';
+        $where[] = "(
+            u.name LIKE ?
+            OR u.surname LIKE ?
+            OR CONCAT(u.surname, ' ', u.name) LIKE ?
+            OR CONCAT(u.name, ' ', u.surname) LIKE ?
+        )";
+        $params[] = $term;
+        $params[] = $term;
+        $params[] = $term;
+        $params[] = $term;
+    }
 }
 
 if ($participantId > 0) {
     $where[] = 'a.id IN (SELECT p.application_id FROM participants p WHERE p.id = ?)';
     $params[] = $participantId;
 } elseif ($participantQuery !== '') {
-    $where[] = 'EXISTS (
-        SELECT 1
-        FROM participants p
-        JOIN applications a2 ON a2.id = p.application_id
-        JOIN users pu ON pu.id = a2.user_id
-        WHERE p.application_id = a.id
-          AND (p.fio LIKE ? OR p.region LIKE ? OR pu.email LIKE ? OR CAST(p.id AS CHAR) LIKE ?)
-    )';
-    $participantTerm = '%' . $participantQuery . '%';
-    $params[] = $participantTerm;
-    $params[] = $participantTerm;
-    $params[] = $participantTerm;
-    $params[] = $participantTerm;
+    $participantQueryNormalized = ltrim(trim((string) $participantQuery), "# \t\n\r\0\x0B");
+    $isParticipantNumeric = $participantQueryNormalized !== '' && ctype_digit($participantQueryNormalized);
+
+    if ($isParticipantNumeric) {
+        $where[] = 'EXISTS (
+            SELECT 1
+            FROM participants p
+            WHERE p.application_id = a.id
+              AND p.public_number = ?
+        )';
+        $params[] = $participantQueryNormalized;
+    } else {
+        $where[] = 'EXISTS (
+            SELECT 1
+            FROM participants p
+            JOIN applications a2 ON a2.id = p.application_id
+            JOIN users pu ON pu.id = a2.user_id
+            WHERE p.application_id = a.id
+              AND (p.fio LIKE ? OR p.region LIKE ? OR pu.email LIKE ?)
+        )';
+        $participantTerm = '%' . $participantQueryNormalized . '%';
+        $params[] = $participantTerm;
+        $params[] = $participantTerm;
+        $params[] = $participantTerm;
+    }
 }
 
 $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
@@ -351,9 +373,9 @@ require_once __DIR__ . '/includes/header.php';
                     'min_length_numeric' => 1,
                     'debounce' => 220,
                 ]) ?>>
-                <label class="form-label">Поиск по заявке</label>
+                <label class="form-label">Поиск по заявителю или заявке</label>
                 <input type="text" id="applicationsSearchInput" name="search" class="form-input" data-live-search-input
-                       placeholder="ID заявки, ФИО заявителя, email, конкурс" value="<?= htmlspecialchars($search) ?>">
+                       placeholder="Номер заявки или ФИО заявителя" value="<?= htmlspecialchars($search) ?>">
                 <input type="hidden" name="search_application_id" id="applicationsSearchApplicationId" data-live-search-hidden value="<?= (int) $searchApplicationId ?>">
                 <input type="hidden" name="search_user_id" id="applicationsSearchUserId" data-live-search-hidden value="<?= (int) $searchUserId ?>">
                 <div id="applicationsSearchResults" class="user-results" data-live-search-results></div>
@@ -362,9 +384,9 @@ require_once __DIR__ . '/includes/header.php';
                 style="flex:1; min-width: 260px; max-width: 380px; position:relative;"
                 <?= admin_live_search_attrs([
                     'endpoint' => '/admin/search-participants',
-                    'primary_template' => '#{{id}} · {{fio||Без имени}}',
+                    'primary_template' => '#{{public_number||id}} · {{fio||Без имени}}',
                     'secondary_template' => 'Регион: {{region||—}} · {{email||Email не указан}}',
-                    'value_template' => '#{{id}} · {{fio||Без имени}}',
+                    'value_template' => '#{{public_number||id}} · {{fio||Без имени}}',
                     'min_length' => 2,
                     'min_length_numeric' => 1,
                     'debounce' => 220,
@@ -376,7 +398,7 @@ require_once __DIR__ . '/includes/header.php';
                     id="participantSearchInput"
                     data-live-search-input
                     class="form-input"
-                    placeholder="ID, ФИО участника, регион или email заявителя"
+                    placeholder="Номер участника или ФИО"
                     value="<?= htmlspecialchars($participantQuery) ?>"
                     autocomplete="off">
                 <input type="hidden" name="participant_id" id="participantId" data-live-search-hidden value="<?= (int) $participantId ?>">

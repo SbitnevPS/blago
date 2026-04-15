@@ -30,10 +30,8 @@ try {
 
     $limit = (int) ($_GET['limit'] ?? 7);
     $limit = max(1, min(7, $limit));
-    $searchTerm = '%' . $query . '%';
     $idQuery = $isNumericQuery ? (int) $query : 0;
-    $userSearchConditions = build_user_search_conditions('u');
-    $userSearchSql = implode("\n                OR ", $userSearchConditions);
+    $searchTerm = '%' . $query . '%';
 
     $stmt = $pdo->prepare("
         SELECT
@@ -48,16 +46,25 @@ try {
         INNER JOIN contests c ON c.id = a.contest_id
         WHERE (
             (? > 0 AND a.id = ?)
-            OR {$userSearchSql}
-            OR c.title LIKE ?
+            OR (
+              u.name LIKE ?
+              OR u.surname LIKE ?
+              OR CONCAT(u.surname, ' ', u.name) LIKE ?
+              OR CONCAT(u.name, ' ', u.surname) LIKE ?
+            )
         )
         ORDER BY a.id DESC
         LIMIT $limit
     ");
 
-    $params = [$idQuery, $idQuery];
-    $params = array_merge($params, array_fill(0, count($userSearchConditions), $searchTerm));
-    $params[] = $searchTerm;
+    $params = [
+        $idQuery,
+        $idQuery,
+        $searchTerm,
+        $searchTerm,
+        $searchTerm,
+        $searchTerm,
+    ];
 
     $stmt->execute($params);
     $rows = $stmt->fetchAll();

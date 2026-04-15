@@ -68,7 +68,8 @@
     const idField = root.dataset.idField || 'id';
     const secondaryTemplate = root.dataset.secondaryTemplate || '';
     const emptyText = root.dataset.emptyText || 'Ничего не найдено';
-    const limit = Number.parseInt(root.dataset.limit || '', 10);
+    const limitRaw = Number.parseInt(root.dataset.limit || '7', 10);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 7) : 7;
     const minLength = Number.parseInt(root.dataset.minLength || '2', 10);
     const minLengthNumeric = Number.parseInt(root.dataset.minLengthNumeric || '1', 10);
     const debounceMs = Number.parseInt(root.dataset.debounce || '220', 10);
@@ -150,8 +151,15 @@
 
     const renderItems = (items) => {
       renderedItems = Array.isArray(items)
-        ? items.map((item) => formatItem(item, templateConfig)).filter((item) => item.id > 0 && item.primary !== '')
+        ? items
+          .map((item) => formatItem(item, templateConfig))
+          .filter((item) => item.id > 0 && item.primary !== '')
         : [];
+
+      // Safety net: even if the backend ignores `limit`, keep the dropdown capped.
+      if (Number.isFinite(limit) && limit > 0) {
+        renderedItems = renderedItems.slice(0, limit);
+      }
 
       if (!renderedItems.length) {
         results.innerHTML = `<div class="user-results__empty">${escapeHtml(emptyText)}</div>`;

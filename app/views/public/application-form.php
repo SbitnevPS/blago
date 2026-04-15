@@ -507,6 +507,10 @@ $user['user_type'] = $user_type;
 
  if ($participant_id > 0) {
  try {
+     assignParticipantPublicNumber($participant_id, (int) $contest_id);
+ } catch (Throwable $ignored) {
+ }
+ try {
  $workStmt = $pdo->prepare("
  INSERT INTO works (contest_id, application_id, participant_id, title, image_path, status, created_at, updated_at)
  VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW())

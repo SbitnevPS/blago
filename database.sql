@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS applications (
 CREATE TABLE IF NOT EXISTS participants (
     id INT AUTO_INCREMENT PRIMARY KEY,
     application_id INT NOT NULL,
+    public_number VARCHAR(32) NULL,
     fio VARCHAR(255) NOT NULL,
     age INT,
     has_ovz TINYINT(1) NOT NULL DEFAULT 0,

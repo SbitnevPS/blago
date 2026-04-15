@@ -38,6 +38,37 @@ if (!array_key_exists($ageCategory, $participantCategoryFilters)) {
     $ageCategory = '';
 }
 
+$isDocxExportRequest = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'
+    && (string) ($_POST['action'] ?? '') === 'export_participants_docx';
+
+if ($isDocxExportRequest) {
+    $exportContestId = max(0, (int) ($_POST['contest_id'] ?? 0));
+    $onlyAccepted = (int) ($_POST['only_accepted'] ?? 0) === 1;
+
+    $contestTitle = 'Все конкурсы';
+    if ($exportContestId > 0) {
+        $titleStmt = $pdo->prepare('SELECT title FROM contests WHERE id = ? LIMIT 1');
+        $titleStmt->execute([$exportContestId]);
+        $contestTitle = (string) ($titleStmt->fetchColumn() ?: ('Конкурс #' . $exportContestId));
+    }
+
+    $rows = fetchParticipantsRowsForDocxExport([
+        'contest_id' => $exportContestId,
+        'only_accepted' => $onlyAccepted,
+    ]);
+
+    $title = 'Участники: ' . $contestTitle . ($onlyAccepted ? ' (только принятые рисунки)' : '');
+    $bytes = buildParticipantsDocxBytes($rows, $title);
+
+    $safeContestSlug = preg_replace('/[^a-zA-Z0-9_\\-]+/', '_', (string) ($exportContestId > 0 ? $exportContestId : 'all'));
+    $fileName = 'participants_' . $safeContestSlug . ($onlyAccepted ? '_accepted' : '') . '_' . date('Ymd_His') . '.docx';
+    header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    header('Content-Disposition: attachment; filename="' . $fileName . '"');
+    header('Content-Length: ' . strlen($bytes));
+    echo $bytes;
+    exit;
+}
+
 $where = [];
 $params = [];
 
@@ -50,8 +81,9 @@ if ($participantId > 0) {
     $where[] = 'p.id = ?';
     $params[] = $participantId;
 } elseif ($participantQuery !== '') {
-    $where[] = '(p.fio LIKE ? OR p.region LIKE ? OR u.email LIKE ? OR CAST(p.id AS CHAR) LIKE ?)';
+    $where[] = '(p.fio LIKE ? OR p.region LIKE ? OR u.email LIKE ? OR p.public_number LIKE ? OR CAST(p.id AS CHAR) LIKE ?)';
     $searchTerm = '%' . $participantQuery . '%';
+    $params[] = $searchTerm;
     $params[] = $searchTerm;
     $params[] = $searchTerm;
     $params[] = $searchTerm;
@@ -125,7 +157,7 @@ $totalParticipants = (int) $countStmt->fetchColumn();
 $totalPages = max(1, (int) ceil($totalParticipants / $perPage));
 
 $ovzSelect = $hasParticipantOvzColumn ? 'COALESCE(p.has_ovz, 0) AS has_ovz,' : '0 AS has_ovz,';
-$listStmt = $pdo->prepare("\n    SELECT p.id, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           $ovzSelect\n           a.status AS application_status, a.allow_edit,\n           c.title AS contest_title,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $whereClause\n    ORDER BY p.created_at DESC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
+$listStmt = $pdo->prepare("\n    SELECT p.id, p.public_number, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           $ovzSelect\n           a.status AS application_status, a.allow_edit,\n           c.title AS contest_title,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $whereClause\n    ORDER BY p.created_at DESC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
 $listStmt->execute($params);
 $participants = $listStmt->fetchAll();
 
@@ -153,9 +185,9 @@ require_once __DIR__ . '/includes/header.php';
                 style="flex:1; min-width: 260px; max-width: 420px; position:relative;"
                 <?= admin_live_search_attrs([
                     'endpoint' => '/admin/search-participants',
-                    'primary_template' => '#{{id}} · {{fio||Без имени}}',
+                    'primary_template' => '#{{public_number||id}} · {{fio||Без имени}}',
                     'secondary_template' => 'Регион: {{region||—}} · {{email||Email не указан}}',
-                    'value_template' => '#{{id}} · {{fio||Без имени}}',
+                    'value_template' => '#{{public_number||id}} · {{fio||Без имени}}',
                     'min_length' => 2,
                     'min_length_numeric' => 1,
                     'debounce' => 220,
@@ -167,7 +199,7 @@ require_once __DIR__ . '/includes/header.php';
                     id="participantSearchInput"
                     data-live-search-input
                     class="form-input"
-                    placeholder="ID, ФИО участника, регион или email заявителя"
+                    placeholder="Номер/ID участника, ФИО, регион или email заявителя"
                     value="<?= htmlspecialchars($participantQuery) ?>"
                     autocomplete="off">
                 <input type="hidden" name="participant_id" id="participantId" data-live-search-hidden value="<?= (int) $participantId ?>">
@@ -204,7 +236,12 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="card">
     <div class="card__header">
-        <h3>Участники (<?= $totalParticipants ?>)</h3>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+            <h3 style="margin:0;">Участники (<?= $totalParticipants ?>)</h3>
+            <button type="button" class="btn btn--secondary btn--sm" id="exportParticipantsDocxBtn">
+                <i class="fas fa-file-word"></i> Скачать DOCX
+            </button>
+        </div>
     </div>
     <div class="card__body">
         <?php if (empty($participants)): ?>
@@ -234,7 +271,7 @@ require_once __DIR__ . '/includes/header.php';
                             <?php endif; ?>
                             <div>
                                 <h4 class="admin-list-card__title"><?= htmlspecialchars($participant['fio'] ?: 'Без имени') ?></h4>
-                                <div class="admin-list-card__subtitle">#<?= (int) $participant['id'] ?> · <?= htmlspecialchars($participant['contest_title'] ?: 'Конкурс не указан') ?></div>
+                                <div class="admin-list-card__subtitle">#<?= e(getParticipantDisplayNumber($participant)) ?> · <?= htmlspecialchars($participant['contest_title'] ?: 'Конкурс не указан') ?></div>
                             </div>
                         </div>
                         <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
@@ -275,5 +312,83 @@ require_once __DIR__ . '/includes/header.php';
         <?php endif; ?>
     </div>
 </div>
+
+<div class="modal" id="participantsDocxModal" aria-hidden="true">
+    <div class="modal__content" style="max-width:720px;">
+        <div class="modal__header">
+            <h3 class="modal__title">Экспорт участников в DOCX</h3>
+            <button type="button" class="modal__close" aria-label="Закрыть" id="participantsDocxModalClose">&times;</button>
+        </div>
+        <div class="modal__body">
+            <form method="POST" id="participantsDocxForm" target="_blank">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="action" value="export_participants_docx">
+
+                <div class="form-group">
+                    <label class="form-label">Конкурс</label>
+                    <select name="contest_id" class="form-select" id="participantsDocxContest">
+                        <option value="0">Все конкурсы</option>
+                        <?php foreach ($contests as $contest): ?>
+                            <option value="<?= (int) $contest['id'] ?>" <?= (string) $contest_id === (string) $contest['id'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars((string) $contest['title']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-hint">Экспортирует участников заявок выбранного конкурса.</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Какие работы включить</label>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <label class="btn btn--secondary btn--sm" style="display:inline-flex; align-items:center; gap:8px;">
+                            <input type="radio" name="only_accepted" value="0" checked>
+                            <span>Все</span>
+                        </label>
+                        <label class="btn btn--secondary btn--sm" style="display:inline-flex; align-items:center; gap:8px;">
+                            <input type="radio" name="only_accepted" value="1">
+                            <span>Только принятые рисунки</span>
+                        </label>
+                    </div>
+                    <div class="form-hint">Если выбрать “только принятые”, в таблицу попадут участники, у которых статус работы = “Рисунок принят”.</div>
+                </div>
+            </form>
+        </div>
+        <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
+            <button type="button" class="btn btn--ghost" id="participantsDocxModalCancel">Отмена</button>
+            <button type="submit" form="participantsDocxForm" class="btn btn--primary">
+                <i class="fas fa-download"></i> Скачать
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+(() => {
+    const modal = document.getElementById('participantsDocxModal');
+    const openBtn = document.getElementById('exportParticipantsDocxBtn');
+    const closeBtn = document.getElementById('participantsDocxModalClose');
+    const cancelBtn = document.getElementById('participantsDocxModalCancel');
+    if (!modal || !openBtn) return;
+
+    const close = () => {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+    };
+    const open = () => {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    };
+
+    openBtn.addEventListener('click', open);
+    closeBtn?.addEventListener('click', close);
+    cancelBtn?.addEventListener('click', close);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) close();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('active')) close();
+    });
+})();
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
