@@ -584,7 +584,8 @@ function getVkPublicationSettings(): array
     $scopeItems = $scopeRaw !== '' ? array_values(array_filter(array_map('trim', preg_split('/[\s,]+/', $scopeRaw) ?: []))) : [];
 
     return [
-        'publication_token' => trim((string) ($settings['vk_publication_manual_token'] ?? ($settings['vk_publication_user_token'] ?? ($settings['vk_publication_access_token'] ?? '')))),
+        // Manual tokens are deprecated: publication token is taken from active VK ID admin session.
+        'publication_token' => '',
         'group_id' => trim((string) ($settings['vk_publication_group_id'] ?? '')),
         'api_version' => trim((string) ($settings['vk_publication_api_version'] ?? VK_API_VERSION)),
         'from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1,
@@ -603,7 +604,7 @@ function getVkPublicationSettings(): array
         'last_success_checked_at' => $lastSuccessfulCheckAt,
         'last_check_status' => trim((string) ($settings['vk_publication_last_check_status'] ?? '')),
         'last_check_message' => trim((string) ($settings['vk_publication_last_check_message'] ?? '')),
-        'token_masked' => maskVkPublicationToken((string) ($settings['vk_publication_manual_token'] ?? ($settings['vk_publication_user_token'] ?? ($settings['vk_publication_access_token'] ?? '')))),
+        'token_masked' => '',
     ];
 }
 
@@ -616,7 +617,7 @@ function getVkPublicationRuntimeSettings(bool $preferSessionToken = false): arra
     }
 
     // If admin is logged in via VK ID SDK, prefer the token stored in the active PHP session.
-    if (trim((string) ($settings['publication_token'] ?? '')) === '' && function_exists('isAdmin') && isAdmin()) {
+    if (function_exists('isAdmin') && isAdmin()) {
         $sessionToken = vkid_session_get_access_token('admin', true);
         if (trim($sessionToken) !== '') {
             $meta = vkid_session_get_tokens('admin');
@@ -666,14 +667,14 @@ function getVkPublicationTokenDiagnostics(array $settings): array
     $expiresIn = $expiresTs ? ($expiresTs - $nowTs) : null;
 
     $status = 'ok';
-    $message = 'Публикационный токен VK готов к работе.';
+    $message = 'VK ID токен из текущей сессии готов к работе.';
 
     if (trim((string) ($settings['publication_token'] ?? '')) === '') {
         $status = 'not_connected';
-        $message = 'Публикационный токен VK не задан.';
+        $message = 'VK ID токен для публикации не найден в текущей сессии.';
     } elseif ($expiresTs && $expiresIn !== null && $expiresIn <= 0) {
         $status = 'expired';
-        $message = 'Публикационный токен VK истёк.';
+        $message = 'VK ID токен для публикации истёк.';
     }
 
     return [
@@ -692,7 +693,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
     $groupName = '';
 
     if ($settings['publication_token'] === '') {
-        $issues[] = 'Не задан publication token VK.';
+        $issues[] = 'Не найден VK ID токен для публикации в текущей сессии админа.';
         $checks[] = 'Токен отсутствует';
     } else {
         $checks[] = 'Токен присутствует';
@@ -707,9 +708,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
 
     $diagnostics = getVkPublicationTokenDiagnostics($settings);
     if ($diagnostics['status'] === 'expired') {
-        $issues[] = ($settings['token_type'] ?? '') === 'session_user'
-            ? 'Токен VK из текущей сессии истёк. Перезайдите в админку через VK ID.'
-            : 'Публикационный токен VK истёк, обновите token вручную в настройках.';
+        $issues[] = 'Токен VK ID из текущей сессии истёк. Перезайдите в админку через VK ID.';
         $checks[] = 'Токен истёк';
     }
 
@@ -754,6 +753,11 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
     $confirmedPermissions = empty($issues) ? implode(', ', getVkPublicationRequiredScopes()) : '';
 
     saveSystemSettings([
+        // Manual/stored tokens are deprecated: keep settings clean.
+        'vk_publication_manual_token' => '',
+        'vk_publication_access_token' => '',
+        'vk_publication_user_token' => '',
+        'vk_publication_refresh_token' => '',
         'vk_publication_status' => $status,
         'vk_publication_last_checked_at' => date('Y-m-d H:i:s'),
         'vk_publication_last_success_checked_at' => empty($issues)
@@ -761,7 +765,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
             : trim((string) (getSystemSettings()['vk_publication_last_success_checked_at'] ?? '')),
         'vk_publication_last_check_status' => empty($issues) ? 'ok' : 'error',
         'vk_publication_last_check_message' => empty($issues)
-            ? 'Публикационный токен VK прошёл проверку.'
+            ? 'VK ID токен из текущей сессии прошёл проверку.'
             : implode('; ', $issues),
         'vk_publication_confirmed_permissions' => $confirmedPermissions,
         'vk_publication_last_error' => empty($issues) ? '' : implode('; ', $issues),
@@ -769,7 +773,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
         'vk_publication_vk_user_id' => (string) ($settings['vk_user_id'] ?? ''),
         'vk_publication_vk_user_name' => (string) ($settings['vk_user_name'] ?? ''),
         'vk_publication_group_name' => $groupName,
-        'vk_publication_token_type' => 'user',
+        'vk_publication_token_type' => 'session_user',
     ]);
 
     vkPublicationLog('publication_token_check', [
@@ -780,7 +784,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
         'token_masked' => maskVkPublicationToken($settings['publication_token']),
     ]);
 
-    $settings = getVkPublicationSettings();
+    $settings = getVkPublicationRuntimeSettings($preferSessionToken);
     $settings['group_name'] = $groupName !== '' ? $groupName : trim((string) (getSystemSettings()['vk_publication_group_name'] ?? ''));
 
     return [
@@ -1906,6 +1910,11 @@ function normalizeVkPublicationError(Throwable $e): array
 
     if ($message === '') {
         $message = 'Неизвестная ошибка публикации в VK.';
+    }
+
+    $lower = mb_strtolower($message);
+    if (str_contains($lower, 'group authorization failed') || str_contains($lower, 'group auth') || str_contains($lower, 'method is unavailable with group auth')) {
+        $message = 'VK вернул ошибку group auth. Для публикации нужен user-токен администратора из VK ID. Перезайдите в админку через VK ID и повторите проверку.';
     }
 
     return [

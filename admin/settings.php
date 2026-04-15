@@ -202,23 +202,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['vk_publication_group_id'] = trim($_POST['vk_publication_group_id'] ?? '');
             $payload['vk_publication_api_version'] = trim($_POST['vk_publication_api_version'] ?? '5.131');
             $payload['vk_publication_from_group'] = isset($_POST['vk_publication_from_group']) ? 1 : 0;
-
-            $newPublicationToken = trim((string) ($_POST['vk_publication_token_new'] ?? ''));
-            $resetPublicationToken = isset($_POST['vk_publication_token_reset']) && (string) $_POST['vk_publication_token_reset'] === '1';
-            if ($resetPublicationToken) {
-                $payload['vk_publication_manual_token'] = '';
-                $payload['vk_publication_status'] = 'disconnected';
-                $payload['vk_publication_last_error'] = '';
-                $payload['vk_publication_technical_diagnostics'] = '';
-                $payload['vk_publication_vk_user_id'] = '';
-                $payload['vk_publication_vk_user_name'] = '';
-                $payload['vk_publication_group_name'] = '';
-                $payload['vk_publication_token_scope'] = '';
-                $payload['vk_publication_confirmed_permissions'] = '';
-            } elseif ($newPublicationToken !== '') {
-                $payload['vk_publication_manual_token'] = $newPublicationToken;
-                $payload['vk_publication_status'] = 'attention';
-            }
         } elseif ($section === 'vk-publication') {
             $payload['vk_publication_post_template'] = trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate());
         } elseif ($section === 'homepage-banner') {
@@ -243,16 +226,21 @@ if (!in_array($activeSettingsTab, ['notifications', 'message-templates', 'email-
     $activeSettingsTab = 'notifications';
 }
 unset($_SESSION['settings_active_tab']);
-$vkPublicationSettings = getVkPublicationSettings();
-$vkReadiness = verifyVkPublicationReadiness(false);
+$vkPublicationSettings = getVkPublicationRuntimeSettings(true);
+$vkReadiness = verifyVkPublicationReadiness(false, true);
 $vkStatus = !empty($vkReadiness['ok']) ? 'connected' : (($vkPublicationSettings['publication_token'] !== '') ? 'attention' : 'disconnected');
 $vkStatusLabel = $vkStatus === 'connected'
     ? 'Публикационный токен готов'
-    : ($vkStatus === 'attention' ? 'Требуется внимание' : 'Публикационный токен не задан');
+    : ($vkStatus === 'attention' ? 'Требуется внимание' : 'Токен VK ID для публикации не получен');
 $vkScopeDisplay = $vkPublicationSettings['token_scope'] !== '' ? $vkPublicationSettings['token_scope'] : 'не указан VK';
 $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== '' ? $vkPublicationSettings['confirmed_permissions'] : 'нет подтверждённых прав';
 $vkLastError = $vkPublicationSettings['last_error'] !== '' ? $vkPublicationSettings['last_error'] : '—';
-$vkTokenTypeLabel = $vkPublicationSettings['token_type'] === 'user' ? 'User token' : $vkPublicationSettings['token_type'];
+$vkTokenTypeLabel = match ((string) ($vkPublicationSettings['token_type'] ?? '')) {
+    'session_user' => 'VK ID (сессия админа)',
+    'user' => 'User token',
+    '' => '—',
+    default => (string) $vkPublicationSettings['token_type'],
+};
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -549,7 +537,7 @@ unset($_SESSION['success_message']);
                             <div class="vk-connection-card__header">
                                 <div>
                                     <strong>Публикация работ в VK</strong>
-                                    <div class="form-hint">Для публикации используется только вручную заданный publication token.</div>
+                                    <div class="form-hint">Токен для публикации берётся из активной сессии админа (вход через VK ID SDK).</div>
                                 </div>
                                 <span class="badge <?= $vkStatus === 'connected' ? 'badge--success' : ($vkStatus === 'attention' ? 'badge--warning' : 'badge--secondary') ?>">
                                     <?= htmlspecialchars($vkStatus === 'connected' ? 'Connected' : ($vkStatus === 'attention' ? 'Attention' : 'Disconnected')) ?>
@@ -572,6 +560,13 @@ unset($_SESSION['success_message']);
                                 <div><strong>Техническая диагностика:</strong> <?= htmlspecialchars($vkPublicationSettings['technical_diagnostics'] !== '' ? $vkPublicationSettings['technical_diagnostics'] : '—') ?></div>
                             </div>
 
+                            <?php if ($vkPublicationSettings['publication_token'] === ''): ?>
+                                <div class="alert alert--warning" style="margin-top:12px;">
+                                    <i class="fas fa-triangle-exclamation"></i>
+                                    Токен VK ID для публикации не найден в текущей сессии. Войдите в админку через VK ID (а не по email), затем нажмите «Проверить токен VK».
+                                </div>
+                            <?php endif; ?>
+
                             <?php if (!empty($vkReadiness['issues'])): ?>
                                 <div class="alert alert--warning">
                                     <i class="fas fa-triangle-exclamation"></i>
@@ -584,17 +579,6 @@ unset($_SESSION['success_message']);
                                     <i class="fas fa-plug-circle-check"></i> Проверить токен VK
                                 </button>
                             </div>
-                        </div>
-
-                        <div class="form-group" style="margin-top:12px;">
-                            <label class="form-label">Access token публикации (ввести новый)</label>
-                            <input type="password" name="vk_publication_token_new" class="form-input" value="" placeholder="vk1.a.... или service token" autocomplete="off">
-                            <div class="form-hint">Полный token не выводится в HTML. Оставьте пустым, чтобы сохранить текущий token без изменений.</div>
-                            <label class="form-checkbox" style="margin-top:8px;">
-                                <input type="checkbox" name="vk_publication_token_reset" value="1">
-                                <span class="form-checkbox__mark"></span>
-                                <span>Удалить сохранённый publication token</span>
-                            </label>
                         </div>
 
                         <div class="form-row">
