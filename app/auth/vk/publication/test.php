@@ -33,4 +33,6 @@ jsonResponse([
     'message' => $message,
     'issues' => $readiness['issues'] ?? [],
     'checks' => $checks,
+    'runtime' => $readiness['runtime'] ?? [],
+    'steps' => $readiness['steps'] ?? [],
 ]);

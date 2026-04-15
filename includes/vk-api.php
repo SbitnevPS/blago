@@ -21,12 +21,23 @@ class VkApiClient
     private string $publicationAccessToken;
     private string $apiVersion;
     private int $groupId;
+    private string $tokenMask;
+    private string $tokenId;
+    private string $authMode;
 
-    public function __construct(string $publicationAccessToken, int $groupId, string $apiVersion = '5.131')
+    /**
+     * @param string $authMode 'user' or 'group'
+     */
+    public function __construct(string $publicationAccessToken, int $groupId, string $apiVersion = '5.131', string $authMode = 'user')
     {
         $this->publicationAccessToken = trim($publicationAccessToken);
         $this->groupId = $groupId;
         $this->apiVersion = trim($apiVersion) !== '' ? trim($apiVersion) : '5.131';
+        $this->authMode = in_array($authMode, ['user', 'group'], true) ? $authMode : 'user';
+        $this->tokenMask = function_exists('maskVkPublicationToken')
+            ? (string) maskVkPublicationToken($this->publicationAccessToken)
+            : (substr($this->publicationAccessToken, 0, 4) . '****' . substr($this->publicationAccessToken, -4));
+        $this->tokenId = substr(hash('sha256', $this->publicationAccessToken), 0, 10);
 
         if ($this->publicationAccessToken === '') {
             throw new VkApiException('Не задан publication token VK для публикации.');
@@ -101,6 +112,8 @@ class VkApiClient
                 'extra_wall_params' => $this->sanitizeParamsForLog($extraWallParams),
                 'wall_post_params' => $this->sanitizeParamsForLog($wallPostParams),
                 'publication_mode' => (string) ($extraWallParams['_publication_mode'] ?? 'unknown'),
+                'token_masked' => $this->tokenMask,
+                'token_id' => $this->tokenId,
             ]);
         }
 
@@ -108,6 +121,7 @@ class VkApiClient
         if (function_exists('vkPublicationLog')) {
             vkPublicationLog('vk_wall_post_response', [
                 'response' => $post,
+                'token_id' => $this->tokenId,
             ]);
         }
 
@@ -171,6 +185,21 @@ class VkApiClient
 
     public function validatePublicationAccess(): void
     {
+        if ($this->authMode === 'group') {
+            // Community token: skip users.get + managers checks (not applicable).
+            $groupsResponse = $this->apiRequest('groups.getById', [
+                'group_id' => $this->groupId,
+            ]);
+
+            if (!$groupsResponse) {
+                throw new VkApiException(
+                    'Не удалось проверить доступ к сообществу VK.',
+                    'groups.getById returned empty response for group_id=' . $this->groupId
+                );
+            }
+            return;
+        }
+
         $response = $this->apiRequest('users.get', []);
         if (!$response) {
             throw new VkApiException(
@@ -249,6 +278,16 @@ class VkApiClient
         }
     }
 
+    public function getGroupTokenPermissions(): array
+    {
+        // https://dev.vk.com/method/groups.getTokenPermissions
+        // Useful only for community access tokens; for user tokens it may still work but is not required.
+        $response = $this->apiRequest('groups.getTokenPermissions', [
+            'group_id' => $this->groupId,
+        ]);
+        return is_array($response) ? $response : [];
+    }
+
 
     public function apiRequestForDiagnostics(string $method, array $params): array
     {
@@ -286,6 +325,7 @@ class VkApiClient
                 'post_id' => $postId,
                 'response' => $response,
                 'post_excerpt' => $this->extractPostVerificationExcerpt($this->extractWallPostFromReadback($response)),
+                'token_id' => $this->tokenId,
             ]);
         }
 
@@ -348,6 +388,15 @@ class VkApiClient
 
         $url = 'https://api.vk.com/method/' . $method;
 
+        if (function_exists('vkPublicationLog')) {
+            vkPublicationLog('vk_api_request', [
+                'method' => $method,
+                'group_id' => $this->groupId,
+                'token_masked' => $this->tokenMask,
+                'token_id' => $this->tokenId,
+            ]);
+        }
+
         $ch = curl_init($url);
         if ($ch === false) {
             throw new VkApiException('Не удалось инициализировать CURL для VK API.');
@@ -377,7 +426,7 @@ class VkApiClient
             $error = (array) $decoded['error'];
             $errorCode = (int) ($error['error_code'] ?? 0);
             $errorMessage = (string) ($error['error_msg'] ?? 'Неизвестная ошибка VK API');
-            $friendlyMessage = $this->normalizeVkError($errorCode, $errorMessage);
+            $friendlyMessage = $this->normalizeVkError($method, $errorCode, $errorMessage);
             throw new VkApiException($friendlyMessage, 'VK API ' . $method . ' error #' . $errorCode . ': ' . $errorMessage, $errorCode);
         }
 
@@ -388,9 +437,10 @@ class VkApiClient
         return (array) $decoded['response'];
     }
 
-    private function normalizeVkError(int $errorCode, string $errorMessage): string
+    private function normalizeVkError(string $method, int $errorCode, string $errorMessage): string
     {
         $msg = mb_strtolower($errorMessage);
+        $methodLower = mb_strtolower($method);
 
         if (str_contains($msg, 'application is blocked')) {
             return 'Приложение VK, через которое получен токен, заблокировано VK. Создайте новый пользовательский токен через другое приложение VK и сохраните его в настройках публикации.';
@@ -409,6 +459,31 @@ class VkApiClient
                 return 'VK отклонил токен из-за привязки к IP. Перезайдите в админку через VK ID и повторите проверку.';
             }
             return 'Невалидный VK токен или у токена нет необходимых прав (wall, photos, groups). Перезайдите в админку через VK ID и подтвердите доступ.';
+        }
+
+        if ($errorCode === 15 && str_contains($msg, 'current scopes')) {
+            if (str_contains($methodLower, 'photos.')) {
+                return 'Роль в сообществе подтверждена, но текущий access token не имеет права photos.';
+            }
+            if (str_contains($methodLower, 'wall.')) {
+                return 'Роль в сообществе подтверждена, но текущий access token не имеет права wall.';
+            }
+            if (str_contains($methodLower, 'groups.')) {
+                return 'Текущий access token не имеет права groups.';
+            }
+            return 'Доступ запрещён: текущий access token не имеет нужных прав (scope).';
+        }
+
+        // VK sometimes returns #15/#7 without explicitly spelling out "current scopes".
+        // Prefer a scope-focused message for publication-specific methods to avoid misleading "role in group" hints.
+        if (($errorCode === 7 || $errorCode === 15) && str_contains($methodLower, 'photos.getwalluploadserver')) {
+            return 'Доступ к photos.getWallUploadServer запрещён. Обычно это означает, что у токена нет scope photos (нужны wall, photos, groups).';
+        }
+        if (($errorCode === 7 || $errorCode === 15) && str_contains($methodLower, 'photos.savewallphoto')) {
+            return 'Доступ к photos.saveWallPhoto запрещён. Обычно это означает, что у токена нет scope photos (нужны wall, photos, groups).';
+        }
+        if (($errorCode === 7 || $errorCode === 15) && str_contains($methodLower, 'wall.post')) {
+            return 'Доступ к wall.post запрещён. Обычно это означает, что у токена нет scope wall (нужны wall, photos, groups).';
         }
 
         if ($errorCode === 7 || $errorCode === 15) {

@@ -553,6 +553,7 @@ function vkid_session_refresh_access_token(string $flow): bool
         'expires_in' => $expiresIn > 0 ? $expiresIn : (int) ($tokens['expires_in'] ?? 0),
         'obtained_at_ts' => $obtainedAt,
         'expires_at_ts' => $expiresAt,
+        'refreshed_at_ts' => $obtainedAt,
         'scope' => $scope,
         'token_type' => $tokenType,
         'user_id' => $userId,

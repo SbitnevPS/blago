@@ -310,7 +310,8 @@ function syncVkDonatesFromVk(): array
     }
 
     $settings = $readiness['settings'];
-    $client = new VkApiClient((string) $settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version']);
+    $authMode = ((string) ($settings['token_type'] ?? '')) === 'group' ? 'group' : 'user';
+    $client = new VkApiClient((string) $settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version'], $authMode);
     $goals = $client->getDonutGoals();
 
     $seenVkIds = [];
@@ -580,22 +581,27 @@ function getVkPublicationSettings(): array
     $settings = getSystemSettings();
     $lastCheckedAt = trim((string) ($settings['vk_publication_last_checked_at'] ?? ''));
     $lastSuccessfulCheckAt = trim((string) ($settings['vk_publication_last_success_checked_at'] ?? ''));
-    $scopeRaw = trim((string) ($settings['vk_publication_token_scope'] ?? ($settings['vk_publication_scope'] ?? '')));
-    $scopeItems = $scopeRaw !== '' ? array_values(array_filter(array_map('trim', preg_split('/[\s,]+/', $scopeRaw) ?: []))) : [];
+    $tokenSource = trim((string) ($settings['vk_publication_token_source'] ?? ''));
+    if (!in_array($tokenSource, ['session_vkid', 'stored_group'], true)) {
+        $tokenSource = 'session_vkid';
+    }
 
     return [
         // Manual tokens are deprecated: publication token is taken from active VK ID admin session.
         'publication_token' => '',
+        'token_source_setting' => $tokenSource,
+        'stored_group_token' => trim((string) ($settings['vk_publication_group_token'] ?? '')),
         'group_id' => trim((string) ($settings['vk_publication_group_id'] ?? '')),
         'api_version' => trim((string) ($settings['vk_publication_api_version'] ?? VK_API_VERSION)),
         'from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1,
         'post_template' => trim((string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate())),
-        'token_expires_at' => trim((string) ($settings['vk_publication_token_expires_at'] ?? '')),
-        'token_scope' => $scopeRaw,
-        'token_scope_items' => $scopeItems,
-        'vk_user_id' => trim((string) ($settings['vk_publication_vk_user_id'] ?? ($settings['vk_publication_oauth_user_id'] ?? ''))),
-        'vk_user_name' => trim((string) ($settings['vk_publication_vk_user_name'] ?? ($settings['vk_publication_oauth_user_name'] ?? ''))),
-        'token_type' => trim((string) ($settings['vk_publication_token_type'] ?? 'user')),
+        // Token-related fields are runtime-only (session), keep legacy settings out.
+        'token_expires_at' => '',
+        'token_scope' => '',
+        'token_scope_items' => [],
+        'vk_user_id' => trim((string) ($settings['vk_publication_vk_user_id'] ?? '')),
+        'vk_user_name' => trim((string) ($settings['vk_publication_vk_user_name'] ?? '')),
+        'token_type' => 'session_user',
         'confirmed_permissions' => trim((string) ($settings['vk_publication_confirmed_permissions'] ?? '')),
         'status' => trim((string) ($settings['vk_publication_status'] ?? ($settings['vk_publication_oauth_state'] ?? 'disconnected'))),
         'last_error' => trim((string) ($settings['vk_publication_last_error'] ?? ($settings['vk_publication_oauth_last_error'] ?? ''))),
@@ -608,22 +614,43 @@ function getVkPublicationSettings(): array
     ];
 }
 
-function getVkPublicationRuntimeSettings(bool $preferSessionToken = false): array
+function getVkPublicationRuntimeSettings(bool $preferSessionToken = false, bool $refreshIfNeeded = true): array
 {
     $settings = getVkPublicationSettings();
 
     if (!$preferSessionToken) {
+        $settings['token_source'] = 'none';
         return $settings;
     }
 
-    // If admin is logged in via VK ID SDK, prefer the token stored in the active PHP session.
+    $sourceSetting = (string) ($settings['token_source_setting'] ?? 'session_vkid');
+
+    // One source of truth: either VK ID session token (admin) OR stored community token.
+    if ($sourceSetting === 'stored_group') {
+        $settings['token_source'] = 'stored';
+        $token = trim((string) ($settings['stored_group_token'] ?? ''));
+        if ($token !== '') {
+            $settings['publication_token'] = $token;
+            $settings['token_masked'] = maskVkPublicationToken($token);
+            $settings['token_id'] = substr(hash('sha256', $token), 0, 10);
+            $settings['token_type'] = 'group';
+            $settings['token_scope_known'] = false; // may be populated during diagnostics via VK API
+        }
+        return $settings;
+    }
+
+    // Default: VK ID SDK admin session token.
+    $settings['token_source'] = 'session';
     if (function_exists('isAdmin') && isAdmin()) {
-        $sessionToken = vkid_session_get_access_token('admin', true);
+        $sessionToken = vkid_session_get_access_token('admin', $refreshIfNeeded);
         if (trim($sessionToken) !== '') {
             $meta = vkid_session_get_tokens('admin');
             $settings['publication_token'] = $sessionToken;
             $settings['token_masked'] = maskVkPublicationToken($sessionToken);
-            $settings['token_type'] = 'session_user';
+            $settings['token_id'] = substr(hash('sha256', $sessionToken), 0, 10);
+            $settings['token_type'] = trim((string) ($meta['token_type'] ?? '')) !== ''
+                ? trim((string) $meta['token_type'])
+                : 'bearer';
             $expiresAtTs = (int) ($meta['expires_at_ts'] ?? 0);
             if ($expiresAtTs > 0) {
                 $settings['token_expires_at'] = date('Y-m-d H:i:s', $expiresAtTs);
@@ -631,9 +658,14 @@ function getVkPublicationRuntimeSettings(bool $preferSessionToken = false): arra
             $scope = trim((string) ($meta['scope'] ?? ''));
             if ($scope !== '') {
                 $settings['token_scope'] = $scope;
-                $settings['token_scope_items'] = array_values(array_filter(array_map('trim', preg_split('/[\\s,]+/', $scope) ?: [])));
+                $settings['token_scope_items'] = normalizeVkScopeItems($scope);
             }
             $settings['vk_user_id'] = trim((string) ($meta['user_id'] ?? $settings['vk_user_id']));
+            $settings['vk_device_id'] = trim((string) ($meta['device_id'] ?? ''));
+            $settings['vk_expires_at_ts'] = $expiresAtTs;
+            $settings['vk_obtained_at_ts'] = (int) ($meta['obtained_at_ts'] ?? 0);
+            $settings['vk_refreshed_at_ts'] = (int) ($meta['refreshed_at_ts'] ?? 0);
+            $settings['token_scope_known'] = $scope !== '';
         }
     }
 
@@ -654,9 +686,98 @@ function maskVkPublicationToken(string $token): string
     return substr($token, 0, 5) . str_repeat('*', max(0, strlen($token) - 10)) . substr($token, -5);
 }
 
-function getVkPublicationRequiredScopes(): array
+function normalizeVkScopeItems(string $scopeRaw): array
 {
-    return ['wall', 'photos', 'groups'];
+    $scopeRaw = trim($scopeRaw);
+    if ($scopeRaw === '') {
+        return [];
+    }
+
+    $items = array_values(array_filter(array_map('trim', preg_split('/[\\s,]+/', $scopeRaw) ?: [])));
+    $unique = [];
+    foreach ($items as $item) {
+        $key = mb_strtolower($item);
+        if ($key === '') {
+            continue;
+        }
+        $unique[$key] = $key;
+    }
+    return array_values($unique);
+}
+
+function extractVkCurrentScopesFromTechnical(string $technical): array
+{
+    $technical = trim($technical);
+    if ($technical === '') {
+        return [];
+    }
+
+    // Example: "VK API photos.getWallUploadServer error #15: Access denied ... current scopes: email wall groups"
+    if (!preg_match('/current\\s+scopes\\s*:\\s*([^;\\n\\r]+)/iu', $technical, $m)) {
+        return [];
+    }
+
+    $raw = trim((string) ($m[1] ?? ''));
+    if ($raw === '') {
+        return [];
+    }
+
+    // Split by commas/spaces, normalize to lower-case.
+    $items = array_values(array_filter(array_map('trim', preg_split('/[\\s,]+/u', $raw) ?: [])));
+    $unique = [];
+    foreach ($items as $item) {
+        $key = mb_strtolower($item);
+        if ($key === '') {
+            continue;
+        }
+        $unique[$key] = $key;
+    }
+    return array_values($unique);
+}
+
+function vkScopeHas(array $scopeItems, string $required): bool
+{
+    $required = mb_strtolower(trim($required));
+    if ($required === '') {
+        return false;
+    }
+    foreach ($scopeItems as $item) {
+        if (mb_strtolower((string) $item) === $required) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function getVkPublicationRequiredScopes(bool $isGroupToken = false): array
+{
+    // User token (VK ID session): needs user-scopes wall/photos/groups.
+    // Community token: VK uses permission sets and does not expose 'groups' in the same way.
+    return $isGroupToken ? ['wall', 'photos'] : ['wall', 'photos', 'groups'];
+}
+
+function mapVkGroupTokenPermissionsToScopes(array $permissionsResponse): array
+{
+    // groups.getTokenPermissions returns: {mask:int, permissions:[{name,setting},...]}
+    $out = [];
+    $items = $permissionsResponse['permissions'] ?? null;
+    if (is_array($items)) {
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $name = mb_strtolower(trim((string) ($item['name'] ?? '')));
+            if ($name === '') {
+                continue;
+            }
+            // Only keep publication-relevant permissions to avoid noise.
+            if (in_array($name, ['wall', 'photos', 'messages', 'manage'], true)) {
+                $out[$name] = $name;
+            }
+        }
+    }
+
+    return array_values($out);
 }
 
 function getVkPublicationTokenDiagnostics(array $settings): array
@@ -682,110 +803,317 @@ function getVkPublicationTokenDiagnostics(array $settings): array
         'message' => $message,
         'expires_at' => $expiresAt,
         'expires_in_seconds' => $expiresIn,
+        'expires_known' => $expiresAt !== '',
     ];
 }
 
 function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferSessionToken = false): array
 {
-    $settings = getVkPublicationRuntimeSettings($preferSessionToken);
+    $settings = getVkPublicationRuntimeSettings($preferSessionToken, $attemptRefresh);
     $issues = [];
     $checks = [];
     $groupName = '';
+    $steps = [];
+    $isGroupToken = (string) ($settings['token_type'] ?? '') === 'group'
+        || (string) ($settings['token_source_setting'] ?? '') === 'stored_group';
+
+    $runtime = [
+        'token_source' => (string) ($settings['token_source'] ?? 'none'),
+        'token_masked' => (string) ($settings['token_masked'] ?? ''),
+        'token_id' => (string) ($settings['token_id'] ?? ''),
+        'token_type' => (string) ($settings['token_type'] ?? ''),
+        'token_scope_raw' => (string) ($settings['token_scope'] ?? ''),
+        'token_scope_items' => (array) ($settings['token_scope_items'] ?? []),
+        'token_scope_known' => (bool) ($settings['token_scope_known'] ?? false),
+        'vk_user_id_claim' => (string) ($settings['vk_user_id'] ?? ''),
+        'vk_device_id' => (string) ($settings['vk_device_id'] ?? ''),
+        'token_expires_at' => (string) ($settings['token_expires_at'] ?? ''),
+        'vk_expires_at_ts' => (int) ($settings['vk_expires_at_ts'] ?? 0),
+        'vk_obtained_at_ts' => (int) ($settings['vk_obtained_at_ts'] ?? 0),
+        'vk_refreshed_at_ts' => (int) ($settings['vk_refreshed_at_ts'] ?? 0),
+    ];
+
+    // Some steps are unsafe to run in "test" mode (would upload/post content).
+    $steps['photos_saveWallPhoto'] = ['ok' => null, 'message' => 'NOT TESTED: требует загрузки файла'];
+    $steps['wall_post'] = ['ok' => null, 'message' => 'NOT TESTED: создаёт пост'];
 
     if ($settings['publication_token'] === '') {
         $issues[] = 'Не найден VK ID токен для публикации в текущей сессии админа.';
         $checks[] = 'Токен отсутствует';
+        $steps['token_present'] = ['ok' => false, 'message' => 'Токен отсутствует'];
     } else {
         $checks[] = 'Токен присутствует';
+        $steps['token_present'] = ['ok' => true, 'message' => 'Токен найден'];
     }
 
     if ($settings['group_id'] === '' || (int) $settings['group_id'] <= 0) {
         $issues[] = 'Не указан ID сообщества VK.';
         $checks[] = 'ID сообщества не задан';
+        $steps['group_id'] = ['ok' => false, 'message' => 'group_id не задан'];
     } else {
         $checks[] = 'ID сообщества задан';
+        $steps['group_id'] = ['ok' => true, 'message' => 'group_id задан', 'group_id' => (int) $settings['group_id']];
     }
 
     $diagnostics = getVkPublicationTokenDiagnostics($settings);
     if ($diagnostics['status'] === 'expired') {
         $issues[] = 'Токен VK ID из текущей сессии истёк. Перезайдите в админку через VK ID.';
         $checks[] = 'Токен истёк';
+        $steps['token_expired'] = ['ok' => false, 'message' => 'Токен истёк'];
+    } elseif (!empty($diagnostics['expires_known'])) {
+        $steps['token_expired'] = ['ok' => true, 'message' => 'Токен не истёк'];
+    } else {
+        $steps['token_expired'] = ['ok' => null, 'message' => 'Срок действия токена неизвестен'];
+    }
+
+    $scopeItems = (array) ($settings['token_scope_items'] ?? []);
+    $requiredScopes = getVkPublicationRequiredScopes($isGroupToken);
+    $scopeCheck = [];
+    foreach ($requiredScopes as $scopeName) {
+        $scopeCheck[$scopeName] = vkScopeHas($scopeItems, $scopeName);
+    }
+    $steps['token_scope'] = [
+        'ok' => true,
+        'message' => $runtime['token_scope_raw'] !== '' ? $runtime['token_scope_raw'] : 'scope неизвестен',
+        'scope_known' => $runtime['token_scope_raw'] !== '',
+        'required' => $requiredScopes,
+        'has' => $scopeCheck,
+    ];
+
+    if ($settings['publication_token'] !== '' && $runtime['token_scope_raw'] !== '' && !$isGroupToken) {
+        foreach ($requiredScopes as $scopeName) {
+            if (!$scopeCheck[$scopeName]) {
+                $issues[] = 'У текущего access token отсутствует scope ' . $scopeName . '.';
+            }
+        }
     }
 
     if ($settings['publication_token'] !== '' && (int) $settings['group_id'] > 0) {
         try {
-            $client = new VkApiClient($settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version']);
+            $client = new VkApiClient(
+                $settings['publication_token'],
+                (int) $settings['group_id'],
+                (string) $settings['api_version'],
+                $isGroupToken ? 'group' : 'user'
+            );
 
-            $userResponse = $client->apiRequestForDiagnostics('users.get', []);
-            $vkUserId = (string) ((int) ($userResponse[0]['id'] ?? 0));
-            if ($vkUserId === '0') {
-                $issues[] = 'users.get не вернул VK user ID владельца токена.';
+            $vkUserId = '0';
+            if ($isGroupToken) {
+                $steps['users_get'] = ['ok' => null, 'message' => 'N/A: group token'];
+
+                // Try to resolve permissions for group token.
+                try {
+                    $permResponse = $client->apiRequestForDiagnostics('groups.getTokenPermissions', [
+                        'group_id' => (int) $settings['group_id'],
+                    ]);
+                    $permItems = mapVkGroupTokenPermissionsToScopes($permResponse);
+                    $steps['groups_getTokenPermissions'] = [
+                        'ok' => true,
+                        'message' => !empty($permItems) ? implode(' ', $permItems) : 'OK',
+                        'permissions' => $permResponse,
+                    ];
+                    if (!empty($permItems)) {
+                        // For readability in UI, map "permissions" to "scope-like" items.
+                        $runtime['token_scope_raw'] = implode(' ', $permItems);
+                        $runtime['token_scope_items'] = $permItems;
+                        $runtime['token_scope_known'] = true;
+                        $steps['token_scope_from_group_token'] = [
+                            'ok' => true,
+                            'message' => implode(' ', $permItems),
+                            'items' => $permItems,
+                        ];
+
+                        // Refresh local scope checks to use group-token permissions from VK as source of truth.
+                        $scopeItems = $permItems;
+                        $scopeCheck = [];
+                        foreach ($requiredScopes as $scopeName) {
+                            $scopeCheck[$scopeName] = vkScopeHas($scopeItems, $scopeName);
+                        }
+                        $steps['token_scope'] = [
+                            'ok' => true,
+                            'message' => $runtime['token_scope_raw'] !== '' ? $runtime['token_scope_raw'] : 'scope неизвестен',
+                            'scope_known' => $runtime['token_scope_raw'] !== '',
+                            'required' => $requiredScopes,
+                            'has' => $scopeCheck,
+                        ];
+                    }
+                } catch (Throwable $e) {
+                    $steps['groups_getTokenPermissions'] = [
+                        'ok' => false,
+                        'message' => 'ERROR: groups.getTokenPermissions',
+                    ];
+                }
             } else {
-                $settings['vk_user_id'] = $vkUserId;
-                $settings['vk_user_name'] = trim((string) (($userResponse[0]['first_name'] ?? '') . ' ' . ($userResponse[0]['last_name'] ?? '')));
-                $checks[] = 'users.get выполнен';
-            }
-
-            $groupResponse = $client->apiRequestForDiagnostics('groups.getById', [
-                'group_id' => (int) $settings['group_id'],
-            ]);
-            if (!empty($groupResponse[0]['name'])) {
-                $groupName = trim((string) $groupResponse[0]['name']);
-            }
-            $checks[] = 'groups.getById выполнен';
-
-            // Check that token owner is a manager of the group (owner/admin/editor).
-            if ($vkUserId !== '0') {
-                $managersResponse = $client->apiRequestForDiagnostics('groups.getMembers', [
-                    'group_id' => (int) $settings['group_id'],
-                    'filter' => 'managers',
-                    'count' => 1000,
-                    'offset' => 0,
-                ]);
-                $items = [];
-                if (isset($managersResponse['items']) && is_array($managersResponse['items'])) {
-                    $items = $managersResponse['items'];
-                } elseif (is_array($managersResponse)) {
-                    $items = $managersResponse;
-                }
-
-                $isManager = false;
-                $role = '';
-                foreach ($items as $item) {
-                    if (is_array($item) && (string) ((int) ($item['id'] ?? 0)) === $vkUserId) {
-                        $isManager = true;
-                        $role = (string) ($item['role'] ?? '');
-                        break;
-                    }
-                    if (is_int($item) && (string) $item === $vkUserId) {
-                        $isManager = true;
-                        break;
-                    }
-                }
-                if ($isManager) {
-                    $checks[] = 'groups.getMembers(managers) выполнен' . ($role !== '' ? ' (role=' . $role . ')' : '');
+                $userResponse = $client->apiRequestForDiagnostics('users.get', []);
+                $vkUserId = (string) ((int) ($userResponse[0]['id'] ?? 0));
+                if ($vkUserId === '0') {
+                    $issues[] = 'users.get не вернул VK user ID владельца токена.';
+                    $steps['users_get'] = ['ok' => false, 'message' => 'users.get не вернул id'];
                 } else {
-                    $issues[] = 'Владелец токена (VK user_id=' . $vkUserId . ') не является администратором/редактором сообщества ' . (int) $settings['group_id'] . '.';
+                    $settings['vk_user_id'] = $vkUserId;
+                    $settings['vk_user_name'] = trim((string) (($userResponse[0]['first_name'] ?? '') . ' ' . ($userResponse[0]['last_name'] ?? '')));
+                    $checks[] = 'users.get выполнен';
+                    $steps['users_get'] = ['ok' => true, 'message' => 'OK', 'vk_user_id' => (int) $vkUserId, 'vk_user_name' => $settings['vk_user_name']];
                 }
             }
 
-            $uploadResponse = $client->apiRequestForDiagnostics('photos.getWallUploadServer', [
-                'group_id' => (int) $settings['group_id'],
-            ]);
-            if (empty($uploadResponse['upload_url'])) {
-                $issues[] = 'photos.getWallUploadServer не вернул upload_url.';
+            if ($runtime['token_scope_raw'] !== '' && empty($scopeCheck['groups'])) {
+                $steps['groups_getById'] = ['ok' => false, 'skipped' => true, 'message' => 'SKIPPED: нет scope groups'];
+                $steps['group_role'] = ['ok' => false, 'skipped' => true, 'message' => 'SKIPPED: нет scope groups'];
+                $steps['photos_getWallUploadServer'] = ['ok' => false, 'skipped' => true, 'message' => 'SKIPPED: нет scope groups/photos'];
             } else {
-                $checks[] = 'photos.getWallUploadServer выполнен';
+                $groupResponse = $client->apiRequestForDiagnostics('groups.getById', [
+                    'group_id' => (int) $settings['group_id'],
+                ]);
+                if (!empty($groupResponse[0]['name'])) {
+                    $groupName = trim((string) $groupResponse[0]['name']);
+                }
+                $checks[] = 'groups.getById выполнен';
+                $steps['groups_getById'] = ['ok' => true, 'message' => 'OK', 'group_name' => $groupName];
+
+                // Check that token owner is a manager of the group (owner/admin/editor).
+                if (!$isGroupToken && $vkUserId !== '0') {
+                    $managersResponse = $client->apiRequestForDiagnostics('groups.getMembers', [
+                        'group_id' => (int) $settings['group_id'],
+                        'filter' => 'managers',
+                        'count' => 1000,
+                        'offset' => 0,
+                    ]);
+                    $items = [];
+                    if (isset($managersResponse['items']) && is_array($managersResponse['items'])) {
+                        $items = $managersResponse['items'];
+                    } elseif (is_array($managersResponse)) {
+                        $items = $managersResponse;
+                    }
+
+                    $isManager = false;
+                    $role = '';
+                    foreach ($items as $item) {
+                        if (is_array($item) && (string) ((int) ($item['id'] ?? 0)) === $vkUserId) {
+                            $isManager = true;
+                            $role = (string) ($item['role'] ?? '');
+                            break;
+                        }
+                        if (is_int($item) && (string) $item === $vkUserId) {
+                            $isManager = true;
+                            break;
+                        }
+                    }
+                    if ($isManager) {
+                        $checks[] = 'groups.getMembers(managers) выполнен' . ($role !== '' ? ' (role=' . $role . ')' : '');
+                        $steps['group_role'] = ['ok' => true, 'message' => 'OK', 'role' => $role !== '' ? $role : 'manager'];
+                    } else {
+                        $issues[] = 'Владелец токена (VK user_id=' . $vkUserId . ') не является администратором/редактором сообщества ' . (int) $settings['group_id'] . '.';
+                        $steps['group_role'] = ['ok' => false, 'message' => 'Пользователь не менеджер сообщества'];
+                    }
+                } elseif ($isGroupToken) {
+                    $steps['group_role'] = ['ok' => null, 'message' => 'N/A: group token'];
+                }
+            }
+
+            // Pre-check scope before attempting photo upload server.
+            if (!array_key_exists('photos_getWallUploadServer', $steps)) {
+                if ($runtime['token_scope_raw'] !== '' && empty($scopeCheck['photos'])) {
+                    $steps['photos_getWallUploadServer'] = ['ok' => false, 'skipped' => true, 'message' => 'SKIPPED: нет scope photos', 'token_id' => $runtime['token_id'] ?? ''];
+                } else {
+                    $uploadResponse = $client->apiRequestForDiagnostics('photos.getWallUploadServer', [
+                        'group_id' => (int) $settings['group_id'],
+                    ]);
+                    if (empty($uploadResponse['upload_url'])) {
+                        $issues[] = 'photos.getWallUploadServer не вернул upload_url.';
+                        $steps['photos_getWallUploadServer'] = ['ok' => false, 'message' => 'upload_url пустой', 'token_id' => $runtime['token_id'] ?? ''];
+                    } else {
+                        $checks[] = 'photos.getWallUploadServer выполнен';
+                        $steps['photos_getWallUploadServer'] = ['ok' => true, 'message' => 'OK', 'token_id' => $runtime['token_id'] ?? ''];
+                    }
+                }
             }
         } catch (Throwable $e) {
             $normalized = normalizeVkPublicationError($e);
-            $issues[] = $normalized['message'];
             $checks[] = 'VK API check failed: ' . $normalized['technical'];
+
+            if ($e instanceof VkApiException) {
+                $technical = $e->getTechnicalMessage();
+                $code = (int) $e->getCode();
+
+                $scopesFromError = extractVkCurrentScopesFromTechnical($technical);
+                if (!empty($scopesFromError)) {
+                    $steps['token_scope_from_vk_error'] = [
+                        'ok' => true,
+                        'message' => implode(' ', $scopesFromError),
+                        'items' => $scopesFromError,
+                        'token_id' => $runtime['token_id'] ?? '',
+                    ];
+                }
+
+                $steps['vk_api_error'] = [
+                    'ok' => false,
+                    'message' => $normalized['message'],
+                    'error_code' => $code,
+                    'technical' => $technical,
+                    'token_id' => $runtime['token_id'] ?? '',
+                ];
+
+                // More precise classification for photo upload permissions.
+                $technicalLower = mb_strtolower($technical);
+                $roleOk = !empty($steps['group_role']['ok']);
+                $isPhotoUploadServerError = str_contains($technicalLower, 'photos.getwalluploadserver')
+                    || str_contains(mb_strtolower($normalized['message']), 'photos.getwalluploadserver');
+
+                // If VK explicitly reports current scopes, trust it even if session metadata is stale.
+                $missingPhotosBySessionScope = ($runtime['token_scope_raw'] !== '' && !vkScopeHas($scopeItems, 'photos'));
+                $missingPhotosByVkScopes = (!empty($scopesFromError) && !in_array('photos', $scopesFromError, true));
+                $missingPhotos = $missingPhotosBySessionScope || $missingPhotosByVkScopes;
+
+                if ($roleOk && $isPhotoUploadServerError && ($code === 15 || $code === 7) && $missingPhotos) {
+                    $issues[] = 'Роль в сообществе подтверждена, но текущий access token не имеет права photos. Получите новый токен с правами wall, photos, groups.';
+                    $steps['photos_getWallUploadServer'] = [
+                        'ok' => false,
+                        'message' => 'ERROR #' . $code . ': нет права photos (scope)',
+                        'error_code' => $code,
+                        'token_id' => $runtime['token_id'] ?? '',
+                    ];
+                } else {
+                    // Generic normalized message (may still be useful for other error types).
+                    $issues[] = $normalized['message'];
+                }
+
+                if (!empty($scopesFromError) && $runtime['token_scope_raw'] !== '') {
+                    $sessionScope = normalizeVkScopeItems($runtime['token_scope_raw']);
+                    sort($sessionScope);
+                    $errorScope = $scopesFromError;
+                    sort($errorScope);
+                    if ($sessionScope !== $errorScope) {
+                        $issues[] = 'VK сообщил current scopes, которые отличаются от scope, сохранённого в сессии. Возможна потеря прав после refresh: перезайдите в админку через VK ID.';
+                        $steps['token_scope_mismatch'] = [
+                            'ok' => false,
+                            'message' => 'scope в сессии не совпадает с VK current scopes',
+                            'session_scope' => implode(' ', $sessionScope),
+                            'vk_scope' => implode(' ', $errorScope),
+                            'token_id' => $runtime['token_id'] ?? '',
+                        ];
+                    }
+                }
+            } else {
+                $issues[] = $normalized['message'];
+            }
         }
     }
 
+    // Refine messaging: if group role is confirmed but photos scope is missing, do not mislead.
+    $roleOk = !empty($steps['group_role']['ok']);
+    if ($settings['publication_token'] !== '' && $runtime['token_scope_raw'] !== '' && $roleOk && empty($scopeCheck['photos'])) {
+        $issues = array_values(array_filter($issues, static fn ($item) => $item !== 'У текущего access token отсутствует scope photos.'));
+        $issues[] = 'Роль в сообществе подтверждена, но текущий access token не имеет права photos. Получите новый токен с правами wall, photos, groups.';
+    }
+
+    // Deduplicate issues to avoid confusing double messages in UI.
+    if (!empty($issues)) {
+        $issues = array_values(array_unique($issues));
+    }
+
     $status = empty($issues) ? 'connected' : ($settings['publication_token'] !== '' ? 'attention' : 'disconnected');
-    $confirmedPermissions = empty($issues) ? implode(', ', getVkPublicationRequiredScopes()) : '';
+    $confirmedPermissions = empty($issues) ? implode(', ', $requiredScopes) : '';
 
     saveSystemSettings([
         // Manual/stored tokens are deprecated: keep settings clean.
@@ -808,7 +1136,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
         'vk_publication_vk_user_id' => (string) ($settings['vk_user_id'] ?? ''),
         'vk_publication_vk_user_name' => (string) ($settings['vk_user_name'] ?? ''),
         'vk_publication_group_name' => $groupName,
-        'vk_publication_token_type' => 'session_user',
+        'vk_publication_token_type' => $isGroupToken ? 'stored_group' : 'session_vkid',
     ]);
 
     vkPublicationLog('publication_token_check', [
@@ -819,7 +1147,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
         'token_masked' => maskVkPublicationToken($settings['publication_token']),
     ]);
 
-    $settings = getVkPublicationRuntimeSettings($preferSessionToken);
+    $settings = getVkPublicationRuntimeSettings($preferSessionToken, $attemptRefresh);
     $settings['group_name'] = $groupName !== '' ? $groupName : trim((string) (getSystemSettings()['vk_publication_group_name'] ?? ''));
 
     return [
@@ -828,6 +1156,8 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
         'checks' => $checks,
         'settings' => $settings,
         'diagnostics' => $diagnostics,
+        'runtime' => $runtime,
+        'steps' => $steps,
     ];
 }
 
@@ -1684,7 +2014,8 @@ function publishVkTaskItem(int $itemId, array $options = []): array
 
     $settings = $readiness['settings'];
     try {
-        $client = new VkApiClient($settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version']);
+        $authMode = ((string) ($settings['token_type'] ?? '')) === 'group' ? 'group' : 'user';
+        $client = new VkApiClient($settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version'], $authMode);
     } catch (Throwable $e) {
         $failureStage = 'validation';
         $normalized = normalizeVkPublicationError($e);

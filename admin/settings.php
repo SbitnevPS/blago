@@ -99,6 +99,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'vk_publication_group_id' => (string) ($settings['vk_publication_group_id'] ?? ''),
             'vk_publication_api_version' => (string) ($settings['vk_publication_api_version'] ?? '5.131'),
             'vk_publication_from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1 ? 1 : 0,
+            'vk_publication_token_source' => (string) ($settings['vk_publication_token_source'] ?? 'session_vkid'),
+            'vk_publication_group_token' => (string) ($settings['vk_publication_group_token'] ?? ''),
             'vk_publication_post_template' => (string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()),
             'email_notifications_enabled' => (int) ($settings['email_notifications_enabled'] ?? 1) === 1 ? 1 : 0,
             'email_from_name' => (string) ($settings['email_from_name'] ?? ''),
@@ -202,6 +204,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['vk_publication_group_id'] = trim($_POST['vk_publication_group_id'] ?? '');
             $payload['vk_publication_api_version'] = trim($_POST['vk_publication_api_version'] ?? '5.131');
             $payload['vk_publication_from_group'] = isset($_POST['vk_publication_from_group']) ? 1 : 0;
+
+            $tokenSource = trim((string) ($_POST['vk_publication_token_source'] ?? 'session_vkid'));
+            if (!in_array($tokenSource, ['session_vkid', 'stored_group'], true)) {
+                $tokenSource = 'session_vkid';
+            }
+            $payload['vk_publication_token_source'] = $tokenSource;
+
+            // Stored group token is optional; keep previous unless a new value is provided.
+            $postedGroupToken = trim((string) ($_POST['vk_publication_group_token'] ?? ''));
+            if ($postedGroupToken !== '') {
+                $payload['vk_publication_group_token'] = $postedGroupToken;
+            }
         } elseif ($section === 'vk-publication') {
             $payload['vk_publication_post_template'] = trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate());
         } elseif ($section === 'homepage-banner') {
@@ -228,19 +242,24 @@ if (!in_array($activeSettingsTab, ['notifications', 'message-templates', 'email-
 unset($_SESSION['settings_active_tab']);
 $vkPublicationSettings = getVkPublicationRuntimeSettings(true);
 $vkReadiness = verifyVkPublicationReadiness(false, true);
+$vkSteps = is_array($vkReadiness['steps'] ?? null) ? $vkReadiness['steps'] : [];
+$vkRuntime = is_array($vkReadiness['runtime'] ?? null) ? $vkReadiness['runtime'] : [];
 $vkStatus = !empty($vkReadiness['ok']) ? 'connected' : (($vkPublicationSettings['publication_token'] !== '') ? 'attention' : 'disconnected');
 $vkStatusLabel = $vkStatus === 'connected'
     ? 'Публикационный токен готов'
-    : ($vkStatus === 'attention' ? 'Требуется внимание' : 'Токен VK ID для публикации не получен');
-$vkScopeDisplay = $vkPublicationSettings['token_scope'] !== '' ? $vkPublicationSettings['token_scope'] : 'не указан VK';
+    : ($vkStatus === 'attention'
+        ? 'Требуется внимание'
+        : ($vkTokenSourceSetting === 'stored_group' ? 'Ключ доступа сообщества для публикации не задан' : 'Токен VK ID для публикации не получен'));
+$vkScopeDisplay = $vkPublicationSettings['token_scope'] !== '' ? $vkPublicationSettings['token_scope'] : 'scope неизвестен';
 $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== '' ? $vkPublicationSettings['confirmed_permissions'] : 'нет подтверждённых прав';
 $vkLastError = $vkPublicationSettings['last_error'] !== '' ? $vkPublicationSettings['last_error'] : '—';
-$vkTokenTypeLabel = match ((string) ($vkPublicationSettings['token_type'] ?? '')) {
-    'session_user' => 'VK ID (сессия админа)',
-    'user' => 'User token',
-    '' => '—',
-    default => (string) $vkPublicationSettings['token_type'],
-};
+$vkTokenTypeRaw = trim((string) ($vkPublicationSettings['token_type'] ?? ''));
+$vkTokenTypeLabel = $vkTokenTypeRaw !== '' ? $vkTokenTypeRaw : '—';
+$vkStoredGroupTokenMasked = maskVkPublicationToken((string) ($settings['vk_publication_group_token'] ?? ''));
+$vkTokenSourceSetting = trim((string) ($settings['vk_publication_token_source'] ?? 'session_vkid'));
+if (!in_array($vkTokenSourceSetting, ['session_vkid', 'stored_group'], true)) {
+    $vkTokenSourceSetting = 'session_vkid';
+}
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -545,25 +564,43 @@ unset($_SESSION['success_message']);
                             </div>
 
                             <div class="vk-connection-card__meta">
+                                <div style="margin:2px 0 6px; font-weight:600;">Права access token</div>
                                 <div><strong>Статус:</strong> <?= htmlspecialchars($vkStatusLabel) ?></div>
-                                <div><strong>VK user ID владельца токена:</strong> <?= htmlspecialchars($vkPublicationSettings['vk_user_id'] !== '' ? $vkPublicationSettings['vk_user_id'] : '—') ?></div>
-                                <div><strong>Владелец токена:</strong> <?= htmlspecialchars($vkPublicationSettings['vk_user_name'] !== '' ? $vkPublicationSettings['vk_user_name'] : '—') ?></div>
-                                <div><strong>Тип токена:</strong> <?= htmlspecialchars($vkTokenTypeLabel) ?></div>
+                                <div><strong>Источник токена:</strong> <?= htmlspecialchars(($vkRuntime['token_source'] ?? '') !== '' ? (string) $vkRuntime['token_source'] : '—') ?><?= !empty($vkRuntime['token_source']) && (string) $vkRuntime['token_source'] !== 'none' ? ' (VK ID сессия админа)' : '' ?></div>
                                 <div><strong>Маска токена:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
-                                <div><strong>Scope токена:</strong> <?= htmlspecialchars($vkScopeDisplay) ?></div>
-                                <div><strong>Подтверждённые права:</strong> <?= htmlspecialchars($vkConfirmedPermissions) ?></div>
+                                <div><strong>Тип токена:</strong> <?= htmlspecialchars($vkTokenTypeLabel) ?></div>
+                                <div><strong>Фактический scope токена:</strong> <?= htmlspecialchars($vkScopeDisplay) ?></div>
+                                <?php if (!empty($vkSteps['token_scope_from_vk_error']['items'])): ?>
+                                    <div><strong>Scope (по current scopes VK):</strong> <?= htmlspecialchars(implode(' ', (array) $vkSteps['token_scope_from_vk_error']['items'])) ?></div>
+                                <?php endif; ?>
+                                <?php if (!empty($vkSteps['token_scope_mismatch']['message'])): ?>
+                                    <div><strong>Консистентность scope:</strong> <?= htmlspecialchars((string) $vkSteps['token_scope_mismatch']['message']) ?></div>
+                                <?php endif; ?>
+                                <div><strong>VK user ID владельца токена:</strong> <?= htmlspecialchars($vkPublicationSettings['vk_user_id'] !== '' ? $vkPublicationSettings['vk_user_id'] : '—') ?></div>
+                                <div><strong>Имя владельца токена:</strong> <?= htmlspecialchars($vkPublicationSettings['vk_user_name'] !== '' ? $vkPublicationSettings['vk_user_name'] : '—') ?></div>
+
+                                <div style="margin:10px 0 6px; font-weight:600;">Права пользователя в сообществе</div>
                                 <div><strong>ID сообщества:</strong> <?= htmlspecialchars($settings['vk_publication_group_id'] ?? '—') ?></div>
                                 <div><strong>Название сообщества:</strong> <?= htmlspecialchars(trim((string)($settings['vk_publication_group_name'] ?? '')) !== '' ? (string)$settings['vk_publication_group_name'] : '—') ?></div>
-                                <div><strong>Последняя проверка:</strong> <?= htmlspecialchars($vkPublicationSettings['last_checked_at'] !== '' ? $vkPublicationSettings['last_checked_at'] : '—') ?></div>
-                                <div><strong>Последняя успешная проверка:</strong> <?= htmlspecialchars($vkPublicationSettings['last_success_checked_at'] !== '' ? $vkPublicationSettings['last_success_checked_at'] : '—') ?></div>
-                                <div><strong>Последняя ошибка:</strong> <?= htmlspecialchars($vkLastError) ?></div>
-                                <div><strong>Техническая диагностика:</strong> <?= htmlspecialchars($vkPublicationSettings['technical_diagnostics'] !== '' ? $vkPublicationSettings['technical_diagnostics'] : '—') ?></div>
+                                <div><strong>Роль пользователя в сообществе:</strong> <?= htmlspecialchars(!empty($vkSteps['group_role']['ok']) ? (string) ($vkSteps['group_role']['role'] ?? 'manager') : '—') ?></div>
+                                <div><strong>users.get:</strong> <?= htmlspecialchars(!empty($vkSteps['users_get']['ok']) ? 'OK' : '—') ?></div>
+                                <div><strong>groups.getById:</strong> <?= htmlspecialchars(!empty($vkSteps['groups_getById']['ok']) ? 'OK' : '—') ?></div>
+                                <div><strong>groups.getMembers(managers):</strong> <?= htmlspecialchars(array_key_exists('group_role', $vkSteps) ? (!empty($vkSteps['group_role']['ok']) ? 'OK' : 'ERROR') : '—') ?></div>
+
+                                <div style="margin:10px 0 6px; font-weight:600;">Права публикации</div>
+                                <div><strong>photos.getWallUploadServer:</strong> <?= htmlspecialchars(array_key_exists('photos_getWallUploadServer', $vkSteps) ? (!empty($vkSteps['photos_getWallUploadServer']['ok']) ? 'OK' : 'ERROR') : '—') ?></div>
+                                <div><strong>photos.saveWallPhoto:</strong> <?= htmlspecialchars(array_key_exists('photos_saveWallPhoto', $vkSteps) ? (isset($vkSteps['photos_saveWallPhoto']['ok']) && $vkSteps['photos_saveWallPhoto']['ok'] === null ? 'NOT TESTED' : (!empty($vkSteps['photos_saveWallPhoto']['ok']) ? 'OK' : 'ERROR')) : '—') ?></div>
+                                <div><strong>wall.post:</strong> <?= htmlspecialchars(array_key_exists('wall_post', $vkSteps) ? (isset($vkSteps['wall_post']['ok']) && $vkSteps['wall_post']['ok'] === null ? 'NOT TESTED' : (!empty($vkSteps['wall_post']['ok']) ? 'OK' : 'ERROR')) : '—') ?></div>
+                                <div><strong>Последняя ошибка VK:</strong> <?= htmlspecialchars($vkLastError) ?></div>
+                                <div><strong>Последняя техническая ошибка:</strong> <?= htmlspecialchars(!empty($vkSteps['vk_api_error']['technical']) ? (string) $vkSteps['vk_api_error']['technical'] : '—') ?></div>
                             </div>
 
                             <?php if ($vkPublicationSettings['publication_token'] === ''): ?>
                                 <div class="alert alert--warning" style="margin-top:12px;">
                                     <i class="fas fa-triangle-exclamation"></i>
-                                    Токен VK ID для публикации не найден в текущей сессии. Войдите в админку через VK ID (а не по email), затем нажмите «Проверить токен VK».
+                                    <?= htmlspecialchars($vkTokenSourceSetting === 'stored_group'
+                                        ? 'Ключ доступа сообщества не задан. Вставьте токен сообщества в поле ниже, сохраните настройки и нажмите «Проверить токен VK».'
+                                        : 'Токен VK ID для публикации не найден в текущей сессии. Войдите в админку через VK ID (а не по email), затем нажмите «Проверить токен VK».') ?>
                                 </div>
                             <?php endif; ?>
 
@@ -579,6 +616,9 @@ unset($_SESSION['success_message']);
                                     <i class="fas fa-plug-circle-check"></i> Проверить токен VK
                                 </button>
                             </div>
+
+                            <div id="vkCheckLiveResult" class="alert" style="display:none; margin-top:12px;"></div>
+                            <pre id="vkCheckLiveDetails" style="display:none; white-space:pre-wrap; background:#0B1220; color:#E5E7EB; padding:12px; border-radius:10px; border:1px solid #1F2937; margin-top:10px; font-size:12px; line-height:1.45;"></pre>
                         </div>
 
                         <div class="form-row">
@@ -589,6 +629,38 @@ unset($_SESSION['success_message']);
                             <div class="form-group">
                                 <label class="form-label">Версия VK API</label>
                                 <input type="text" name="vk_publication_api_version" class="form-input" value="<?= htmlspecialchars($settings['vk_publication_api_version'] ?? '5.131') ?>" placeholder="5.131">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Источник токена для публикации</label>
+                            <div class="form-hint" style="margin-bottom:8px;">
+                                Чтобы исключить двусмысленность, публикация использует только один источник: VK ID сессия админа или сохранённый ключ сообщества.
+                            </div>
+                            <label class="form-checkbox" style="display:block; margin-bottom:8px;">
+                                <input type="radio" name="vk_publication_token_source" value="session_vkid" <?= $vkTokenSourceSetting === 'session_vkid' ? 'checked' : '' ?>>
+                                <span class="form-checkbox__mark"></span>
+                                <span>VK ID токен из сессии админа (рекомендуется)</span>
+                            </label>
+                            <label class="form-checkbox" style="display:block;">
+                                <input type="radio" name="vk_publication_token_source" value="stored_group" <?= $vkTokenSourceSetting === 'stored_group' ? 'checked' : '' ?>>
+                                <span class="form-checkbox__mark"></span>
+                                <span>Ключ доступа сообщества (сохранённый)</span>
+                            </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Ключ доступа сообщества VK (токен)</label>
+                            <input
+                                type="password"
+                                name="vk_publication_group_token"
+                                class="form-input"
+                                value=""
+                                placeholder="<?= htmlspecialchars($vkStoredGroupTokenMasked !== '' ? ($vkStoredGroupTokenMasked . ' (уже сохранён)') : 'вставьте токен сообщества') ?>"
+                                autocomplete="new-password"
+                            >
+                            <div class="form-hint">
+                                Токен полностью не отображается. Чтобы заменить, вставьте новый и сохраните. Если оставить пустым, сохранённый токен не изменится.
                             </div>
                         </div>
 
@@ -827,13 +899,101 @@ unset($_SESSION['success_message']);
     };
 
     vkCheckBtn?.addEventListener('click', async () => {
+        const liveBox = document.getElementById('vkCheckLiveResult');
+        const liveDetails = document.getElementById('vkCheckLiveDetails');
+        const setLive = (message, type) => {
+            if (!liveBox) return;
+            liveBox.className = 'alert ' + (type === 'success' ? 'alert--success' : 'alert--error');
+            liveBox.style.display = 'block';
+            liveBox.textContent = message;
+        };
+        const setDetails = (text) => {
+            if (!liveDetails) return;
+            liveDetails.style.display = 'block';
+            liveDetails.textContent = text;
+        };
+
         try {
-            const payload = await postJson('/auth/vk/publication/test');
-            alert(payload.message || 'Подключение VK проверено');
-            window.location.reload();
+            const response = await fetch('/auth/vk/publication/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken,
+                },
+                body: JSON.stringify({}),
+            });
+            const payload = await response.json().catch(() => ({}));
+            const ok = !!(payload && payload.success);
+            setLive(payload.message || (ok ? 'Проверка VK завершена' : 'Проверка VK завершилась с ошибкой'), ok ? 'success' : 'error');
+
+            const runtime = payload.runtime || {};
+            const steps = payload.steps || {};
+            const scope = runtime.token_scope_raw || 'scope неизвестен';
+            const lines = [];
+            lines.push(`Токен найден: ${steps.token_present && steps.token_present.ok ? 'да' : 'нет'}`);
+            lines.push(`Источник токена: ${runtime.token_source || '—'}`);
+            lines.push(`Маска токена: ${runtime.token_masked || '—'}`);
+            lines.push(`Тип токена: ${runtime.token_type || '—'}`);
+            lines.push(`Scope токена: ${scope}`);
+            if (steps.token_scope_from_vk_error && Array.isArray(steps.token_scope_from_vk_error.items) && steps.token_scope_from_vk_error.items.length) {
+                lines.push(`Scope (по current scopes VK): ${steps.token_scope_from_vk_error.items.join(' ')}`);
+            }
+            if (steps.token_scope && steps.token_scope.has) {
+                const has = steps.token_scope.has;
+                if (Object.prototype.hasOwnProperty.call(has, 'wall')) {
+                    lines.push(`Scope wall: ${has.wall ? 'да' : 'нет'}`);
+                }
+                if (Object.prototype.hasOwnProperty.call(has, 'photos')) {
+                    lines.push(`Scope photos: ${has.photos ? 'да' : 'нет'}`);
+                }
+                if (Object.prototype.hasOwnProperty.call(has, 'groups')) {
+                    lines.push(`Scope groups: ${has.groups ? 'да' : 'нет'}`);
+                }
+            }
+            lines.push(`users.get: ${steps.users_get && steps.users_get.ok ? 'OK' : 'ERROR'}`);
+            lines.push(`groups.getById: ${steps.groups_getById && steps.groups_getById.ok ? 'OK' : 'ERROR'}`);
+            if (steps.group_role) {
+                lines.push(`groups.getMembers(managers): ${steps.group_role.ok ? 'OK' : 'ERROR'}${steps.group_role.role ? ', role=' + steps.group_role.role : ''}`);
+            } else {
+                lines.push('groups.getMembers(managers): —');
+            }
+            if (steps.photos_getWallUploadServer) {
+                const skipped = steps.photos_getWallUploadServer.skipped ? ' (SKIPPED)' : '';
+                lines.push(`photos.getWallUploadServer: ${steps.photos_getWallUploadServer.ok ? 'OK' : 'ERROR'}${skipped}`);
+                if (!steps.photos_getWallUploadServer.ok && steps.photos_getWallUploadServer.message) {
+                    lines.push(`  причина: ${steps.photos_getWallUploadServer.message}`);
+                }
+            } else {
+                lines.push('photos.getWallUploadServer: —');
+            }
+            if (steps.photos_saveWallPhoto) {
+                lines.push(`photos.saveWallPhoto: ${steps.photos_saveWallPhoto.ok === null ? 'NOT TESTED' : (steps.photos_saveWallPhoto.ok ? 'OK' : 'ERROR')}`);
+            }
+            if (steps.wall_post) {
+                lines.push(`wall.post: ${steps.wall_post.ok === null ? 'NOT TESTED' : (steps.wall_post.ok ? 'OK' : 'ERROR')}`);
+            }
+            if (steps.token_scope_mismatch && steps.token_scope_mismatch.message) {
+                lines.push('');
+                lines.push('Консистентность токена:');
+                lines.push(String(steps.token_scope_mismatch.message));
+                if (steps.token_scope_mismatch.session_scope && steps.token_scope_mismatch.vk_scope) {
+                    lines.push(`session scope: ${steps.token_scope_mismatch.session_scope}`);
+                    lines.push(`vk scope: ${steps.token_scope_mismatch.vk_scope}`);
+                }
+            }
+            if (payload.issues && payload.issues.length) {
+                lines.push('');
+                lines.push('Проблемы:');
+                payload.issues.forEach((issue) => lines.push('- ' + issue));
+            }
+            if (steps.vk_api_error && steps.vk_api_error.technical) {
+                lines.push('');
+                lines.push('Технически:');
+                lines.push(String(steps.vk_api_error.technical));
+            }
+            setDetails(lines.join('\n'));
         } catch (error) {
-            alert(error.message || 'Проверка VK завершилась с ошибкой');
-            window.location.reload();
+            setLive(error.message || 'Проверка VK завершилась с ошибкой', 'error');
         }
     });
 
