@@ -28,7 +28,7 @@ class VkApiClient
     public function __construct(string $token, string $tokenType, int $groupId, string $apiVersion = '5.131')
     {
         $this->accessToken = trim($token);
-        $this->tokenType = trim($tokenType) !== '' ? trim($tokenType) : 'community_token';
+        $this->tokenType = trim($tokenType) !== '' ? trim($tokenType) : 'admin_user_token';
         $this->groupId = $groupId;
         $this->apiVersion = trim($apiVersion) !== '' ? trim($apiVersion) : '5.131';
         $this->tokenMask = function_exists('maskVkPublicationToken')
@@ -53,10 +53,6 @@ class VkApiClient
 
     public function uploadWallPhoto(string $imageFsPath): string
     {
-        if ($this->tokenType === 'community_token') {
-            throw new VkApiException('Локальная загрузка файла недоступна для community_token.');
-        }
-
         if (!is_file($imageFsPath) || !is_readable($imageFsPath)) {
             throw new VkApiException('Файл изображения недоступен для публикации.');
         }
@@ -194,40 +190,54 @@ class VkApiClient
         ];
     }
 
-    public function validatePublicationAccess(): void
+    public function validatePublicationAccess(): array
     {
         $groupsResponse = $this->apiRequest('groups.getById', [
             'group_id' => $this->groupId,
+            'fields' => 'can_post',
         ]);
 
-        if (!$groupsResponse) {
+        $group = $groupsResponse[0] ?? null;
+        if (!is_array($group)) {
             throw new VkApiException(
                 'Не удалось проверить доступ к сообществу VK.',
                 'groups.getById returned empty response for group_id=' . $this->groupId
             );
         }
 
-        $permissions = $this->apiRequest('groups.getTokenPermissions', []);
-        $permissionItems = $this->extractTokenPermissionNames($permissions);
+        $isAdmin = (int) ($group['is_admin'] ?? 0) === 1 || (int) ($group['admin_level'] ?? 0) > 0;
+        if (!$isAdmin) {
+            throw new VkApiException(
+                'Пользователь не является владельцем или администратором сообщества VK.',
+                'groups.getById indicates no admin access'
+            );
+        }
 
-        foreach (['wall', 'photos'] as $requiredPermission) {
-            if (!in_array($requiredPermission, $permissionItems, true)) {
-                throw new VkApiException(
-                    'Недостаточно прав для публикации на стене сообщества.',
-                    'groups.getTokenPermissions missing permission "' . $requiredPermission . '"'
-                );
-            }
+        $canPost = (int) ($group['can_post'] ?? 1) === 1;
+        if (!$canPost) {
+            throw new VkApiException(
+                'Нет прав на публикацию на стене сообщества VK.',
+                'groups.getById indicates can_post=0'
+            );
         }
 
         $uploadServer = $this->apiRequest('photos.getWallUploadServer', [
             'group_id' => $this->groupId,
         ]);
-        if (empty($uploadServer['upload_url'])) {
+        $uploadUrl = (string) ($uploadServer['upload_url'] ?? '');
+        if ($uploadUrl === '') {
             throw new VkApiException(
-                'Не удалось загрузить изображение для публикации',
+                'Нет прав на загрузку изображений в сообщество VK.',
                 'photos.getWallUploadServer returned empty upload_url for group_id=' . $this->groupId
             );
         }
+
+        return [
+            'group_name' => trim((string) ($group['name'] ?? '')),
+            'is_admin' => $isAdmin,
+            'can_post' => $canPost,
+            'upload_url' => $uploadUrl,
+        ];
     }
 
     public function apiRequestForDiagnostics(string $method, array $params): array
@@ -421,32 +431,6 @@ class VkApiClient
 
         return 'Ошибка VK API: ' . $errorMessage;
     }
-
-    private function extractTokenPermissionNames(array $permissionsResponse): array
-    {
-        $items = [];
-        $permissions = $permissionsResponse['permissions'] ?? null;
-        if (is_array($permissions)) {
-            foreach ($permissions as $permission) {
-                if (is_array($permission)) {
-                    $name = trim((string) ($permission['name'] ?? ''));
-                    if ($name !== '') {
-                        $items[] = $name;
-                    }
-                    continue;
-                }
-
-                $name = trim((string) $permission);
-                if ($name !== '') {
-                    $items[] = $name;
-                }
-            }
-        }
-
-        return array_values(array_unique($items));
-    }
-
-
     public function extractWallPostFromReadback(array $readbackRaw): array
     {
         $items = $readbackRaw['items'] ?? $readbackRaw;

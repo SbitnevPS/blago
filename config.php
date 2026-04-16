@@ -73,9 +73,11 @@ define('VK_CLIENT_SECRET', (string) config_require($config, 'vk.client_secret'))
 define('VK_API_VERSION', (string) config_get($config, 'vk.api_version', '5.131'));
 define('VK_ADMIN_REDIRECT_URI', (string) config_get($config, 'vk.admin_redirect_uri', SITE_URL . '/auth/vk/admin/callback'));
 define('VK_USER_REDIRECT_URI', (string) config_get($config, 'vk.user_redirect_uri', SITE_URL . '/auth/vk/user/callback'));
-// VK ID SDK scopes. Use admin scope for publication permissions.
+define('VK_PUBLICATION_REDIRECT_URI', (string) config_get($config, 'vk.publication_redirect_uri', SITE_URL . '/auth/vk/publication/callback'));
+// VK ID SDK scopes.
 define('VKID_USER_SCOPE', (string) config_get($config, 'vkid.user_scope', 'email'));
-define('VKID_ADMIN_SCOPE', (string) config_get($config, 'vkid.admin_scope', 'email,wall,photos,groups,offline'));
+define('VKID_ADMIN_SCOPE', (string) config_get($config, 'vkid.admin_scope', 'email,offline'));
+define('VKID_PUBLICATION_SCOPE', (string) config_get($config, 'vkid.publication_scope', 'wall,photos,offline'));
 
 // Обратная совместимость со старым кодом
 define('VK_REDIRECT_URI', VK_ADMIN_REDIRECT_URI);
@@ -1346,6 +1348,7 @@ function isAdmin() {
             strpos($currentUri, '/admin') === 0 &&
             strpos($currentUri, '/admin/login') !== 0 &&
             strpos($currentUri, '/auth/vk/admin/callback') !== 0 &&
+            strpos($currentUri, '/auth/vk/publication/callback') !== 0 &&
             strpos($currentUri, '/admin/logout') !== 0
         ) {
             $_SESSION['admin_auth_redirect'] = sanitize_internal_redirect($currentUri, '/admin');

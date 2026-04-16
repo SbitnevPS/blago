@@ -25,12 +25,15 @@
 Публикация работ в VK выполняется только через настройки в `/admin/settings`:
 
 - `vk_publication_group_id`
-- `vk_publication_group_token`
+- `vk_publication_admin_access_token_encrypted`
+- `vk_publication_admin_refresh_token_encrypted`
+- `vk_publication_admin_user_id`
 - `vk_publication_api_version`
 - `vk_publication_from_group`
 - `vk_publication_post_template`
 
-Проверка готовности выполняется через `/auth/vk/publication/test`. Публикационный контур не использует пользовательские VK ID токены.
+Подключение токена выполняется отдельным OAuth потоком: `/auth/vk/publication/start` → `/auth/vk/publication/callback`.
+Проверка готовности выполняется через `/auth/vk/publication/test`.
 
 ## Laravel Valet (если открывается 404)
 

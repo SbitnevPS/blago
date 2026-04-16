@@ -2,117 +2,50 @@
 
 ## Базовый сценарий
 
-Публикация работ выполняется **только** через сохранённый в настройках ключ доступа сообщества VK:
+Публикация работ выполняется только через OAuth VK Business / VK ID в режиме `admin_user_token`.
 
+Используемые настройки:
+
+- `vk_publication_admin_access_token_encrypted`
+- `vk_publication_admin_refresh_token_encrypted`
+- `vk_publication_admin_token_expires_at`
+- `vk_publication_admin_user_id`
 - `vk_publication_group_id`
-- `vk_publication_group_token`
 - `vk_publication_api_version`
 - `vk_publication_from_group`
 - `vk_publication_post_template`
 
-Сессия администратора VK ID, OAuth callback и любые fallback-режимы не участвуют в публикации работ.
+Токены публикации хранятся только на сервере в зашифрованном виде.
+
+## OAuth для публикации
+
+Отдельный поток авторизации:
+
+- `POST /auth/vk/publication/start`
+- `GET /auth/vk/publication/callback`
+
+Запрашиваемый scope: `wall,photos,offline`.
+
+После callback выполняется серверная валидация прав. Если проверка не пройдена, токен не считается рабочим.
 
 ## Проверка подключения
 
-Проверка (`POST /auth/vk/publication/test`) делает только проверки, необходимые для публикации через ключ сообщества:
+Проверка (`POST /auth/vk/publication/test`) выполняет:
 
-1. задан ли `group_id`;
-2. задан ли ключ доступа сообщества;
-3. проходит ли `groups.getById`;
-4. читаются права ключа (`groups.getTokenPermissions`);
-5. фиксируется факт ограничения upload-цепочки для group token (`photos.getWallUploadServer`).
+1. наличие user access token;
+2. наличие `group_id`;
+3. `groups.getById` (пользователь — владелец/админ);
+4. `photos.getWallUploadServer` (доступность загрузки изображений).
 
-Используемые VK API методы после переделки:
+## Публикация
 
-- `groups.getById` — проверяет доступность сообщества и валидность `group_id` для текущего ключа;
-- `groups.getTokenPermissions` — возвращает права ключа сообщества (массив объектов `name`/`setting`) и позволяет проверить наличие `wall` и `photos`;
-- `photos.getWallUploadServer` — в реальных тестах для group token возвращает `error #27: method is unavailable with group auth`;
-- `photos.saveWallPhoto` — сохраняет загруженное изображение в фото-объекты для стены;
-- `wall.post` — публикует пост на стене сообщества с фото и текстом шаблона;
-- `wall.getById` — readback-проверка уже созданной записи (диагностика/логирование).
+Поддерживается только обязательный сценарий: **изображение + текст**.
 
-Важно: на текущий момент upload-цепочка `photos.getWallUploadServer -> photos.saveWallPhoto -> wall.post` **не подтверждена как совместимая** с ключом сообщества. Диагностика должна явно сообщать, что текущий сценарий загрузки изображения на стену недоступен для group auth.
+Цепочка VK API:
 
-Сообщения ошибок в UI нормализуются до понятных формулировок:
+1. `photos.getWallUploadServer`
+2. upload файла
+3. `photos.saveWallPhoto`
+4. `wall.post` с `owner_id=-GROUP_ID`, `from_group=1`, `attachments=photo...`
 
-- «Не задан ключ доступа сообщества VK»
-- «Не указан ID сообщества VK»
-- «Ключ доступа сообщества недействителен»
-- «Недостаточно прав для публикации на стене сообщества»
-- «Не удалось загрузить изображение для публикации»
-- «Публикация в VK завершилась ошибкой»
-
-## Отбор работ
-
-В задачу публикации попадают только работы со статусом `accepted` (UI: «Рисунок принят»).
-
-Дополнительно проверяется:
-
-- наличие файла рисунка;
-- наличие файла на диске;
-- доступность файла для чтения;
-- размер файла больше 0;
-- исключение уже опубликованных работ (если включён флаг `exclude_vk_published`).
-
-## Формирование текста
-
-Текст поста берётся только из `vk_publication_post_template`.
-
-Поддерживаются переменные:
-
-- `{participant_name}`
-- `{participant_full_name}`
-- `{organization_name}`
-- `{region_name}`
-- `{contest_title}`
-- `{participant_age}`
-- `{age_category}`
-- `{work_title}` / `{drawing_title}`
-
-Если шаблон пустой, элемент помечается ошибкой: «Не заполнен шаблон текста публикации в настройках».
-
-## Публикация элемента
-
-Для каждого элемента выполняется публикация на стену сообщества с:
-
-- текстом из шаблона;
-- локальным файлом изображения работы.
-
-## Данные в БД
-
-Используются существующие таблицы:
-
-- `vk_publication_tasks`
-- `vk_publication_task_items`
-- `works`
-
-После успеха:
-
-- `vk_publication_task_items.item_status = published`
-- `vk_publication_task_items.vk_post_id`, `vk_post_url`, `published_at`
-- `works.vk_published_at`, `vk_post_id`, `vk_post_url`, `vk_publish_error = NULL`
-
-После ошибки:
-
-- `vk_publication_task_items.item_status = failed`
-- `vk_publication_task_items.error_message`, `technical_error`
-- `works.vk_publish_error`
-
-## Статусы
-
-Сохраняются текущие статусы задач и элементов:
-
-- задачи: `draft`, `ready`, `publishing`, `published`, `partially_failed`, `failed`, `archived`
-- элементы: `pending`, `ready`, `published`, `failed`, `skipped`
-
-## UI сценарий
-
-Сохраняется существующий цикл:
-
-- создание задания;
-- предпросмотр;
-- публикация одного элемента;
-- публикация всех готовых элементов;
-- повтор `failed`.
-
-Сценарии Donut/Donation не используются в контуре публикации работ.
+Без изображения публикация не выполняется.
