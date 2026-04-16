@@ -114,12 +114,8 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div class="form-group">
                     <label class="form-label">Статус работы</label>
-                    <select name="work_status" class="form-select">
-                        <option value="">Любой</option>
-                        <option value="pending">На рассмотрении</option>
-                        <option value="accepted">Принята</option>
-                        <option value="reviewed">Рассмотрена</option>
-                    </select>
+                    <input type="hidden" name="work_status" value="accepted">
+                    <input type="text" class="form-input" value="Рисунок принят" disabled>
                 </div>
             </div>
 

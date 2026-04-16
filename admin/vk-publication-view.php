@@ -58,12 +58,8 @@ $pageTitle = 'Задание #' . $taskId . ' / Публикации в ВК';
 $breadcrumb = 'Публикации в ВК / Просмотр задания';
 
 $statusMeta = getVkTaskStatusMeta((string) $task['task_status']);
-$taskPublicationType = resolveVkPublicationType($task);
-$taskPublicationTypeLabel = [
-    'standard' => 'Обычная',
-    'vk_donut' => 'VK Donut',
-    'donation_goal' => 'С целью доната',
-][$taskPublicationType] ?? $taskPublicationType;
+$taskPublicationType = 'standard';
+$taskPublicationTypeLabel = 'Обычная';
 $items = getVkTaskItems($taskId);
 
 require_once __DIR__ . '/includes/header.php';
@@ -156,16 +152,7 @@ require_once __DIR__ . '/includes/header.php';
             <div><strong>Опубликовано:</strong> <?= (int) $task['published_items'] ?></div>
             <div><strong>Ошибки:</strong> <?= (int) $task['failed_items'] ?></div>
             <div><strong>Пропущено:</strong> <?= (int) $task['skipped_items'] ?></div>
-            <?php if ($taskPublicationType === 'donation_goal'): ?>
-                <div><strong>Донат:</strong> включён</div>
-                <div><strong>ID цели (локальный):</strong> <?= (int) ($task['donation_goal_id'] ?? 0) ?: '—' ?></div>
-                <div><strong>VK Donut ID:</strong> <?= e((string) ($task['vk_donate_id'] ?? '—')) ?></div>
-            <?php elseif ($taskPublicationType === 'vk_donut'): ?>
-                <div><strong>VK Donut paywall:</strong> включён</div>
-                <div><strong>Paid duration:</strong> <?= (int) ($task['vk_donut_paid_duration'] ?? 0) ?></div>
-            <?php else: ?>
-                <div><strong>Донат:</strong> выключен</div>
-            <?php endif; ?>
+            <div><strong>Донат:</strong> выключен</div>
         </div>
 
         <div class="flex gap-md mt-lg" style="margin-top:16px; flex-wrap: wrap;">
@@ -200,7 +187,6 @@ require_once __DIR__ . '/includes/header.php';
                 <th>Конкурс</th>
                 <th>Текст поста</th>
                 <th>Статус</th>
-                <th>Донат</th>
                 <th>Результат</th>
                 <th></th>
             </tr>
@@ -225,24 +211,11 @@ require_once __DIR__ . '/includes/header.php';
                     <td data-label="Конкурс"><?= e($item['contest_title'] ?: '—') ?></td>
                     <td data-label="Текст поста" style="max-width: 320px;"><div style="white-space: pre-wrap;"><?= e($item['post_text']) ?></div></td>
                     <td data-label="Статус"><span class="badge <?= e($itemStatus['badge_class']) ?>"><?= e($itemStatus['label']) ?></span></td>
-                    <td data-label="Донат">
-                        <div><?= (int) ($item['donation_enabled'] ?? 0) === 1 ? 'включён' : 'выключен' ?></div>
-                        <?php if ((int) ($item['donation_enabled'] ?? 0) === 1): ?>
-                            <div class="text-secondary" style="font-size:12px;"><?= e((string) ($item['donation_goal_title'] ?? '—')) ?></div>
-                            <div class="text-secondary" style="font-size:12px;">ID: <?= e((string) ($item['vk_donate_id'] ?? '—')) ?></div>
-                        <?php endif; ?>
-                    </td>
                     <td data-label="Результат">
                         <?php if (!empty($item['vk_post_url'])): ?>
                             <a href="<?= e($item['vk_post_url']) ?>" target="_blank" class="btn btn--ghost btn--sm"><i class="fas fa-up-right-from-square"></i> Пост</a>
                             <div class="text-secondary" style="margin-top:6px; font-size:12px;">
-                                <?php if ((int) ($item['donation_enabled'] ?? 0) === 1 && !empty($item['error_message'])): ?>
-                                    Пост опубликован, но донат не прикрепился
-                                <?php elseif ((int) ($item['donation_enabled'] ?? 0) === 1): ?>
-                                    Опубликовано с донатом: <?= e((string) ($item['donation_goal_title'] ?? '—')) ?>
-                                <?php else: ?>
-                                    Опубликовано без доната
-                                <?php endif; ?>
+                                Опубликовано
                             </div>
                         <?php elseif (!empty($item['error_message'])): ?>
                             <div class="text-secondary" style="max-width:220px;"><?= e($item['error_message']) ?></div>
@@ -277,7 +250,7 @@ require_once __DIR__ . '/includes/header.php';
                 </tr>
             <?php endforeach; ?>
             <?php if (!$items): ?>
-                <tr><td colspan="10" class="text-center text-secondary" style="padding: 36px;">Элементов нет.</td></tr>
+                <tr><td colspan="9" class="text-center text-secondary" style="padding: 36px;">Элементов нет.</td></tr>
             <?php endif; ?>
             </tbody>
         </table>
