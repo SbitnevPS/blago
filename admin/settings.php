@@ -99,8 +99,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'vk_publication_group_id' => (string) ($settings['vk_publication_group_id'] ?? ''),
             'vk_publication_api_version' => (string) ($settings['vk_publication_api_version'] ?? '5.131'),
             'vk_publication_from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1 ? 1 : 0,
-            'vk_publication_auth_mode' => 'user_session',
-            'vk_publication_token_source' => 'session_user',
+            'vk_publication_auth_mode' => (string) ($settings['vk_publication_auth_mode'] ?? 'user_session'),
+            'vk_publication_token_source' => (string) ($settings['vk_publication_token_source'] ?? 'session_vkid'),
+            'vk_publication_group_token' => (string) ($settings['vk_publication_group_token'] ?? ''),
             'vk_publication_post_template' => (string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()),
             'email_notifications_enabled' => (int) ($settings['email_notifications_enabled'] ?? 1) === 1 ? 1 : 0,
             'email_from_name' => (string) ($settings['email_from_name'] ?? ''),
@@ -204,8 +205,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['vk_publication_group_id'] = trim($_POST['vk_publication_group_id'] ?? '');
             $payload['vk_publication_api_version'] = trim($_POST['vk_publication_api_version'] ?? '5.131');
             $payload['vk_publication_from_group'] = isset($_POST['vk_publication_from_group']) ? 1 : 0;
-            $payload['vk_publication_auth_mode'] = 'user_session';
-            $payload['vk_publication_token_source'] = 'session_user';
+
+            $authMode = trim((string) ($_POST['vk_publication_auth_mode'] ?? ($settings['vk_publication_auth_mode'] ?? 'user_session')));
+            if (!in_array($authMode, ['user_session', 'community_token'], true)) {
+                $authMode = 'user_session';
+            }
+            $payload['vk_publication_auth_mode'] = $authMode;
+            $payload['vk_publication_token_source'] = $authMode === 'community_token' ? 'stored_group' : 'session_vkid';
+
+            $postedGroupToken = trim((string) ($_POST['vk_publication_group_token'] ?? ''));
+            if ($postedGroupToken !== '') {
+                $payload['vk_publication_group_token'] = $postedGroupToken;
+            }
         } elseif ($section === 'vk-publication') {
             $payload['vk_publication_post_template'] = trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate());
         } elseif ($section === 'homepage-banner') {
@@ -246,7 +257,7 @@ $vkScopeDisplay = trim((string) ($vkRuntime['token_scope_raw'] ?? '')) !== ''
     : ($vkPublicationSettings['token_scope'] !== '' ? $vkPublicationSettings['token_scope'] : 'scope неизвестен');
 $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== '' ? $vkPublicationSettings['confirmed_permissions'] : 'нет подтверждённых прав';
 $vkLastError = $vkPublicationSettings['last_error'] !== '' ? $vkPublicationSettings['last_error'] : '—';
-$vkTokenTypeRaw = 'user_session';
+$vkTokenTypeRaw = trim((string) ($vkPublicationSettings['token_type'] ?? ''));
 $vkTokenTypeLabel = $vkTokenTypeRaw !== '' ? $vkTokenTypeRaw : '—';
 
 $vkStepShortStatus = static function (array $steps, string $key): string {

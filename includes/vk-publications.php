@@ -295,16 +295,26 @@ function getVkPublicationSettings(): array
     $lastCheckedAt = trim((string) ($settings['vk_publication_last_checked_at'] ?? ''));
     $lastSuccessfulCheckAt = trim((string) ($settings['vk_publication_last_success_checked_at'] ?? ''));
     $groupToken = trim((string) ($settings['vk_publication_group_token'] ?? ''));
+    $tokenSource = trim((string) ($settings['vk_publication_token_source'] ?? 'session_vkid'));
+    if (!in_array($tokenSource, ['session_vkid', 'stored_group'], true)) {
+        $tokenSource = 'session_vkid';
+    }
+
+    $authMode = trim((string) ($settings['vk_publication_auth_mode'] ?? ''));
+    if (!in_array($authMode, ['user_session', 'community_token'], true)) {
+        $authMode = $tokenSource === 'stored_group' ? 'community_token' : 'user_session';
+    }
 
     return [
         'publication_token' => '',
-        'auth_mode' => 'user_session',
-        'token_source_setting' => 'session_user',
+        'auth_mode' => $authMode,
+        'token_source_setting' => $tokenSource,
         'group_id' => trim((string) ($settings['vk_publication_group_id'] ?? '')),
         'group_token' => $groupToken,
         'api_version' => trim((string) ($settings['vk_publication_api_version'] ?? VK_API_VERSION)),
         'from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1,
         'post_template' => trim((string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate())),
+        'group_name' => trim((string) ($settings['vk_publication_group_name'] ?? '')),
         'token_expires_at' => '',
         'token_scope' => '',
         'token_scope_items' => [],
@@ -312,9 +322,9 @@ function getVkPublicationSettings(): array
         'vk_user_name' => '',
         'token_type' => 'user',
         'confirmed_permissions' => trim((string) ($settings['vk_publication_confirmed_permissions'] ?? '')),
-        'status' => trim((string) ($settings['vk_publication_status'] ?? ($settings['vk_publication_oauth_state'] ?? 'disconnected'))),
-        'last_error' => trim((string) ($settings['vk_publication_last_error'] ?? ($settings['vk_publication_oauth_last_error'] ?? ''))),
-        'technical_diagnostics' => trim((string) ($settings['vk_publication_technical_diagnostics'] ?? ($settings['vk_publication_oauth_last_error_technical'] ?? ''))),
+        'status' => trim((string) ($settings['vk_publication_status'] ?? 'disconnected')),
+        'last_error' => trim((string) ($settings['vk_publication_last_error'] ?? '')),
+        'technical_diagnostics' => trim((string) ($settings['vk_publication_technical_diagnostics'] ?? '')),
         'last_checked_at' => $lastCheckedAt,
         'last_success_checked_at' => $lastSuccessfulCheckAt,
         'last_check_status' => trim((string) ($settings['vk_publication_last_check_status'] ?? '')),
@@ -326,30 +336,6 @@ function getVkPublicationSettings(): array
 function getVkPublicationRuntimeSettings(bool $preferSessionToken = true, bool $attemptRefresh = true): array
 {
     $settings = getVkPublicationSettings();
-    $settings['token_source'] = 'session_user';
-
-    $token = '';
-    $source = '';
-    $flows = !empty($_SESSION['admin_user_id']) ? ['admin', 'user'] : ['user', 'admin'];
-    foreach ($flows as $flow) {
-        $candidate = trim((string) vkid_session_get_access_token($flow, $refreshIfNeeded));
-        if ($candidate !== '') {
-            $token = $candidate;
-            $source = $flow === 'admin' ? 'session_admin_vkid' : 'session_user_vkid';
-            break;
-        }
-    }
-
-    if ($token !== '' && $source !== '') {
-        $settings['publication_token'] = $token;
-        $settings['token_masked'] = maskVkPublicationToken($token);
-        $settings['token_id'] = substr(hash('sha256', $token), 0, 10);
-        $settings['token_type'] = 'user';
-        $settings['token_scope_known'] = false;
-        $settings['token_source'] = $source;
-    }
-
-    return $settings;
     $rawSystemSettings = getSystemSettings();
     $authMode = trim((string) ($rawSystemSettings['vk_publication_auth_mode'] ?? ''));
     if (!in_array($authMode, ['user_session', 'community_token'], true)) {
@@ -559,7 +545,7 @@ function verifyVkPublicationReadinessUserToken(array $settings, string $scenario
 
     $runtime = [
         'auth_mode' => 'user_session',
-        'token_source' => (string) ($settings['token_source'] ?? 'session_user'),
+        'token_source' => (string) ($settings['token_source'] ?? 'session_vkid'),
         'token_masked' => (string) ($settings['token_masked'] ?? ''),
         'token_id' => (string) ($settings['token_id'] ?? ''),
         'token_type' => (string) ($settings['token_type'] ?? ''),
