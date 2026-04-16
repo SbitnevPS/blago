@@ -223,12 +223,7 @@ class VkApiClient
         }
 
         $permissions = $this->apiRequest('groups.getTokenPermissions', []);
-        $permissionItems = [];
-        if (isset($permissions['permissions']) && is_array($permissions['permissions'])) {
-            $permissionItems = array_values(array_map('strval', $permissions['permissions']));
-        } elseif (is_array($permissions)) {
-            $permissionItems = array_values(array_filter(array_map(static fn($value) => is_string($value) ? trim($value) : '', $permissions)));
-        }
+        $permissionItems = $this->extractTokenPermissionNames($permissions);
 
         foreach (['wall', 'photos'] as $requiredPermission) {
             if (!in_array($requiredPermission, $permissionItems, true)) {
@@ -390,8 +385,12 @@ class VkApiClient
             return 'VK отклонил запрос как некорректный. Проверьте актуальность токена, ID сообщества и параметры публикации.';
         }
 
+        if ($errorCode === 27 && str_contains($methodLower, 'photos.getwalluploadserver')) {
+            return 'Ключ сообщества валиден, но текущий VK API-сценарий загрузки изображения на стену недоступен для group auth.';
+        }
+
         if (str_contains($msg, 'method is unavailable with group auth')) {
-            return 'VK отклонил запрос из-за неподходящего типа авторизации для ключа сообщества.';
+            return 'Текущий VK API-метод недоступен для ключа сообщества (group auth).';
         }
 
         if ($errorCode === 5) {
@@ -436,6 +435,30 @@ class VkApiClient
         }
 
         return 'Ошибка VK API: ' . $errorMessage;
+    }
+
+    private function extractTokenPermissionNames(array $permissionsResponse): array
+    {
+        $items = [];
+        $permissions = $permissionsResponse['permissions'] ?? null;
+        if (is_array($permissions)) {
+            foreach ($permissions as $permission) {
+                if (is_array($permission)) {
+                    $name = trim((string) ($permission['name'] ?? ''));
+                    if ($name !== '') {
+                        $items[] = $name;
+                    }
+                    continue;
+                }
+
+                $name = trim((string) $permission);
+                if ($name !== '') {
+                    $items[] = $name;
+                }
+            }
+        }
+
+        return array_values(array_unique($items));
     }
 
 

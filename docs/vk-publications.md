@@ -19,18 +19,19 @@
 1. задан ли `group_id`;
 2. задан ли ключ доступа сообщества;
 3. проходит ли `groups.getById`;
-4. доступны ли права публикации (`groups.getTokenPermissions`, `photos.getWallUploadServer`).
+4. читаются права ключа (`groups.getTokenPermissions`);
+5. фиксируется факт ограничения upload-цепочки для group token (`photos.getWallUploadServer`).
 
 Используемые VK API методы после переделки:
 
 - `groups.getById` — проверяет доступность сообщества и валидность `group_id` для текущего ключа;
-- `groups.getTokenPermissions` — возвращает права ключа сообщества и подтверждает наличие `wall` и `photos`;
-- `photos.getWallUploadServer` — проверяет, что у ключа есть доступ к upload-сценарию фото на стену;
+- `groups.getTokenPermissions` — возвращает права ключа сообщества (массив объектов `name`/`setting`) и позволяет проверить наличие `wall` и `photos`;
+- `photos.getWallUploadServer` — в реальных тестах для group token возвращает `error #27: method is unavailable with group auth`;
 - `photos.saveWallPhoto` — сохраняет загруженное изображение в фото-объекты для стены;
 - `wall.post` — публикует пост на стене сообщества с фото и текстом шаблона;
 - `wall.getById` — readback-проверка уже созданной записи (диагностика/логирование).
 
-Эти методы совместимы с ключом сообщества, потому что вызываются в контуре публикации от имени сообщества (`owner_id = -group_id`) и используют цепочку API, предназначенную для групповых токенов.
+Важно: на текущий момент upload-цепочка `photos.getWallUploadServer -> photos.saveWallPhoto -> wall.post` **не подтверждена как совместимая** с ключом сообщества. Диагностика должна явно сообщать, что текущий сценарий загрузки изображения на стену недоступен для group auth.
 
 Сообщения ошибок в UI нормализуются до понятных формулировок:
 
