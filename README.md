@@ -20,12 +20,17 @@
 - `router.php` — маршрутизатор, который подключает соответствующие view-файлы.
 - `docs/vk-publications.md` — документация по модулю заданий публикации работ в VK.
 
-## VK: два независимых сценария
+## VK: публикация работ
 
-- Вход пользователей: `VK ID login` через `/auth/vk/user/start` и `/auth/vk/user/callback`.
-- Публикация работ: отдельный ручной `publication token` в `/admin/settings` + проверка через `/auth/vk/publication/test`.
+Публикация работ в VK выполняется только через настройки в `/admin/settings`:
 
-Публикация не использует OAuth callback и не зависит от пользовательского VK ID login.
+- `vk_publication_group_id`
+- `vk_publication_group_token`
+- `vk_publication_api_version`
+- `vk_publication_from_group`
+- `vk_publication_post_template`
+
+Проверка готовности выполняется через `/auth/vk/publication/test`. Публикационный контур не использует пользовательские VK ID токены.
 
 ## Laravel Valet (если открывается 404)
 
