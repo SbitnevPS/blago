@@ -583,7 +583,7 @@ unset($_SESSION['success_message']);
                             <div class="vk-connection-card__header">
                                 <div>
                                     <strong>Публикация работ в VK</strong>
-                                    <div class="form-hint">Основной контур: <code>admin_user_token</code>. <code>community_token</code> — только text-only или attach существующего media id.</div>
+                                    <div class="form-hint">Проект публикует только рисунок + текст по шаблону. Для этого нужен режим <code>admin_user_token</code> с загрузкой локального изображения.</div>
                                 </div>
                                 <span class="badge <?= $vkStatus === 'connected' ? 'badge--success' : ($vkStatus === 'attention' ? 'badge--warning' : 'badge--secondary') ?>">
                                     <?= htmlspecialchars($vkStatus === 'connected' ? 'Connected' : ($vkStatus === 'attention' ? 'Attention' : 'Disconnected')) ?>
@@ -619,7 +619,7 @@ unset($_SESSION['success_message']);
                                     };
                                     ?>
                                     <?php if (isset($vkCapabilityMatrix['text_post_supported'])): ?>
-                                        <div>Текстовая публикация: <?= htmlspecialchars($fmt($vkCapabilityMatrix['text_post_supported']['supported'] ?? null)) ?></div>
+                                        <div>Текстовая публикация (диагностика): <?= htmlspecialchars($fmt($vkCapabilityMatrix['text_post_supported']['supported'] ?? null)) ?></div>
                                         <div>Локальная загрузка рисунка: <?= htmlspecialchars($fmt($vkCapabilityMatrix['upload_local_image_supported']['supported'] ?? null)) ?></div>
                                         <div>Attach media id: <?= htmlspecialchars($fmt($vkCapabilityMatrix['attach_existing_media_supported']['supported'] ?? null)) ?></div>
                                     <?php endif; ?>
@@ -629,6 +629,7 @@ unset($_SESSION['success_message']);
                                 <div style="margin:10px 0 6px; font-weight:600;">Диагностика по режимам</div>
                                 <div><strong>community_token:</strong> <?= $vkCommunityReady ? 'READY' : 'NOT CONFIGURED' ?></div>
                                 <div><strong>admin_user_token:</strong> <?= $vkAdminReady ? 'READY' : 'NOT CONFIGURED' ?></div>
+                                <div class="form-hint" style="margin-top:8px;">Режим <code>community_token</code> не подходит для публикации работ, так как проект публикует только изображение рисунка + текст.</div>
                             </div>
 
                             <?php if ($vkPublicationSettings['group_token'] === ''): ?>
