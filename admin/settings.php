@@ -99,9 +99,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'vk_publication_group_id' => (string) ($settings['vk_publication_group_id'] ?? ''),
             'vk_publication_api_version' => (string) ($settings['vk_publication_api_version'] ?? '5.131'),
             'vk_publication_from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1 ? 1 : 0,
-            'vk_publication_auth_mode' => 'community_token',
-            'vk_publication_token_source' => 'stored_group',
-            'vk_publication_group_token' => (string) ($settings['vk_publication_group_token'] ?? ''),
+            'vk_publication_auth_mode' => 'user_session',
+            'vk_publication_token_source' => 'session_user',
             'vk_publication_post_template' => (string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()),
             'email_notifications_enabled' => (int) ($settings['email_notifications_enabled'] ?? 1) === 1 ? 1 : 0,
             'email_from_name' => (string) ($settings['email_from_name'] ?? ''),
@@ -205,15 +204,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['vk_publication_group_id'] = trim($_POST['vk_publication_group_id'] ?? '');
             $payload['vk_publication_api_version'] = trim($_POST['vk_publication_api_version'] ?? '5.131');
             $payload['vk_publication_from_group'] = isset($_POST['vk_publication_from_group']) ? 1 : 0;
-
-            $payload['vk_publication_auth_mode'] = 'community_token';
-            $payload['vk_publication_token_source'] = 'stored_group';
-
-            // Stored group token is optional; keep previous unless a new value is provided.
-            $postedGroupToken = trim((string) ($_POST['vk_publication_group_token'] ?? ''));
-            if ($postedGroupToken !== '') {
-                $payload['vk_publication_group_token'] = $postedGroupToken;
-            }
+            $payload['vk_publication_auth_mode'] = 'user_session';
+            $payload['vk_publication_token_source'] = 'session_user';
         } elseif ($section === 'vk-publication') {
             $payload['vk_publication_post_template'] = trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate());
         } elseif ($section === 'homepage-banner') {
@@ -247,17 +239,16 @@ if (!empty($vkSteps['capabilities']['matrix']) && is_array($vkSteps['capabilitie
 }
 $vkStatus = !empty($vkReadiness['ok']) ? 'connected' : (($vkPublicationSettings['publication_token'] !== '') ? 'attention' : 'disconnected');
 $vkStatusLabel = $vkStatus === 'connected'
-    ? 'Ключ доступа сообщества готов'
-    : ($vkStatus === 'attention' ? 'Требуется внимание' : 'Ключ доступа сообщества для публикации не задан');
+    ? 'Пользовательский токен из сессии готов'
+    : ($vkStatus === 'attention' ? 'Требуется внимание' : 'Пользовательский токен из сессии не найден');
 $vkScopeDisplay = trim((string) ($vkRuntime['token_scope_raw'] ?? '')) !== ''
     ? (string) $vkRuntime['token_scope_raw']
     : ($vkPublicationSettings['token_scope'] !== '' ? $vkPublicationSettings['token_scope'] : 'scope неизвестен');
 $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== '' ? $vkPublicationSettings['confirmed_permissions'] : 'нет подтверждённых прав';
 $vkLastError = $vkPublicationSettings['last_error'] !== '' ? $vkPublicationSettings['last_error'] : '—';
-$vkTokenTypeRaw = 'group';
+$vkTokenTypeRaw = 'user_session';
 $vkTokenTypeLabel = $vkTokenTypeRaw !== '' ? $vkTokenTypeRaw : '—';
-$vkStoredGroupTokenMasked = maskVkPublicationToken((string) ($settings['vk_publication_group_token'] ?? ''));
-$vkAuthModeSetting = 'community_token';
+$vkAuthModeSetting = 'user_session';
 
 $vkStepShortStatus = static function (array $steps, string $key): string {
     if (!array_key_exists($key, $steps) || !is_array($steps[$key])) {
@@ -565,7 +556,7 @@ unset($_SESSION['success_message']);
                 <input type="hidden" name="settings_section" value="vk-integration">
                     <div class="settings-section__header">
                         <h4><i class="fab fa-vk"></i> Интеграция VK</h4>
-                        <p>Публикация работ в VK через сохранённый ключ доступа сообщества.</p>
+                        <p>Публикация работ в VK через пользовательский токен из текущей VK-сессии.</p>
                     </div>
 
                     <div class="settings-vk-card">
@@ -573,7 +564,7 @@ unset($_SESSION['success_message']);
                             <div class="vk-connection-card__header">
                                 <div>
                                     <strong>Публикация работ в VK</strong>
-                                    <div class="form-hint">Используется только ключ доступа сообщества из настроек.</div>
+                                    <div class="form-hint">Используется только user token из текущей сессии авторизации VK.</div>
                                 </div>
                                 <span class="badge <?= $vkStatus === 'connected' ? 'badge--success' : ($vkStatus === 'attention' ? 'badge--warning' : 'badge--secondary') ?>">
                                     <?= htmlspecialchars($vkStatus === 'connected' ? 'Connected' : ($vkStatus === 'attention' ? 'Attention' : 'Disconnected')) ?>
@@ -583,7 +574,7 @@ unset($_SESSION['success_message']);
                             <div class="vk-connection-card__meta">
                                 <div style="margin:2px 0 6px; font-weight:600;">Права access token</div>
                                 <div><strong>Статус:</strong> <?= htmlspecialchars($vkStatusLabel) ?></div>
-                                <div><strong>Источник токена:</strong> сохранённый ключ сообщества</div>
+                                <div><strong>Источник токена:</strong> текущая сессия VK на сайте</div>
                                 <div><strong>Маска токена:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
                                 <div><strong>Тип токена:</strong> <?= htmlspecialchars($vkTokenTypeLabel) ?></div>
                                 <div><strong>Фактический scope токена:</strong> <?= htmlspecialchars($vkScopeDisplay) ?></div>
@@ -620,7 +611,7 @@ unset($_SESSION['success_message']);
                             <?php if ($vkPublicationSettings['publication_token'] === ''): ?>
                                 <div class="alert alert--warning" style="margin-top:12px;">
                                     <i class="fas fa-triangle-exclamation"></i>
-                                    <?= htmlspecialchars('Ключ доступа сообщества не задан. Вставьте токен сообщества, сохраните настройки и нажмите «Проверить токен VK».') ?>
+                                    <?= htmlspecialchars('Пользовательский токен не найден в сессии. Войдите в админку через VK-аккаунт с правами публикации и нажмите «Проверить токен VK».') ?>
                                 </div>
                             <?php endif; ?>
 
@@ -633,7 +624,7 @@ unset($_SESSION['success_message']);
 
                             <div class="vk-connection-card__actions">
                                 <button type="button" class="btn btn--ghost btn--sm" id="vkCheckBtn">
-                                    <i class="fas fa-plug-circle-check"></i> Проверить токен VK
+                                    <i class="fas fa-plug-circle-check"></i> Проверить user token VK
                                 </button>
                             </div>
 
@@ -649,21 +640,6 @@ unset($_SESSION['success_message']);
                             <div class="form-group">
                                 <label class="form-label">Версия VK API</label>
                                 <input type="text" name="vk_publication_api_version" class="form-input" value="<?= htmlspecialchars($settings['vk_publication_api_version'] ?? '5.131') ?>" placeholder="5.131">
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label class="form-label">Ключ доступа сообщества VK (токен)</label>
-                            <input
-                                type="password"
-                                name="vk_publication_group_token"
-                                class="form-input"
-                                value=""
-                                placeholder="<?= htmlspecialchars($vkStoredGroupTokenMasked !== '' ? ($vkStoredGroupTokenMasked . ' (уже сохранён)') : 'вставьте токен сообщества') ?>"
-                                autocomplete="new-password"
-                            >
-                            <div class="form-hint">
-                                Токен полностью не отображается. Чтобы заменить, вставьте новый и сохраните. Если оставить пустым, сохранённый токен не изменится.
                             </div>
                         </div>
 
