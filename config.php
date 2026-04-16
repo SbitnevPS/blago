@@ -350,11 +350,20 @@ ensureApplicationPaymentReceiptSchema($pdo);
 
 // Настройки сессии
 if (session_status() === PHP_SESSION_NONE) {
-    $isHttps = (
+    $siteScheme = strtolower((string) parse_url((string) SITE_URL, PHP_URL_SCHEME));
+    $requestIsHttps = (
         (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-        || (isset($_SERVER['SERVER_PORT']) && (string)$_SERVER['SERVER_PORT'] === '443')
+        || (isset($_SERVER['SERVER_PORT']) && (string) $_SERVER['SERVER_PORT'] === '443')
         || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
     );
+
+    if ($siteScheme === 'http') {
+        $isHttps = false;
+    } elseif ($siteScheme === 'https') {
+        $isHttps = $requestIsHttps;
+    } else {
+        $isHttps = $requestIsHttps;
+    }
 
     if (PHP_VERSION_ID >= 70300) {
         session_set_cookie_params([
