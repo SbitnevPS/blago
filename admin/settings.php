@@ -248,7 +248,6 @@ $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== ''
 $vkLastError = $vkPublicationSettings['last_error'] !== '' ? $vkPublicationSettings['last_error'] : '—';
 $vkTokenTypeRaw = 'user_session';
 $vkTokenTypeLabel = $vkTokenTypeRaw !== '' ? $vkTokenTypeRaw : '—';
-$vkAuthModeSetting = 'user_session';
 
 $vkStepShortStatus = static function (array $steps, string $key): string {
     if (!array_key_exists($key, $steps) || !is_array($steps[$key])) {
