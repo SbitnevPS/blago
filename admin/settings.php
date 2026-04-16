@@ -578,7 +578,7 @@ unset($_SESSION['success_message']);
                                 <div><strong>Название сообщества:</strong> <?= htmlspecialchars(trim((string)($settings['vk_publication_group_name'] ?? '')) !== '' ? (string)$settings['vk_publication_group_name'] : '—') ?></div>
                                 <div><strong>groups.getById:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'groups_getById')) ?></div>
 
-                                <div style="margin:10px 0 6px; font-weight:600;">Права публикации</div>
+                                <div style="margin:10px 0 6px; font-weight:600;">Проверка VK API</div>
                                 <div><strong>photos.getWallUploadServer:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'photos_getWallUploadServer')) ?></div>
                                 <div><strong>photos.saveWallPhoto:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'photos_saveWallPhoto')) ?></div>
                                 <div><strong>wall.post:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'wall_post')) ?></div>
@@ -593,9 +593,6 @@ unset($_SESSION['success_message']);
                                     ?>
                                     <?php if (isset($vkCapabilityMatrix['text_post'])): ?>
                                         <div>Текстовая публикация: <?= htmlspecialchars($fmt($vkCapabilityMatrix['text_post']['supported'] ?? null)) ?></div>
-                                    <?php endif; ?>
-                                    <?php if (isset($vkCapabilityMatrix['upload_local_image_to_wall'])): ?>
-                                        <div>Загрузка локального изображения: <?= htmlspecialchars($fmt($vkCapabilityMatrix['upload_local_image_to_wall']['supported'] ?? null)) ?></div>
                                     <?php endif; ?>
                                 <?php endif; ?>
                                 <div><strong>Последняя ошибка VK:</strong> <?= htmlspecialchars($vkLastError) ?></div>

@@ -385,9 +385,54 @@ function vkPublicationCapabilityMatrixCommunityToken(): array
 {
     return [
         'text_post' => ['supported' => true, 'note' => 'supported via wall.post'],
-        'upload_local_image_to_wall' => ['supported' => true, 'note' => 'supported via photos.getWallUploadServer + photos.saveWallPhoto + wall.post'],
+        'upload_local_image_to_wall' => ['supported' => false, 'note' => 'photos.getWallUploadServer returns error #27 (method is unavailable with group auth)'],
         'donut_donation' => ['supported' => false, 'note' => 'not used in publication pipeline'],
     ];
+}
+
+function extractVkGroupTokenPermissionNames(array $permissionsResponse): array
+{
+    $result = [];
+    $entries = $permissionsResponse['permissions'] ?? null;
+    if (is_array($entries)) {
+        foreach ($entries as $entry) {
+            if (is_array($entry)) {
+                $name = trim((string) ($entry['name'] ?? ''));
+                if ($name !== '') {
+                    $result[] = $name;
+                }
+                continue;
+            }
+
+            $name = trim((string) $entry);
+            if ($name !== '') {
+                $result[] = $name;
+            }
+        }
+    }
+
+    if (empty($result) && isset($permissionsResponse[0]) && is_array($permissionsResponse)) {
+        foreach ($permissionsResponse as $entry) {
+            if (!is_string($entry)) {
+                continue;
+            }
+            $name = trim($entry);
+            if ($name !== '') {
+                $result[] = $name;
+            }
+        }
+    }
+
+    return array_values(array_unique($result));
+}
+
+function isVkGroupAuthMethodUnavailableError(Throwable $e): bool
+{
+    $message = mb_strtolower(trim((string) $e->getMessage()));
+    $technical = $e instanceof VkApiException ? mb_strtolower($e->getTechnicalMessage()) : '';
+    return str_contains($message, 'method is unavailable with group auth')
+        || str_contains($technical, 'method is unavailable with group auth')
+        || ((int) $e->getCode() === 27 && str_contains($technical, 'photos.getwalluploadserver'));
 }
 
 function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferSessionToken = false, string $scenario = 'diagnostic'): array
@@ -445,12 +490,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
             $checks[] = 'groups.getById выполнен';
 
             $permissions = $client->apiRequestForDiagnostics('groups.getTokenPermissions', []);
-            $permissionItems = [];
-            if (isset($permissions['permissions']) && is_array($permissions['permissions'])) {
-                $permissionItems = array_values(array_map('strval', $permissions['permissions']));
-            } elseif (is_array($permissions)) {
-                $permissionItems = array_values(array_filter(array_map(static fn($value) => is_string($value) ? trim($value) : '', $permissions)));
-            }
+            $permissionItems = extractVkGroupTokenPermissionNames($permissions);
             $requiredPermissions = getVkPublicationRequiredScopes(true);
             $missingPermissions = [];
             foreach ($requiredPermissions as $permission) {
@@ -470,15 +510,30 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
                 $checks[] = 'groups.getTokenPermissions выполнен';
             }
 
-            $uploadResponse = $client->apiRequestForDiagnostics('photos.getWallUploadServer', [
-                'group_id' => (int) $settings['group_id'],
-            ]);
-            if (empty($uploadResponse['upload_url'])) {
-                $issues[] = 'photos.getWallUploadServer не вернул upload_url.';
-                $steps['photos_getWallUploadServer'] = ['ok' => false, 'message' => 'upload_url пустой'];
-            } else {
-                $checks[] = 'photos.getWallUploadServer выполнен';
-                $steps['photos_getWallUploadServer'] = ['ok' => true, 'message' => 'OK'];
+            try {
+                $uploadResponse = $client->apiRequestForDiagnostics('photos.getWallUploadServer', [
+                    'group_id' => (int) $settings['group_id'],
+                ]);
+                if (empty($uploadResponse['upload_url'])) {
+                    $issues[] = 'photos.getWallUploadServer не вернул upload_url.';
+                    $steps['photos_getWallUploadServer'] = ['ok' => false, 'message' => 'upload_url пустой'];
+                } else {
+                    $checks[] = 'photos.getWallUploadServer выполнен';
+                    $steps['photos_getWallUploadServer'] = ['ok' => true, 'message' => 'OK'];
+                }
+            } catch (Throwable $uploadError) {
+                if (isVkGroupAuthMethodUnavailableError($uploadError)) {
+                    $issue = 'Ключ сообщества валиден, но текущий VK API-сценарий загрузки изображения на стену недоступен для group auth.';
+                    $issues[] = $issue;
+                    $checks[] = 'photos.getWallUploadServer: method unavailable with group auth';
+                    $steps['photos_getWallUploadServer'] = [
+                        'ok' => false,
+                        'skipped' => true,
+                        'message' => 'Текущий сценарий загрузки изображения на стену не поддерживается для ключа сообщества.',
+                    ];
+                } else {
+                    throw $uploadError;
+                }
             }
         } catch (Throwable $e) {
             $normalized = normalizeVkPublicationError($e);
@@ -501,7 +556,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
     $confirmedPermissions = empty($issues)
         ? ((isset($steps['token_permissions']['list']) && trim((string) $steps['token_permissions']['list']) !== '')
             ? (string) $steps['token_permissions']['list']
-            : implode(', ', getVkPublicationRequiredScopes(true)))
+            : 'не удалось определить')
         : '';
 
     saveSystemSettings([
@@ -1343,6 +1398,8 @@ function normalizeVkPublicationError(Throwable $e): array
     $lower = mb_strtolower($message . ' ' . $technical);
     if (str_contains($lower, 'invalid access token') || str_contains($lower, 'access token is invalid')) {
         $message = 'Ключ доступа сообщества VK недействителен.';
+    } elseif (str_contains($lower, 'method is unavailable with group auth')) {
+        $message = 'Ключ сообщества валиден, но текущий VK API-сценарий загрузки изображения на стену недоступен для group auth.';
     } elseif (str_contains($lower, 'access denied') || str_contains($lower, 'not enough rights') || str_contains($lower, 'permission')) {
         $message = 'Недостаточно прав для публикации на стене сообщества.';
     } elseif (str_contains($lower, 'upload') || str_contains($lower, 'photo')) {
