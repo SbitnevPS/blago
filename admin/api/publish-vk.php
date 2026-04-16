@@ -18,7 +18,6 @@ if (!verifyCSRFToken($csrfToken)) {
 }
 
 $applicationId = max(0, (int) ($payload['application_id'] ?? 0));
-$publicationType = 'standard';
 if ($applicationId <= 0) {
     jsonResponse(['success' => false, 'error' => 'Некорректный идентификатор заявки.'], 422);
 }
@@ -45,19 +44,12 @@ if (empty($workIds)) {
 }
 
 ensureVkPublicationSchema();
-$readiness = verifyVkPublicationReadiness(true, true, 'publish_text_links');
+$readiness = verifyVkPublicationReadiness(true, true, 'publish_local_image');
 if (empty($readiness['ok'])) {
     $issues = $readiness['issues'] ?? [];
     $message = is_array($issues) && !empty($issues) ? (string) $issues[0] : 'VK не готов к публикации.';
     jsonResponse(['success' => false, 'error' => $message], 422);
 }
-$settings = $readiness['settings'] ?? getVkPublicationSettings();
-
-$extraWallParams = [];
-$publicationMeta = [
-    'publication_type' => $publicationType,
-];
-
 $filters = normalizeVkTaskFilters([
     'work_status' => 'accepted',
     'exclude_vk_published' => 1,
@@ -77,14 +69,10 @@ $taskId = createVkTaskFromPreview(
     'Публикация по заявке #' . $applicationId . ' от ' . date('d.m.Y H:i'),
     (int) getCurrentAdminId(),
     $preview,
-    'immediate',
-    $publicationMeta
+    'immediate'
 );
 
-$publishResult = publishVkTask($taskId, [
-    'wall_params' => $extraWallParams,
-    'strategy' => 'text_with_links',
-]);
+$publishResult = publishVkTask($taskId);
 $taskAfterPublish = getVkTaskById($taskId);
 $postUrl = trim((string) ($taskAfterPublish['vk_post_url'] ?? ''));
 $published = (int) ($publishResult['published'] ?? 0);
@@ -94,7 +82,7 @@ $apiError = trim((string) ($publishResult['error'] ?? ''));
 if ($failed > 0 || $published <= 0) {
     vkPublicationLog('application_publish_failed', [
         'application_id' => $applicationId,
-        'publication_type' => $publicationMeta['publication_type'] ?? 'standard',
+        'publication_type' => 'standard',
         'task_id' => $taskId,
         'error' => $apiError,
         'failed' => $failed,
@@ -102,7 +90,7 @@ if ($failed > 0 || $published <= 0) {
     ]);
     jsonResponse([
         'success' => false,
-        'publication_type' => $publicationMeta['publication_type'] ?? 'standard',
+        'publication_type' => 'standard',
         'task_id' => $taskId,
         'published' => $published,
         'failed' => $failed,
@@ -114,7 +102,7 @@ if ($failed > 0 || $published <= 0) {
 jsonResponse([
     'success' => true,
     'task_id' => $taskId,
-    'publication_type' => $publicationMeta['publication_type'] ?? 'standard',
+    'publication_type' => 'standard',
     'published' => $published,
     'failed' => $failed,
     'total' => (int) ($publishResult['total'] ?? 0),

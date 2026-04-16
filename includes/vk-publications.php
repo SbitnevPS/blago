@@ -581,34 +581,21 @@ function getVkPublicationSettings(): array
     $settings = getSystemSettings();
     $lastCheckedAt = trim((string) ($settings['vk_publication_last_checked_at'] ?? ''));
     $lastSuccessfulCheckAt = trim((string) ($settings['vk_publication_last_success_checked_at'] ?? ''));
-    $legacyTokenSource = trim((string) ($settings['vk_publication_token_source'] ?? ''));
-    if (!in_array($legacyTokenSource, ['session_vkid', 'stored_group'], true)) {
-        $legacyTokenSource = 'session_vkid';
-    }
-
-    $authMode = trim((string) ($settings['vk_publication_auth_mode'] ?? ''));
-    if (!in_array($authMode, ['user_session', 'community_token'], true)) {
-        // Backward compatibility: map old token_source radio to new auth_mode.
-        $authMode = $legacyTokenSource === 'stored_group' ? 'community_token' : 'user_session';
-    }
-
     return [
-        // Manual tokens are deprecated: publication token is taken from active VK ID admin session.
-        'publication_token' => '',
-        'auth_mode' => $authMode,
-        'token_source_setting' => $legacyTokenSource,
+        'publication_token' => trim((string) ($settings['vk_publication_group_token'] ?? '')),
+        'auth_mode' => 'community_token',
+        'token_source_setting' => 'stored_group',
         'stored_group_token' => trim((string) ($settings['vk_publication_group_token'] ?? '')),
         'group_id' => trim((string) ($settings['vk_publication_group_id'] ?? '')),
         'api_version' => trim((string) ($settings['vk_publication_api_version'] ?? VK_API_VERSION)),
         'from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1,
         'post_template' => trim((string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate())),
-        // Token-related fields are runtime-only (session), keep legacy settings out.
         'token_expires_at' => '',
         'token_scope' => '',
         'token_scope_items' => [],
-        'vk_user_id' => trim((string) ($settings['vk_publication_vk_user_id'] ?? '')),
-        'vk_user_name' => trim((string) ($settings['vk_publication_vk_user_name'] ?? '')),
-        'token_type' => 'session_user',
+        'vk_user_id' => '',
+        'vk_user_name' => '',
+        'token_type' => 'group',
         'confirmed_permissions' => trim((string) ($settings['vk_publication_confirmed_permissions'] ?? '')),
         'status' => trim((string) ($settings['vk_publication_status'] ?? ($settings['vk_publication_oauth_state'] ?? 'disconnected'))),
         'last_error' => trim((string) ($settings['vk_publication_last_error'] ?? ($settings['vk_publication_oauth_last_error'] ?? ''))),
@@ -624,58 +611,15 @@ function getVkPublicationSettings(): array
 function getVkPublicationRuntimeSettings(bool $preferSessionToken = false, bool $refreshIfNeeded = true): array
 {
     $settings = getVkPublicationSettings();
-
-    if (!$preferSessionToken) {
-        $settings['token_source'] = 'none';
-        return $settings;
+    $settings['token_source'] = 'stored';
+    $token = trim((string) ($settings['stored_group_token'] ?? ''));
+    if ($token !== '') {
+        $settings['publication_token'] = $token;
+        $settings['token_masked'] = maskVkPublicationToken($token);
+        $settings['token_id'] = substr(hash('sha256', $token), 0, 10);
+        $settings['token_type'] = 'group';
+        $settings['token_scope_known'] = false;
     }
-
-    $authMode = (string) ($settings['auth_mode'] ?? 'user_session');
-
-    // One source of truth: either VK ID session token (admin) OR stored community token.
-    if ($authMode === 'community_token') {
-        $settings['token_source'] = 'stored';
-        $token = trim((string) ($settings['stored_group_token'] ?? ''));
-        if ($token !== '') {
-            $settings['publication_token'] = $token;
-            $settings['token_masked'] = maskVkPublicationToken($token);
-            $settings['token_id'] = substr(hash('sha256', $token), 0, 10);
-            $settings['token_type'] = 'group';
-            $settings['token_scope_known'] = false; // may be populated during diagnostics via VK API
-        }
-        return $settings;
-    }
-
-    // Default: VK ID SDK admin session token.
-    $settings['token_source'] = 'session';
-    if (function_exists('isAdmin') && isAdmin()) {
-        $sessionToken = vkid_session_get_access_token('admin', $refreshIfNeeded);
-        if (trim($sessionToken) !== '') {
-            $meta = vkid_session_get_tokens('admin');
-            $settings['publication_token'] = $sessionToken;
-            $settings['token_masked'] = maskVkPublicationToken($sessionToken);
-            $settings['token_id'] = substr(hash('sha256', $sessionToken), 0, 10);
-            $settings['token_type'] = trim((string) ($meta['token_type'] ?? '')) !== ''
-                ? trim((string) $meta['token_type'])
-                : 'bearer';
-            $expiresAtTs = (int) ($meta['expires_at_ts'] ?? 0);
-            if ($expiresAtTs > 0) {
-                $settings['token_expires_at'] = date('Y-m-d H:i:s', $expiresAtTs);
-            }
-            $scope = trim((string) ($meta['scope'] ?? ''));
-            if ($scope !== '') {
-                $settings['token_scope'] = $scope;
-                $settings['token_scope_items'] = normalizeVkScopeItems($scope);
-            }
-            $settings['vk_user_id'] = trim((string) ($meta['user_id'] ?? $settings['vk_user_id']));
-            $settings['vk_device_id'] = trim((string) ($meta['device_id'] ?? ''));
-            $settings['vk_expires_at_ts'] = $expiresAtTs;
-            $settings['vk_obtained_at_ts'] = (int) ($meta['obtained_at_ts'] ?? 0);
-            $settings['vk_refreshed_at_ts'] = (int) ($meta['refreshed_at_ts'] ?? 0);
-            $settings['token_scope_known'] = $scope !== '';
-        }
-    }
-
     return $settings;
 }
 
@@ -795,14 +739,14 @@ function getVkPublicationTokenDiagnostics(array $settings): array
     $expiresIn = $expiresTs ? ($expiresTs - $nowTs) : null;
 
     $status = 'ok';
-    $message = 'VK ID токен из текущей сессии готов к работе.';
+    $message = 'Ключ доступа сообщества готов к работе.';
 
     if (trim((string) ($settings['publication_token'] ?? '')) === '') {
         $status = 'not_connected';
-        $message = 'VK ID токен для публикации не найден в текущей сессии.';
+        $message = 'Не задан ключ доступа сообщества VK.';
     } elseif ($expiresTs && $expiresIn !== null && $expiresIn <= 0) {
         $status = 'expired';
-        $message = 'VK ID токен для публикации истёк.';
+        $message = 'Срок действия ключа доступа сообщества истёк.';
     }
 
     return [
@@ -814,341 +758,10 @@ function getVkPublicationTokenDiagnostics(array $settings): array
     ];
 }
 
-function vkPublicationCapabilityMatrixUserSession(): array
-{
-    return [
-        'text_post' => ['supported' => true, 'note' => 'supported'],
-        'upload_local_image_to_wall' => ['supported' => true, 'note' => 'supported'],
-        'donut_donation' => ['supported' => true, 'note' => 'as implemented'],
-    ];
-}
-
-function vkPublicationCapabilityMatrixCommunityToken(): array
-{
-    return [
-        'text_post' => ['supported' => null, 'note' => 'requires separate probe (disabled by default)'],
-        'upload_local_image_to_wall' => ['supported' => false, 'note' => 'unsupported: community token cannot run user-only upload chain'],
-        'donut_donation' => ['supported' => null, 'note' => 'not checked by default'],
-    ];
-}
-
 function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferSessionToken = false, string $scenario = 'diagnostic'): array
 {
     $settings = getVkPublicationRuntimeSettings($preferSessionToken, $attemptRefresh);
-    $authMode = (string) ($settings['auth_mode'] ?? 'user_session');
-    if (!in_array($authMode, ['user_session', 'community_token'], true)) {
-        $authMode = 'user_session';
-    }
-
-    if ($authMode === 'community_token') {
-        return verifyVkPublicationReadinessCommunityToken($settings, $scenario);
-    }
-
-    $issues = [];
-    $checks = [];
-    $groupName = '';
-    $steps = [];
-    $isGroupToken = false; // user_session mode must not run group-token logic
-
-    $runtime = [
-        'auth_mode' => 'user_session',
-        'token_source' => (string) ($settings['token_source'] ?? 'none'),
-        'token_masked' => (string) ($settings['token_masked'] ?? ''),
-        'token_id' => (string) ($settings['token_id'] ?? ''),
-        'token_type' => (string) ($settings['token_type'] ?? ''),
-        'token_scope_raw' => (string) ($settings['token_scope'] ?? ''),
-        'token_scope_items' => (array) ($settings['token_scope_items'] ?? []),
-        'token_scope_known' => (bool) ($settings['token_scope_known'] ?? false),
-        'vk_user_id_claim' => (string) ($settings['vk_user_id'] ?? ''),
-        'vk_device_id' => (string) ($settings['vk_device_id'] ?? ''),
-        'token_expires_at' => (string) ($settings['token_expires_at'] ?? ''),
-        'vk_expires_at_ts' => (int) ($settings['vk_expires_at_ts'] ?? 0),
-        'vk_obtained_at_ts' => (int) ($settings['vk_obtained_at_ts'] ?? 0),
-        'vk_refreshed_at_ts' => (int) ($settings['vk_refreshed_at_ts'] ?? 0),
-    ];
-
-    // Some steps are unsafe to run in "test" mode (would upload/post content).
-    $steps['photos_saveWallPhoto'] = ['ok' => null, 'message' => 'NOT TESTED: требует загрузки файла'];
-    $steps['wall_post'] = ['ok' => null, 'message' => 'NOT TESTED: создаёт пост'];
-    $steps['capabilities'] = ['ok' => true, 'matrix' => vkPublicationCapabilityMatrixUserSession()];
-
-    if ($settings['publication_token'] === '') {
-        $issues[] = 'Не найден VK ID токен для публикации в текущей сессии админа.';
-        $checks[] = 'Токен отсутствует';
-        $steps['token_present'] = ['ok' => false, 'message' => 'Токен отсутствует'];
-    } else {
-        $checks[] = 'Токен присутствует';
-        $steps['token_present'] = ['ok' => true, 'message' => 'Токен найден'];
-    }
-
-    if ($settings['group_id'] === '' || (int) $settings['group_id'] <= 0) {
-        $issues[] = 'Не указан ID сообщества VK.';
-        $checks[] = 'ID сообщества не задан';
-        $steps['group_id'] = ['ok' => false, 'message' => 'group_id не задан'];
-    } else {
-        $checks[] = 'ID сообщества задан';
-        $steps['group_id'] = ['ok' => true, 'message' => 'group_id задан', 'group_id' => (int) $settings['group_id']];
-    }
-
-    $diagnostics = getVkPublicationTokenDiagnostics($settings);
-    if ($diagnostics['status'] === 'expired') {
-        $issues[] = 'Токен VK ID из текущей сессии истёк. Перезайдите в админку через VK ID.';
-        $checks[] = 'Токен истёк';
-        $steps['token_expired'] = ['ok' => false, 'message' => 'Токен истёк'];
-    } elseif (!empty($diagnostics['expires_known'])) {
-        $steps['token_expired'] = ['ok' => true, 'message' => 'Токен не истёк'];
-    } else {
-        $steps['token_expired'] = ['ok' => null, 'message' => 'Срок действия токена неизвестен'];
-    }
-
-    $scopeItems = (array) ($settings['token_scope_items'] ?? []);
-    $requiredScopes = $scenario === 'publish_text_links' ? ['wall', 'groups'] : getVkPublicationRequiredScopes($isGroupToken);
-    $scopeCheck = [];
-    foreach ($requiredScopes as $scopeName) {
-        $scopeCheck[$scopeName] = vkScopeHas($scopeItems, $scopeName);
-    }
-    $steps['token_scope'] = [
-        'ok' => true,
-        'message' => $runtime['token_scope_raw'] !== '' ? $runtime['token_scope_raw'] : 'scope неизвестен',
-        'scope_known' => $runtime['token_scope_raw'] !== '',
-        'required' => $requiredScopes,
-        'has' => $scopeCheck,
-    ];
-
-    if ($settings['publication_token'] !== '' && $runtime['token_scope_raw'] !== '' && !$isGroupToken) {
-        foreach ($requiredScopes as $scopeName) {
-            if (!$scopeCheck[$scopeName]) {
-                $issues[] = 'У текущего access token отсутствует scope ' . $scopeName . '.';
-            }
-        }
-    }
-
-    if ($settings['publication_token'] !== '' && (int) $settings['group_id'] > 0) {
-        try {
-            $client = new VkApiClient(
-                $settings['publication_token'],
-                (int) $settings['group_id'],
-                (string) $settings['api_version'],
-                'user'
-            );
-
-            $vkUserId = '0';
-            $userResponse = $client->apiRequestForDiagnostics('users.get', []);
-            $vkUserId = (string) ((int) ($userResponse[0]['id'] ?? 0));
-            if ($vkUserId === '0') {
-                $issues[] = 'users.get не вернул VK user ID владельца токена.';
-                $steps['users_get'] = ['ok' => false, 'message' => 'users.get не вернул id'];
-            } else {
-                $settings['vk_user_id'] = $vkUserId;
-                $settings['vk_user_name'] = trim((string) (($userResponse[0]['first_name'] ?? '') . ' ' . ($userResponse[0]['last_name'] ?? '')));
-                $checks[] = 'users.get выполнен';
-                $steps['users_get'] = ['ok' => true, 'message' => 'OK', 'vk_user_id' => (int) $vkUserId, 'vk_user_name' => $settings['vk_user_name']];
-            }
-
-            if ($runtime['token_scope_raw'] !== '' && empty($scopeCheck['groups'])) {
-                $steps['groups_getById'] = ['ok' => false, 'skipped' => true, 'message' => 'SKIPPED: нет scope groups'];
-                $steps['group_role'] = ['ok' => false, 'skipped' => true, 'message' => 'SKIPPED: нет scope groups'];
-                $steps['photos_getWallUploadServer'] = ['ok' => false, 'skipped' => true, 'message' => 'SKIPPED: нет scope groups/photos'];
-            } else {
-                $groupResponse = $client->apiRequestForDiagnostics('groups.getById', [
-                    'group_id' => (int) $settings['group_id'],
-                ]);
-                if (!empty($groupResponse[0]['name'])) {
-                    $groupName = trim((string) $groupResponse[0]['name']);
-                }
-                $checks[] = 'groups.getById выполнен';
-                $steps['groups_getById'] = ['ok' => true, 'message' => 'OK', 'group_name' => $groupName];
-
-                // Check that token owner is a manager of the group (owner/admin/editor).
-                if ($vkUserId !== '0') {
-                    $managersResponse = $client->apiRequestForDiagnostics('groups.getMembers', [
-                        'group_id' => (int) $settings['group_id'],
-                        'filter' => 'managers',
-                        'count' => 1000,
-                        'offset' => 0,
-                    ]);
-                    $items = [];
-                    if (isset($managersResponse['items']) && is_array($managersResponse['items'])) {
-                        $items = $managersResponse['items'];
-                    } elseif (is_array($managersResponse)) {
-                        $items = $managersResponse;
-                    }
-
-                    $isManager = false;
-                    $role = '';
-                    foreach ($items as $item) {
-                        if (is_array($item) && (string) ((int) ($item['id'] ?? 0)) === $vkUserId) {
-                            $isManager = true;
-                            $role = (string) ($item['role'] ?? '');
-                            break;
-                        }
-                        if (is_int($item) && (string) $item === $vkUserId) {
-                            $isManager = true;
-                            break;
-                        }
-                    }
-                    if ($isManager) {
-                        $checks[] = 'groups.getMembers(managers) выполнен' . ($role !== '' ? ' (role=' . $role . ')' : '');
-                        $steps['group_role'] = ['ok' => true, 'message' => 'OK', 'role' => $role !== '' ? $role : 'manager'];
-                    } else {
-                        $issues[] = 'Владелец токена (VK user_id=' . $vkUserId . ') не является администратором/редактором сообщества ' . (int) $settings['group_id'] . '.';
-                        $steps['group_role'] = ['ok' => false, 'message' => 'Пользователь не менеджер сообщества'];
-                    }
-                }
-            }
-
-            // Photo upload probe is needed only when publication scenario requires image upload.
-            if ($scenario === 'publish_text_links') {
-                $steps['photos_getWallUploadServer'] = ['ok' => null, 'message' => 'NOT NEEDED: publish_text_links'];
-            } else {
-                if (!array_key_exists('photos_getWallUploadServer', $steps)) {
-                    if ($runtime['token_scope_raw'] !== '' && empty($scopeCheck['photos'])) {
-                        $steps['photos_getWallUploadServer'] = ['ok' => false, 'skipped' => true, 'message' => 'SKIPPED: нет scope photos', 'token_id' => $runtime['token_id'] ?? ''];
-                    } else {
-                        $uploadResponse = $client->apiRequestForDiagnostics('photos.getWallUploadServer', [
-                            'group_id' => (int) $settings['group_id'],
-                        ]);
-                        if (empty($uploadResponse['upload_url'])) {
-                            $issues[] = 'photos.getWallUploadServer не вернул upload_url.';
-                            $steps['photos_getWallUploadServer'] = ['ok' => false, 'message' => 'upload_url пустой', 'token_id' => $runtime['token_id'] ?? ''];
-                        } else {
-                            $checks[] = 'photos.getWallUploadServer выполнен';
-                            $steps['photos_getWallUploadServer'] = ['ok' => true, 'message' => 'OK', 'token_id' => $runtime['token_id'] ?? ''];
-                        }
-                    }
-                }
-            }
-        } catch (Throwable $e) {
-            $normalized = normalizeVkPublicationError($e);
-            $checks[] = 'VK API check failed: ' . $normalized['technical'];
-
-            if ($e instanceof VkApiException) {
-                $technical = $e->getTechnicalMessage();
-                $code = (int) $e->getCode();
-
-                $scopesFromError = extractVkCurrentScopesFromTechnical($technical);
-                if (!empty($scopesFromError)) {
-                    $steps['token_scope_from_vk_error'] = [
-                        'ok' => true,
-                        'message' => implode(' ', $scopesFromError),
-                        'items' => $scopesFromError,
-                        'token_id' => $runtime['token_id'] ?? '',
-                    ];
-                }
-
-                $steps['vk_api_error'] = [
-                    'ok' => false,
-                    'message' => $normalized['message'],
-                    'error_code' => $code,
-                    'technical' => $technical,
-                    'token_id' => $runtime['token_id'] ?? '',
-                ];
-
-                // More precise classification for photo upload permissions.
-                $technicalLower = mb_strtolower($technical);
-                $roleOk = !empty($steps['group_role']['ok']);
-                $isPhotoUploadServerError = str_contains($technicalLower, 'photos.getwalluploadserver')
-                    || str_contains(mb_strtolower($normalized['message']), 'photos.getwalluploadserver');
-
-                // If VK explicitly reports current scopes, trust it even if session metadata is stale.
-                $missingPhotosBySessionScope = ($runtime['token_scope_raw'] !== '' && !vkScopeHas($scopeItems, 'photos'));
-                $missingPhotosByVkScopes = (!empty($scopesFromError) && !in_array('photos', $scopesFromError, true));
-                $missingPhotos = $missingPhotosBySessionScope || $missingPhotosByVkScopes;
-
-                if ($roleOk && $isPhotoUploadServerError && ($code === 15 || $code === 7) && $missingPhotos) {
-                    $issues[] = 'Роль в сообществе подтверждена, но текущий access token не имеет права photos. Получите новый токен с правами wall, photos, groups.';
-                    $steps['photos_getWallUploadServer'] = [
-                        'ok' => false,
-                        'message' => 'ERROR #' . $code . ': нет права photos (scope)',
-                        'error_code' => $code,
-                        'token_id' => $runtime['token_id'] ?? '',
-                    ];
-                } else {
-                    // Generic normalized message (may still be useful for other error types).
-                    $issues[] = $normalized['message'];
-                }
-
-                if (!empty($scopesFromError) && $runtime['token_scope_raw'] !== '') {
-                    $sessionScope = normalizeVkScopeItems($runtime['token_scope_raw']);
-                    sort($sessionScope);
-                    $errorScope = $scopesFromError;
-                    sort($errorScope);
-                    if ($sessionScope !== $errorScope) {
-                        $issues[] = 'VK сообщил current scopes, которые отличаются от scope, сохранённого в сессии. Возможна потеря прав после refresh: перезайдите в админку через VK ID.';
-                        $steps['token_scope_mismatch'] = [
-                            'ok' => false,
-                            'message' => 'scope в сессии не совпадает с VK current scopes',
-                            'session_scope' => implode(' ', $sessionScope),
-                            'vk_scope' => implode(' ', $errorScope),
-                            'token_id' => $runtime['token_id'] ?? '',
-                        ];
-                    }
-                }
-            } else {
-                $issues[] = $normalized['message'];
-            }
-        }
-    }
-
-    // Refine messaging: if group role is confirmed but photos scope is missing, do not mislead.
-    $roleOk = !empty($steps['group_role']['ok']);
-    if ($settings['publication_token'] !== '' && $runtime['token_scope_raw'] !== '' && $roleOk && empty($scopeCheck['photos'])) {
-        $issues = array_values(array_filter($issues, static fn ($item) => $item !== 'У текущего access token отсутствует scope photos.'));
-        $issues[] = 'Роль в сообществе подтверждена, но текущий access token не имеет права photos. Получите новый токен с правами wall, photos, groups.';
-    }
-
-    // Deduplicate issues to avoid confusing double messages in UI.
-    if (!empty($issues)) {
-        $issues = array_values(array_unique($issues));
-    }
-
-    $status = empty($issues) ? 'connected' : ($settings['publication_token'] !== '' ? 'attention' : 'disconnected');
-    $confirmedPermissions = empty($issues) ? implode(', ', $requiredScopes) : '';
-
-    saveSystemSettings([
-        // Manual/stored tokens are deprecated: keep settings clean.
-        'vk_publication_manual_token' => '',
-        'vk_publication_access_token' => '',
-        'vk_publication_user_token' => '',
-        'vk_publication_refresh_token' => '',
-        'vk_publication_status' => $status,
-        'vk_publication_last_checked_at' => date('Y-m-d H:i:s'),
-        'vk_publication_last_success_checked_at' => empty($issues)
-            ? date('Y-m-d H:i:s')
-            : trim((string) (getSystemSettings()['vk_publication_last_success_checked_at'] ?? '')),
-        'vk_publication_last_check_status' => empty($issues) ? 'ok' : 'error',
-        'vk_publication_last_check_message' => empty($issues)
-            ? 'VK ID токен из текущей сессии прошёл проверку.'
-            : implode('; ', $issues),
-        'vk_publication_confirmed_permissions' => $confirmedPermissions,
-        'vk_publication_last_error' => empty($issues) ? '' : implode('; ', $issues),
-        'vk_publication_technical_diagnostics' => empty($issues) ? implode('; ', $checks) : implode('; ', $checks),
-        'vk_publication_vk_user_id' => (string) ($settings['vk_user_id'] ?? ''),
-        'vk_publication_vk_user_name' => (string) ($settings['vk_user_name'] ?? ''),
-        'vk_publication_group_name' => $groupName,
-        'vk_publication_token_type' => 'user_session',
-    ]);
-
-    vkPublicationLog('publication_token_check', [
-        'ok' => empty($issues),
-        'issues' => $issues,
-        'checks' => $checks,
-        'group_id' => $settings['group_id'],
-        'token_masked' => maskVkPublicationToken($settings['publication_token']),
-    ]);
-
-    $settings = getVkPublicationRuntimeSettings($preferSessionToken, $attemptRefresh);
-    $settings['group_name'] = $groupName !== '' ? $groupName : trim((string) (getSystemSettings()['vk_publication_group_name'] ?? ''));
-
-    return [
-        'ok' => empty($issues),
-        'issues' => $issues,
-        'checks' => $checks,
-        'settings' => $settings,
-        'diagnostics' => $diagnostics,
-        'runtime' => $runtime,
-        'steps' => $steps,
-    ];
+    return verifyVkPublicationReadinessCommunityToken($settings, $scenario);
 }
 
 function verifyVkPublicationReadinessCommunityToken(array $settings, string $scenario = 'diagnostic'): array
@@ -1169,10 +782,10 @@ function verifyVkPublicationReadinessCommunityToken(array $settings, string $sce
         'token_scope_known' => false,
     ];
 
-    $steps['capabilities'] = ['ok' => true, 'matrix' => vkPublicationCapabilityMatrixCommunityToken()];
+    $steps['capabilities'] = ['ok' => true, 'matrix' => ['text_post' => ['supported' => true], 'upload_local_image_to_wall' => ['supported' => true]]];
 
     if (trim((string) ($settings['publication_token'] ?? '')) === '') {
-        $issues[] = 'Не задан ключ доступа сообщества (community token) для публикации.';
+        $issues[] = 'Не задан ключ доступа сообщества VK';
         $steps['token_present'] = ['ok' => false, 'message' => 'Токен отсутствует'];
     } else {
         $steps['token_present'] = ['ok' => true, 'message' => 'Токен найден'];
@@ -1193,18 +806,13 @@ function verifyVkPublicationReadinessCommunityToken(array $settings, string $sce
         try {
             $client = new VkApiClient((string) $settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version'], 'group');
 
-            // Optional: group info.
-            try {
-                $groupResponse = $client->apiRequestForDiagnostics('groups.getById', ['group_id' => (int) $settings['group_id']]);
-                if (!empty($groupResponse[0]['name'])) {
-                    $groupName = trim((string) $groupResponse[0]['name']);
-                }
-                $steps['groups_getById'] = ['ok' => true, 'message' => 'OK', 'group_name' => $groupName];
-            } catch (Throwable $e) {
-                $steps['groups_getById'] = ['ok' => null, 'message' => 'OPTIONAL: not available for community token'];
+            $groupResponse = $client->apiRequestForDiagnostics('groups.getById', ['group_id' => (int) $settings['group_id']]);
+            if (!empty($groupResponse[0]['name'])) {
+                $groupName = trim((string) $groupResponse[0]['name']);
             }
+            $steps['groups_getById'] = ['ok' => true, 'message' => 'OK', 'group_name' => $groupName];
+            $checks[] = 'groups.getById выполнен';
 
-            // Primary: groups.getTokenPermissions.
             $permResponse = $client->apiRequestForDiagnostics('groups.getTokenPermissions', [
                 'group_id' => (int) $settings['group_id'],
             ]);
@@ -1215,15 +823,11 @@ function verifyVkPublicationReadinessCommunityToken(array $settings, string $sce
             $checks[] = 'groups.getTokenPermissions выполнен';
             $steps['groups_getTokenPermissions'] = ['ok' => true, 'message' => $runtime['token_scope_raw'] !== '' ? $runtime['token_scope_raw'] : 'OK'];
 
-            // Scope-like flags for UI.
             $has = [
                 'wall' => vkScopeHas($permItems, 'wall'),
                 'photos' => vkScopeHas($permItems, 'photos'),
-                'manage' => vkScopeHas($permItems, 'manage'),
-                'messages' => vkScopeHas($permItems, 'messages'),
-                'docs' => vkScopeHas($permItems, 'docs'),
             ];
-            $required = $scenario === 'publish_text_links' ? ['wall'] : ['wall', 'photos'];
+            $required = ['wall', 'photos'];
             $steps['token_scope'] = [
                 'ok' => true,
                 'message' => $runtime['token_scope_raw'] !== '' ? $runtime['token_scope_raw'] : 'permissions неизвестны',
@@ -1232,9 +836,17 @@ function verifyVkPublicationReadinessCommunityToken(array $settings, string $sce
                 'has' => $has,
             ];
 
-            // Community token mode MUST NOT call user-only upload chain.
-            $steps['photos_getWallUploadServer'] = ['ok' => null, 'skipped' => true, 'message' => 'UNSUPPORTED: community token mode (user-only upload)'];
-            $steps['photos_saveWallPhoto'] = ['ok' => null, 'skipped' => true, 'message' => 'UNSUPPORTED: community token mode (user-only upload)'];
+            $uploadResponse = $client->apiRequestForDiagnostics('photos.getWallUploadServer', [
+                'group_id' => (int) $settings['group_id'],
+            ]);
+            $steps['photos_getWallUploadServer'] = [
+                'ok' => !empty($uploadResponse['upload_url']),
+                'message' => !empty($uploadResponse['upload_url']) ? 'OK' : 'upload_url пустой',
+            ];
+            if (empty($uploadResponse['upload_url'])) {
+                $issues[] = 'Не удалось загрузить изображение для публикации';
+            }
+            $steps['photos_saveWallPhoto'] = ['ok' => null, 'message' => 'NOT TESTED: требует загрузки файла'];
             $steps['wall_post'] = ['ok' => null, 'message' => 'NOT TESTED: creates a real post'];
 
             if (!$runtime['token_scope_known']) {
@@ -1247,13 +859,6 @@ function verifyVkPublicationReadinessCommunityToken(array $settings, string $sce
                 }
             }
 
-            if ($scenario === 'donut_sync') {
-                $issues[] = 'В режиме community token проверка/синхронизация donut/donation возможностей не выполняется по умолчанию.';
-            }
-
-            if ($scenario === 'publish_local_image') {
-                $issues[] = 'Для публикации нового изображения с диска нужен режим user_session (VK ID токен администратора). В режиме community token этот сценарий не поддерживается.';
-            }
         } catch (Throwable $e) {
             $normalized = normalizeVkPublicationError($e);
             $issues[] = $normalized['message'];
@@ -1272,14 +877,14 @@ function verifyVkPublicationReadinessCommunityToken(array $settings, string $sce
 
     $ok = empty($issues);
     $status = $ok ? 'connected' : (!empty($steps['token_present']['ok']) ? 'attention' : 'disconnected');
-    $confirmedPermissions = $ok ? 'wall, photos' : '';
+    $confirmedPermissions = $ok ? 'wall, photos, groups' : '';
 
     saveSystemSettings([
         'vk_publication_status' => $status,
         'vk_publication_last_checked_at' => date('Y-m-d H:i:s'),
         'vk_publication_last_check_status' => $ok ? 'ok' : 'error',
         'vk_publication_last_check_message' => $ok
-            ? 'Community token режим: проверка выполнена.'
+            ? 'Ключ доступа сообщества прошёл проверку.'
             : implode('; ', $issues),
         'vk_publication_last_error' => $ok ? '' : implode('; ', $issues),
         'vk_publication_group_name' => $groupName,
@@ -1340,7 +945,7 @@ function normalizeVkTaskFilters(array $input): array
     return [
         'contest_id' => max(0, (int) ($input['contest_id'] ?? 0)),
         'application_status' => trim((string) ($input['application_status'] ?? '')),
-        'work_status' => trim((string) ($input['work_status'] ?? '')),
+        'work_status' => 'accepted',
         'region' => trim((string) ($input['region'] ?? '')),
         'organization_name' => trim((string) ($input['organization_name'] ?? '')),
         'drawing_title' => trim((string) ($input['drawing_title'] ?? '')),
@@ -1374,10 +979,7 @@ function getVkWorksByFilters(array $filters): array
         $params[] = (string) $filters['application_status'];
     }
 
-    if (($filters['work_status'] ?? '') !== '') {
-        $where[] = 'w.status = ?';
-        $params[] = (string) $filters['work_status'];
-    }
+    $where[] = "w.status = 'accepted'";
 
     if (($filters['region'] ?? '') !== '') {
         $where[] = 'p.region LIKE ?';
@@ -1601,15 +1203,30 @@ function buildVkTaskPreview(array $filters, ?string $template = null): array
         } elseif (empty($row['work_image_fs_path']) || !is_file((string) $row['work_image_fs_path'])) {
             $itemStatus = 'skipped';
             $skipReason = 'Файл изображения не найден на диске';
+        } elseif (!is_readable((string) $row['work_image_fs_path'])) {
+            $itemStatus = 'failed';
+            $skipReason = 'Файл изображения недоступен для чтения';
+        } elseif ((int) @filesize((string) $row['work_image_fs_path']) <= 0) {
+            $itemStatus = 'failed';
+            $skipReason = 'Файл изображения пустой';
         } elseif (!empty($filters['required_data_only']) && trim((string) ($row['participant_fio'] ?? '')) === '') {
             $itemStatus = 'skipped';
             $skipReason = 'Не заполнено ФИО участника';
+        } elseif (!empty($row['vk_published_at']) && !empty($filters['exclude_vk_published'])) {
+            $itemStatus = 'skipped';
+            $skipReason = 'Работа уже опубликована в VK';
         }
 
-        $postText = buildVkPostText($row, $template);
-        if ($postText === '') {
-            $itemStatus = 'skipped';
-            $skipReason = 'Не удалось сформировать текст поста';
+        $postText = '';
+        if (trim($template) === '') {
+            $itemStatus = 'failed';
+            $skipReason = 'Не заполнен шаблон текста публикации в настройках';
+        } else {
+            $postText = buildVkPostText($row, $template);
+            if ($postText === '') {
+                $itemStatus = 'skipped';
+                $skipReason = 'Не удалось сформировать текст поста';
+            }
         }
 
         if ($itemStatus === 'ready') {
@@ -1653,18 +1270,6 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
     $contestId = (int) ($filters['contest_id'] ?? 0);
     $status = $publicationMode === 'immediate' ? 'ready' : 'draft';
     $settings = getVkPublicationSettings();
-    $vkDonutEnabled = !empty($publicationMeta['vk_donut_enabled']) ? 1 : 0;
-    $vkDonutPaidDuration = isset($publicationMeta['vk_donut_paid_duration']) ? (int) $publicationMeta['vk_donut_paid_duration'] : null;
-    $vkDonutCanPublishFreeCopy = !empty($publicationMeta['vk_donut_can_publish_free_copy']) ? 1 : 0;
-    $vkDonutSnapshot = !empty($publicationMeta['vk_donut_settings_snapshot']) ? json_encode($publicationMeta['vk_donut_settings_snapshot'], JSON_UNESCAPED_UNICODE) : null;
-    $donationEnabled = !empty($publicationMeta['donation_enabled']) ? 1 : 0;
-    $donationGoalId = isset($publicationMeta['donation_goal_id']) ? (int) $publicationMeta['donation_goal_id'] : null;
-    $vkDonateId = trim((string) ($publicationMeta['vk_donate_id'] ?? ''));
-    $publicationType = trim((string) ($publicationMeta['publication_type'] ?? ''));
-    if (!in_array($publicationType, ['standard', 'vk_donut', 'donation_goal'], true)) {
-        $publicationType = $vkDonutEnabled ? 'vk_donut' : ($donationEnabled ? 'donation_goal' : 'standard');
-    }
-
     $taskColumns = getTableColumnsCached('vk_publication_tasks');
     $itemColumns = getTableColumnsCached('vk_publication_task_items');
 
@@ -1698,41 +1303,13 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
         $settings['group_id'] !== '' ? $settings['group_id'] : null,
     ];
 
-    if (in_array('vk_donut_enabled', $taskColumns, true)) {
-        $taskInsertColumns[] = 'vk_donut_enabled';
-        $taskInsertValues[] = $vkDonutEnabled;
-    }
-    if (in_array('vk_donut_paid_duration', $taskColumns, true)) {
-        $taskInsertColumns[] = 'vk_donut_paid_duration';
-        $taskInsertValues[] = $vkDonutEnabled ? $vkDonutPaidDuration : null;
-    }
-    if (in_array('vk_donut_can_publish_free_copy', $taskColumns, true)) {
-        $taskInsertColumns[] = 'vk_donut_can_publish_free_copy';
-        $taskInsertValues[] = $vkDonutEnabled ? $vkDonutCanPublishFreeCopy : 0;
-    }
-    if (in_array('vk_donut_settings_snapshot', $taskColumns, true)) {
-        $taskInsertColumns[] = 'vk_donut_settings_snapshot';
-        $taskInsertValues[] = $vkDonutEnabled ? $vkDonutSnapshot : null;
-    }
-    if (in_array('donation_enabled', $taskColumns, true)) {
-        $taskInsertColumns[] = 'donation_enabled';
-        $taskInsertValues[] = $donationEnabled;
-    }
-    if (in_array('donation_goal_id', $taskColumns, true)) {
-        $taskInsertColumns[] = 'donation_goal_id';
-        $taskInsertValues[] = $donationEnabled ? ($donationGoalId > 0 ? $donationGoalId : null) : null;
-    }
-    if (in_array('vk_donate_id', $taskColumns, true)) {
-        $taskInsertColumns[] = 'vk_donate_id';
-        $taskInsertValues[] = $donationEnabled && $vkDonateId !== '' ? $vkDonateId : null;
-    }
     if (in_array('publication_type', $taskColumns, true)) {
         $taskInsertColumns[] = 'publication_type';
-        $taskInsertValues[] = $publicationType;
+        $taskInsertValues[] = 'standard';
     }
     if (in_array('resolved_mode', $taskColumns, true)) {
         $taskInsertColumns[] = 'resolved_mode';
-        $taskInsertValues[] = $publicationType;
+        $taskInsertValues[] = 'standard';
     }
     if (in_array('capability_status', $taskColumns, true)) {
         $taskInsertColumns[] = 'capability_status';
@@ -1758,38 +1335,9 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
         'item_status',
         'skip_reason',
     ];
-    $supportsItemDonutEnabled = in_array('vk_donut_enabled', $itemColumns, true);
-    $supportsItemDonutDuration = in_array('vk_donut_paid_duration', $itemColumns, true);
-    $supportsItemDonutFreeCopy = in_array('vk_donut_can_publish_free_copy', $itemColumns, true);
-    $supportsItemDonutSnapshot = in_array('vk_donut_settings_snapshot', $itemColumns, true);
-    $supportsItemDonationEnabled = in_array('donation_enabled', $itemColumns, true);
-    $supportsItemDonationGoal = in_array('donation_goal_id', $itemColumns, true);
-    $supportsItemVkDonateId = in_array('vk_donate_id', $itemColumns, true);
     $supportsItemPublicationType = in_array('publication_type', $itemColumns, true);
     $supportsItemResolvedMode = in_array('resolved_mode', $itemColumns, true);
     $supportsItemCapabilityStatus = in_array('capability_status', $itemColumns, true);
-
-    if ($supportsItemDonutEnabled) {
-        $itemInsertColumns[] = 'vk_donut_enabled';
-    }
-    if ($supportsItemDonutDuration) {
-        $itemInsertColumns[] = 'vk_donut_paid_duration';
-    }
-    if ($supportsItemDonutFreeCopy) {
-        $itemInsertColumns[] = 'vk_donut_can_publish_free_copy';
-    }
-    if ($supportsItemDonutSnapshot) {
-        $itemInsertColumns[] = 'vk_donut_settings_snapshot';
-    }
-    if ($supportsItemDonationEnabled) {
-        $itemInsertColumns[] = 'donation_enabled';
-    }
-    if ($supportsItemDonationGoal) {
-        $itemInsertColumns[] = 'donation_goal_id';
-    }
-    if ($supportsItemVkDonateId) {
-        $itemInsertColumns[] = 'vk_donate_id';
-    }
     if ($supportsItemPublicationType) {
         $itemInsertColumns[] = 'publication_type';
     }
@@ -1818,32 +1366,11 @@ function createVkTaskFromPreview(string $title, int $createdBy, array $preview, 
             (string) ($item['item_status'] ?? 'pending'),
             $item['skip_reason'] ?? null,
         ];
-        if ($supportsItemDonutEnabled) {
-            $itemInsertValues[] = $vkDonutEnabled;
-        }
-        if ($supportsItemDonutDuration) {
-            $itemInsertValues[] = $vkDonutEnabled ? $vkDonutPaidDuration : null;
-        }
-        if ($supportsItemDonutFreeCopy) {
-            $itemInsertValues[] = $vkDonutEnabled ? $vkDonutCanPublishFreeCopy : 0;
-        }
-        if ($supportsItemDonutSnapshot) {
-            $itemInsertValues[] = $vkDonutEnabled ? $vkDonutSnapshot : null;
-        }
-        if ($supportsItemDonationEnabled) {
-            $itemInsertValues[] = $donationEnabled;
-        }
-        if ($supportsItemDonationGoal) {
-            $itemInsertValues[] = $donationEnabled ? ($donationGoalId > 0 ? $donationGoalId : null) : null;
-        }
-        if ($supportsItemVkDonateId) {
-            $itemInsertValues[] = $donationEnabled && $vkDonateId !== '' ? $vkDonateId : null;
-        }
         if ($supportsItemPublicationType) {
-            $itemInsertValues[] = $publicationType;
+            $itemInsertValues[] = 'standard';
         }
         if ($supportsItemResolvedMode) {
-            $itemInsertValues[] = $publicationType;
+            $itemInsertValues[] = 'standard';
         }
         if ($supportsItemCapabilityStatus) {
             $itemInsertValues[] = 'not_checked';
@@ -1892,15 +1419,13 @@ function getVkTaskItems(int $taskId): array
             p.region,
             p.organization_name,
             c.title AS contest_title,
-            u.email AS applicant_email,
-            d.title AS donation_goal_title
+            u.email AS applicant_email
         FROM vk_publication_task_items i
         LEFT JOIN works w ON w.id = i.work_id
         LEFT JOIN participants p ON p.id = i.participant_id
         LEFT JOIN contests c ON c.id = i.contest_id
         LEFT JOIN applications a ON a.id = i.application_id
         LEFT JOIN users u ON u.id = a.user_id
-        LEFT JOIN vk_donates d ON d.id = i.donation_goal_id
         WHERE i.task_id = ?
         ORDER BY i.id ASC");
     $stmt->execute([$taskId]);
@@ -1967,150 +1492,6 @@ function refreshVkTaskCounters(int $taskId): void
         ]);
 }
 
-function resolveVkPublicationType(array $source): string
-{
-    $explicitType = trim((string) ($source['publication_type'] ?? ''));
-    if (in_array($explicitType, ['standard', 'vk_donut', 'donation_goal'], true)) {
-        return $explicitType;
-    }
-
-    if (!empty($source['vk_donut_enabled'])) {
-        return 'vk_donut';
-    }
-
-    if (!empty($source['donation_enabled'])) {
-        return 'donation_goal';
-    }
-
-    return 'standard';
-}
-
-function buildVkPublicationCapabilities(array $readiness): array
-{
-    $base = [
-        'standard' => ['status' => 'not_checked', 'message' => 'Проверка ещё не выполнялась.'],
-        'vk_donut' => ['status' => 'not_checked', 'message' => 'Проверка ещё не выполнялась.'],
-        'donation_goal' => ['status' => 'not_checked', 'message' => 'Проверка ещё не выполнялась.'],
-    ];
-
-    $authMode = (string) (($readiness['runtime']['auth_mode'] ?? '') !== '' ? $readiness['runtime']['auth_mode'] : (($readiness['settings']['auth_mode'] ?? '') ?: 'user_session'));
-    if ($authMode === 'community_token') {
-        if (empty($readiness['ok'])) {
-            $message = implode('; ', $readiness['issues'] ?? ['VK не готов к публикации.']);
-            foreach ($base as $mode => $meta) {
-                $base[$mode] = ['status' => 'unsupported', 'message' => $message];
-            }
-            return $base;
-        }
-
-        $base['standard'] = [
-            'status' => 'supported',
-            'message' => 'Community token режим: текстовая публикация доступна. Загрузка локального изображения в VK не используется.',
-        ];
-        $base['vk_donut'] = ['status' => 'not_checked', 'message' => 'В community token режиме donut не проверяется по умолчанию.'];
-        $base['donation_goal'] = ['status' => 'not_checked', 'message' => 'В community token режиме donation goal не проверяется по умолчанию.'];
-        return $base;
-    }
-
-    if (empty($readiness['ok'])) {
-        $message = implode('; ', $readiness['issues'] ?? ['VK не готов к публикации.']);
-        foreach ($base as $mode => $meta) {
-            $base[$mode] = ['status' => 'unsupported', 'message' => $message];
-        }
-        return $base;
-    }
-
-    $base['standard'] = ['status' => 'supported', 'message' => 'Базовая публикация доступна.'];
-    $base['vk_donut'] = ['status' => 'not_checked', 'message' => 'Требуется тест публикации с donut-параметрами.'];
-    $base['donation_goal'] = ['status' => 'not_checked', 'message' => 'Требуется тест публикации с donation_goal_id.'];
-
-    return $base;
-}
-
-function getVkPublicationCapabilities(): array
-{
-    $readiness = verifyVkPublicationReadiness(true, true, 'diagnostic');
-    $capabilities = buildVkPublicationCapabilities($readiness);
-
-    $settings = getSystemSettings();
-    $cached = json_decode((string) ($settings['vk_publication_capabilities_json'] ?? ''), true);
-    if (is_array($cached)) {
-        foreach (['standard', 'vk_donut', 'donation_goal'] as $mode) {
-            if (!empty($cached[$mode]) && is_array($cached[$mode])) {
-                $capabilities[$mode] = array_merge($capabilities[$mode], $cached[$mode]);
-            }
-        }
-    }
-
-    return $capabilities;
-}
-
-function updateVkCapabilityFromError(string $mode, Throwable $error): void
-{
-    if (!in_array($mode, ['standard', 'vk_donut', 'donation_goal'], true)) {
-        return;
-    }
-
-    $settings = getSystemSettings();
-    $cached = json_decode((string) ($settings['vk_publication_capabilities_json'] ?? ''), true);
-    if (!is_array($cached)) {
-        $cached = [];
-    }
-
-    $normalized = normalizeVkPublicationError($error);
-    $cached[$mode] = [
-        'status' => 'unsupported',
-        'message' => $normalized['message'],
-        'technical' => $normalized['technical'],
-        'checked_at' => date('c'),
-    ];
-
-    saveSystemSettings([
-        'vk_publication_capabilities_json' => json_encode($cached, JSON_UNESCAPED_UNICODE),
-    ]);
-}
-
-function markVkCapabilitySupported(string $mode, string $message): void
-{
-    if (!in_array($mode, ['standard', 'vk_donut', 'donation_goal'], true)) {
-        return;
-    }
-
-    $settings = getSystemSettings();
-    $cached = json_decode((string) ($settings['vk_publication_capabilities_json'] ?? ''), true);
-    if (!is_array($cached)) {
-        $cached = [];
-    }
-
-    $cached[$mode] = [
-        'status' => 'supported',
-        'message' => $message,
-        'checked_at' => date('c'),
-    ];
-
-    saveSystemSettings([
-        'vk_publication_capabilities_json' => json_encode($cached, JSON_UNESCAPED_UNICODE),
-    ]);
-}
-
-function buildVkWallParamsByMode(array $item, array $options = []): array
-{
-    $type = resolveVkPublicationType($item);
-    if (!empty($options['wall_params']) && is_array($options['wall_params'])) {
-        return $options['wall_params'];
-    }
-
-    if ($type === 'vk_donut') {
-        return buildVkDonutWallParamsFromTask($item);
-    }
-
-    if ($type === 'donation_goal') {
-        return buildVkDonateWallParamsFromItem($item);
-    }
-
-    return [];
-}
-
 function publishVkTaskItem(int $itemId, array $options = []): array
 {
     global $pdo;
@@ -2131,38 +1512,16 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         return ['success' => true, 'already' => true, 'post_url' => $item['vk_post_url']];
     }
 
-    $publicationType = resolveVkPublicationType($item);
     $failureStage = null;
     $requestPayload = [];
     $responsePayload = [];
-    $verificationStatus = null;
-    $verificationMessage = null;
-    $detectedMode = null;
+    $verificationStatus = 'confirmed_standard';
+    $verificationMessage = 'Пост опубликован.';
+    $detectedMode = 'standard';
     $detectedFeatures = [];
     $vkPostReadbackJson = null;
-    $capabilities = getVkPublicationCapabilities();
-    $capabilityMeta = $capabilities[$publicationType] ?? ['status' => 'not_checked', 'message' => ''];
 
-    vkPublicationLog('publish_item_attempt', [
-        'item_id' => (int) $item['id'],
-        'task_id' => (int) $item['task_id'],
-        'work_id' => (int) $item['work_id'],
-        'publication_type' => $publicationType,
-        'capability_status' => $capabilityMeta['status'] ?? 'not_checked',
-        'donation_enabled' => (int) ($item['donation_enabled'] ?? 0),
-        'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
-        'vk_donate_id' => (string) ($item['vk_donate_id'] ?? ''),
-        'vk_donut_enabled' => (int) ($item['vk_donut_enabled'] ?? 0),
-        'vk_donut_paid_duration' => isset($item['vk_donut_paid_duration']) ? (int) $item['vk_donut_paid_duration'] : null,
-        'vk_donut_can_publish_free_copy' => (int) ($item['vk_donut_can_publish_free_copy'] ?? 0),
-        'build_by_mode' => buildVkWallParamsByMode($item, $options),
-        'build_donate_params' => buildVkDonateWallParamsFromItem($item),
-        'build_donut_params' => buildVkDonutWallParamsFromTask($item),
-    ]);
-
-    $strategy = (string) ($options['strategy'] ?? '');
-    $scenario = $strategy === 'text_with_links' ? 'publish_text_links' : 'publish_local_image';
-    $readiness = verifyVkPublicationReadiness(true, true, $scenario);
+    $readiness = verifyVkPublicationReadiness(true, true, 'publish_local_image');
     if (empty($readiness['ok'])) {
         $failureStage = 'validation';
         $error = (string) ($readiness['issues'][0] ?? 'VK не готов к публикации');
@@ -2172,8 +1531,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
 
     $settings = $readiness['settings'];
     try {
-        $authMode = ((string) ($settings['token_type'] ?? '')) === 'group' ? 'group' : 'user';
-        $client = new VkApiClient($settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version'], $authMode);
+        $client = new VkApiClient($settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version'], 'group');
     } catch (Throwable $e) {
         $failureStage = 'validation';
         $normalized = normalizeVkPublicationError($e);
@@ -2181,140 +1539,32 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         return ['success' => false, 'error' => $normalized['message']];
     }
 
-    $imageFsPath = null;
-    $imageUrl = '';
-    if ($strategy === 'text_with_links') {
-        $rel = getParticipantDrawingWebPath((string) ($item['applicant_email'] ?? ''), (string) ($item['work_image_path'] ?? ''));
-        $imageUrl = vkMakeAbsoluteUrl($rel);
-        if ($imageUrl === '') {
-            $failureStage = 'validation';
-            $error = 'Ссылка на изображение для публикации не найдена';
-            markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
-            return ['success' => false, 'error' => $error];
-        }
-    } else {
-        $imageFsPath = getParticipantDrawingFsPath((string) ($item['applicant_email'] ?? ''), (string) ($item['work_image_path'] ?? ''));
-        if (!$imageFsPath || !is_file($imageFsPath)) {
-            $failureStage = 'validation';
-            $error = 'Изображение для публикации не найдено';
-            markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
-            return ['success' => false, 'error' => $error];
-        }
-    }
-
-    $extraWallParams = buildVkWallParamsByMode($item, $options);
-    $extraWallParams['_publication_mode'] = $publicationType;
-
-    if ($publicationType === 'donation_goal' && empty($extraWallParams)) {
+    $imageFsPath = getParticipantDrawingFsPath((string) ($item['applicant_email'] ?? ''), (string) ($item['work_image_path'] ?? ''));
+    if (!$imageFsPath || !is_file($imageFsPath) || !is_readable($imageFsPath)) {
         $failureStage = 'validation';
-        $support = getVkDonationAttachmentSupport();
-        $vkDonateId = trim((string) ($item['vk_donate_id'] ?? ''));
-        $error = empty($support['supported'])
-            ? (string) ($support['message'] ?? 'Публикация с выбранной целью доната недоступна для текущего VK API.')
-            : 'Нельзя публиковать с пустым vk_donate_id.';
-        $technical = empty($support['supported'])
-            ? 'donation attachment disabled: ' . (string) ($support['code'] ?? 'unknown')
-            : $error;
-        if ($vkDonateId === '' && !empty($support['supported'])) {
-            $technical = 'donation attachment blocked: empty vk_donate_id';
-        }
-        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $technical);
+        $error = 'Не удалось загрузить изображение для публикации';
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
         return ['success' => false, 'error' => $error];
     }
 
     $requestPayload = [
         'item_id' => (int) $item['id'],
         'task_id' => (int) $item['task_id'],
-        'publication_type' => $publicationType,
+        'publication_type' => 'standard',
         'message' => (string) ($item['post_text'] ?? ''),
         'image_path' => (string) ($item['work_image_path'] ?? ''),
-        'strategy' => $strategy !== '' ? $strategy : 'photo_upload',
-        'image_url' => $imageUrl,
-        'extra_wall_params' => sanitizeVkExtraWallParamsForLog($extraWallParams),
+        'strategy' => 'photo_upload',
     ];
 
     try {
         $failureStage = 'wall_post';
-        if ($strategy === 'text_with_links') {
-            $message = trim((string) ($item['post_text'] ?? ''));
-            $message = $message !== '' ? ($message . "\n\n" . $imageUrl) : $imageUrl;
-            $published = $client->publishTextPost(
-                $message,
-                (bool) $settings['from_group'],
-                $extraWallParams
-            );
-        } else {
-            $published = $client->publishPhotoPost(
-                (string) $imageFsPath,
-                (string) ($item['post_text'] ?? ''),
-                (bool) $settings['from_group'],
-                $extraWallParams
-            );
-        }
+        $published = $client->publishPhotoPost(
+            (string) $imageFsPath,
+            (string) ($item['post_text'] ?? ''),
+            (bool) $settings['from_group']
+        );
         $responsePayload = $published;
-        $readbackOk = !empty($published['readback_ok']);
-        $readbackError = trim((string) ($published['readback_error'] ?? ''));
-        $readbackPost = is_array($published['readback_post'] ?? null) ? $published['readback_post'] : [];
-        $verification = [
-            'verification_status' => 'unknown_result',
-            'verification_message' => 'VK создал пост, но не удалось верифицировать результат.',
-            'detected_mode' => 'unknown',
-            'detected_features' => [],
-        ];
-
-        if ($strategy === 'text_with_links') {
-            $verification = [
-                'verification_status' => 'text_with_links_post_created',
-                'verification_message' => 'Пост создан (режим text_with_links).',
-                'detected_mode' => 'standard',
-                'detected_features' => [],
-            ];
-        } elseif ($readbackOk) {
-            $verification = verifyVkPublicationReadback($publicationType, $readbackPost);
-        } elseif ($publicationType === 'standard') {
-            $verification = [
-                'verification_status' => 'standard_post_created_without_readback_confirmation',
-                'verification_message' => $readbackError !== ''
-                    ? 'Пост создан, но readback-диагностика не подтвердила результат: ' . $readbackError
-                    : 'Пост создан, но readback-диагностика не вернула подтверждающий ответ.',
-                'detected_mode' => 'unknown',
-                'detected_features' => [],
-            ];
-        } elseif ($publicationType === 'vk_donut') {
-            $verification = [
-                'verification_status' => 'unknown_result',
-                'verification_message' => $readbackError !== ''
-                    ? 'Пост создан, но VK не подтвердил donut/paywall через readback: ' . $readbackError
-                    : 'Пост создан, но readback-ответ VK не подтвердил donut/paywall.',
-                'detected_mode' => 'unknown',
-                'detected_features' => [],
-            ];
-        } elseif ($publicationType === 'donation_goal') {
-            $verification = [
-                'verification_status' => 'unknown_result',
-                'verification_message' => $readbackError !== ''
-                    ? 'Пост создан, но VK не подтвердил цель сбора через readback: ' . $readbackError
-                    : 'Пост создан, но readback-ответ VK не подтвердил цель сбора.',
-                'detected_mode' => 'unknown',
-                'detected_features' => [],
-            ];
-        }
-
-        $verificationStatus = (string) ($verification['verification_status'] ?? 'unknown_result');
-        $verificationMessage = (string) ($verification['verification_message'] ?? 'VK создал пост, но не удалось верифицировать результат.');
-        $detectedMode = (string) ($verification['detected_mode'] ?? 'unknown');
-        $detectedFeatures = is_array($verification['detected_features'] ?? null) ? $verification['detected_features'] : [];
         $vkPostReadbackJson = json_encode($published['readback_raw'] ?? [], JSON_UNESCAPED_UNICODE);
-        $verificationFailed = false;
-        if ($publicationType === 'vk_donut') {
-            $verificationFailed = in_array($verificationStatus, ['post_created_but_donut_not_confirmed', 'unknown_result'], true);
-        } elseif ($publicationType === 'donation_goal') {
-            $verificationFailed = in_array($verificationStatus, ['post_created_but_goal_not_confirmed', 'unknown_result'], true);
-        }
-
-        if ($verificationFailed) {
-            throw new RuntimeException($verificationMessage);
-        }
 
         $pdo->prepare("UPDATE vk_publication_task_items
             SET item_status = 'published', vk_post_id = ?, vk_post_url = ?, error_message = ?, technical_error = ?, published_at = NOW(), updated_at = NOW(),
@@ -2326,7 +1576,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
                 (string) $published['post_url'],
                 null,
                 null,
-                $publicationType,
+                'standard',
                 'supported',
                 json_encode($requestPayload, JSON_UNESCAPED_UNICODE),
                 json_encode($responsePayload, JSON_UNESCAPED_UNICODE),
@@ -2349,21 +1599,14 @@ function publishVkTaskItem(int $itemId, array $options = []): array
             ->execute([(string) $published['post_id'], (string) $published['post_url'], (int) $item['work_id']]);
 
         refreshVkTaskCounters((int) $item['task_id']);
-        markVkCapabilitySupported($publicationType, 'Публикация успешно прошла.');
         vkPublicationLog('publish_item_success', [
             'item_id' => (int) $item['id'],
             'task_id' => (int) $item['task_id'],
             'work_id' => (int) $item['work_id'],
-            'publication_type' => $publicationType,
+            'publication_type' => 'standard',
             'post_id' => (string) $published['post_id'],
-            'donation_enabled' => (int) ($item['donation_enabled'] ?? 0),
-            'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
-            'vk_donate_id' => (string) ($item['vk_donate_id'] ?? ''),
-            'extra_wall_params' => sanitizeVkExtraWallParamsForLog($extraWallParams),
             'verification_status' => $verificationStatus,
             'verification_message' => $verificationMessage,
-            'readback_ok' => $readbackOk ? 1 : 0,
-            'readback_error' => $readbackError,
             'detected_mode' => $detectedMode,
             'detected_features' => $detectedFeatures,
         ]);
@@ -2375,35 +1618,17 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         ];
     } catch (Throwable $e) {
         $normalized = normalizeVkPublicationError($e);
-        updateVkCapabilityFromError($publicationType, $e);
-        $isDonationEnabled = (int) ($item['donation_enabled'] ?? 0) === 1;
         $errorMessage = $normalized['message'];
-        if ($isDonationEnabled && isVkDonationAttachmentError($e)) {
-            $errorMessage = 'Пост не опубликован: не удалось прикрепить выбранный донат.';
-            vkPublicationLog('publish_item_donation_failed', [
-                'item_id' => (int) $item['id'],
-                'task_id' => (int) $item['task_id'],
-                'work_id' => (int) $item['work_id'],
-                'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
-                'vk_donate_id' => (string) ($item['vk_donate_id'] ?? ''),
-                'vk_error_text' => $normalized['message'],
-                'technical' => $normalized['technical'],
-            ]);
-        }
         vkPublicationLog('publish_item_failed', [
             'item_id' => (int) $item['id'],
             'task_id' => (int) $item['task_id'],
             'work_id' => (int) $item['work_id'],
-            'publication_type' => $publicationType,
+            'publication_type' => 'standard',
             'failure_stage' => $failureStage ?? 'wall_post',
             'error' => $errorMessage,
             'technical' => $normalized['technical'],
             'post_id' => (string) ($responsePayload['post_id'] ?? ''),
             'post_url' => (string) ($responsePayload['post_url'] ?? ''),
-            'donation_enabled' => (int) ($item['donation_enabled'] ?? 0),
-            'donation_goal_id' => (int) ($item['donation_goal_id'] ?? 0),
-            'vk_donate_id' => (string) ($item['vk_donate_id'] ?? ''),
-            'extra_wall_params' => sanitizeVkExtraWallParamsForLog($extraWallParams),
         ]);
         markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $errorMessage, $normalized['technical']);
         $pdo->prepare("UPDATE vk_publication_task_items
@@ -2413,7 +1638,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
                 vk_post_readback_json = COALESCE(vk_post_readback_json, ?), updated_at = NOW()
             WHERE id = ?")
             ->execute([
-                $publicationType,
+                'standard',
                 'unsupported',
                 $failureStage ?? 'wall_post',
                 json_encode($requestPayload, JSON_UNESCAPED_UNICODE),
@@ -2468,12 +1693,15 @@ function normalizeVkPublicationError(Throwable $e): array
         $message = 'Неизвестная ошибка публикации в VK.';
     }
 
-    $lower = mb_strtolower($message);
-    if (str_contains($lower, 'group authorization failed') || str_contains($lower, 'group auth') || str_contains($lower, 'method is unavailable with group auth')) {
-        $message = 'VK вернул ошибку group auth. Для публикации нужен user-токен администратора из VK ID. Перезайдите в админку через VK ID и повторите проверку.';
-    }
-    if (str_contains($lower, 'another ip address')) {
-        $message = 'VK отклонил токен из-за привязки к IP. Перезайдите в админку через VK ID и повторите проверку.';
+    $lower = mb_strtolower($message . ' ' . $technical);
+    if (str_contains($lower, 'invalid access token') || str_contains($lower, 'access token is invalid')) {
+        $message = 'Ключ доступа сообщества недействителен';
+    } elseif (str_contains($lower, 'access denied') || str_contains($lower, 'not enough rights') || str_contains($lower, 'permission')) {
+        $message = 'Недостаточно прав для публикации на стене сообщества';
+    } elseif (str_contains($lower, 'upload') || str_contains($lower, 'photo')) {
+        $message = 'Не удалось загрузить изображение для публикации';
+    } else {
+        $message = 'Публикация в VK завершилась ошибкой';
     }
 
     return [
@@ -2485,33 +1713,7 @@ function normalizeVkPublicationError(Throwable $e): array
 function publishVkTask(int $taskId, array $options = []): array
 {
     global $pdo;
-
-    $task = getVkTaskById($taskId);
-    $taskType = $task ? resolveVkPublicationType($task) : 'standard';
-
-    if ($task && $taskType === 'vk_donut' && empty($options['wall_params']) && !empty($task['vk_donut_enabled'])) {
-        $options['wall_params'] = buildVkDonutWallParamsFromTask($task);
-        if (empty($options['wall_params'])) {
-            return [
-                'total' => 0,
-                'published' => 0,
-                'failed' => 0,
-                'error' => 'Некорректные параметры VK Donut: укажите paid_duration.',
-            ];
-        }
-    }
-    if ($task && $taskType === 'donation_goal' && empty($task['vk_donate_id'])) {
-        return [
-            'total' => 0,
-            'published' => 0,
-            'failed' => 0,
-            'error' => 'Некорректные параметры публикации donation goal: отсутствует vk_donate_id.',
-        ];
-    }
-
-    $strategy = (string) ($options['strategy'] ?? '');
-    $scenario = $strategy === 'text_with_links' ? 'publish_text_links' : 'publish_local_image';
-    $readiness = verifyVkPublicationReadiness(true, true, $scenario);
+    $readiness = verifyVkPublicationReadiness(true, true, 'publish_local_image');
     if (empty($readiness['ok'])) {
         return [
             'total' => 0,
@@ -2521,8 +1723,8 @@ function publishVkTask(int $taskId, array $options = []): array
         ];
     }
 
-    $pdo->prepare("UPDATE vk_publication_tasks SET task_status = 'publishing', resolved_mode = ?, capability_status = 'not_checked', updated_at = NOW() WHERE id = ?")
-        ->execute([$taskType, $taskId]);
+    $pdo->prepare("UPDATE vk_publication_tasks SET task_status = 'publishing', resolved_mode = 'standard', capability_status = 'not_checked', updated_at = NOW() WHERE id = ?")
+        ->execute([$taskId]);
 
     $stmt = $pdo->prepare("SELECT id FROM vk_publication_task_items
         WHERE task_id = ? AND item_status IN ('ready','failed','pending')
@@ -2553,176 +1755,6 @@ function publishVkTask(int $taskId, array $options = []): array
         ]);
 
     return $result;
-}
-
-function buildVkDonutWallParamsFromTask(array $task): array
-{
-    if (empty($task['vk_donut_enabled'])) {
-        return [];
-    }
-
-    $paidDuration = (int) ($task['vk_donut_paid_duration'] ?? 0);
-    if ($paidDuration <= 0) {
-        return [];
-    }
-
-    $donut = [
-        'is_donut' => 1,
-        'paid_duration' => $paidDuration,
-        'can_publish_free_copy' => !empty($task['vk_donut_can_publish_free_copy']) ? 1 : 0,
-    ];
-
-    return ['donut' => $donut];
-}
-
-function buildVkDonateWallParamsFromItem(array $item): array
-{
-    $enabled = (int) ($item['donation_enabled'] ?? 0) === 1;
-    $vkDonateId = trim((string) ($item['vk_donate_id'] ?? ''));
-    if (!$enabled || $vkDonateId === '') {
-        return [];
-    }
-
-    return ['donation_goal_id' => $vkDonateId];
-}
-
-function getVkDonationAttachmentSupport(): array
-{
-    $capabilities = getVkPublicationCapabilities();
-    $donation = $capabilities['donation_goal'] ?? [];
-    $status = (string) ($donation['status'] ?? 'not_checked');
-
-    if ($status === 'supported') {
-        return [
-            'supported' => true,
-            'code' => 'supported',
-            'status' => $status,
-            'message' => (string) ($donation['message'] ?? ''),
-        ];
-    }
-
-    if ($status === 'unsupported') {
-        return [
-            'supported' => false,
-            'code' => 'unsupported',
-            'status' => $status,
-            'message' => (string) ($donation['message'] ?? 'Режим donation goal подтверждён как нерабочий по ответу VK API.'),
-        ];
-    }
-
-    return [
-        'supported' => true,
-        'code' => 'not_checked',
-        'status' => 'not_checked',
-        'message' => (string) ($donation['message'] ?? 'Поддержка donation goal ещё не подтверждена: доступен диагностический запуск.'),
-    ];
-}
-
-function sanitizeVkExtraWallParamsForLog(array $params): array
-{
-    $out = [];
-    foreach ($params as $key => $value) {
-        $normalizedKey = trim((string) $key);
-        if ($normalizedKey === '' || in_array($normalizedKey, ['access_token', 'v'], true)) {
-            continue;
-        }
-        $out[$normalizedKey] = $value;
-    }
-    return $out;
-}
-
-function vkMakeAbsoluteUrl(?string $pathOrUrl): string
-{
-    $value = trim((string) ($pathOrUrl ?? ''));
-    if ($value === '') {
-        return '';
-    }
-    if (preg_match('~^https?://~i', $value)) {
-        return $value;
-    }
-    if ($value[0] !== '/') {
-        $value = '/' . $value;
-    }
-    return rtrim((string) SITE_URL, '/') . $value;
-}
-
-function detectVkPostFeatures(array $post): array
-{
-    $json = json_encode($post, JSON_UNESCAPED_UNICODE);
-    $jsonLower = mb_strtolower((string) $json);
-    $donut = is_array($post['donut'] ?? null) ? $post['donut'] : [];
-    $donutDetected = !empty($donut)
-        || (int) ($post['is_donut'] ?? 0) === 1
-        || str_contains($jsonLower, '"donut"')
-        || str_contains($jsonLower, 'is_donut');
-
-    $goalHints = ['goal', 'donat', 'donation', 'fundrais', 'support', 'donut_link'];
-    $goalDetected = false;
-    foreach ($goalHints as $hint) {
-        if (str_contains($jsonLower, $hint)) {
-            $goalDetected = true;
-            break;
-        }
-    }
-
-    return [
-        'has_donut' => $donutDetected,
-        'has_goal' => $goalDetected,
-        'donut' => $donut,
-        'attachments_count' => is_array($post['attachments'] ?? null) ? count($post['attachments']) : 0,
-    ];
-}
-
-function verifyVkPublicationReadback(string $mode, array $post): array
-{
-    $features = detectVkPostFeatures($post);
-    $status = 'unknown_result';
-    $message = 'VK создал пост, но итог верификации неоднозначен.';
-    $detectedMode = 'unknown';
-
-    if ($features['has_donut'] && !$features['has_goal']) {
-        $detectedMode = 'vk_donut';
-    } elseif ($features['has_goal'] && !$features['has_donut']) {
-        $detectedMode = 'donation_goal';
-    } elseif (!$features['has_goal'] && !$features['has_donut']) {
-        $detectedMode = 'standard';
-    }
-
-    if ($mode === 'standard') {
-        $status = (!$features['has_goal'] && !$features['has_donut']) ? 'confirmed_standard' : 'post_created_but_unexpected_features';
-        $message = $status === 'confirmed_standard'
-            ? 'Пост создан, признаки donut/paywall и цели сбора не обнаружены.'
-            : 'Пост создан, но в readback обнаружены неожиданные признаки донатов/целей.';
-    } elseif ($mode === 'vk_donut') {
-        $status = $features['has_donut'] ? 'confirmed_vk_donut' : 'post_created_but_donut_not_confirmed';
-        $message = $features['has_donut']
-            ? 'Пост создан и donut/paywall подтверждён readback-ответом VK.'
-            : 'Пост создан, но VK не подтвердил donut/paywall в readback.';
-    } elseif ($mode === 'donation_goal') {
-        $status = $features['has_goal'] ? 'confirmed_donation_goal' : 'post_created_but_goal_not_confirmed';
-        $message = $features['has_goal']
-            ? 'Пост создан и цель сбора подтверждена readback-ответом VK.'
-            : 'Пост создан, но VK не подтвердил прикрепление цели сбора. Публикация считается неуспешной.';
-    }
-
-    return [
-        'verification_status' => $status,
-        'verification_message' => $message,
-        'detected_mode' => $detectedMode,
-        'detected_features' => $features,
-    ];
-}
-
-function isVkDonationAttachmentError(Throwable $e): bool
-{
-    $message = mb_strtolower((string) $e->getMessage());
-    $technical = $e instanceof VkApiException ? mb_strtolower($e->getTechnicalMessage()) : '';
-    $haystack = $message . ' ' . $technical;
-
-    return str_contains($haystack, 'donut')
-        || str_contains($haystack, 'donate')
-        || str_contains($haystack, 'donation')
-        || str_contains($haystack, 'goal');
 }
 
 function retryFailedVkTaskItems(int $taskId): array
