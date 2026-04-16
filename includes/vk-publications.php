@@ -568,7 +568,7 @@ function getVkPublicationTokenDiagnostics(array $settings): array
 function vkPublicationCapabilityMatrixCommunityToken(): array
 {
     return [
-        'text_post_supported' => ['supported' => true, 'note' => 'supported via wall.post'],
+        'text_post_supported' => ['supported' => true, 'note' => 'diagnostic only, not used in production publication flow'],
         'upload_local_image_supported' => ['supported' => false, 'note' => 'local upload is blocked for community_token'],
         'attach_existing_media_supported' => ['supported' => true, 'note' => 'supported when media id is known'],
     ];
@@ -577,7 +577,7 @@ function vkPublicationCapabilityMatrixCommunityToken(): array
 function vkPublicationCapabilityMatrixAdminUserToken(): array
 {
     return [
-        'text_post_supported' => ['supported' => true, 'note' => 'supported via wall.post'],
+        'text_post_supported' => ['supported' => true, 'note' => 'diagnostic only, not used in production publication flow'],
         'upload_local_image_supported' => ['supported' => true, 'note' => 'photos.getWallUploadServer -> saveWallPhoto -> wall.post'],
         'attach_existing_media_supported' => ['supported' => true, 'note' => 'supported via wall.post attachments'],
     ];
@@ -650,6 +650,15 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
     $steps['capabilities'] = ['ok' => true, 'matrix' => $effectiveAuthMode === 'admin_user_token'
         ? vkPublicationCapabilityMatrixAdminUserToken()
         : vkPublicationCapabilityMatrixCommunityToken()];
+    $capabilityMatrix = $steps['capabilities']['matrix'];
+    if (
+        $scenario === 'publish_local_image'
+        && empty($capabilityMatrix['upload_local_image_supported']['supported'])
+    ) {
+        $issues[] = 'Текущий режим авторизации не поддерживает загрузку локального рисунка в VK.';
+        $steps['capabilities']['ok'] = false;
+        $steps['capabilities']['message'] = 'Для публикации работ нужен режим с загрузкой локального изображения.';
+    }
 
     if ($effectiveAuthMode === 'admin_user_token') {
         $adminTokenState = resolvePersistentAdminVkAccessToken();
@@ -720,9 +729,6 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
                     'skipped' => true,
                     'message' => 'Локальная загрузка файла недоступна для community_token.',
                 ];
-                if ($scenario === 'publish_local_image') {
-                    $issues[] = 'Текущий режим авторизации не поддерживает загрузку локального рисунка в VK.';
-                }
             } else {
                 $uploadResponse = $client->apiRequestForDiagnostics('photos.getWallUploadServer', [
                     'group_id' => (int) $settings['group_id'],
@@ -1440,10 +1446,50 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         return ['success' => false, 'error' => $normalized['message']];
     }
 
-    $imageFsPath = getParticipantDrawingFsPath((string) ($item['applicant_email'] ?? ''), (string) ($item['work_image_path'] ?? ''));
-    if (!$imageFsPath || !is_file($imageFsPath) || !is_readable($imageFsPath)) {
+    if (!$ctx->canUploadLocalImage()) {
+        $failureStage = 'capability_check';
+        $error = 'Текущий режим авторизации не поддерживает загрузку локального рисунка в VK.';
+        markVkTaskItemFailed(
+            (int) $item['id'],
+            (int) $item['task_id'],
+            $error,
+            'Current auth mode cannot upload local image to VK'
+        );
+        return ['success' => false, 'error' => $error];
+    }
+
+    $workStateStmt = $pdo->prepare("SELECT status FROM works WHERE id = ? LIMIT 1");
+    $workStateStmt->execute([(int) $item['work_id']]);
+    $workState = $workStateStmt->fetchColumn();
+    if ((string) $workState !== 'accepted') {
         $failureStage = 'validation';
-        $error = 'Не удалось найти изображение в заявке или файл недоступен для чтения.';
+        $error = 'Работа больше не имеет статус "accepted".';
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, 'work status is not accepted');
+        return ['success' => false, 'error' => $error];
+    }
+
+    $imageFsPath = getParticipantDrawingFsPath((string) ($item['applicant_email'] ?? ''), (string) ($item['work_image_path'] ?? ''));
+    if (!$imageFsPath) {
+        $failureStage = 'validation';
+        $error = 'Не удалось определить путь к изображению рисунка.';
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
+        return ['success' => false, 'error' => $error];
+    }
+    if (!is_file($imageFsPath)) {
+        $failureStage = 'validation';
+        $error = 'Файл изображения рисунка не найден на диске.';
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
+        return ['success' => false, 'error' => $error];
+    }
+    if (!is_readable($imageFsPath)) {
+        $failureStage = 'validation';
+        $error = 'Файл изображения рисунка недоступен для чтения.';
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
+        return ['success' => false, 'error' => $error];
+    }
+    if ((int) @filesize($imageFsPath) <= 0) {
+        $failureStage = 'validation';
+        $error = 'Файл изображения рисунка пустой.';
         markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
         return ['success' => false, 'error' => $error];
     }
@@ -1461,7 +1507,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
     $postMessage = trim((string) ($item['post_text'] ?? ''));
     if ($postMessage === '') {
         $failureStage = 'validation';
-        $error = 'Не заполнен шаблон подписи для публикации в VK.';
+        $error = 'Шаблон текста публикации пустой или не дал результата после подстановки данных.';
         markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $error, $error);
         return ['success' => false, 'error' => $error];
     }
@@ -1677,14 +1723,3 @@ function retryFailedVkTaskItems(int $taskId): array
 
     return publishVkTask($taskId);
 }
-    if (!$ctx->canUploadLocalImage()) {
-        $failureStage = 'capability_check';
-        $error = 'Текущий режим авторизации не поддерживает загрузку локального рисунка в VK.';
-        markVkTaskItemFailed(
-            (int) $item['id'],
-            (int) $item['task_id'],
-            $error,
-            'community_token cannot use local wall photo upload chain'
-        );
-        return ['success' => false, 'error' => 'Неподдерживаемый режим авторизации'];
-    }
