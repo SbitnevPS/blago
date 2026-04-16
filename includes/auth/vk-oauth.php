@@ -1159,5 +1159,21 @@ function vk_admin_login_by_access_token(PDO $pdo, string $accessToken, string $r
         'device_id' => $deviceId,
     ]);
 
+    if (function_exists('saveSystemSettings')) {
+        $encrypt = static function (string $value): string {
+            if (function_exists('vkPublicationEncryptValue')) {
+                return (string) vkPublicationEncryptValue($value);
+            }
+            return $value;
+        };
+        saveSystemSettings([
+            'vk_publication_admin_access_token_encrypted' => $encrypt($accessToken),
+            'vk_publication_admin_refresh_token_encrypted' => $encrypt($refreshToken),
+            'vk_publication_admin_token_expires_at' => $expiresAt,
+            'vk_publication_admin_device_id' => $deviceId,
+            'vk_publication_admin_user_id' => $vkUserId,
+        ]);
+    }
+
     return ['ok' => true, 'redirect_to' => $safeRedirect];
 }

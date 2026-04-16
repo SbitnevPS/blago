@@ -1,6 +1,28 @@
 <?php
 
 require_once __DIR__ . '/vk-api.php';
+require_once __DIR__ . '/auth/vk-oauth.php';
+
+final class VkPublicationAuthContext
+{
+    public function __construct(
+        public string $mode,
+        public string $accessToken,
+        public int $groupId,
+        public string $apiVersion,
+        public bool $fromGroup,
+        public ?string $refreshToken = null,
+        public ?string $deviceId = null,
+        public ?int $expiresAt = null,
+        public ?int $adminUserId = null,
+    ) {
+    }
+
+    public function canUploadLocalImage(): bool
+    {
+        return $this->mode === 'admin_user_token';
+    }
+}
 
 function ensureVkPublicationSchema(): void
 {
@@ -85,11 +107,41 @@ function ensureVkPublicationSchema(): void
         if (!in_array('technical_error', $itemColumns, true)) {
             $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN technical_error TEXT NULL AFTER error_message");
         }
+        $itemColumnSql = [
+            'publication_type' => "ALTER TABLE vk_publication_task_items ADD COLUMN publication_type VARCHAR(32) NOT NULL DEFAULT 'standard'",
+            'resolved_mode' => "ALTER TABLE vk_publication_task_items ADD COLUMN resolved_mode VARCHAR(32) NULL",
+            'capability_status' => "ALTER TABLE vk_publication_task_items ADD COLUMN capability_status VARCHAR(32) NOT NULL DEFAULT 'not_checked'",
+            'failure_stage' => "ALTER TABLE vk_publication_task_items ADD COLUMN failure_stage VARCHAR(64) NULL",
+            'request_payload_json' => "ALTER TABLE vk_publication_task_items ADD COLUMN request_payload_json LONGTEXT NULL",
+            'response_payload_json' => "ALTER TABLE vk_publication_task_items ADD COLUMN response_payload_json LONGTEXT NULL",
+            'verification_status' => "ALTER TABLE vk_publication_task_items ADD COLUMN verification_status VARCHAR(64) NULL",
+            'verification_message' => "ALTER TABLE vk_publication_task_items ADD COLUMN verification_message TEXT NULL",
+            'detected_mode' => "ALTER TABLE vk_publication_task_items ADD COLUMN detected_mode VARCHAR(64) NULL",
+            'detected_features_json' => "ALTER TABLE vk_publication_task_items ADD COLUMN detected_features_json LONGTEXT NULL",
+            'vk_post_readback_json' => "ALTER TABLE vk_publication_task_items ADD COLUMN vk_post_readback_json LONGTEXT NULL",
+        ];
+        foreach ($itemColumnSql as $column => $sql) {
+            if (!in_array($column, $itemColumns, true)) {
+                $pdo->exec($sql);
+            }
+        }
     } catch (Throwable $e) {
     }
 
     try {
         $taskColumns = $pdo->query("SHOW COLUMNS FROM vk_publication_tasks")->fetchAll(PDO::FETCH_COLUMN);
+        $taskColumnSql = [
+            'publication_type' => "ALTER TABLE vk_publication_tasks ADD COLUMN publication_type VARCHAR(32) NOT NULL DEFAULT 'standard'",
+            'resolved_mode' => "ALTER TABLE vk_publication_tasks ADD COLUMN resolved_mode VARCHAR(32) NULL",
+            'capability_status' => "ALTER TABLE vk_publication_tasks ADD COLUMN capability_status VARCHAR(32) NOT NULL DEFAULT 'not_checked'",
+            'failure_stage' => "ALTER TABLE vk_publication_tasks ADD COLUMN failure_stage VARCHAR(64) NULL",
+            'response_payload_json' => "ALTER TABLE vk_publication_tasks ADD COLUMN response_payload_json LONGTEXT NULL",
+        ];
+        foreach ($taskColumnSql as $column => $sql) {
+            if (!in_array($column, $taskColumns, true)) {
+                $pdo->exec($sql);
+            }
+        }
     } catch (Throwable $e) {
     }
 }
@@ -297,7 +349,9 @@ function getVkPublicationSettings(): array
     $groupToken = trim((string) ($settings['vk_publication_group_token'] ?? ''));
 
     return [
-        'auth_mode' => 'community_token',
+        'auth_mode' => in_array((string) ($settings['vk_publication_auth_mode'] ?? 'community_token'), ['community_token', 'admin_user_token'], true)
+            ? (string) $settings['vk_publication_auth_mode']
+            : 'community_token',
         'token_source_setting' => 'stored_group',
         'group_id' => trim((string) ($settings['vk_publication_group_id'] ?? '')),
         'group_token' => $groupToken,
@@ -315,6 +369,10 @@ function getVkPublicationSettings(): array
         'last_check_status' => trim((string) ($settings['vk_publication_last_check_status'] ?? '')),
         'last_check_message' => trim((string) ($settings['vk_publication_last_check_message'] ?? '')),
         'token_masked' => $groupToken !== '' ? maskVkPublicationToken($groupToken) : '',
+        'admin_token_masked' => trim((string) ($settings['vk_publication_admin_access_token_encrypted'] ?? '')) !== ''
+            ? 'stored_encrypted'
+            : '',
+        'admin_user_id' => (int) ($settings['vk_publication_admin_user_id'] ?? 0),
     ];
 }
 
@@ -324,11 +382,11 @@ function getVkPublicationRuntimeSettings(bool $preferSessionToken = true, bool $
     $token = trim((string) ($settings['group_token'] ?? ''));
 
     return [
-        'auth_mode' => 'community_token',
+        'auth_mode' => (string) ($settings['auth_mode'] ?? 'community_token'),
         'group_token' => $token,
         'token_masked' => $token !== '' ? maskVkPublicationToken($token) : '',
         'token_id' => $token !== '' ? substr(hash('sha256', $token), 0, 10) : '',
-        'token_type' => 'group',
+        'token_type' => (string) ($settings['auth_mode'] ?? 'community_token') === 'admin_user_token' ? 'user' : 'group',
         'token_source' => $token !== '' ? 'stored_group' : 'none',
         'scope_required_for_publication' => ['wall', 'photos'],
         'vk_device_id' => '',
@@ -337,10 +395,136 @@ function getVkPublicationRuntimeSettings(bool $preferSessionToken = true, bool $
         'from_group' => !empty($settings['from_group']),
         'post_template' => (string) ($settings['post_template'] ?? defaultVkPostTemplate()),
         'group_name' => (string) ($settings['group_name'] ?? ''),
+        'admin_access_token' => '',
+        'admin_refresh_token' => '',
+        'admin_token_expires_at' => (int) (getSystemSettings()['vk_publication_admin_token_expires_at'] ?? 0),
+        'admin_device_id' => (string) (getSystemSettings()['vk_publication_admin_device_id'] ?? ''),
+        'admin_user_id' => (int) (getSystemSettings()['vk_publication_admin_user_id'] ?? 0),
         'confirmed_permissions' => trim((string) (getSystemSettings()['vk_publication_confirmed_permissions'] ?? '')),
         'last_error' => trim((string) ($settings['last_error'] ?? '')),
         'last_check_message' => trim((string) ($settings['last_check_message'] ?? '')),
     ];
+}
+
+function vkPublicationEncryptValue(string $value): string
+{
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+    $key = hash('sha256', VK_CLIENT_SECRET . '|vk_publication', true);
+    $iv = random_bytes(16);
+    $encrypted = openssl_encrypt($value, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+    if ($encrypted === false) {
+        return '';
+    }
+    return base64_encode($iv . $encrypted);
+}
+
+function vkPublicationDecryptValue(string $encrypted): string
+{
+    $encoded = trim($encrypted);
+    if ($encoded === '') {
+        return '';
+    }
+    $raw = base64_decode($encoded, true);
+    if ($raw === false || strlen($raw) <= 16) {
+        return '';
+    }
+    $iv = substr($raw, 0, 16);
+    $cipher = substr($raw, 16);
+    $key = hash('sha256', VK_CLIENT_SECRET . '|vk_publication', true);
+    $decrypted = openssl_decrypt($cipher, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+    return is_string($decrypted) ? $decrypted : '';
+}
+
+function resolvePersistentAdminVkAccessToken(): array
+{
+    $settings = getSystemSettings();
+    $accessToken = vkPublicationDecryptValue((string) ($settings['vk_publication_admin_access_token_encrypted'] ?? ''));
+    $refreshToken = vkPublicationDecryptValue((string) ($settings['vk_publication_admin_refresh_token_encrypted'] ?? ''));
+    $expiresAt = (int) ($settings['vk_publication_admin_token_expires_at'] ?? 0);
+    $deviceId = trim((string) ($settings['vk_publication_admin_device_id'] ?? ''));
+    $adminUserId = (int) ($settings['vk_publication_admin_user_id'] ?? 0);
+
+    if ($accessToken === '') {
+        return ['ok' => false, 'error' => 'admin token is missing'];
+    }
+
+    $now = time();
+    if ($refreshToken !== '' && $deviceId !== '' && $expiresAt > 0 && ($expiresAt - $now) <= 300) {
+        $refreshResult = vkid_refresh_token($refreshToken, $deviceId);
+        if (!empty($refreshResult['ok'])) {
+            $payload = (array) ($refreshResult['payload'] ?? []);
+            $freshAccessToken = trim((string) ($payload['access_token'] ?? ''));
+            $freshRefreshToken = trim((string) ($payload['refresh_token'] ?? $refreshToken));
+            $expiresIn = (int) ($payload['expires_in'] ?? 0);
+            $freshExpiresAt = $expiresIn > 0 ? ($now + $expiresIn) : $expiresAt;
+
+            if ($freshAccessToken !== '') {
+                saveSystemSettings([
+                    'vk_publication_admin_access_token_encrypted' => vkPublicationEncryptValue($freshAccessToken),
+                    'vk_publication_admin_refresh_token_encrypted' => vkPublicationEncryptValue($freshRefreshToken),
+                    'vk_publication_admin_token_expires_at' => $freshExpiresAt,
+                    'vk_publication_admin_device_id' => $deviceId,
+                    'vk_publication_admin_user_id' => $adminUserId,
+                ]);
+                return [
+                    'ok' => true,
+                    'access_token' => $freshAccessToken,
+                    'refresh_token' => $freshRefreshToken,
+                    'expires_at' => $freshExpiresAt,
+                    'device_id' => $deviceId,
+                    'admin_user_id' => $adminUserId,
+                    'refreshed' => true,
+                ];
+            }
+        }
+    }
+
+    return [
+        'ok' => true,
+        'access_token' => $accessToken,
+        'refresh_token' => $refreshToken,
+        'expires_at' => $expiresAt,
+        'device_id' => $deviceId,
+        'admin_user_id' => $adminUserId,
+        'refreshed' => false,
+    ];
+}
+
+function resolveVkPublicationAuthContext(): VkPublicationAuthContext
+{
+    $settings = getVkPublicationRuntimeSettings(false, false);
+    $mode = in_array((string) ($settings['auth_mode'] ?? ''), ['community_token', 'admin_user_token'], true)
+        ? (string) $settings['auth_mode']
+        : 'community_token';
+
+    if ($mode === 'admin_user_token') {
+        $tokenState = resolvePersistentAdminVkAccessToken();
+        if (empty($tokenState['ok'])) {
+            throw new VkApiException('Не задан admin user token для публикации.');
+        }
+        return new VkPublicationAuthContext(
+            'admin_user_token',
+            (string) $tokenState['access_token'],
+            (int) $settings['group_id'],
+            (string) $settings['api_version'],
+            !empty($settings['from_group']),
+            (string) ($tokenState['refresh_token'] ?? ''),
+            (string) ($tokenState['device_id'] ?? ''),
+            (int) ($tokenState['expires_at'] ?? 0),
+            (int) ($tokenState['admin_user_id'] ?? 0),
+        );
+    }
+
+    return new VkPublicationAuthContext(
+        'community_token',
+        (string) ($settings['group_token'] ?? ''),
+        (int) $settings['group_id'],
+        (string) $settings['api_version'],
+        !empty($settings['from_group']),
+    );
 }
 
 function maskVkPublicationToken(string $token): string
@@ -384,9 +568,18 @@ function getVkPublicationTokenDiagnostics(array $settings): array
 function vkPublicationCapabilityMatrixCommunityToken(): array
 {
     return [
-        'text_post' => ['supported' => true, 'note' => 'supported via wall.post'],
-        'upload_local_image_to_wall' => ['supported' => false, 'note' => 'photos.getWallUploadServer returns error #27 (method is unavailable with group auth)'],
-        'donut_donation' => ['supported' => false, 'note' => 'not used in publication pipeline'],
+        'text_post_supported' => ['supported' => true, 'note' => 'supported via wall.post'],
+        'upload_local_image_supported' => ['supported' => false, 'note' => 'local upload is blocked for community_token'],
+        'attach_existing_media_supported' => ['supported' => true, 'note' => 'supported when media id is known'],
+    ];
+}
+
+function vkPublicationCapabilityMatrixAdminUserToken(): array
+{
+    return [
+        'text_post_supported' => ['supported' => true, 'note' => 'supported via wall.post'],
+        'upload_local_image_supported' => ['supported' => true, 'note' => 'photos.getWallUploadServer -> saveWallPhoto -> wall.post'],
+        'attach_existing_media_supported' => ['supported' => true, 'note' => 'supported via wall.post attachments'],
     ];
 }
 
@@ -435,25 +628,39 @@ function isVkGroupAuthMethodUnavailableError(Throwable $e): bool
         || ((int) $e->getCode() === 27 && str_contains($technical, 'photos.getwalluploadserver'));
 }
 
-function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferSessionToken = false, string $scenario = 'diagnostic'): array
+function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferSessionToken = false, string $scenario = 'diagnostic', ?string $authMode = null): array
 {
     $settings = getVkPublicationRuntimeSettings(false, false);
+    $effectiveAuthMode = in_array((string) $authMode, ['community_token', 'admin_user_token'], true)
+        ? (string) $authMode
+        : (string) ($settings['auth_mode'] ?? 'community_token');
     $issues = [];
     $checks = [];
     $groupName = '';
     $steps = [];
 
     $runtime = [
-        'auth_mode' => 'community_token',
+        'auth_mode' => $effectiveAuthMode,
         'token_source' => (string) ($settings['token_source'] ?? 'none'),
         'token_masked' => (string) ($settings['token_masked'] ?? ''),
         'token_id' => (string) ($settings['token_id'] ?? ''),
         'token_type' => 'group',
     ];
 
-    $steps['capabilities'] = ['ok' => true, 'matrix' => vkPublicationCapabilityMatrixCommunityToken()];
+    $steps['capabilities'] = ['ok' => true, 'matrix' => $effectiveAuthMode === 'admin_user_token'
+        ? vkPublicationCapabilityMatrixAdminUserToken()
+        : vkPublicationCapabilityMatrixCommunityToken()];
 
-    if (trim((string) ($settings['group_token'] ?? '')) === '') {
+    if ($effectiveAuthMode === 'admin_user_token') {
+        $adminTokenState = resolvePersistentAdminVkAccessToken();
+        if (empty($adminTokenState['ok']) || trim((string) ($adminTokenState['access_token'] ?? '')) === '') {
+            $issues[] = 'Admin user token не задан.';
+            $steps['token_present'] = ['ok' => false, 'message' => 'admin user token отсутствует'];
+        } else {
+            $settings['group_token'] = (string) $adminTokenState['access_token'];
+            $steps['token_present'] = ['ok' => true, 'message' => 'admin user token найден'];
+        }
+    } elseif (trim((string) ($settings['group_token'] ?? '')) === '') {
         $issues[] = 'Ключ доступа сообщества VK не задан.';
         $steps['token_present'] = ['ok' => false, 'message' => 'Ключ сообщества отсутствует'];
     } else {
@@ -474,11 +681,8 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
 
     if ($settings['group_token'] !== '' && (int) $settings['group_id'] > 0) {
         try {
-            $client = new VkApiClient(
-                $settings['group_token'],
-                (int) $settings['group_id'],
-                (string) $settings['api_version']
-            );
+            $ctx = resolveVkPublicationAuthContext();
+            $client = new VkApiClient($ctx->accessToken, $ctx->mode, $ctx->groupId, $ctx->apiVersion);
 
             $groupResponse = $client->apiRequestForDiagnostics('groups.getById', [
                 'group_id' => (int) $settings['group_id'],
@@ -510,7 +714,16 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
                 $checks[] = 'groups.getTokenPermissions выполнен';
             }
 
-            try {
+            if ($effectiveAuthMode === 'community_token') {
+                $steps['photos_getWallUploadServer'] = [
+                    'ok' => false,
+                    'skipped' => true,
+                    'message' => 'Локальная загрузка файла недоступна для community_token.',
+                ];
+                if ($scenario === 'publish_local_image') {
+                    $issues[] = 'Текущий режим авторизации не поддерживает загрузку локального рисунка в VK.';
+                }
+            } else {
                 $uploadResponse = $client->apiRequestForDiagnostics('photos.getWallUploadServer', [
                     'group_id' => (int) $settings['group_id'],
                 ]);
@@ -520,19 +733,6 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
                 } else {
                     $checks[] = 'photos.getWallUploadServer выполнен';
                     $steps['photos_getWallUploadServer'] = ['ok' => true, 'message' => 'OK'];
-                }
-            } catch (Throwable $uploadError) {
-                if (isVkGroupAuthMethodUnavailableError($uploadError)) {
-                    $issue = 'Ключ сообщества валиден, но текущий VK API-сценарий загрузки изображения на стену недоступен для group auth.';
-                    $issues[] = $issue;
-                    $checks[] = 'photos.getWallUploadServer: method unavailable with group auth';
-                    $steps['photos_getWallUploadServer'] = [
-                        'ok' => false,
-                        'skipped' => true,
-                        'message' => 'Текущий сценарий загрузки изображения на стену не поддерживается для ключа сообщества.',
-                    ];
-                } else {
-                    throw $uploadError;
                 }
             }
         } catch (Throwable $e) {
@@ -1225,7 +1425,14 @@ function publishVkTaskItem(int $itemId, array $options = []): array
 
     $settings = $readiness['settings'];
     try {
-        $client = new VkApiClient($settings['group_token'], (int) $settings['group_id'], (string) $settings['api_version']);
+        $ctx = resolveVkPublicationAuthContext();
+    } catch (Throwable $e) {
+        $normalized = normalizeVkPublicationError($e);
+        markVkTaskItemFailed((int) $item['id'], (int) $item['task_id'], $normalized['message'], $normalized['technical']);
+        return ['success' => false, 'error' => $normalized['message']];
+    }
+    try {
+        $client = new VkApiClient($ctx->accessToken, $ctx->mode, $ctx->groupId, $ctx->apiVersion);
     } catch (Throwable $e) {
         $failureStage = 'validation';
         $normalized = normalizeVkPublicationError($e);
@@ -1245,6 +1452,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
         'item_id' => (int) $item['id'],
         'task_id' => (int) $item['task_id'],
         'publication_type' => 'standard',
+        'auth_mode' => $ctx->mode,
         'message' => (string) ($item['post_text'] ?? ''),
         'image_path' => (string) ($item['work_image_path'] ?? ''),
         'strategy' => 'photo_upload',
@@ -1278,7 +1486,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
                 (string) $published['post_url'],
                 null,
                 null,
-                'standard',
+                $ctx->mode,
                 'supported',
                 json_encode($requestPayload, JSON_UNESCAPED_UNICODE),
                 json_encode($responsePayload, JSON_UNESCAPED_UNICODE),
@@ -1340,7 +1548,7 @@ function publishVkTaskItem(int $itemId, array $options = []): array
                 vk_post_readback_json = COALESCE(vk_post_readback_json, ?), updated_at = NOW()
             WHERE id = ?")
             ->execute([
-                'standard',
+                $ctx->mode,
                 'unsupported',
                 $failureStage ?? 'wall_post',
                 json_encode($requestPayload, JSON_UNESCAPED_UNICODE),
@@ -1469,3 +1677,14 @@ function retryFailedVkTaskItems(int $taskId): array
 
     return publishVkTask($taskId);
 }
+    if (!$ctx->canUploadLocalImage()) {
+        $failureStage = 'capability_check';
+        $error = 'Текущий режим авторизации не поддерживает загрузку локального рисунка в VK.';
+        markVkTaskItemFailed(
+            (int) $item['id'],
+            (int) $item['task_id'],
+            $error,
+            'community_token cannot use local wall photo upload chain'
+        );
+        return ['success' => false, 'error' => 'Неподдерживаемый режим авторизации'];
+    }
