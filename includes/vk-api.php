@@ -18,24 +18,26 @@ class VkApiException extends RuntimeException
 
 class VkApiClient
 {
-    private string $groupAccessToken;
+    private string $accessToken;
+    private string $tokenType;
     private string $apiVersion;
     private int $groupId;
     private string $tokenMask;
     private string $tokenId;
 
-    public function __construct(string $groupAccessToken, int $groupId, string $apiVersion = '5.131')
+    public function __construct(string $token, string $tokenType, int $groupId, string $apiVersion = '5.131')
     {
-        $this->groupAccessToken = trim($groupAccessToken);
+        $this->accessToken = trim($token);
+        $this->tokenType = trim($tokenType) !== '' ? trim($tokenType) : 'community_token';
         $this->groupId = $groupId;
         $this->apiVersion = trim($apiVersion) !== '' ? trim($apiVersion) : '5.131';
         $this->tokenMask = function_exists('maskVkPublicationToken')
-            ? (string) maskVkPublicationToken($this->groupAccessToken)
-            : (substr($this->groupAccessToken, 0, 4) . '****' . substr($this->groupAccessToken, -4));
-        $this->tokenId = substr(hash('sha256', $this->groupAccessToken), 0, 10);
+            ? (string) maskVkPublicationToken($this->accessToken)
+            : (substr($this->accessToken, 0, 4) . '****' . substr($this->accessToken, -4));
+        $this->tokenId = substr(hash('sha256', $this->accessToken), 0, 10);
 
-        if ($this->groupAccessToken === '') {
-            throw new VkApiException('Не задан ключ доступа сообщества VK для публикации.');
+        if ($this->accessToken === '') {
+            throw new VkApiException('Не задан ключ доступа VK для публикации.');
         }
 
         if ($this->groupId <= 0) {
@@ -45,6 +47,16 @@ class VkApiClient
 
     public function publishPhotoPost(string $imageFsPath, string $message, bool $fromGroup = true, array $extraWallParams = []): array
     {
+        $attachment = $this->uploadWallPhoto($imageFsPath);
+        return $this->postWallWithAttachment($message, $attachment, $fromGroup, $extraWallParams);
+    }
+
+    public function uploadWallPhoto(string $imageFsPath): string
+    {
+        if ($this->tokenType === 'community_token') {
+            throw new VkApiException('Локальная загрузка файла недоступна для community_token.');
+        }
+
         if (!is_file($imageFsPath) || !is_readable($imageFsPath)) {
             throw new VkApiException('Файл изображения недоступен для публикации.');
         }
@@ -80,8 +92,11 @@ class VkApiClient
             throw new VkApiException('VK вернул некорректный идентификатор фото.');
         }
 
-        $attachment = 'photo' . $ownerId . '_' . $photoId;
+        return 'photo' . $ownerId . '_' . $photoId;
+    }
 
+    public function postWallWithAttachment(string $message, string $attachment, bool $fromGroup = true, array $extraWallParams = []): array
+    {
         $wallPostParams = [
             'owner_id' => -1 * $this->groupId,
             'from_group' => $fromGroup ? 1 : 0,
@@ -107,6 +122,7 @@ class VkApiClient
                 'extra_wall_params' => $this->sanitizeParamsForLog($extraWallParams),
                 'wall_post_params' => $this->sanitizeParamsForLog($wallPostParams),
                 'publication_mode' => (string) ($extraWallParams['_publication_mode'] ?? 'unknown'),
+                'token_type' => $this->tokenType,
                 'token_masked' => $this->tokenMask,
                 'token_id' => $this->tokenId,
             ]);
@@ -318,7 +334,7 @@ class VkApiClient
 
     private function apiRequest(string $method, array $params): array
     {
-        $params['access_token'] = $this->groupAccessToken;
+        $params['access_token'] = $this->accessToken;
         $params['v'] = $this->apiVersion;
 
         $url = 'https://api.vk.com/method/' . $method;
