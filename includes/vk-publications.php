@@ -340,12 +340,50 @@ function getVkPublicationRuntimeSettings(bool $preferSessionToken = true, bool $
     $settings = getVkPublicationSettings();
     $rawSystemSettings = getSystemSettings();
     $authMode = trim((string) ($rawSystemSettings['vk_publication_auth_mode'] ?? ''));
+    $tokenSource = trim((string) ($rawSystemSettings['vk_publication_token_source'] ?? 'session_vkid'));
+    if (!in_array($tokenSource, ['session_vkid', 'manual_user', 'stored_group'], true)) {
+        $tokenSource = 'session_vkid';
+    }
+
     if (!in_array($authMode, ['user_session', 'community_token'], true)) {
-        $tokenSource = trim((string) ($rawSystemSettings['vk_publication_token_source'] ?? 'session_vkid'));
         $authMode = $tokenSource === 'stored_group' ? 'community_token' : 'user_session';
     }
 
     if ($authMode === 'user_session' && $preferSessionToken) {
+        $manualUserToken = trim((string) ($settings['manual_user_token'] ?? ''));
+
+        if ($tokenSource === 'manual_user') {
+            return [
+                'auth_mode' => 'user_session',
+                'publication_token' => $manualUserToken,
+                'token_masked' => $manualUserToken !== '' ? maskVkPublicationToken($manualUserToken) : '',
+                'token_id' => $manualUserToken !== '' ? substr(hash('sha256', $manualUserToken), 0, 10) : '',
+                'token_type' => 'user',
+                'token_source' => $manualUserToken !== '' ? 'manual_user' : 'none',
+                'token_scope' => '',
+                'token_scope_items' => [],
+                'token_scope_known' => false,
+                'scope_required_for_publication' => vk_admin_publication_required_scopes(),
+                'scope_requested_for_login' => vk_scope_normalize(VKID_ADMIN_SCOPE),
+                'requires_reauth' => false,
+                'reauth_reason' => $manualUserToken === '' ? 'Выбран ручной user token, но поле токена пустое.' : '',
+                'vk_user_id' => '',
+                'vk_device_id' => '',
+                'vk_obtained_at_ts' => 0,
+                'vk_refreshed_at_ts' => 0,
+                'vk_expires_at_ts' => 0,
+                'token_expires_at' => '',
+                'group_id' => (string) ($settings['group_id'] ?? ''),
+                'api_version' => (string) ($settings['api_version'] ?? VK_API_VERSION),
+                'from_group' => !empty($settings['from_group']),
+                'post_template' => (string) ($settings['post_template'] ?? defaultVkPostTemplate()),
+                'group_name' => (string) ($settings['group_name'] ?? ''),
+                'confirmed_permissions' => trim((string) ($rawSystemSettings['vk_publication_confirmed_permissions'] ?? '')),
+                'last_error' => trim((string) ($settings['last_error'] ?? '')),
+                'last_check_message' => trim((string) ($settings['last_check_message'] ?? '')),
+            ];
+        }
+
         $sessionTokens = vkid_session_get_tokens('admin');
         $sessionAccessToken = vkid_session_get_access_token('admin', $attemptRefresh);
         if ($sessionAccessToken !== '') {
@@ -394,39 +432,6 @@ function getVkPublicationRuntimeSettings(bool $preferSessionToken = true, bool $
             'last_error' => trim((string) ($settings['last_error'] ?? '')),
             'last_check_message' => trim((string) ($settings['last_check_message'] ?? '')),
         ];
-
-        $manualUserToken = trim((string) ($settings['manual_user_token'] ?? ''));
-        if (($sessionAccessToken === '' || $requiresReauth) && $manualUserToken !== '') {
-            return [
-                'auth_mode' => 'user_session',
-                'publication_token' => $manualUserToken,
-                'token_masked' => maskVkPublicationToken($manualUserToken),
-                'token_id' => substr(hash('sha256', $manualUserToken), 0, 10),
-                'token_type' => 'user',
-                'token_source' => 'manual_user',
-                'token_scope' => '',
-                'token_scope_items' => [],
-                'token_scope_known' => false,
-                'scope_required_for_publication' => vk_admin_publication_required_scopes(),
-                'scope_requested_for_login' => vk_scope_normalize(VKID_ADMIN_SCOPE),
-                'requires_reauth' => false,
-                'reauth_reason' => '',
-                'vk_user_id' => '',
-                'vk_device_id' => '',
-                'vk_obtained_at_ts' => 0,
-                'vk_refreshed_at_ts' => 0,
-                'vk_expires_at_ts' => 0,
-                'token_expires_at' => '',
-                'group_id' => (string) ($settings['group_id'] ?? ''),
-                'api_version' => (string) ($settings['api_version'] ?? VK_API_VERSION),
-                'from_group' => !empty($settings['from_group']),
-                'post_template' => (string) ($settings['post_template'] ?? defaultVkPostTemplate()),
-                'group_name' => (string) ($settings['group_name'] ?? ''),
-                'confirmed_permissions' => trim((string) ($rawSystemSettings['vk_publication_confirmed_permissions'] ?? '')),
-                'last_error' => trim((string) ($settings['last_error'] ?? '')),
-                'last_check_message' => trim((string) ($settings['last_check_message'] ?? '')),
-            ];
-        }
     }
 
     $token = trim((string) ($settings['group_token'] ?? ''));

@@ -212,7 +212,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $authMode = 'user_session';
             }
             $payload['vk_publication_auth_mode'] = $authMode;
-            $payload['vk_publication_token_source'] = $authMode === 'community_token' ? 'stored_group' : 'session_vkid';
+            $tokenSource = trim((string) ($_POST['vk_publication_token_source'] ?? ($settings['vk_publication_token_source'] ?? 'session_vkid')));
+            if ($authMode === 'community_token') {
+                $tokenSource = 'stored_group';
+            } elseif (!in_array($tokenSource, ['session_vkid', 'manual_user'], true)) {
+                $tokenSource = 'session_vkid';
+            }
+            $payload['vk_publication_token_source'] = $tokenSource;
 
             $postedGroupToken = trim((string) ($_POST['vk_publication_group_token'] ?? ''));
             if ($postedGroupToken !== '') {
@@ -670,9 +676,26 @@ unset($_SESSION['success_message']);
                         </div>
 
                         <div class="form-group">
+                            <?php $selectedVkTokenSource = (string) ($settings['vk_publication_token_source'] ?? 'session_vkid'); ?>
+                            <?php if (!in_array($selectedVkTokenSource, ['session_vkid', 'manual_user'], true)) { $selectedVkTokenSource = 'session_vkid'; } ?>
+                            <label class="form-label">Какой user token использовать</label>
+                            <label class="form-checkbox" style="display:block; margin-bottom:8px;">
+                                <input type="radio" name="vk_publication_token_source" value="session_vkid" <?= $selectedVkTokenSource === 'session_vkid' ? 'checked' : '' ?>>
+                                <span class="form-checkbox__mark"></span>
+                                <span>Токен из текущей VK-авторизации</span>
+                            </label>
+                            <label class="form-checkbox" style="display:block;">
+                                <input type="radio" name="vk_publication_token_source" value="manual_user" <?= $selectedVkTokenSource === 'manual_user' ? 'checked' : '' ?>>
+                                <span class="form-checkbox__mark"></span>
+                                <span>Ручной user token</span>
+                            </label>
+                            <div class="form-hint">Выбор применяется явно. Если выбран ручной токен, система не будет использовать токен из VK-сессии.</div>
+                        </div>
+
+                        <div class="form-group">
                             <label class="form-label">Резервный user token VK</label>
-                            <textarea name="vk_publication_manual_token" class="form-input" rows="4" placeholder="Вставьте user access token VK, если хотите использовать его как fallback вместо сессионного токена"><?= htmlspecialchars((string) ($settings['vk_publication_manual_token'] ?? '')) ?></textarea>
-                            <div class="form-hint">Используется только в режиме user_session как запасной вариант: если токен из VK-сессии отсутствует или выдан без нужных прав.</div>
+                            <textarea name="vk_publication_manual_token" class="form-input" rows="4" placeholder="Вставьте user access token VK, если хотите использовать его вручную"><?= htmlspecialchars((string) ($settings['vk_publication_manual_token'] ?? '')) ?></textarea>
+                            <div class="form-hint">Используется только в режиме user_session, если выше выбран вариант «Ручной user token».</div>
                             <div class="form-hint">Для публикации изображения в сообщество токен должен быть user token с правами <code>wall</code>, <code>photos</code>, <code>groups</code>.</div>
                         </div>
 
