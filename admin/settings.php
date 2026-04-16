@@ -102,6 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'vk_publication_auth_mode' => (string) ($settings['vk_publication_auth_mode'] ?? 'user_session'),
             'vk_publication_token_source' => (string) ($settings['vk_publication_token_source'] ?? 'session_vkid'),
             'vk_publication_group_token' => (string) ($settings['vk_publication_group_token'] ?? ''),
+            'vk_publication_manual_token' => (string) ($settings['vk_publication_manual_token'] ?? ''),
             'vk_publication_post_template' => (string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()),
             'email_notifications_enabled' => (int) ($settings['email_notifications_enabled'] ?? 1) === 1 ? 1 : 0,
             'email_from_name' => (string) ($settings['email_from_name'] ?? ''),
@@ -216,6 +217,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $postedGroupToken = trim((string) ($_POST['vk_publication_group_token'] ?? ''));
             if ($postedGroupToken !== '') {
                 $payload['vk_publication_group_token'] = $postedGroupToken;
+            }
+
+            $postedManualToken = trim((string) ($_POST['vk_publication_manual_token'] ?? ''));
+            if ($postedManualToken !== '') {
+                $payload['vk_publication_manual_token'] = $postedManualToken;
+            } elseif (isset($_POST['vk_publication_manual_token'])) {
+                $payload['vk_publication_manual_token'] = '';
             }
         } elseif ($section === 'vk-publication') {
             $payload['vk_publication_post_template'] = trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate());
@@ -584,7 +592,7 @@ unset($_SESSION['success_message']);
                             <div class="vk-connection-card__meta">
                                 <div style="margin:2px 0 6px; font-weight:600;">Права access token</div>
                                 <div><strong>Статус:</strong> <?= htmlspecialchars($vkStatusLabel) ?></div>
-                                <div><strong>Источник токена:</strong> текущая сессия VK на сайте</div>
+                                <div><strong>Источник токена:</strong> <?= htmlspecialchars(($vkPublicationSettings['token_source'] ?? '') === 'manual_user' ? 'ручной user token из настроек' : 'текущая сессия VK на сайте') ?></div>
                                 <div><strong>Маска токена:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
                                 <div><strong>Тип токена:</strong> <?= htmlspecialchars($vkTokenTypeLabel) ?></div>
                                 <div><strong>Фактический scope токена:</strong> <?= htmlspecialchars($vkScopeDisplay) ?></div>
@@ -659,6 +667,13 @@ unset($_SESSION['success_message']);
                                 <span class="form-checkbox__mark"></span>
                                 <span>Публиковать от имени сообщества</span>
                             </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Резервный user token VK</label>
+                            <textarea name="vk_publication_manual_token" class="form-input" rows="4" placeholder="Вставьте user access token VK, если хотите использовать его как fallback вместо сессионного токена"><?= htmlspecialchars((string) ($settings['vk_publication_manual_token'] ?? '')) ?></textarea>
+                            <div class="form-hint">Используется только в режиме user_session как запасной вариант: если токен из VK-сессии отсутствует или выдан без нужных прав.</div>
+                            <div class="form-hint">Для публикации изображения в сообщество токен должен быть user token с правами <code>wall</code>, <code>photos</code>, <code>groups</code>.</div>
                         </div>
 
                     </div>

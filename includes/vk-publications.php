@@ -295,8 +295,9 @@ function getVkPublicationSettings(): array
     $lastCheckedAt = trim((string) ($settings['vk_publication_last_checked_at'] ?? ''));
     $lastSuccessfulCheckAt = trim((string) ($settings['vk_publication_last_success_checked_at'] ?? ''));
     $groupToken = trim((string) ($settings['vk_publication_group_token'] ?? ''));
+    $manualUserToken = trim((string) ($settings['vk_publication_manual_token'] ?? ''));
     $tokenSource = trim((string) ($settings['vk_publication_token_source'] ?? 'session_vkid'));
-    if (!in_array($tokenSource, ['session_vkid', 'stored_group'], true)) {
+    if (!in_array($tokenSource, ['session_vkid', 'manual_user', 'stored_group'], true)) {
         $tokenSource = 'session_vkid';
     }
 
@@ -311,6 +312,7 @@ function getVkPublicationSettings(): array
         'token_source_setting' => $tokenSource,
         'group_id' => trim((string) ($settings['vk_publication_group_id'] ?? '')),
         'group_token' => $groupToken,
+        'manual_user_token' => $manualUserToken,
         'api_version' => trim((string) ($settings['vk_publication_api_version'] ?? VK_API_VERSION)),
         'from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1,
         'post_template' => trim((string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate())),
@@ -392,6 +394,39 @@ function getVkPublicationRuntimeSettings(bool $preferSessionToken = true, bool $
             'last_error' => trim((string) ($settings['last_error'] ?? '')),
             'last_check_message' => trim((string) ($settings['last_check_message'] ?? '')),
         ];
+
+        $manualUserToken = trim((string) ($settings['manual_user_token'] ?? ''));
+        if (($sessionAccessToken === '' || $requiresReauth) && $manualUserToken !== '') {
+            return [
+                'auth_mode' => 'user_session',
+                'publication_token' => $manualUserToken,
+                'token_masked' => maskVkPublicationToken($manualUserToken),
+                'token_id' => substr(hash('sha256', $manualUserToken), 0, 10),
+                'token_type' => 'user',
+                'token_source' => 'manual_user',
+                'token_scope' => '',
+                'token_scope_items' => [],
+                'token_scope_known' => false,
+                'scope_required_for_publication' => vk_admin_publication_required_scopes(),
+                'scope_requested_for_login' => vk_scope_normalize(VKID_ADMIN_SCOPE),
+                'requires_reauth' => false,
+                'reauth_reason' => '',
+                'vk_user_id' => '',
+                'vk_device_id' => '',
+                'vk_obtained_at_ts' => 0,
+                'vk_refreshed_at_ts' => 0,
+                'vk_expires_at_ts' => 0,
+                'token_expires_at' => '',
+                'group_id' => (string) ($settings['group_id'] ?? ''),
+                'api_version' => (string) ($settings['api_version'] ?? VK_API_VERSION),
+                'from_group' => !empty($settings['from_group']),
+                'post_template' => (string) ($settings['post_template'] ?? defaultVkPostTemplate()),
+                'group_name' => (string) ($settings['group_name'] ?? ''),
+                'confirmed_permissions' => trim((string) ($rawSystemSettings['vk_publication_confirmed_permissions'] ?? '')),
+                'last_error' => trim((string) ($settings['last_error'] ?? '')),
+                'last_check_message' => trim((string) ($settings['last_check_message'] ?? '')),
+            ];
+        }
     }
 
     $token = trim((string) ($settings['group_token'] ?? ''));
@@ -828,8 +863,7 @@ function verifyVkPublicationReadinessUserToken(array $settings, string $scenario
     $confirmedPermissions = empty($issues) ? implode(', ', $requiredScopes) : '';
 
     saveSystemSettings([
-        // Manual/stored tokens are deprecated: keep settings clean.
-        'vk_publication_manual_token' => '',
+        // Legacy OAuth remnants are deprecated; keep only explicit manual fallback token.
         'vk_publication_access_token' => '',
         'vk_publication_user_token' => '',
         'vk_publication_refresh_token' => '',
