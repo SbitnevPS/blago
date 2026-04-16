@@ -251,10 +251,18 @@ $vkCapabilityMatrix = [];
 if (!empty($vkSteps['capabilities']['matrix']) && is_array($vkSteps['capabilities']['matrix'])) {
     $vkCapabilityMatrix = $vkSteps['capabilities']['matrix'];
 }
-$vkStatus = !empty($vkReadiness['ok']) ? 'connected' : (($vkPublicationSettings['admin_token_masked'] !== '') ? 'attention' : 'disconnected');
-$vkStatusLabel = $vkStatus === 'connected'
-    ? 'VK подключён'
-    : ($vkStatus === 'attention' ? 'Требуется внимание' : 'VK не подключён');
+$vkIntegrationStatus = trim((string) ($settings['vk_publication_status'] ?? 'NOT_CONNECTED'));
+$vkStatusLabelMap = [
+    'NOT_CONNECTED' => 'Не подключено',
+    'TOKEN_SAVED' => 'Токен сохранён',
+    'READY_FOR_PUBLICATION' => 'Подключено',
+    'TOKEN_EXPIRED' => 'Срок токена истёк',
+    'CHECK_FAILED' => 'Проверка не пройдена',
+];
+$vkStatusLabel = $vkStatusLabelMap[$vkIntegrationStatus] ?? 'Не подключено';
+$vkStatusBadgeClass = $vkIntegrationStatus === 'READY_FOR_PUBLICATION'
+    ? 'badge--success'
+    : (($vkIntegrationStatus === 'TOKEN_SAVED' || $vkIntegrationStatus === 'TOKEN_EXPIRED' || $vkIntegrationStatus === 'CHECK_FAILED') ? 'badge--warning' : 'badge--secondary');
 $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== '' ? $vkPublicationSettings['confirmed_permissions'] : 'нет подтверждённых прав';
 $vkLastError = $vkPublicationSettings['last_error'] !== '' ? $vkPublicationSettings['last_error'] : '—';
 $vkTokenTypeRaw = trim((string) ($vkPublicationSettings['token_type'] ?? ''));
@@ -573,8 +581,8 @@ unset($_SESSION['success_message']);
                                     <strong>Публикация работ в VK</strong>
                                     <div class="form-hint">Проект публикует только рисунок + текст по шаблону. Для этого нужен режим <code>admin_user_token</code> с загрузкой локального изображения.</div>
                                 </div>
-                                <span class="badge <?= $vkStatus === 'connected' ? 'badge--success' : ($vkStatus === 'attention' ? 'badge--warning' : 'badge--secondary') ?>">
-                                    <?= htmlspecialchars($vkStatus === 'connected' ? 'Connected' : ($vkStatus === 'attention' ? 'Attention' : 'Disconnected')) ?>
+                                <span class="badge <?= htmlspecialchars($vkStatusBadgeClass) ?>">
+                                    <?= htmlspecialchars($vkIntegrationStatus) ?>
                                 </span>
                             </div>
 
@@ -582,7 +590,7 @@ unset($_SESSION['success_message']);
                                 <div style="margin:2px 0 6px; font-weight:600;">Параметры ключа</div>
                                 <div><strong>Статус:</strong> <?= htmlspecialchars($vkStatusLabel) ?></div>
                                 <div><strong>Auth mode:</strong> admin_user_token</div>
-                                <div><strong>Источник токена:</strong> <?= htmlspecialchars(($vkPublicationSettings['token_source'] ?? '') === 'stored_admin_user' ? 'OAuth VK Business / VK ID' : 'не задан') ?></div>
+                                <div><strong>Источник токена:</strong> <?= htmlspecialchars(($vkPublicationSettings['token_source'] ?? '') === 'oauth_vk_admin_login' ? 'OAuth VK admin login' : 'не задан') ?></div>
                                 <div><strong>Маска ключа:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
                                 <div><strong>Admin token:</strong> <code><?= htmlspecialchars(!empty($settings['vk_publication_admin_access_token_encrypted']) ? 'stored_encrypted' : '—') ?></code></div>
                                 <div><strong>Тип ключа:</strong> <?= htmlspecialchars($vkTokenTypeLabel) ?></div>
@@ -615,13 +623,13 @@ unset($_SESSION['success_message']);
                                 <div><strong>Последняя ошибка VK:</strong> <?= htmlspecialchars($vkLastError) ?></div>
                                 <div><strong>Последняя техническая ошибка:</strong> <?= htmlspecialchars(!empty($vkSteps['vk_api_error']['technical']) ? (string) $vkSteps['vk_api_error']['technical'] : '—') ?></div>
                                 <div style="margin:10px 0 6px; font-weight:600;">Диагностика</div>
-                                <div><strong>admin_user_token:</strong> <?= $vkAdminReady ? 'READY' : 'NOT CONFIGURED' ?></div>
+                                <div><strong>admin_user_token:</strong> <?= $vkAdminReady ? 'TOKEN_SAVED' : 'NOT_CONNECTED' ?></div>
                             </div>
 
                             <?php if (empty($settings['vk_publication_admin_access_token_encrypted'])): ?>
                                 <div class="alert alert--warning" style="margin-top:12px;">
                                     <i class="fas fa-triangle-exclamation"></i>
-                                    <?= htmlspecialchars('User access token для публикации не подключён. Нажмите «Подключить VK».') ?>
+                                    <?= htmlspecialchars('Требуется вход через VK для публикации на странице /admin/login.') ?>
                                 </div>
                             <?php endif; ?>
 
@@ -633,12 +641,9 @@ unset($_SESSION['success_message']);
                             <?php endif; ?>
 
                             <div class="vk-connection-card__actions">
-                                <button type="button" class="btn btn--primary btn--sm" id="vkConnectBtn">
-                                    <i class="fab fa-vk"></i> Подключить VK
-                                </button>
-                                <button type="button" class="btn btn--ghost btn--sm" id="vkReconnectBtn">
-                                    <i class="fas fa-rotate"></i> Переподключить VK
-                                </button>
+                                <a href="/admin/login?redirect=/admin/settings%23vk-integration" class="btn btn--primary btn--sm">
+                                    <i class="fab fa-vk"></i> Войти через VK для публикации
+                                </a>
                                 <button type="button" class="btn btn--ghost btn--sm" id="vkCheckBtn">
                                     <i class="fas fa-plug-circle-check"></i> Проверить доступ
                                 </button>
@@ -883,39 +888,6 @@ unset($_SESSION['success_message']);
         });
     }
 
-    const postJson = async (url) => {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': csrfToken,
-            },
-            body: JSON.stringify({}),
-        });
-        const payload = await response.json();
-        if (!response.ok || !payload.success) {
-            throw new Error(payload.error || payload.message || 'Ошибка запроса');
-        }
-        return payload;
-    };
-
-
-    const vkConnectBtn = document.getElementById('vkConnectBtn');
-    const vkReconnectBtn = document.getElementById('vkReconnectBtn');
-    const startVkPublicationOAuth = async () => {
-        const payload = await postJson('/auth/vk/publication/start');
-        if (!payload.auth_url) {
-            throw new Error('Не удалось получить ссылку авторизации VK.');
-        }
-        window.location.href = payload.auth_url;
-    };
-
-    vkConnectBtn?.addEventListener('click', async () => {
-        try { await startVkPublicationOAuth(); } catch (error) { alert(error.message || 'Ошибка запуска OAuth VK'); }
-    });
-    vkReconnectBtn?.addEventListener('click', async () => {
-        try { await startVkPublicationOAuth(); } catch (error) { alert(error.message || 'Ошибка запуска OAuth VK'); }
-    });
     vkCheckBtn?.addEventListener('click', async () => {
         const liveBox = document.getElementById('vkCheckLiveResult');
         const liveDetails = document.getElementById('vkCheckLiveDetails');
