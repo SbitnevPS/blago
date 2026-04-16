@@ -84,6 +84,8 @@ $routes = [
  '/auth/vk/admin/sdk-login' => ['file' => 'app/auth/vk/admin/sdk-login.php', 'name' => 'vk-admin-sdk-login'],
  '/auth/vk/admin/callback' => ['file' => 'app/auth/vk/admin/callback.php', 'name' => 'vk-admin-callback'],
  '/auth/vk/publication/test' => ['file' => 'app/auth/vk/publication/test.php', 'name' => 'vk-publication-test'],
+ '/auth/vk/publication/start' => ['file' => 'app/auth/vk/publication/start.php', 'name' => 'vk-publication-start'],
+ '/auth/vk/publication/callback' => ['file' => 'app/auth/vk/publication/callback.php', 'name' => 'vk-publication-callback'],
  
  // Конкурсы
  '/contests' => ['file' => 'app/views/public/contests.php', 'name' => 'contests'],

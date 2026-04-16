@@ -102,12 +102,20 @@ function vk_flow_redirect_uri(string $flow): string
         return VK_ADMIN_REDIRECT_URI;
     }
 
+    if ($flow === 'publication') {
+        return VK_PUBLICATION_REDIRECT_URI;
+    }
+
     return VK_USER_REDIRECT_URI;
 }
 
 function vk_flow_default_redirect(string $flow): string
 {
-    return $flow === 'admin' ? '/admin' : '/contests';
+    if ($flow === 'admin' || $flow === 'publication') {
+        return '/admin/settings#vk-integration';
+    }
+
+    return '/contests';
 }
 
 function vk_flow_session_get(string $flow): ?array
@@ -158,7 +166,9 @@ function vk_build_auth_url(array $sessionFlow): string
     $flow = (string) ($sessionFlow['flow'] ?? 'user');
     $scope = $flow === 'admin'
         ? vk_scope_normalize(VKID_ADMIN_SCOPE, ',')
-        : vk_scope_normalize(VKID_USER_SCOPE, ',');
+        : ($flow === 'publication'
+            ? vk_scope_normalize(VKID_PUBLICATION_SCOPE, ',')
+            : vk_scope_normalize(VKID_USER_SCOPE, ','));
 
     return 'https://oauth.vk.com/authorize?' . http_build_query([
         'client_id' => VK_CLIENT_ID,
@@ -177,8 +187,8 @@ function vk_flow_prepare(string $flow, string $rawRedirect): array
     $defaultRedirect = vk_flow_default_redirect($flow);
     $safeRedirect = sanitize_internal_redirect($rawRedirect, $defaultRedirect);
 
-    if ($flow === 'admin' && strpos($safeRedirect, '/admin') !== 0) {
-        $safeRedirect = '/admin';
+    if (($flow === 'admin' || $flow === 'publication') && strpos($safeRedirect, '/admin') !== 0) {
+        $safeRedirect = '/admin/settings#vk-integration';
     }
 
     $sessionFlow = vk_flow_session_get($flow);
@@ -364,7 +374,7 @@ function vk_error_message(string $code): string
 function vk_callback_fail(string $flow, string $errorCode): void
 {
     vk_flow_session_clear($flow);
-    $basePath = $flow === 'admin' ? '/admin/login' : '/login';
+    $basePath = $flow === 'admin' ? '/admin/login' : (($flow === 'publication') ? '/admin/settings#vk-integration' : '/login');
     header('Location: ' . $basePath . '?auth_error=' . urlencode($errorCode));
     exit;
 }

@@ -19,13 +19,14 @@ return [
         'api_version' => '5.131',
         'admin_redirect_uri' => 'https://example.com/auth/vk/admin/callback',
         'user_redirect_uri' => 'https://example.com/auth/vk/user/callback',
+        'publication_redirect_uri' => 'https://example.com/auth/vk/publication/callback',
     ],
 
-    // VK ID SDK scopes (used on login pages).
-    // Admin scope should include publication permissions if you want to publish to VK while admin session is active.
+    // VK ID SDK scopes.
     'vkid' => [
         'user_scope' => 'email',
-        'admin_scope' => 'email,wall,photos,groups,offline',
+        'admin_scope' => 'email,offline',
+        'publication_scope' => 'wall,photos,offline',
     ],
 
     'secrets' => [

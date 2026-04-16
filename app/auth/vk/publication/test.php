@@ -19,7 +19,7 @@ $readiness = verifyVkPublicationReadiness(false, false, 'diagnostic');
 $status = !empty($readiness['ok']) ? 'ok' : 'error';
 $message = '';
 if (!empty($readiness['ok'])) {
-    $message = 'Ключ доступа сообщества VK прошёл проверку. Публикация доступна.';
+    $message = 'User access token VK прошёл проверку. Публикация изображений доступна.';
 } else {
     $message = implode('; ', $readiness['issues'] ?? ['Ошибка проверки VK']);
 }
