@@ -154,18 +154,37 @@ function vk_flow_session_is_valid(string $flow, ?array $sessionFlow): bool
     return (
         ($sessionFlow['flow'] ?? '') === $flow
         && trim((string) ($sessionFlow['state'] ?? '')) !== ''
-        && trim((string) ($sessionFlow['code_verifier'] ?? '')) !== ''
         && trim((string) ($sessionFlow['redirect_uri'] ?? '')) === vk_flow_redirect_uri($flow)
     );
 }
 
+function vk_admin_publication_scope(): string
+{
+    $chunks = array_merge(
+        explode(',', vk_scope_normalize(VKID_ADMIN_SCOPE, ',')),
+        explode(',', vk_scope_normalize(VKID_PUBLICATION_SCOPE, ','))
+    );
+
+    $scopes = [];
+    foreach ($chunks as $chunk) {
+        $value = trim((string) $chunk);
+        if ($value !== '') {
+            $scopes[$value] = $value;
+        }
+    }
+
+    foreach (['wall', 'photos', 'offline'] as $requiredScope) {
+        $scopes[$requiredScope] = $requiredScope;
+    }
+
+    return implode(',', array_values($scopes));
+}
+
 function vk_build_auth_url(array $sessionFlow): string
 {
-    $verifier = (string) $sessionFlow['code_verifier'];
-    $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
     $flow = (string) ($sessionFlow['flow'] ?? 'user');
     $scope = $flow === 'admin'
-        ? vk_scope_normalize(VKID_ADMIN_SCOPE, ',')
+        ? vk_admin_publication_scope()
         : ($flow === 'publication'
             ? vk_scope_normalize(VKID_PUBLICATION_SCOPE, ',')
             : vk_scope_normalize(VKID_USER_SCOPE, ','));
@@ -176,8 +195,6 @@ function vk_build_auth_url(array $sessionFlow): string
         'response_type' => 'code',
         'scope' => $scope,
         'state' => (string) $sessionFlow['state'],
-        'code_challenge' => $challenge,
-        'code_challenge_method' => 'S256',
         'v' => VK_API_VERSION,
     ]);
 }
@@ -363,7 +380,7 @@ function vk_error_message(string $code): string
     $messages = [
         'session_expired' => 'Сессия входа через VK устарела. Попробуйте снова.',
         'invalid_callback' => 'VK вернул некорректные данные входа.',
-        'exchange_failed' => 'Не удалось завершить вход через VK.',
+        'exchange_failed' => 'Не удалось завершить вход через VK для публикации (нужны права wall/photos).',
         'profile_failed' => 'Не удалось получить профиль VK.',
         'admin_access_denied' => 'Доступ в админку запрещён.',
     ];
@@ -440,7 +457,7 @@ function vk_callback_handle(string $flow, PDO $pdo): void
         vk_callback_fail($flow, 'session_expired');
     }
 
-    if ($expectedState === '' || !hash_equals($expectedState, $state) || $storedVerifier === '') {
+    if ($expectedState === '' || !hash_equals($expectedState, $state)) {
         vk_auth_log('callback_state_or_verifier_failed', [
             'flow' => $flow,
             'state_valid' => ($expectedState !== '' && hash_equals($expectedState, $state)),
@@ -454,7 +471,6 @@ function vk_callback_handle(string $flow, PDO $pdo): void
         'client_secret' => VK_CLIENT_SECRET,
         'redirect_uri' => vk_flow_redirect_uri($flow),
         'code' => $code,
-        'code_verifier' => $storedVerifier,
         'grant_type' => 'authorization_code',
     ]);
     $tokenResponse = vk_http_get($tokenUrl);
@@ -1147,12 +1163,21 @@ function vk_admin_login_by_access_token(PDO $pdo, string $accessToken, string $r
         return ['ok' => false, 'error_code' => 'admin_access_denied'];
     }
 
+    $scope = vk_scope_normalize((string) ($claims['scope'] ?? ''), ',');
+    $scopeList = array_filter(array_map('trim', explode(',', $scope)));
+    $requiredScopes = ['wall', 'photos'];
+    foreach ($requiredScopes as $requiredScope) {
+        if (!in_array($requiredScope, $scopeList, true)) {
+            return ['ok' => false, 'error_code' => 'exchange_failed'];
+        }
+    }
+
     $_SESSION['admin_user_id'] = (int) $admin['id'];
     $_SESSION['is_admin'] = true;
     unset($_SESSION['admin_auth_redirect']);
 
     $expiresIn = (int) ($claims['expires_in'] ?? ($claims['expiresIn'] ?? 0));
-    $scope = vk_scope_normalize((string) ($claims['scope'] ?? ''));
+    $scopeForSession = vk_scope_normalize((string) ($claims['scope'] ?? ''));
     $tokenType = trim((string) ($claims['token_type'] ?? ($claims['tokenType'] ?? '')));
     $deviceId = trim((string) ($claims['device_id'] ?? ($claims['deviceId'] ?? '')));
     $obtainedAt = time();
@@ -1163,7 +1188,7 @@ function vk_admin_login_by_access_token(PDO $pdo, string $accessToken, string $r
         'expires_in' => $expiresIn,
         'obtained_at_ts' => $obtainedAt,
         'expires_at_ts' => $expiresAt,
-        'scope' => $scope,
+        'scope' => $scopeForSession,
         'token_type' => $tokenType,
         'user_id' => $vkUserId,
         'device_id' => $deviceId,
@@ -1182,7 +1207,26 @@ function vk_admin_login_by_access_token(PDO $pdo, string $accessToken, string $r
             'vk_publication_admin_token_expires_at' => $expiresAt,
             'vk_publication_admin_device_id' => $deviceId,
             'vk_publication_admin_user_id' => $vkUserId,
+            'vk_publication_auth_mode' => 'admin_user_token',
+            'vk_publication_token_source' => 'oauth_vk_admin_login',
+            'vk_publication_status' => 'TOKEN_SAVED',
         ]);
+    }
+
+    if (function_exists('verifyVkPublicationReadiness')) {
+        $readiness = verifyVkPublicationReadiness(false, false, 'admin_login');
+        if (empty($readiness['ok'])) {
+            saveSystemSettings([
+                'vk_publication_admin_access_token_encrypted' => '',
+                'vk_publication_admin_refresh_token_encrypted' => '',
+                'vk_publication_admin_token_expires_at' => 0,
+                'vk_publication_admin_device_id' => '',
+                'vk_publication_admin_user_id' => 0,
+                'vk_publication_status' => 'CHECK_FAILED',
+            ]);
+            vk_admin_session_reset();
+            return ['ok' => false, 'error_code' => 'exchange_failed'];
+        }
     }
 
     return ['ok' => true, 'redirect_to' => $safeRedirect];
