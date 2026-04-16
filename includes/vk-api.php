@@ -25,15 +25,12 @@ class VkApiClient
     private string $tokenId;
     private string $authMode;
 
-    /**
-     * @param string $authMode 'user' or 'group'
-     */
     public function __construct(string $publicationAccessToken, int $groupId, string $apiVersion = '5.131', string $authMode = 'user')
     {
         $this->publicationAccessToken = trim($publicationAccessToken);
         $this->groupId = $groupId;
         $this->apiVersion = trim($apiVersion) !== '' ? trim($apiVersion) : '5.131';
-        $this->authMode = in_array($authMode, ['user', 'group'], true) ? $authMode : 'user';
+        $this->authMode = 'user';
         $this->tokenMask = function_exists('maskVkPublicationToken')
             ? (string) maskVkPublicationToken($this->publicationAccessToken)
             : (substr($this->publicationAccessToken, 0, 4) . '****' . substr($this->publicationAccessToken, -4));
@@ -216,21 +213,6 @@ class VkApiClient
 
     public function validatePublicationAccess(): void
     {
-        if ($this->authMode === 'group') {
-            // Community token: skip users.get + managers checks (not applicable).
-            $groupsResponse = $this->apiRequest('groups.getById', [
-                'group_id' => $this->groupId,
-            ]);
-
-            if (!$groupsResponse) {
-                throw new VkApiException(
-                    'Не удалось проверить доступ к сообществу VK.',
-                    'groups.getById returned empty response for group_id=' . $this->groupId
-                );
-            }
-            return;
-        }
-
         $response = $this->apiRequest('users.get', []);
         if (!$response) {
             throw new VkApiException(
@@ -308,17 +290,6 @@ class VkApiClient
             );
         }
     }
-
-    public function getGroupTokenPermissions(): array
-    {
-        // https://dev.vk.com/method/groups.getTokenPermissions
-        // Useful only for community access tokens; for user tokens it may still work but is not required.
-        $response = $this->apiRequest('groups.getTokenPermissions', [
-            'group_id' => $this->groupId,
-        ]);
-        return is_array($response) ? $response : [];
-    }
-
 
     public function apiRequestForDiagnostics(string $method, array $params): array
     {
@@ -482,7 +453,7 @@ class VkApiClient
         }
 
         if (str_contains($msg, 'method is unavailable with group auth')) {
-            return 'VK вернул group auth. Для публикации нужен user-токен администратора из VK ID (вход в админку через VK ID) с правами wall, photos, groups.';
+            return 'VK отклонил запрос из-за неподходящего типа авторизации. Для публикации используется только пользовательский токен из текущей VK-сессии.';
         }
 
         if ($errorCode === 5) {
