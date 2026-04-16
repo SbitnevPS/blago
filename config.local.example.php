@@ -25,7 +25,7 @@ return [
     // Admin scope should include publication permissions if you want to publish to VK while admin session is active.
     'vkid' => [
         'user_scope' => 'email',
-        'admin_scope' => 'email wall groups photos offline',
+        'admin_scope' => 'email,wall,photos,groups,offline',
     ],
 
     'secrets' => [

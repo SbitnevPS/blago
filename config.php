@@ -75,7 +75,7 @@ define('VK_ADMIN_REDIRECT_URI', (string) config_get($config, 'vk.admin_redirect_
 define('VK_USER_REDIRECT_URI', (string) config_get($config, 'vk.user_redirect_uri', SITE_URL . '/auth/vk/user/callback'));
 // VK ID SDK scopes. Use admin scope for publication permissions.
 define('VKID_USER_SCOPE', (string) config_get($config, 'vkid.user_scope', 'email'));
-define('VKID_ADMIN_SCOPE', (string) config_get($config, 'vkid.admin_scope', 'email wall groups photos offline'));
+define('VKID_ADMIN_SCOPE', (string) config_get($config, 'vkid.admin_scope', 'email,wall,photos,groups,offline'));
 
 // Обратная совместимость со старым кодом
 define('VK_REDIRECT_URI', VK_ADMIN_REDIRECT_URI);
@@ -417,6 +417,47 @@ function vkid_session_clear_tokens(string $flow): void
     if (empty($_SESSION[VKID_SESSION_TOKENS_KEY])) {
         unset($_SESSION[VKID_SESSION_TOKENS_KEY]);
     }
+}
+
+function vk_scope_items($scope): array
+{
+    if (is_array($scope)) {
+        $rawItems = $scope;
+    } else {
+        $rawItems = preg_split('/[\s,]+/u', trim((string) $scope)) ?: [];
+    }
+
+    $normalized = [];
+    foreach ($rawItems as $item) {
+        $name = mb_strtolower(trim((string) $item));
+        if ($name === '') {
+            continue;
+        }
+        $normalized[$name] = $name;
+    }
+
+    return array_values($normalized);
+}
+
+function vk_scope_normalize($scope, string $separator = ' '): string
+{
+    $items = vk_scope_items($scope);
+    return empty($items) ? '' : implode($separator, $items);
+}
+
+function vk_admin_publication_required_scopes(): array
+{
+    return ['wall', 'photos', 'groups'];
+}
+
+function vk_scope_has($scope, string $required): bool
+{
+    $required = mb_strtolower(trim($required));
+    if ($required === '') {
+        return false;
+    }
+
+    return in_array($required, vk_scope_items($scope), true);
 }
 
 function vkid_session_is_expired(array $tokens, int $leewaySeconds = 60): bool

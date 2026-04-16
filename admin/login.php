@@ -212,7 +212,7 @@ function initVkAdminIdWidget() {
         redirectUrl: <?= json_encode(VK_ADMIN_REDIRECT_URI, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
-        scope: <?= json_encode(VKID_ADMIN_SCOPE, JSON_UNESCAPED_UNICODE) ?>,
+        scope: <?= json_encode(vk_scope_normalize(VKID_ADMIN_SCOPE, ','), JSON_UNESCAPED_UNICODE) ?>,
         state: <?= json_encode((string) ($vkidSdkFlow['state'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
         codeVerifier: <?= json_encode((string) ($vkidSdkFlow['code_verifier'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
     });

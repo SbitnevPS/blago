@@ -155,12 +155,16 @@ function vk_build_auth_url(array $sessionFlow): string
 {
     $verifier = (string) $sessionFlow['code_verifier'];
     $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
+    $flow = (string) ($sessionFlow['flow'] ?? 'user');
+    $scope = $flow === 'admin'
+        ? vk_scope_normalize(VKID_ADMIN_SCOPE, ',')
+        : vk_scope_normalize(VKID_USER_SCOPE, ',');
 
     return 'https://oauth.vk.com/authorize?' . http_build_query([
         'client_id' => VK_CLIENT_ID,
         'redirect_uri' => (string) $sessionFlow['redirect_uri'],
         'response_type' => 'code',
-        'scope' => 'email',
+        'scope' => $scope,
         'state' => (string) $sessionFlow['state'],
         'code_challenge' => $challenge,
         'code_challenge_method' => 'S256',
@@ -1037,7 +1041,7 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
     $_SESSION['user_id'] = $userId;
     $_SESSION['vk_token'] = $accessToken;
     $expiresIn = (int) ($claims['expires_in'] ?? ($claims['expiresIn'] ?? 0));
-    $scope = trim((string) ($claims['scope'] ?? ''));
+    $scope = vk_scope_normalize((string) ($claims['scope'] ?? ''));
     $tokenType = trim((string) ($claims['token_type'] ?? ($claims['tokenType'] ?? '')));
     $deviceId = trim((string) ($claims['device_id'] ?? ($claims['deviceId'] ?? '')));
     $obtainedAt = time();
@@ -1138,7 +1142,7 @@ function vk_admin_login_by_access_token(PDO $pdo, string $accessToken, string $r
     unset($_SESSION['admin_auth_redirect']);
 
     $expiresIn = (int) ($claims['expires_in'] ?? ($claims['expiresIn'] ?? 0));
-    $scope = trim((string) ($claims['scope'] ?? ''));
+    $scope = vk_scope_normalize((string) ($claims['scope'] ?? ''));
     $tokenType = trim((string) ($claims['token_type'] ?? ($claims['tokenType'] ?? '')));
     $deviceId = trim((string) ($claims['device_id'] ?? ($claims['deviceId'] ?? '')));
     $obtainedAt = time();

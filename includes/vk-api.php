@@ -50,18 +50,11 @@ class VkApiClient
 
     public function publishPhotoPost(string $imageFsPath, string $message, bool $fromGroup = true, array $extraWallParams = []): array
     {
-        if ($this->authMode === 'group') {
-            throw new VkApiException(
-                'Используется community token. Публикация нового локального изображения на стену недоступна в этом режиме.',
-                'community token mode: upload chain photos.getWallUploadServer/photos.saveWallPhoto is user-only'
-            );
-        }
-
         if (!is_file($imageFsPath) || !is_readable($imageFsPath)) {
             throw new VkApiException('Файл изображения недоступен для публикации.');
         }
 
-        $this->assertUserTokenCanPublish();
+        $this->validatePublicationAccess();
 
         $uploadServer = $this->apiRequest('photos.getWallUploadServer', [
             'group_id' => $this->groupId,

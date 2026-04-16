@@ -85,284 +85,13 @@ function ensureVkPublicationSchema(): void
         if (!in_array('technical_error', $itemColumns, true)) {
             $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN technical_error TEXT NULL AFTER error_message");
         }
-        if (!in_array('vk_donut_enabled', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_donut_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER vk_post_url");
-        }
-        if (!in_array('vk_donut_paid_duration', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_donut_paid_duration INT NULL AFTER vk_donut_enabled");
-        }
-        if (!in_array('vk_donut_can_publish_free_copy', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_donut_can_publish_free_copy TINYINT(1) NOT NULL DEFAULT 0 AFTER vk_donut_paid_duration");
-        }
-        if (!in_array('vk_donut_settings_snapshot', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_donut_settings_snapshot LONGTEXT NULL AFTER vk_donut_can_publish_free_copy");
-        }
-        if (!in_array('donation_enabled', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN donation_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER vk_donut_settings_snapshot");
-        }
-        if (!in_array('donation_goal_id', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN donation_goal_id INT NULL AFTER donation_enabled");
-        }
-        if (!in_array('vk_donate_id', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_donate_id VARCHAR(64) NULL AFTER donation_goal_id");
-        }
-        if (!in_array('publication_type', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN publication_type VARCHAR(32) NOT NULL DEFAULT 'standard' AFTER vk_donate_id");
-        }
-        if (!in_array('resolved_mode', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN resolved_mode VARCHAR(32) NULL AFTER publication_type");
-        }
-        if (!in_array('capability_status', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN capability_status VARCHAR(32) NULL AFTER resolved_mode");
-        }
-        if (!in_array('failure_stage', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN failure_stage VARCHAR(64) NULL AFTER capability_status");
-        }
-        if (!in_array('request_payload_json', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN request_payload_json LONGTEXT NULL AFTER failure_stage");
-        }
-        if (!in_array('response_payload_json', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN response_payload_json LONGTEXT NULL AFTER request_payload_json");
-        }
-        if (!in_array('verification_status', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN verification_status VARCHAR(64) NULL AFTER response_payload_json");
-        }
-        if (!in_array('verification_message', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN verification_message TEXT NULL AFTER verification_status");
-        }
-        if (!in_array('detected_mode', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN detected_mode VARCHAR(64) NULL AFTER verification_message");
-        }
-        if (!in_array('detected_features_json', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN detected_features_json LONGTEXT NULL AFTER detected_mode");
-        }
-        if (!in_array('vk_post_readback_json', $itemColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD COLUMN vk_post_readback_json LONGTEXT NULL AFTER detected_features_json");
-        }
-        try {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD INDEX idx_donation_goal_id (donation_goal_id)");
-        } catch (Throwable $e) {
-        }
-        try {
-            $pdo->exec("ALTER TABLE vk_publication_task_items ADD INDEX idx_vk_donate_id (vk_donate_id)");
-        } catch (Throwable $e) {
-        }
     } catch (Throwable $e) {
     }
 
     try {
         $taskColumns = $pdo->query("SHOW COLUMNS FROM vk_publication_tasks")->fetchAll(PDO::FETCH_COLUMN);
-        if (!in_array('vk_donut_enabled', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_donut_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER vk_group_id");
-        }
-        if (!in_array('vk_donut_paid_duration', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_donut_paid_duration INT NULL AFTER vk_donut_enabled");
-        }
-        if (!in_array('vk_donut_can_publish_free_copy', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_donut_can_publish_free_copy TINYINT(1) NOT NULL DEFAULT 0 AFTER vk_donut_paid_duration");
-        }
-        if (!in_array('vk_donut_settings_snapshot', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_donut_settings_snapshot LONGTEXT NULL AFTER vk_donut_can_publish_free_copy");
-        }
-        if (!in_array('vk_post_url', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_post_url VARCHAR(255) NULL AFTER vk_donut_settings_snapshot");
-        }
-        if (!in_array('donation_enabled', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN donation_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER vk_post_url");
-        }
-        if (!in_array('donation_goal_id', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN donation_goal_id INT NULL AFTER donation_enabled");
-        }
-        if (!in_array('vk_donate_id', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN vk_donate_id VARCHAR(64) NULL AFTER donation_goal_id");
-        }
-        if (!in_array('publication_type', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN publication_type VARCHAR(32) NOT NULL DEFAULT 'standard' AFTER vk_donate_id");
-        }
-        if (!in_array('resolved_mode', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN resolved_mode VARCHAR(32) NULL AFTER publication_type");
-        }
-        if (!in_array('capability_status', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN capability_status VARCHAR(32) NULL AFTER resolved_mode");
-        }
-        if (!in_array('failure_stage', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN failure_stage VARCHAR(64) NULL AFTER capability_status");
-        }
-        if (!in_array('request_payload_json', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN request_payload_json LONGTEXT NULL AFTER failure_stage");
-        }
-        if (!in_array('response_payload_json', $taskColumns, true)) {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD COLUMN response_payload_json LONGTEXT NULL AFTER request_payload_json");
-        }
-        try {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD INDEX idx_donation_goal_id (donation_goal_id)");
-        } catch (Throwable $e) {
-        }
-        try {
-            $pdo->exec("ALTER TABLE vk_publication_tasks ADD INDEX idx_vk_donate_id (vk_donate_id)");
-        } catch (Throwable $e) {
-        }
     } catch (Throwable $e) {
     }
-}
-
-function ensureVkDonatesSchema(): void
-{
-    global $pdo;
-
-    try {
-        $pdo->exec("CREATE TABLE IF NOT EXISTS vk_donates (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            title VARCHAR(255) NOT NULL,
-            description TEXT NULL,
-            vk_donate_id VARCHAR(64) NOT NULL,
-            is_active TINYINT(1) NOT NULL DEFAULT 1
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    } catch (Throwable $e) {
-    }
-}
-
-function getActiveVkDonates(): array
-{
-    global $pdo;
-    ensureVkDonatesSchema();
-
-    $stmt = $pdo->query("SELECT id, title, description, vk_donate_id, is_active FROM vk_donates WHERE is_active = 1 ORDER BY title ASC, id ASC");
-    return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-}
-
-function getVkDonateById(int $id): ?array
-{
-    global $pdo;
-    ensureVkDonatesSchema();
-    if ($id <= 0) {
-        return null;
-    }
-
-    $stmt = $pdo->prepare("SELECT id, title, description, vk_donate_id, is_active FROM vk_donates WHERE id = ? LIMIT 1");
-    $stmt->execute([$id]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $row ?: null;
-}
-
-function getVkDonateByVkId(string $vkDonateId): ?array
-{
-    global $pdo;
-    ensureVkDonatesSchema();
-
-    $normalizedVkDonateId = trim($vkDonateId);
-    if ($normalizedVkDonateId === '') {
-        return null;
-    }
-
-    $stmt = $pdo->prepare("SELECT id, title, description, vk_donate_id, is_active FROM vk_donates WHERE vk_donate_id = ? LIMIT 1");
-    $stmt->execute([$normalizedVkDonateId]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $row ?: null;
-}
-
-function upsertVkDonate(array $vkGoal): void
-{
-    global $pdo;
-    ensureVkDonatesSchema();
-
-    $vkDonateId = trim((string) ($vkGoal['vk_donate_id'] ?? ''));
-    if ($vkDonateId === '') {
-        return;
-    }
-
-    $title = trim((string) ($vkGoal['title'] ?? ''));
-    $description = trim((string) ($vkGoal['description'] ?? ''));
-    $isActive = !empty($vkGoal['is_active']) ? 1 : 0;
-
-    $existingStmt = $pdo->prepare("SELECT id FROM vk_donates WHERE vk_donate_id = ? LIMIT 1");
-    $existingStmt->execute([$vkDonateId]);
-    $existingId = (int) ($existingStmt->fetchColumn() ?: 0);
-
-    if ($existingId > 0) {
-        $pdo->prepare("UPDATE vk_donates SET title = ?, description = ?, is_active = ? WHERE id = ?")
-            ->execute([
-                $title !== '' ? $title : ('Цель #' . $vkDonateId),
-                $description !== '' ? $description : null,
-                $isActive,
-                $existingId,
-            ]);
-        return;
-    }
-
-    $pdo->prepare("INSERT INTO vk_donates (title, description, vk_donate_id, is_active) VALUES (?, ?, ?, ?)")
-        ->execute([
-            $title !== '' ? $title : ('Цель #' . $vkDonateId),
-            $description !== '' ? $description : null,
-            $vkDonateId,
-            $isActive,
-        ]);
-}
-
-function syncVkDonatesFromVk(): array
-{
-    global $pdo;
-    ensureVkDonatesSchema();
-
-    $readiness = verifyVkPublicationReadiness(true, true, 'donut_sync');
-    if (empty($readiness['ok'])) {
-        throw new RuntimeException((string) ($readiness['issues'][0] ?? 'VK не готов к синхронизации донатов.'));
-    }
-
-    $settings = $readiness['settings'];
-    $authMode = ((string) ($settings['token_type'] ?? '')) === 'group' ? 'group' : 'user';
-    $client = new VkApiClient((string) $settings['publication_token'], (int) $settings['group_id'], (string) $settings['api_version'], $authMode);
-    $goals = $client->getDonutGoals();
-
-    $seenVkIds = [];
-    $inserted = 0;
-    $updated = 0;
-
-    foreach ($goals as $goal) {
-        if (!is_array($goal)) {
-            continue;
-        }
-        $vkDonateId = trim((string) ($goal['id'] ?? $goal['goal_id'] ?? $goal['vk_donate_id'] ?? ''));
-        if ($vkDonateId === '') {
-            continue;
-        }
-
-        $seenVkIds[] = $vkDonateId;
-
-        $existingStmt = $pdo->prepare("SELECT id FROM vk_donates WHERE vk_donate_id = ? LIMIT 1");
-        $existingStmt->execute([$vkDonateId]);
-        $existingId = (int) ($existingStmt->fetchColumn() ?: 0);
-
-        upsertVkDonate([
-            'vk_donate_id' => $vkDonateId,
-            'title' => (string) ($goal['title'] ?? $goal['name'] ?? ''),
-            'description' => (string) ($goal['description'] ?? ''),
-            'is_active' => !array_key_exists('is_active', $goal) ? 1 : ((int) $goal['is_active'] === 1),
-        ]);
-
-        if ($existingId > 0) {
-            $updated++;
-        } else {
-            $inserted++;
-        }
-    }
-
-    if (empty($seenVkIds)) {
-        $pdo->exec("UPDATE vk_donates SET is_active = 0");
-    } else {
-        $placeholders = implode(',', array_fill(0, count($seenVkIds), '?'));
-        $stmt = $pdo->prepare("UPDATE vk_donates SET is_active = 0 WHERE vk_donate_id NOT IN ($placeholders)");
-        $stmt->execute($seenVkIds);
-    }
-
-    $activeCount = (int) ($pdo->query("SELECT COUNT(*) FROM vk_donates WHERE is_active = 1")->fetchColumn() ?: 0);
-
-    return [
-        'inserted' => $inserted,
-        'updated' => $updated,
-        'active_count' => $activeCount,
-        'fetched' => count($seenVkIds),
-    ];
 }
 
 function getTableColumnsCached(string $table): array
@@ -560,123 +289,122 @@ function vkPublicationLog(string $event, array $context = []): void
     error_log('[VK_PUBLICATION] ' . $event . ' ' . json_encode($safeContext, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 
-function cleanupLegacyVkPublicationOauthData(): void
-{
-    saveSystemSettings([
-        'vk_publication_oauth_state' => '',
-        'vk_publication_oauth_last_error' => '',
-        'vk_publication_oauth_last_error_technical' => '',
-        'vk_publication_oauth_user_id' => '',
-        'vk_publication_oauth_user_name' => '',
-        'vk_publication_oauth_user_profile_url' => '',
-        'vk_publication_oauth_connected_at' => '',
-        'vk_publication_access_token' => '',
-        'vk_publication_user_token' => '',
-        'vk_publication_refresh_token' => '',
-    ]);
-}
-
 function getVkPublicationSettings(): array
 {
     $settings = getSystemSettings();
     $lastCheckedAt = trim((string) ($settings['vk_publication_last_checked_at'] ?? ''));
     $lastSuccessfulCheckAt = trim((string) ($settings['vk_publication_last_success_checked_at'] ?? ''));
-    $legacyTokenSource = trim((string) ($settings['vk_publication_token_source'] ?? ''));
-    if (!in_array($legacyTokenSource, ['session_vkid', 'stored_group'], true)) {
-        $legacyTokenSource = 'session_vkid';
-    }
-
-    $authMode = trim((string) ($settings['vk_publication_auth_mode'] ?? ''));
-    if (!in_array($authMode, ['user_session', 'community_token'], true)) {
-        // Backward compatibility: map old token_source radio to new auth_mode.
-        $authMode = $legacyTokenSource === 'stored_group' ? 'community_token' : 'user_session';
-    }
+    $groupToken = trim((string) ($settings['vk_publication_group_token'] ?? ''));
 
     return [
-        // Manual tokens are deprecated: publication token is taken from active VK ID admin session.
-        'publication_token' => '',
-        'auth_mode' => $authMode,
-        'token_source_setting' => $legacyTokenSource,
-        'stored_group_token' => trim((string) ($settings['vk_publication_group_token'] ?? '')),
         'group_id' => trim((string) ($settings['vk_publication_group_id'] ?? '')),
+        'group_token' => $groupToken,
         'api_version' => trim((string) ($settings['vk_publication_api_version'] ?? VK_API_VERSION)),
         'from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1,
         'post_template' => trim((string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate())),
-        // Token-related fields are runtime-only (session), keep legacy settings out.
-        'token_expires_at' => '',
-        'token_scope' => '',
-        'token_scope_items' => [],
-        'vk_user_id' => trim((string) ($settings['vk_publication_vk_user_id'] ?? '')),
-        'vk_user_name' => trim((string) ($settings['vk_publication_vk_user_name'] ?? '')),
-        'token_type' => 'session_user',
-        'confirmed_permissions' => trim((string) ($settings['vk_publication_confirmed_permissions'] ?? '')),
-        'status' => trim((string) ($settings['vk_publication_status'] ?? ($settings['vk_publication_oauth_state'] ?? 'disconnected'))),
-        'last_error' => trim((string) ($settings['vk_publication_last_error'] ?? ($settings['vk_publication_oauth_last_error'] ?? ''))),
-        'technical_diagnostics' => trim((string) ($settings['vk_publication_technical_diagnostics'] ?? ($settings['vk_publication_oauth_last_error_technical'] ?? ''))),
+        'group_name' => trim((string) ($settings['vk_publication_group_name'] ?? '')),
+        'status' => trim((string) ($settings['vk_publication_status'] ?? 'disconnected')),
+        'last_error' => trim((string) ($settings['vk_publication_last_error'] ?? '')),
         'last_checked_at' => $lastCheckedAt,
         'last_success_checked_at' => $lastSuccessfulCheckAt,
         'last_check_status' => trim((string) ($settings['vk_publication_last_check_status'] ?? '')),
         'last_check_message' => trim((string) ($settings['vk_publication_last_check_message'] ?? '')),
-        'token_masked' => '',
+        'token_masked' => $groupToken !== '' ? maskVkPublicationToken($groupToken) : '',
     ];
 }
 
-function getVkPublicationRuntimeSettings(bool $preferSessionToken = false, bool $refreshIfNeeded = true): array
+function getVkPublicationRuntimeSettings(bool $preferSessionToken = true, bool $attemptRefresh = true): array
 {
     $settings = getVkPublicationSettings();
-
-    if (!$preferSessionToken) {
-        $settings['token_source'] = 'none';
-        return $settings;
+    $rawSystemSettings = getSystemSettings();
+    $authMode = trim((string) ($rawSystemSettings['vk_publication_auth_mode'] ?? ''));
+    if (!in_array($authMode, ['user_session', 'community_token'], true)) {
+        $tokenSource = trim((string) ($rawSystemSettings['vk_publication_token_source'] ?? 'session_vkid'));
+        $authMode = $tokenSource === 'stored_group' ? 'community_token' : 'user_session';
     }
 
-    $authMode = (string) ($settings['auth_mode'] ?? 'user_session');
-
-    // One source of truth: either VK ID session token (admin) OR stored community token.
-    if ($authMode === 'community_token') {
-        $settings['token_source'] = 'stored';
-        $token = trim((string) ($settings['stored_group_token'] ?? ''));
-        if ($token !== '') {
-            $settings['publication_token'] = $token;
-            $settings['token_masked'] = maskVkPublicationToken($token);
-            $settings['token_id'] = substr(hash('sha256', $token), 0, 10);
-            $settings['token_type'] = 'group';
-            $settings['token_scope_known'] = false; // may be populated during diagnostics via VK API
+    if ($authMode === 'user_session' && $preferSessionToken) {
+        $sessionTokens = vkid_session_get_tokens('admin');
+        $sessionAccessToken = vkid_session_get_access_token('admin', $attemptRefresh);
+        if ($sessionAccessToken !== '') {
+            $sessionTokens = vkid_session_get_tokens('admin');
         }
-        return $settings;
-    }
 
-    // Default: VK ID SDK admin session token.
-    $settings['token_source'] = 'session';
-    if (function_exists('isAdmin') && isAdmin()) {
-        $sessionToken = vkid_session_get_access_token('admin', $refreshIfNeeded);
-        if (trim($sessionToken) !== '') {
-            $meta = vkid_session_get_tokens('admin');
-            $settings['publication_token'] = $sessionToken;
-            $settings['token_masked'] = maskVkPublicationToken($sessionToken);
-            $settings['token_id'] = substr(hash('sha256', $sessionToken), 0, 10);
-            $settings['token_type'] = trim((string) ($meta['token_type'] ?? '')) !== ''
-                ? trim((string) $meta['token_type'])
-                : 'bearer';
-            $expiresAtTs = (int) ($meta['expires_at_ts'] ?? 0);
-            if ($expiresAtTs > 0) {
-                $settings['token_expires_at'] = date('Y-m-d H:i:s', $expiresAtTs);
+        $scopeRaw = vk_scope_normalize((string) ($sessionTokens['scope'] ?? ''));
+        $scopeItems = vk_scope_items($scopeRaw);
+        $expiresAtTs = (int) ($sessionTokens['expires_at_ts'] ?? 0);
+        $requiresReauth = false;
+        foreach (vk_admin_publication_required_scopes() as $requiredScope) {
+            if (!in_array($requiredScope, $scopeItems, true)) {
+                $requiresReauth = true;
+                break;
             }
-            $scope = trim((string) ($meta['scope'] ?? ''));
-            if ($scope !== '') {
-                $settings['token_scope'] = $scope;
-                $settings['token_scope_items'] = normalizeVkScopeItems($scope);
-            }
-            $settings['vk_user_id'] = trim((string) ($meta['user_id'] ?? $settings['vk_user_id']));
-            $settings['vk_device_id'] = trim((string) ($meta['device_id'] ?? ''));
-            $settings['vk_expires_at_ts'] = $expiresAtTs;
-            $settings['vk_obtained_at_ts'] = (int) ($meta['obtained_at_ts'] ?? 0);
-            $settings['vk_refreshed_at_ts'] = (int) ($meta['refreshed_at_ts'] ?? 0);
-            $settings['token_scope_known'] = $scope !== '';
         }
+
+        return [
+            'auth_mode' => 'user_session',
+            'publication_token' => $sessionAccessToken,
+            'token_masked' => $sessionAccessToken !== '' ? maskVkPublicationToken($sessionAccessToken) : '',
+            'token_id' => $sessionAccessToken !== '' ? substr(hash('sha256', $sessionAccessToken), 0, 10) : '',
+            'token_type' => trim((string) ($sessionTokens['token_type'] ?? 'user')),
+            'token_source' => $sessionAccessToken !== '' ? 'session_vkid' : 'none',
+            'token_scope' => $scopeRaw,
+            'token_scope_items' => $scopeItems,
+            'token_scope_known' => $scopeRaw !== '',
+            'scope_required_for_publication' => vk_admin_publication_required_scopes(),
+            'scope_requested_for_login' => vk_scope_normalize(VKID_ADMIN_SCOPE),
+            'requires_reauth' => $requiresReauth,
+            'reauth_reason' => $requiresReauth
+                ? 'Для публикации в сообщество нужен user token с правами wall, photos, groups. Выйдите из VK-авторизации на сайте и войдите через VK снова.'
+                : '',
+            'vk_user_id' => trim((string) ($sessionTokens['user_id'] ?? '')),
+            'vk_device_id' => trim((string) ($sessionTokens['device_id'] ?? '')),
+            'vk_obtained_at_ts' => (int) ($sessionTokens['obtained_at_ts'] ?? 0),
+            'vk_refreshed_at_ts' => (int) ($sessionTokens['refreshed_at_ts'] ?? 0),
+            'vk_expires_at_ts' => $expiresAtTs,
+            'token_expires_at' => $expiresAtTs > 0 ? date('Y-m-d H:i:s', $expiresAtTs) : '',
+            'group_id' => (string) ($settings['group_id'] ?? ''),
+            'api_version' => (string) ($settings['api_version'] ?? VK_API_VERSION),
+            'from_group' => !empty($settings['from_group']),
+            'post_template' => (string) ($settings['post_template'] ?? defaultVkPostTemplate()),
+            'group_name' => (string) ($settings['group_name'] ?? ''),
+            'confirmed_permissions' => trim((string) ($rawSystemSettings['vk_publication_confirmed_permissions'] ?? '')),
+            'last_error' => trim((string) ($settings['last_error'] ?? '')),
+            'last_check_message' => trim((string) ($settings['last_check_message'] ?? '')),
+        ];
     }
 
-    return $settings;
+    $token = trim((string) ($settings['group_token'] ?? ''));
+
+    return [
+        'auth_mode' => 'community_token',
+        'publication_token' => $token,
+        'token_masked' => $token !== '' ? maskVkPublicationToken($token) : '',
+        'token_id' => $token !== '' ? substr(hash('sha256', $token), 0, 10) : '',
+        'token_type' => 'group',
+        'token_source' => $token !== '' ? 'stored_group' : 'none',
+        'token_scope' => '',
+        'token_scope_items' => [],
+        'token_scope_known' => false,
+        'scope_required_for_publication' => ['wall', 'photos'],
+        'scope_requested_for_login' => '',
+        'requires_reauth' => false,
+        'reauth_reason' => '',
+        'vk_user_id' => '',
+        'vk_device_id' => '',
+        'vk_obtained_at_ts' => 0,
+        'vk_refreshed_at_ts' => 0,
+        'vk_expires_at_ts' => 0,
+        'token_expires_at' => '',
+        'group_id' => (string) ($settings['group_id'] ?? ''),
+        'api_version' => (string) ($settings['api_version'] ?? VK_API_VERSION),
+        'from_group' => !empty($settings['from_group']),
+        'post_template' => (string) ($settings['post_template'] ?? defaultVkPostTemplate()),
+        'group_name' => (string) ($settings['group_name'] ?? ''),
+        'confirmed_permissions' => trim((string) ($rawSystemSettings['vk_publication_confirmed_permissions'] ?? '')),
+        'last_error' => trim((string) ($settings['last_error'] ?? '')),
+        'last_check_message' => trim((string) ($settings['last_check_message'] ?? '')),
+    ];
 }
 
 function maskVkPublicationToken(string $token): string
@@ -744,16 +472,7 @@ function extractVkCurrentScopesFromTechnical(string $technical): array
 
 function vkScopeHas(array $scopeItems, string $required): bool
 {
-    $required = mb_strtolower(trim($required));
-    if ($required === '') {
-        return false;
-    }
-    foreach ($scopeItems as $item) {
-        if (mb_strtolower((string) $item) === $required) {
-            return true;
-        }
-    }
-    return false;
+    return vk_scope_has($scopeItems, $required);
 }
 
 function getVkPublicationRequiredScopes(bool $isGroupToken = false): array
@@ -800,6 +519,9 @@ function getVkPublicationTokenDiagnostics(array $settings): array
     if (trim((string) ($settings['publication_token'] ?? '')) === '') {
         $status = 'not_connected';
         $message = 'VK ID токен для публикации не найден в текущей сессии.';
+    } elseif (!empty($settings['requires_reauth'])) {
+        $status = 'reauthorization_required';
+        $message = (string) ($settings['reauth_reason'] ?? 'Для публикации в сообщество нужен user token с правами wall, photos, groups. Требуется повторная авторизация через VK.');
     } elseif ($expiresTs && $expiresIn !== null && $expiresIn <= 0) {
         $status = 'expired';
         $message = 'VK ID токен для публикации истёк.';
@@ -859,6 +581,8 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
         'token_scope_raw' => (string) ($settings['token_scope'] ?? ''),
         'token_scope_items' => (array) ($settings['token_scope_items'] ?? []),
         'token_scope_known' => (bool) ($settings['token_scope_known'] ?? false),
+        'requires_reauth' => !empty($settings['requires_reauth']),
+        'reauth_reason' => (string) ($settings['reauth_reason'] ?? ''),
         'vk_user_id_claim' => (string) ($settings['vk_user_id'] ?? ''),
         'vk_device_id' => (string) ($settings['vk_device_id'] ?? ''),
         'token_expires_at' => (string) ($settings['token_expires_at'] ?? ''),
@@ -921,6 +645,14 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
                 $issues[] = 'У текущего access token отсутствует scope ' . $scopeName . '.';
             }
         }
+    }
+
+    if (!empty($settings['requires_reauth'])) {
+        $issues[] = (string) ($settings['reauth_reason'] ?? 'Для публикации в сообщество нужен user token с правами wall, photos, groups. Требуется повторная авторизация через VK.');
+        $steps['reauthorization_required'] = [
+            'ok' => false,
+            'message' => (string) ($settings['reauth_reason'] ?? 'Требуется повторная авторизация через VK.'),
+        ];
     }
 
     if ($settings['publication_token'] !== '' && (int) $settings['group_id'] > 0) {
