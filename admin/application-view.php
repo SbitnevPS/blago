@@ -47,14 +47,12 @@ try {
 $stmt = $pdo->prepare("SELECT * FROM participants WHERE application_id = ?");
 $stmt->execute([$application_id]);
 $participants = $stmt->fetchAll();
-$works = getApplicationWorks((int)$application_id);
-$isApplicationApproved = (string) ($application['status'] ?? '') === 'approved';
-$isApplicationFinal = in_array((string) ($application['status'] ?? ''), ['approved', 'rejected', 'cancelled'], true);
-$isApplicationDecisionLocked = (string) ($application['status'] ?? '') === 'cancelled';
-$displayPermissions = getApplicationDisplayPermissions($application, $works);
-$canShowBulkDiplomaActions = (bool) ($displayPermissions['can_show_bulk_diplomas'] ?? false);
-$showVkPublishPrompt = max(0, (int) ($_SESSION['vk_publish_prompt_application_id'] ?? 0)) === (int) $application_id;
-unset($_SESSION['vk_publish_prompt_application_id']);
+	$works = getApplicationWorks((int)$application_id);
+	$isApplicationApproved = (string) ($application['status'] ?? '') === 'approved';
+	$isApplicationFinal = in_array((string) ($application['status'] ?? ''), ['approved', 'rejected', 'cancelled'], true);
+	$isApplicationDecisionLocked = (string) ($application['status'] ?? '') === 'cancelled';
+	$showVkPublishPrompt = max(0, (int) ($_SESSION['vk_publish_prompt_application_id'] ?? 0)) === (int) $application_id;
+	unset($_SESSION['vk_publish_prompt_application_id']);
 $participantColumns = $pdo->query("DESCRIBE participants")->fetchAll(PDO::FETCH_COLUMN);
 $hasDrawingCompliantColumn = in_array('drawing_compliant', $participantColumns, true);
 $hasDrawingCommentColumn = in_array('drawing_comment', $participantColumns, true);
@@ -242,110 +240,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             ]);
         }
 
-        $_SESSION['success_message'] = $message;
-        redirect('/admin/application/' . $application_id);
+	        $_SESSION['success_message'] = $message;
+	        redirect('/admin/application/' . $application_id);
 
-    } elseif ($_POST['action'] === 'update_work_diploma_settings') {
-        $workId = (int)($_POST['work_id'] ?? 0);
-        if ($workId <= 0) {
-            if ($isAjaxRequest) {
-                jsonResponse(['success' => false, 'error' => 'Работа не найдена'], 422);
-            }
-            throw new RuntimeException('Работа не найдена');
-        }
-
-        $workContext = getWorkDiplomaContext($workId);
-        if (!$workContext || (int) ($workContext['application_id'] ?? 0) !== (int) $application_id) {
-            if ($isAjaxRequest) {
-                jsonResponse(['success' => false, 'error' => 'Работа не найдена в этой заявке'], 422);
-            }
-            throw new RuntimeException('Работа не найдена в этой заявке');
-        }
-
-        $updatedWork = updateWorkDiplomaAttachment(
-            $workId,
-            isset($_POST['attach_diploma']),
-            trim((string)($_POST['attached_diploma_type'] ?? '')) ?: null
-        );
-        $frontendType = getAttachedDiplomaTypeForWork($updatedWork);
-        $selectedType = trim((string)($updatedWork['attached_diploma_type'] ?? ''));
-        $message = $frontendType !== null
-            ? 'Диплом прикреплён к заявке и станет доступен участнику.'
-            : 'Дипломные действия на сайте отключены для этой работы.';
-
-        if ($isAjaxRequest) {
-            jsonResponse([
-                'success' => true,
-                'message' => $message,
-                'attach_diploma' => (int)($updatedWork['attach_diploma'] ?? 0),
-                'selected_diploma_type' => $selectedType,
-                'attached_diploma_type' => $frontendType ?? '',
-                'frontend_enabled' => $frontendType !== null,
-                'show_action_buttons' => $frontendType !== null,
-            ]);
-        }
-
-        $_SESSION['success_message'] = $message;
-        redirect('/admin/application/' . $application_id);
-
-    } elseif ($_POST['action'] === 'download_participant_diploma') {
-        $workId = (int)($_POST['work_id'] ?? 0);
-        if ($workId <= 0) {
-            if ($isAjaxRequest) {
-                jsonResponse(['success' => false, 'error' => 'Работа не найдена'], 422);
-            }
-            throw new RuntimeException('Работа не найдена');
-        }
-        $workContext = getWorkDiplomaContext($workId);
-        if (!$workContext || (int) ($workContext['application_id'] ?? 0) !== (int) $application_id || !canShowIndividualDiplomaActions(['status' => (string) ($workContext['work_status'] ?? 'pending')])) {
-            throw new RuntimeException('Для выбранной работы диплом недоступен');
-        }
-        $diploma = generateWorkDiploma($workId, false, trim((string)($_POST['diploma_type'] ?? '')) ?: null);
-        if ($isAjaxRequest) {
-            jsonResponse([
-                'success' => true,
-                'message' => 'Диплом сформирован и скачивается',
-                'download_url' => '/' . ltrim((string) ($diploma['file_path'] ?? ''), '/'),
-            ]);
-        }
-        $file = ROOT_PATH . '/' . $diploma['file_path'];
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: attachment; filename="diploma_work_' . $workId . '.pdf"');
-        readfile($file);
-        exit;
-    } elseif ($_POST['action'] === 'send_participant_diploma') {
-        $workId = (int)($_POST['work_id'] ?? 0);
-        $ctx = getWorkDiplomaContext($workId);
-        if (!$ctx || (int) ($ctx['application_id'] ?? 0) !== (int) $application_id || !canShowIndividualDiplomaActions(['status' => (string) ($ctx['work_status'] ?? 'pending')])) {
-            throw new RuntimeException('Для выбранной работы диплом недоступен');
-        }
-        $diploma = generateWorkDiploma($workId, false, trim((string)($_POST['diploma_type'] ?? '')) ?: null);
-        sendDiplomaByEmail($ctx ?? [], $diploma);
-        if ($isAjaxRequest) {
-            jsonResponse(['success' => true, 'message' => 'Диплом участника отправлен']);
-        }
-        $_SESSION['success_message'] = 'Диплом участника отправлен';
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'link_participant_diploma') {
-        $workId = (int)($_POST['work_id'] ?? 0);
-        $ctx = getWorkDiplomaContext($workId);
-        if (!$ctx || (int) ($ctx['application_id'] ?? 0) !== (int) $application_id || !canShowIndividualDiplomaActions(['status' => (string) ($ctx['work_status'] ?? 'pending')])) {
-            throw new RuntimeException('Для выбранной работы диплом недоступен');
-        }
-        $diploma = generateWorkDiploma($workId, false, trim((string)($_POST['diploma_type'] ?? '')) ?: null);
-        if ($isAjaxRequest) {
-            jsonResponse([
-                'success' => true,
-                'message' => 'Ссылка на диплом готова',
-                'public_url' => getPublicDiplomaUrl($diploma['public_token']),
-            ]);
-        }
-        $_SESSION['success_message'] = 'Ссылка участника: ' . getPublicDiplomaUrl($diploma['public_token']);
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'set_work_status') {
-        $workId = (int)($_POST['work_id'] ?? 0);
-        $participantId = (int)($_POST['participant_id'] ?? findWorkParticipantId($works, $workId));
-        $newStatus = (string)($_POST['work_status'] ?? 'pending');
+	    } elseif ($_POST['action'] === 'set_work_status') {
+	        $workId = (int)($_POST['work_id'] ?? 0);
+	        $participantId = (int)($_POST['participant_id'] ?? findWorkParticipantId($works, $workId));
+	        $newStatus = (string)($_POST['work_status'] ?? 'pending');
         if ($workId <= 0 || !in_array($newStatus, ['pending', 'accepted', 'reviewed', 'reviewed_non_competitive'], true)) {
             if ($isAjaxRequest) {
                 jsonResponse(['success' => false, 'error' => 'Некорректный статус работы'], 422);
@@ -379,79 +280,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
         }
         if ($isAjaxRequest) {
-            jsonResponse([
-                'success' => true,
-                'message' => 'Статус работы обновлён',
-                'work_status' => $newStatus,
-                'status_label' => getWorkStatusLabel($newStatus),
-                'status_class' => getWorkStatusBadgeClass($newStatus),
-                'diploma_available' => mapWorkStatusToDiplomaType($newStatus) !== null,
-                'drawing_compliant' => $newStatus === 'accepted' ? 1 : null,
-                'application_status' => (string) ($application['status'] ?? 'submitted'),
-                'application_status_reset' => (bool) ($applicationStatusReset['was_reset'] ?? false),
-            ]);
-        }
-        $_SESSION['success_message'] = 'Статус работы обновлён';
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'generate_all_diplomas') {
-        if (!$canShowBulkDiplomaActions) {
-            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
-        }
-        foreach ($works as $workRow) {
-            if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
-                continue;
-            }
-            generateWorkDiploma((int)$workRow['id'], false, trim((string)($_POST['bulk_template_type'] ?? '')) ?: null);
-        }
-        $_SESSION['success_message'] = 'Дипломы сформированы';
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'generate_and_send_all_diplomas') {
-        if (!$canShowBulkDiplomaActions) {
-            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
-        }
-        foreach ($works as $workRow) {
-            if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
-                continue;
-            }
-            $ctx = getWorkDiplomaContext((int)$workRow['id']);
-            $diploma = generateWorkDiploma((int)$workRow['id'], false, trim((string)($_POST['bulk_template_type'] ?? '')) ?: null);
-            sendDiplomaByEmail($ctx ?? [], $diploma);
-        }
-        $_SESSION['success_message'] = 'Дипломы сформированы и отправлены';
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'collect_all_diploma_links') {
-        if (!$canShowBulkDiplomaActions) {
-            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
-        }
-        foreach ($works as $workRow) {
-            if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
-                continue;
-            }
-            generateWorkDiploma((int)$workRow['id'], false, trim((string)($_POST['bulk_template_type'] ?? '')) ?: null);
-        }
-        $links = collectApplicationDiplomaLinks((int)$application_id);
-        $lines = array_map(static fn($it) => $it['participant'] . ': ' . $it['url'], $links);
-        $_SESSION['success_message'] = "Ссылки:
-" . implode("
-", $lines);
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'download_zip_diplomas') {
-        if (!$canShowBulkDiplomaActions) {
-            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
-        }
-        foreach ($works as $workRow) {
-            if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
-                continue;
-            }
-            generateWorkDiploma((int)$workRow['id'], false, trim((string)($_POST['bulk_template_type'] ?? '')) ?: null);
-        }
-        $zipRelative = buildApplicationDiplomaZip((int)$application_id);
-        $zipFile = ROOT_PATH . '/' . $zipRelative;
-        header('Content-Type: application/zip');
-        header('Content-Disposition: attachment; filename="' . basename($zipFile) . '"');
-        readfile($zipFile);
-        exit;
-    } elseif ($_POST['action'] === 'approve_application') {
+	            jsonResponse([
+	                'success' => true,
+	                'message' => 'Статус работы обновлён',
+	                'work_status' => $newStatus,
+	                'status_label' => getWorkStatusLabel($newStatus),
+	                'status_class' => getWorkStatusBadgeClass($newStatus),
+	                'drawing_compliant' => $newStatus === 'accepted' ? 1 : null,
+	                'application_status' => (string) ($application['status'] ?? 'submitted'),
+	                'application_status_reset' => (bool) ($applicationStatusReset['was_reset'] ?? false),
+	            ]);
+	        }
+	        $_SESSION['success_message'] = 'Статус работы обновлён';
+	        redirect('/admin/application/' . $application_id);
+	    } elseif ($_POST['action'] === 'approve_application') {
         if ($hasDrawingCompliantColumn) {
             $unresolvedStmt = $pdo->prepare("
                 SELECT COUNT(*)
@@ -1045,43 +887,12 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                                         <textarea class="form-textarea js-drawing-comment" name="comment" rows="2" placeholder="Укажите, что нужно исправить" <?= $isComplianceLocked ? 'disabled aria-disabled="true"' : '' ?>><?= e($p['drawing_comment'] ?? '') ?></textarea>
                                     </form>
                                 </section>
-                                <section class="work-section"><h4>Действия по работе с дипломами</h4>
-                                    <?php $workDiplomaTypes = getAllowedDiplomaTypesForWorkStatus((string)($p['status'] ?? 'pending')); ?>
-                                    <?php $allDiplomaTypes = array_keys(diplomaTemplateTypes()); ?>
-                                    <?php $selectedWorkDiplomaType = trim((string)($p['attached_diploma_type'] ?? '')); ?>
-                                    <?php if ($selectedWorkDiplomaType !== '' && !in_array($selectedWorkDiplomaType, $workDiplomaTypes, true)) { $selectedWorkDiplomaType = ''; } ?>
-                                    <?php $showWorkDiplomaButtons = mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null; ?>
-                                    <div class="work-actions" data-work-controls data-work-id="<?= (int) $p['id'] ?>" data-work-status="<?= e($workStatus) ?>">
-                                        <form method="POST" class="js-work-async-form" data-accept-work-form><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--sm work-decision-btn <?= ((string) ($p['status'] ?? 'pending')) === 'accepted' ? 'work-decision-btn--accepted is-active' : '' ?>" type="submit" data-decision-button="accepted" <?= ((string) ($p['status'] ?? 'pending')) === 'reviewed_non_competitive' ? 'disabled aria-disabled="true"' : '' ?>>Рисунок принят</button></form>
-                                        <form method="POST" class="js-work-async-form" data-reject-work-form><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="reviewed_non_competitive"><input type="hidden" name="comment" value="<?= e((string) ($p['drawing_comment'] ?? '')) ?>" data-reject-comment-input><button class="btn btn--sm work-decision-btn <?= ((string) ($p['status'] ?? 'pending')) === 'reviewed_non_competitive' ? 'work-decision-btn--rejected is-active' : '' ?>" type="submit" data-decision-button="reviewed_non_competitive" <?= ((string) ($p['status'] ?? 'pending')) === 'accepted' ? 'disabled aria-disabled="true"' : '' ?>>Рисунок отклонён</button></form>
-                                        <div class="work-diploma-actions" style="display:<?= mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null ? 'flex' : 'none' ?>;" data-diploma-actions>
-                                            <form method="POST" class="js-work-async-form" data-diploma-settings-form style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;width:100%;">
-                                                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                                                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                                                    <input type="hidden" name="action" value="update_work_diploma_settings">
-                                                    <input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>">
-                                                    <label class="form-label" style="margin:0;display:flex;gap:8px;align-items:center;">
-                                                        <input type="checkbox" name="attach_diploma" value="1" <?= (int)($p['attach_diploma'] ?? 0) === 1 ? 'checked' : '' ?> data-work-diploma-attach>
-                                                        <span>Прикрепить диплом</span>
-                                                    </label>
-                                                    <div class="form-group" style="min-width:240px;margin:0;">
-                                                        <select class="form-select" name="attached_diploma_type" data-work-diploma-type>
-                                                            <option value="">Выберите шаблон диплома</option>
-                                                            <?php foreach ($allDiplomaTypes as $type): ?>
-                                                                <option value="<?= e($type) ?>" <?= $selectedWorkDiplomaType === $type ? 'selected' : '' ?>><?= e(diplomaTemplateTypes()[$type] ?? $type) ?></option>
-                                                            <?php endforeach; ?>
-                                                        </select>
-                                                    </div>
-                                                    <div class="text-secondary" style="font-size:12px;align-self:center;" data-diploma-settings-hint>Изменения сохраняются автоматически</div>
-                                            </form>
-                                            <div data-diploma-action-buttons style="display:<?= $showWorkDiplomaButtons ? 'flex' : 'none' ?>;gap:8px;flex-wrap:wrap;width:100%;">
-                                                <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="diploma_type" value="<?= e($selectedWorkDiplomaType) ?>" data-work-diploma-type-input><button class="btn btn--primary btn--sm" type="submit">Скачать диплом</button></form>
-                                                <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="diploma_type" value="<?= e($selectedWorkDiplomaType) ?>" data-work-diploma-type-input><button class="btn btn--secondary btn--sm" type="submit">Отправить на почту</button></form>
-                                                <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="link_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="diploma_type" value="<?= e($selectedWorkDiplomaType) ?>" data-work-diploma-type-input><button class="btn btn--ghost btn--sm">Получить ссылку</button></form>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </section>
+	                                <section class="work-section"><h4>Действия по работе</h4>
+	                                    <div class="work-actions" data-work-controls data-work-id="<?= (int) $p['id'] ?>" data-work-status="<?= e($workStatus) ?>">
+	                                        <form method="POST" class="js-work-async-form" data-accept-work-form><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--sm work-decision-btn <?= ((string) ($p['status'] ?? 'pending')) === 'accepted' ? 'work-decision-btn--accepted is-active' : '' ?>" type="submit" data-decision-button="accepted" <?= ((string) ($p['status'] ?? 'pending')) === 'reviewed_non_competitive' ? 'disabled aria-disabled="true"' : '' ?>>Рисунок принят</button></form>
+	                                        <form method="POST" class="js-work-async-form" data-reject-work-form><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="reviewed_non_competitive"><input type="hidden" name="comment" value="<?= e((string) ($p['drawing_comment'] ?? '')) ?>" data-reject-comment-input><button class="btn btn--sm work-decision-btn <?= ((string) ($p['status'] ?? 'pending')) === 'reviewed_non_competitive' ? 'work-decision-btn--rejected is-active' : '' ?>" type="submit" data-decision-button="reviewed_non_competitive" <?= ((string) ($p['status'] ?? 'pending')) === 'accepted' ? 'disabled aria-disabled="true"' : '' ?>>Рисунок отклонён</button></form>
+	                                    </div>
+	                                </section>
                             </div>
                         </div>
                     </div>
@@ -1094,30 +905,8 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
     <aside id="application-actions" class="application-sidebar">
         <div class="card application-sticky-panel">
             <div class="card__body">
-                <h3 class="application-card-title">Массовые действия по дипломам</h3>
-                <?php if ($canShowBulkDiplomaActions): ?>
-                <form method="POST" class="application-diploma-actions">
-                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                    <input type="hidden" name="action" value="generate_all_diplomas">
-                    <select class="form-select" name="bulk_template_type">
-                        <option value="contest_participant">Диплом участника конкурса</option>
-                        <option value="participant_certificate">Сертификат участника</option>
-                    </select>
-                    <select class="form-select" name="bulk_diploma_action" id="bulkDiplomaActionSelect">
-                        <option value="generate_all_diplomas">Сформировать дипломы</option>
-                        <option value="generate_and_send_all_diplomas">Сформировать и отправить</option>
-                        <option value="collect_all_diploma_links">Получить ссылки</option>
-                        <option value="download_zip_diplomas">Скачать ZIP</option>
-                    </select>
-                    <button type="submit" class="btn btn--primary" id="bulkDiplomaActionRun">Выполнить</button>
-                </form>
-                <?php else: ?>
-                    <p class="text-secondary">Массовые дипломные действия доступны только после статуса «Заявка принята».</p>
-                <?php endif; ?>
-                <hr class="application-separator">
-                <h3 class="application-card-title">Действия с заявкой</h3>
-                <div class="card vk-publication-card">
+	                <h3 class="application-card-title">Действия с заявкой</h3>
+	                <div class="card vk-publication-card">
                     <div class="card__body">
                         <div class="vk-publication-card__title">Публикация в VK</div>
                         <div class="flex items-center gap-sm vk-publication-card__meta">
@@ -1315,48 +1104,8 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
 </div>
 </div>
 
-<script>
-const bulkDiplomaActionSelect = document.getElementById('bulkDiplomaActionSelect');
-const bulkDiplomaActionRun = document.getElementById('bulkDiplomaActionRun');
-if (bulkDiplomaActionSelect && bulkDiplomaActionRun) {
-    bulkDiplomaActionRun.addEventListener('click', (event) => {
-        const form = bulkDiplomaActionRun.closest('form');
-        if (!form) return;
-        const actionInput = form.querySelector('input[name=\"action\"]');
-        if (!actionInput) return;
-        actionInput.value = bulkDiplomaActionSelect.value;
-    });
-}
-
-document.querySelectorAll('[data-diploma-actions]').forEach((actionsRoot) => {
-    const settingsForm = actionsRoot.querySelector('[data-diploma-settings-form]');
-    const select = actionsRoot.querySelector('[data-work-diploma-type]');
-    const attachToggle = actionsRoot.querySelector('[data-work-diploma-attach]');
-    const inputs = actionsRoot.querySelectorAll('[data-work-diploma-type-input]');
-    const buttons = actionsRoot.querySelector('[data-diploma-action-buttons]');
-    const sync = () => {
-        const value = select?.value || '';
-        const showButtons = Boolean(attachToggle?.checked && value);
-        inputs.forEach((input) => {
-            input.value = value;
-        });
-        if (buttons) {
-            buttons.style.display = showButtons ? 'flex' : 'none';
-        }
-    };
-    const autoSave = () => {
-        if (!settingsForm) return;
-        if (attachToggle?.checked && !(select?.value || '')) return;
-        settingsForm.requestSubmit();
-    };
-    select?.addEventListener('change', sync);
-    attachToggle?.addEventListener('change', sync);
-    select?.addEventListener('change', autoSave);
-    attachToggle?.addEventListener('change', autoSave);
-    sync();
-});
-
-let cropper = null;
+	<script>
+	let cropper = null;
 let currentRotation = 0;
 let editorDirty = false;
 const drawingEditorModal = document.getElementById('drawingEditorModal');
@@ -1611,53 +1360,11 @@ function updateDecisionButtons(controls, status) {
  acceptButton.classList.toggle('is-disabled', acceptDisabled);
 
  rejectButton.disabled = rejectDisabled;
- rejectButton.setAttribute('aria-disabled', rejectDisabled ? 'true' : 'false');
- rejectButton.classList.toggle('is-disabled', rejectDisabled);
-}
+	rejectButton.setAttribute('aria-disabled', rejectDisabled ? 'true' : 'false');
+	rejectButton.classList.toggle('is-disabled', rejectDisabled);
+	}
 
-function getAllowedDiplomaTypesForStatus(status) {
- if (status === 'accepted') return ['contest_participant', 'participant_certificate'];
- if (status === 'reviewed' || status === 'reviewed_non_competitive') return ['encouragement'];
- return [];
-}
-
-function syncWorkDiplomaUi(controls, status) {
- if (!controls) return;
- const actionsRoot = controls.querySelector('[data-diploma-actions]');
- if (!actionsRoot) return;
- const allowed = getAllowedDiplomaTypesForStatus(String(status || 'pending'));
- const hasDiploma = allowed.length > 0;
-
- actionsRoot.style.display = hasDiploma ? 'flex' : 'none';
-
- const select = actionsRoot.querySelector('[data-work-diploma-type]');
- if (select) {
-  const allowedSet = new Set(allowed);
-  Array.from(select.options).forEach((opt) => {
-   if (!opt.value) return;
-   opt.disabled = !allowedSet.has(opt.value);
-  });
-  if (select.value && !allowedSet.has(select.value)) {
-   select.value = '';
-  }
-  if (!select.value && allowed.length) {
-   select.value = allowed[0];
-  }
- }
-
- const selectedType = select ? String(select.value || '') : '';
- const hiddenTypeInputs = actionsRoot.querySelectorAll('[data-work-diploma-type-input]') || [];
- hiddenTypeInputs.forEach((input) => {
-  input.value = selectedType;
- });
-
- const buttonGroup = actionsRoot.querySelector('[data-diploma-action-buttons]');
- if (buttonGroup) {
-  buttonGroup.style.display = hasDiploma ? 'flex' : 'none';
- }
-}
-
-async function parseJsonResponse(response) {
+	async function parseJsonResponse(response) {
  const rawBody = await response.text();
  if (!rawBody) {
   throw new Error('Сервер вернул пустой ответ. Проверьте логи PHP и повторите попытку.');
@@ -1709,13 +1416,12 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
     if (badge) {
      badge.className = 'badge ' + (data.status_class || '');
      badge.textContent = data.status_label || badge.textContent;
-    }
-    const workStatus = data.work_status || formData.get('work_status') || 'pending';
-    syncWorkDiplomaUi(controls, workStatus);
-    const compliantToggle = card?.querySelector('.js-drawing-compliant-toggle');
-    const commentField = card?.querySelector('.js-drawing-comment');
-    if (compliantToggle && data.drawing_compliant !== null) {
-      compliantToggle.checked = String(data.drawing_compliant) === '1';
+	    }
+	    const workStatus = data.work_status || formData.get('work_status') || 'pending';
+	    const compliantToggle = card?.querySelector('.js-drawing-compliant-toggle');
+	    const commentField = card?.querySelector('.js-drawing-comment');
+	    if (compliantToggle && data.drawing_compliant !== null) {
+	      compliantToggle.checked = String(data.drawing_compliant) === '1';
     }
     if (workStatus === 'accepted' && commentField) {
       commentField.value = '';
@@ -1723,50 +1429,14 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
     updateDecisionButtons(controls, workStatus);
     syncComplianceFormState(card, workStatus);
     syncApplicationActionState(data.application_status || 'submitted');
-    syncRevisionApplicationButtonState();
-    syncDeclineApplicationButtonState();
-    syncApproveApplicationButtonState();
-   }
-
-   if (action === 'update_work_diploma_settings' && controls) {
-    const actionsRoot = controls.querySelector('[data-diploma-actions]');
-    const select = actionsRoot?.querySelector('[data-work-diploma-type]');
-    const attachToggle = actionsRoot?.querySelector('[data-work-diploma-attach]');
-    if (attachToggle) {
-     attachToggle.checked = String(data.attach_diploma || 0) === '1';
-    }
-    if (select) {
-     select.value = data.selected_diploma_type || select.value || '';
-    }
-    syncWorkDiplomaUi(controls, controls.dataset.workStatus || 'pending');
-   }
-
-   if (action === 'download_participant_diploma' && data.download_url) {
-    const link = document.createElement('a');
-    link.href = data.download_url;
-    link.download = '';
-    document.body.appendChild(link);
-     link.click();
-     link.remove();
-   }
-
-   if (action === 'link_participant_diploma' && data.public_url) {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(data.public_url);
-        showToast('Ссылка на диплом скопирована', 'success');
-      } else {
-        showToast(data.public_url, 'success');
-      }
-    } catch (error) {
-      showToast(data.public_url, 'success');
-    }
-   } else {
-    showToast(data.message || 'Готово', 'success');
-   }
-  } catch (error) {
-   showToast(error.message || 'Не удалось выполнить действие', 'error');
-  } finally {
+	    syncRevisionApplicationButtonState();
+	    syncDeclineApplicationButtonState();
+	    syncApproveApplicationButtonState();
+	   }
+	   showToast(data.message || 'Готово', 'success');
+	  } catch (error) {
+	   showToast(error.message || 'Не удалось выполнить действие', 'error');
+	  } finally {
    if (button) {
     button.disabled = false;
     button.innerHTML = defaultHtml;
@@ -1845,11 +1515,10 @@ document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
     return;
    }
    syncDrawingCommentTemplateVisibility(form);
-   if (controls) {
-    controls.dataset.workStatus = toggle.checked ? 'accepted' : (String(comment?.value || '').trim() ? 'reviewed' : 'pending');
-    updateDecisionButtons(controls, controls.dataset.workStatus);
-    syncWorkDiplomaUi(controls, controls.dataset.workStatus);
-   }
+	   if (controls) {
+	    controls.dataset.workStatus = toggle.checked ? 'accepted' : (String(comment?.value || '').trim() ? 'reviewed' : 'pending');
+	    updateDecisionButtons(controls, controls.dataset.workStatus);
+	   }
    saveDrawingCompliance(form);
    syncRevisionApplicationButtonState();
    syncDeclineApplicationButtonState();
@@ -1866,11 +1535,10 @@ document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
    if (rejectCommentInput) {
     rejectCommentInput.value = comment.value;
    }
-   if (controls && toggle && !toggle.checked) {
-    controls.dataset.workStatus = comment.value.trim() ? 'reviewed' : 'pending';
-    updateDecisionButtons(controls, controls.dataset.workStatus);
-    syncWorkDiplomaUi(controls, controls.dataset.workStatus);
-   }
+	   if (controls && toggle && !toggle.checked) {
+	    controls.dataset.workStatus = comment.value.trim() ? 'reviewed' : 'pending';
+	    updateDecisionButtons(controls, controls.dataset.workStatus);
+	   }
    if (commentTimer) clearTimeout(commentTimer);
    commentTimer = setTimeout(() => saveDrawingCompliance(form), 500);
    syncRevisionApplicationButtonState();
@@ -2076,11 +1744,10 @@ syncApproveApplicationButtonState();
 syncRevisionApplicationButtonState();
 syncDeclineApplicationButtonState();
 ensureComplianceFieldsAvailable();
-document.querySelectorAll('[data-work-controls]').forEach((controls) => {
- updateDecisionButtons(controls, controls.dataset.workStatus || 'pending');
- syncComplianceFormState(controls.closest('.card'), controls.dataset.workStatus || 'pending');
- syncWorkDiplomaUi(controls, controls.dataset.workStatus || 'pending');
-});
+	document.querySelectorAll('[data-work-controls]').forEach((controls) => {
+	 updateDecisionButtons(controls, controls.dataset.workStatus || 'pending');
+	 syncComplianceFormState(controls.closest('.card'), controls.dataset.workStatus || 'pending');
+	});
 
 (() => {
     const modal = document.getElementById('vkPublishPromptModal');

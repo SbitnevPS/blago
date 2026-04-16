@@ -163,41 +163,56 @@ foreach ($participants as $participantRow) {
     $participantByWorkId[(int)($participantRow['id'] ?? 0)] = $participantRow;
 }
 
-$workSummary = buildApplicationWorkSummary($participants);
-$uiStatusMeta = getApplicationUiStatusMeta($workSummary);
-$displayPermissions = getApplicationDisplayPermissions($application, $participants);
-$canShowBulkDiplomaActions = (bool) ($displayPermissions['can_show_bulk_diplomas'] ?? false);
+	$workSummary = buildApplicationWorkSummary($participants);
+	$uiStatusMeta = getApplicationUiStatusMeta($workSummary);
+	$displayPermissions = getApplicationDisplayPermissions($application, $participants);
 
-$ensureIndividualDiplomaActionsAllowed = static function (int $workId) use ($participantByWorkId, $applicationId) {
-    $workRow = $participantByWorkId[$workId] ?? null;
-    if ($workRow && isFrontendDiplomaAvailableForWork($workRow)) {
-        return;
-    }
-    $_SESSION['error_message'] = 'Для выбранной работы диплом пока недоступен.';
-    redirect('/application/' . $applicationId);
-};
+	$workDiplomasByWorkId = [];
+	try {
+	    $diplomaStmt = $pdo->prepare('SELECT * FROM participant_diplomas WHERE application_id = ?');
+	    $diplomaStmt->execute([$applicationId]);
+	    $diplomaRows = $diplomaStmt->fetchAll();
+	    foreach ($diplomaRows as $row) {
+	        $workId = (int) ($row['work_id'] ?? 0);
+	        if ($workId <= 0 || !isset($participantByWorkId[$workId])) {
+	            continue;
+	        }
+	        $filePath = trim((string) ($row['file_path'] ?? ''));
+	        if ($filePath === '') {
+	            continue;
+	        }
+	        $absolutePath = ROOT_PATH . '/' . ltrim($filePath, '/');
+	        if (!is_file($absolutePath)) {
+	            continue;
+	        }
+	        $workDiplomasByWorkId[$workId] = (array) $row;
+	    }
+	} catch (Throwable $ignored) {
+	    $workDiplomasByWorkId = [];
+	}
+	$diplomasCount = count($workDiplomasByWorkId);
 
-$ensureBulkDiplomaActionsAllowed = static function () use ($canShowBulkDiplomaActions, $applicationId) {
-    if ($canShowBulkDiplomaActions) {
-        return;
-    }
-    $_SESSION['error_message'] = 'Массовые действия с дипломами доступны только после принятия заявки.';
-    redirect('/application/' . $applicationId);
-};
+	$ensureIndividualDiplomaActionsAllowed = static function (int $workId) use ($workDiplomasByWorkId, $applicationId) {
+	    if (isset($workDiplomasByWorkId[$workId])) {
+	        return;
+	    }
+	    $_SESSION['error_message'] = 'Для выбранной работы диплом пока недоступен.';
+	    redirect('/application/' . $applicationId);
+	};
 
 if (($_GET['action'] ?? '') === 'diploma_preview_one') {
     $workId = (int) ($_GET['work_id'] ?? 0);
     if (!isset($participantByWorkId[$workId])) {
         $_SESSION['error_message'] = 'Работа не найдена.';
         redirect('/application/' . $applicationId);
-    }
-    $ensureIndividualDiplomaActionsAllowed($workId);
-    try {
-        $diploma = findExistingWorkDiploma($workId, getFrontendDiplomaTypeForWork($participantByWorkId[$workId] ?? []));
-        if (!$diploma) {
-            throw new RuntimeException('Диплом ещё не сформирован администратором.');
-        }
-        redirect(getPublicDiplomaUrl((string) ($diploma['public_token'] ?? '')));
+	    }
+	    $ensureIndividualDiplomaActionsAllowed($workId);
+	    try {
+	        $diploma = $workDiplomasByWorkId[$workId] ?? null;
+	        if (!$diploma) {
+	            throw new RuntimeException('Диплом ещё не сформирован администратором.');
+	        }
+	        redirect(getPublicDiplomaUrl((string) ($diploma['public_token'] ?? '')));
     } catch (Throwable $e) {
         $_SESSION['error_message'] = $e->getMessage();
         redirect('/application/' . $applicationId);
@@ -210,103 +225,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && str_star
         redirect('/application/' . $applicationId);
     }
 
-    try {
-        if ($_POST['action'] === 'diploma_download_one') {
-            $workId = (int)($_POST['work_id'] ?? 0);
-            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
-            $ensureIndividualDiplomaActionsAllowed($workId);
-            $diploma = findExistingWorkDiploma($workId, getFrontendDiplomaTypeForWork($participantByWorkId[$workId] ?? []));
-            if (!$diploma) { throw new RuntimeException('Диплом ещё не сформирован администратором'); }
-            header('Content-Type: application/pdf');
-            header('Content-Disposition: attachment; filename="diploma_work_' . $workId . '.pdf"');
-            readfile(ROOT_PATH . '/' . $diploma['file_path']);
-            exit;
-        }
-        if ($_POST['action'] === 'diploma_link_one') {
-            $workId = (int)($_POST['work_id'] ?? 0);
-            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
-            $ensureIndividualDiplomaActionsAllowed($workId);
-            $diploma = findExistingWorkDiploma($workId, getFrontendDiplomaTypeForWork($participantByWorkId[$workId] ?? []));
-            if (!$diploma) { throw new RuntimeException('Диплом ещё не сформирован администратором'); }
-            $_SESSION['success_message'] = 'Ссылка скопирована: ' . getPublicDiplomaUrl((string)($diploma['public_token'] ?? ''));
-            redirect('/application/' . $applicationId);
-        }
-        if ($_POST['action'] === 'diploma_email_one') {
-            $workId = (int)($_POST['work_id'] ?? 0);
-            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
-            $ensureIndividualDiplomaActionsAllowed($workId);
-            $diploma = findExistingWorkDiploma($workId, getFrontendDiplomaTypeForWork($participantByWorkId[$workId] ?? []));
-            if (!$diploma) { throw new RuntimeException('Диплом ещё не сформирован администратором'); }
-            $ctx = getWorkDiplomaContext($workId);
-            if (!$ctx || !sendDiplomaByEmail($ctx, $diploma)) {
-                throw new RuntimeException('Не удалось отправить диплом на почту.');
-            }
+	    try {
+	        if ($_POST['action'] === 'diploma_download_one') {
+	            $workId = (int)($_POST['work_id'] ?? 0);
+	            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
+	            $ensureIndividualDiplomaActionsAllowed($workId);
+	            $diploma = $workDiplomasByWorkId[$workId] ?? null;
+	            if (!$diploma) { throw new RuntimeException('Диплом ещё не сформирован администратором'); }
+	            $absolutePath = ROOT_PATH . '/' . ltrim((string) ($diploma['file_path'] ?? ''), '/');
+	            if (!is_file($absolutePath)) { throw new RuntimeException('Файл диплома не найден'); }
+	            header('Content-Type: application/pdf');
+	            header('Content-Disposition: attachment; filename="diploma_work_' . $workId . '.pdf"');
+	            readfile($absolutePath);
+	            exit;
+	        }
+	        if ($_POST['action'] === 'diploma_link_one') {
+	            $workId = (int)($_POST['work_id'] ?? 0);
+	            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
+	            $ensureIndividualDiplomaActionsAllowed($workId);
+	            $diploma = $workDiplomasByWorkId[$workId] ?? null;
+	            if (!$diploma) { throw new RuntimeException('Диплом ещё не сформирован администратором'); }
+	            $_SESSION['success_message'] = 'Ссылка скопирована: ' . getPublicDiplomaUrl((string)($diploma['public_token'] ?? ''));
+	            redirect('/application/' . $applicationId);
+	        }
+	        if ($_POST['action'] === 'diploma_email_one') {
+	            $workId = (int)($_POST['work_id'] ?? 0);
+	            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
+	            $ensureIndividualDiplomaActionsAllowed($workId);
+	            $diploma = $workDiplomasByWorkId[$workId] ?? null;
+	            if (!$diploma) { throw new RuntimeException('Диплом ещё не сформирован администратором'); }
+	            $ctx = getWorkDiplomaContext($workId);
+	            if (!$ctx || !sendDiplomaByEmail($ctx, $diploma)) {
+	                throw new RuntimeException('Не удалось отправить диплом на почту.');
+	            }
             $_SESSION['success_message'] = 'Диплом отправлен на почту.';
             redirect('/application/' . $applicationId);
         }
-        if ($_POST['action'] === 'diploma_download_all') {
-            $ensureBulkDiplomaActionsAllowed();
-            $attachedWorkIds = [];
-            foreach ($participants as $participantRow) {
-                $frontendDiplomaType = getFrontendDiplomaTypeForWork($participantRow);
-                if ($frontendDiplomaType === null) {
-                    continue;
-                }
-                $workId = (int)$participantRow['id'];
-                if (!findExistingWorkDiploma($workId, $frontendDiplomaType)) {
-                    continue;
-                }
-                $attachedWorkIds[] = $workId;
-            }
-            if (!$attachedWorkIds) {
-                throw new RuntimeException('Нет прикреплённых дипломов для скачивания.');
-            }
-            $zipRelative = buildApplicationDiplomaZip($applicationId, $attachedWorkIds);
-            $zipAbsolute = ROOT_PATH . '/' . $zipRelative;
+	        if ($_POST['action'] === 'diploma_download_all') {
+	            $attachedWorkIds = [];
+	            foreach ($participants as $participantRow) {
+	                $workId = (int)$participantRow['id'];
+	                if (isset($workDiplomasByWorkId[$workId])) {
+	                    $attachedWorkIds[] = $workId;
+	                }
+	            }
+	            if (!$attachedWorkIds) {
+	                throw new RuntimeException('Нет сформированных дипломов для скачивания.');
+	            }
+	            $zipRelative = buildApplicationDiplomaZip($applicationId, $attachedWorkIds);
+	            $zipAbsolute = ROOT_PATH . '/' . $zipRelative;
             header('Content-Type: application/zip');
             header('Content-Disposition: attachment; filename="' . basename($zipAbsolute) . '"');
             readfile($zipAbsolute);
             exit;
         }
-        if ($_POST['action'] === 'diploma_links_all') {
-            $ensureBulkDiplomaActionsAllowed();
-            $attachedWorkIds = [];
-            foreach ($participants as $participantRow) {
-                $frontendDiplomaType = getFrontendDiplomaTypeForWork($participantRow);
-                if ($frontendDiplomaType === null) {
-                    continue;
-                }
-                $workId = (int)$participantRow['id'];
-                if (!findExistingWorkDiploma($workId, $frontendDiplomaType)) {
-                    continue;
-                }
-                $attachedWorkIds[] = $workId;
-            }
-            if (!$attachedWorkIds) {
-                throw new RuntimeException('Нет прикреплённых дипломов для получения ссылок.');
-            }
-            $links = collectApplicationDiplomaLinks($applicationId, $attachedWorkIds);
-            $_SESSION['success_message'] = 'Ссылки скопированы: ' . implode(' | ', array_map(static fn($it) => $it['participant'] . ': ' . $it['url'], $links));
+	        if ($_POST['action'] === 'diploma_links_all') {
+	            $attachedWorkIds = [];
+	            foreach ($participants as $participantRow) {
+	                $workId = (int)$participantRow['id'];
+	                if (isset($workDiplomasByWorkId[$workId])) {
+	                    $attachedWorkIds[] = $workId;
+	                }
+	            }
+	            if (!$attachedWorkIds) {
+	                throw new RuntimeException('Нет сформированных дипломов для получения ссылок.');
+	            }
+	            $links = collectApplicationDiplomaLinks($applicationId, $attachedWorkIds);
+	            $_SESSION['success_message'] = 'Ссылки скопированы: ' . implode(' | ', array_map(static fn($it) => $it['participant'] . ': ' . $it['url'], $links));
             redirect('/application/' . $applicationId);
         }
-        if ($_POST['action'] === 'diploma_email_all') {
-            $ensureBulkDiplomaActionsAllowed();
-            $sent = 0;
-            foreach ($participants as $participantRow) {
-                $frontendDiplomaType = getFrontendDiplomaTypeForWork($participantRow);
-                if ($frontendDiplomaType === null) {
-                    continue;
-                }
-                $workId = (int)($participantRow['id'] ?? 0);
-                $diploma = findExistingWorkDiploma($workId, $frontendDiplomaType);
-                if (!$diploma) {
-                    continue;
-                }
-                $ctx = getWorkDiplomaContext($workId);
-                if ($ctx && sendDiplomaByEmail($ctx, $diploma)) {
-                    $sent++;
-                }
-            }
+	        if ($_POST['action'] === 'diploma_email_all') {
+	            $sent = 0;
+	            foreach ($participants as $participantRow) {
+	                $workId = (int)($participantRow['id'] ?? 0);
+	                $diploma = $workDiplomasByWorkId[$workId] ?? null;
+	                if (!$diploma) { continue; }
+	                $ctx = getWorkDiplomaContext($workId);
+	                if ($ctx && sendDiplomaByEmail($ctx, $diploma)) {
+	                    $sent++;
+	                }
+	            }
             if ($sent > 0) {
                 $_SESSION['success_message'] = 'Диплом отправлен на почту.';
             } else {
@@ -533,15 +531,13 @@ foreach ($unresolvedCorrections as $correction) {
     }
 }
 
-$allPending = $workSummary['total'] > 0 && $workSummary['pending'] === $workSummary['total'];
-$hasDiplomas = false;
-$participantsWithDiplomas = array_values(array_filter($participants, static function (array $participantRow): bool {
-    return isFrontendDiplomaAvailableForWork($participantRow);
-}));
-$hasParticipantsWithDiplomas = count($participantsWithDiplomas) > 0;
-$hasDiplomas = $hasParticipantsWithDiplomas;
-$hasVkPublished = $workSummary['vk_published'] > 0;
-$vkPublicationLinks = [];
+	$allPending = $workSummary['total'] > 0 && $workSummary['pending'] === $workSummary['total'];
+	$participantsTotalCount = count($participants);
+	$participantsDiplomaCount = $diplomasCount;
+	$hasDiplomas = $participantsDiplomaCount > 0;
+	$hasVkPublished = $workSummary['vk_published'] > 0;
+	$diplomaLabels = diplomaTemplateTypes();
+	$vkPublicationLinks = [];
 foreach ($participants as $participantRow) {
     if (!empty($participantRow['vk_post_url'])) {
         $vkPublicationLinks[] = (string)$participantRow['vk_post_url'];
@@ -751,14 +747,18 @@ $currentPage = 'applications';
                 <div class="participants-grid">
                     <?php $galleryDisplayIndex = 0; ?>
                     <?php foreach ($participants as $index => $participant): ?>
-                        <?php
-                            $hasParticipantCorrection = !empty($participantCorrections[(int) ($participant['participant_id'] ?? 0)]);
-                            $workStatus = (string)($participant['status'] ?? 'pending');
-                            $frontendDiplomaType = getFrontendDiplomaTypeForWork($participant);
-                            $isDiplomaAvailable = $frontendDiplomaType !== null;
-                            $participantVkUrl = trim((string)($participant['vk_post_url'] ?? ''));
-                            $drawingSrc = !empty($participant['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
-                            $drawingPreviewSrc = !empty($participant['drawing_file']) ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
+	                        <?php
+	                            $hasParticipantCorrection = !empty($participantCorrections[(int) ($participant['participant_id'] ?? 0)]);
+	                            $workStatus = (string)($participant['status'] ?? 'pending');
+	                            $workId = (int) ($participant['id'] ?? 0);
+	                            $workDiploma = $workId > 0 ? ($workDiplomasByWorkId[$workId] ?? null) : null;
+	                            $isDiplomaAvailable = $workDiploma !== null;
+	                            $diplomaLabel = $isDiplomaAvailable
+	                                ? (string) ($diplomaLabels[(string) ($workDiploma['diploma_type'] ?? '')] ?? ($workDiploma['diploma_type'] ?? ''))
+	                                : '';
+	                            $participantVkUrl = trim((string)($participant['vk_post_url'] ?? ''));
+	                            $drawingSrc = !empty($participant['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
+	                            $drawingPreviewSrc = !empty($participant['drawing_file']) ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
                             $participantGalleryIndex = null;
                             if ($drawingSrc !== '') {
                                 $participantGalleryIndex = $galleryDisplayIndex++;
@@ -783,12 +783,15 @@ $currentPage = 'applications';
                                     <?php endif; ?>
                                 </div>
                                 <div class="participant-modern-card__subtitle"><?= e(getWorkStatusHint($workStatus)) ?></div>
-                                <div class="participant-modern-card__facts">
-                                    <div><strong>Возраст:</strong> <span class="js-participant-age"><?= e((string)($participant['age'] ?? '—')) ?></span></div>
-                                    <div><strong>Регион:</strong> <?= e((string)($participant['region'] ?? '—')) ?></div>
-                                    <div><strong>Организация:</strong> <?= e((string)($participant['organization_name'] ?? '—')) ?></div>
-                                    <div><strong>Номер участника:</strong> #<?= e(getParticipantDisplayNumber($participant)) ?></div>
-                                </div>
+	                                <div class="participant-modern-card__facts">
+	                                    <div><strong>Возраст:</strong> <span class="js-participant-age"><?= e((string)($participant['age'] ?? '—')) ?></span></div>
+	                                    <div><strong>Регион:</strong> <?= e((string)($participant['region'] ?? '—')) ?></div>
+	                                    <div><strong>Организация:</strong> <?= e((string)($participant['organization_name'] ?? '—')) ?></div>
+	                                    <div><strong>Номер участника:</strong> #<?= e(getParticipantDisplayNumber($participant)) ?></div>
+	                                    <?php if ($isDiplomaAvailable && $diplomaLabel !== ''): ?>
+	                                        <div><strong>Диплом:</strong> <?= e($diplomaLabel) ?></div>
+	                                    <?php endif; ?>
+	                                </div>
                                 <?php if ($hasParticipantCorrection): ?>
                                     <div class="app-highlight">
                                         <strong><i class="fas fa-tools"></i> Требует исправлений</strong>
@@ -804,9 +807,9 @@ $currentPage = 'applications';
                                     <?php if ($hasParticipantCorrection): ?>
                                         <button type="button" class="btn btn--primary btn--sm js-open-participant-edit" data-work-id="<?= (int)($participant['id'] ?? 0) ?>" data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>" data-age="<?= (int)($participant['age'] ?? 0) ?>" data-drawing-url="<?= htmlspecialchars($drawingSrc, ENT_QUOTES) ?>" data-drawing-preview-url="<?= htmlspecialchars($drawingPreviewSrc, ENT_QUOTES) ?>"><i class="fas fa-pen"></i> Исправить</button>
                                     <?php endif; ?>
-                                    <?php if ($isDiplomaAvailable): ?>
-                                        <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_one"><input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>"><input type="hidden" name="diploma_type" value="<?= e($frontendDiplomaType) ?>"><button class="btn btn--primary btn--sm" type="submit"><i class="fas fa-download"></i> Скачать диплом</button></form>
-                                    <?php endif; ?>
+	                                    <?php if ($isDiplomaAvailable): ?>
+	                                        <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_one"><input type="hidden" name="work_id" value="<?= (int) ($participant['id'] ?? 0) ?>"><button class="btn btn--primary btn--sm" type="submit"><i class="fas fa-download"></i> Скачать диплом</button></form>
+	                                    <?php endif; ?>
                                     <?php if ($participantVkUrl !== ''): ?>
                                         <div class="participant-vk-card">
                                             <div class="participant-vk-card__label"><i class="fab fa-vk"></i> Публикация</div>
@@ -870,9 +873,13 @@ $currentPage = 'applications';
                     </div>
                 <?php elseif ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
                     <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary"><i class="fas fa-pen"></i> Исправить заявку</a>
-                <?php elseif ($canShowBulkDiplomaActions && $hasDiplomas): ?>
-                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать все дипломы</button></form>
-                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_email_all"><button class="btn btn--secondary" type="submit"><i class="fas fa-envelope"></i> Отправить дипломы себе на почту</button></form>
+	                <?php elseif ($hasDiplomas): ?>
+	                    <div class="app-highlight" style="width:100%;">
+	                        <strong>Дипломы</strong>
+	                        <div>Участников: <?= (int) $participantsTotalCount ?>, дипломы сформированы: <?= (int) $participantsDiplomaCount ?></div>
+	                    </div>
+	                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать все дипломы</button></form>
+	                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_email_all"><button class="btn btn--secondary" type="submit"><i class="fas fa-envelope"></i> Отправить дипломы себе на почту</button></form>
                 <?php elseif (getApplicationCanonicalStatus($application) === 'rejected'): ?>
                     <div class="app-highlight" style="width:100%;">
                         <strong>Заявка отклонена.</strong>

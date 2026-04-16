@@ -218,20 +218,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($postedGroupToken !== '') {
                 $payload['vk_publication_group_token'] = $postedGroupToken;
             }
-
-            $adminAccessToken = trim((string) ($_POST['vk_publication_admin_access_token'] ?? ''));
-            if ($adminAccessToken !== '') {
-                $payload['vk_publication_admin_access_token_encrypted'] = vkPublicationEncryptValue($adminAccessToken);
-            }
-
-            $adminRefreshToken = trim((string) ($_POST['vk_publication_admin_refresh_token'] ?? ''));
-            if ($adminRefreshToken !== '') {
-                $payload['vk_publication_admin_refresh_token_encrypted'] = vkPublicationEncryptValue($adminRefreshToken);
-            }
-
-            $payload['vk_publication_admin_device_id'] = trim((string) ($_POST['vk_publication_admin_device_id'] ?? ''));
-            $payload['vk_publication_admin_user_id'] = trim((string) ($_POST['vk_publication_admin_user_id'] ?? ''));
-            $payload['vk_publication_admin_token_expires_at'] = max(0, (int) ($_POST['vk_publication_admin_token_expires_at'] ?? 0));
         } elseif ($section === 'homepage-banner') {
             $payload['homepage_hero_image'] = trim($_POST['homepage_hero_image'] ?? '');
         }
@@ -689,29 +675,9 @@ unset($_SESSION['success_message']);
                             <div class="form-hint">Текущее значение: <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code>. Поле работает в режиме replace-only.</div>
                         </div>
 
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">Admin access token (replace-only)</label>
-                                <textarea name="vk_publication_admin_access_token" class="form-input" rows="3" placeholder="Оставьте пустым, чтобы не менять"></textarea>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Admin refresh token (replace-only)</label>
-                                <textarea name="vk_publication_admin_refresh_token" class="form-input" rows="3" placeholder="Оставьте пустым, чтобы не менять"></textarea>
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">Admin token expires_at (unix ts)</label>
-                                <input type="text" name="vk_publication_admin_token_expires_at" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_token_expires_at'] ?? '')) ?>" placeholder="0">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Admin device_id</label>
-                                <input type="text" name="vk_publication_admin_device_id" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_device_id'] ?? '')) ?>" placeholder="device id">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Admin user_id</label>
-                                <input type="text" name="vk_publication_admin_user_id" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_user_id'] ?? '')) ?>" placeholder="vk user id">
-                            </div>
+                        <div class="form-hint">
+                            Admin user token сохраняется автоматически после входа в админку через VK.
+                            Ручной ввод access/refresh token, device_id и expires_at в настройках не требуется.
                         </div>
 
                         <div class="form-group">

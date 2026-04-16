@@ -237,12 +237,12 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card">
     <div class="card__header">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-            <h3 style="margin:0;">Участники (<?= $totalParticipants ?>)</h3>
-            <button type="button" class="btn btn--secondary btn--sm" id="exportParticipantsDocxBtn">
-                <i class="fas fa-file-word"></i> Скачать DOCX
-            </button>
-        </div>
-    </div>
+	            <h3 style="margin:0;">Участники (<?= $totalParticipants ?>)</h3>
+	            <button type="button" class="btn btn--secondary btn--sm" id="exportParticipantsDocxBtn">
+	                <i class="fas fa-file-word"></i> Скачать список участников
+	            </button>
+	        </div>
+	    </div>
     <div class="card__body">
         <?php if (empty($participants)): ?>
             <div class="text-center text-secondary" style="padding: 36px;">Участники не найдены.</div>
