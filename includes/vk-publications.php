@@ -530,6 +530,24 @@ function getVkPublicationTokenDiagnostics(array $settings): array
     ];
 }
 
+function vkPublicationCapabilityMatrixUserSession(): array
+{
+    return [
+        'text_post' => ['supported' => true, 'note' => 'supported'],
+        'upload_local_image_to_wall' => ['supported' => true, 'note' => 'supported'],
+        'donut_donation' => ['supported' => true, 'note' => 'as implemented'],
+    ];
+}
+
+function vkPublicationCapabilityMatrixCommunityToken(): array
+{
+    return [
+        'text_post' => ['supported' => null, 'note' => 'requires separate probe (disabled by default)'],
+        'upload_local_image_to_wall' => ['supported' => false, 'note' => 'unsupported: community token cannot run user-only upload chain'],
+        'donut_donation' => ['supported' => null, 'note' => 'not checked by default'],
+    ];
+}
+
 function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferSessionToken = false, string $scenario = 'diagnostic'): array
 {
     $settings = getVkPublicationRuntimeSettings($preferSessionToken, $attemptRefresh);
@@ -542,6 +560,7 @@ function verifyVkPublicationReadinessUserToken(array $settings, string $scenario
     $checks = [];
     $groupName = '';
     $steps = [];
+    $isGroupToken = false;
 
     $runtime = [
         'auth_mode' => 'user_session',
@@ -840,7 +859,6 @@ function verifyVkPublicationReadinessUserToken(array $settings, string $scenario
         'token_masked' => maskVkPublicationToken($settings['publication_token']),
     ]);
 
-    $settings = getVkPublicationRuntimeSettings($preferSessionToken, $attemptRefresh);
     $settings['group_name'] = $groupName !== '' ? $groupName : trim((string) (getSystemSettings()['vk_publication_group_name'] ?? ''));
 
     return [
