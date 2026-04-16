@@ -15,11 +15,11 @@ if (!verifyCSRFToken($csrfToken)) {
     jsonResponse(['success' => false, 'error' => 'Ошибка безопасности'], 403);
 }
 
-$readiness = verifyVkPublicationReadiness(true, true, 'diagnostic');
+$readiness = verifyVkPublicationReadiness(false, false, 'diagnostic');
 $status = !empty($readiness['ok']) ? 'ok' : 'error';
 $message = '';
 if (!empty($readiness['ok'])) {
-    $message = 'Пользовательский VK токен из текущей сессии прошёл проверку. Публикация доступна.';
+    $message = 'Ключ доступа сообщества VK прошёл проверку. Публикация доступна.';
 } else {
     $message = implode('; ', $readiness['issues'] ?? ['Ошибка проверки VK']);
 }
