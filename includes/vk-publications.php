@@ -349,7 +349,7 @@ function getVkPublicationSettings(): array
 
     return [
         'auth_mode' => 'admin_user_token',
-        'token_source_setting' => 'stored_admin_user',
+        'token_source_setting' => trim((string) ($settings['vk_publication_token_source'] ?? 'oauth_vk_admin_login')),
         'group_id' => trim((string) ($settings['vk_publication_group_id'] ?? '')),
         'api_version' => trim((string) ($settings['vk_publication_api_version'] ?? VK_API_VERSION)),
         'from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1,
@@ -357,7 +357,7 @@ function getVkPublicationSettings(): array
         'group_name' => trim((string) ($settings['vk_publication_group_name'] ?? '')),
         'token_type' => 'user',
         'confirmed_permissions' => trim((string) ($settings['vk_publication_confirmed_permissions'] ?? '')),
-        'status' => trim((string) ($settings['vk_publication_status'] ?? 'disconnected')),
+        'status' => trim((string) ($settings['vk_publication_status'] ?? 'NOT_CONNECTED')),
         'last_error' => trim((string) ($settings['vk_publication_last_error'] ?? '')),
         'technical_diagnostics' => trim((string) ($settings['vk_publication_technical_diagnostics'] ?? '')),
         'last_checked_at' => $lastCheckedAt,
@@ -382,7 +382,9 @@ function getVkPublicationRuntimeSettings(bool $preferSessionToken = true, bool $
         'token_masked' => '',
         'token_id' => '',
         'token_type' => 'user',
-        'token_source' => trim((string) ($systemSettings['vk_publication_admin_access_token_encrypted'] ?? '')) !== '' ? 'stored_admin_user' : 'none',
+        'token_source' => trim((string) ($systemSettings['vk_publication_admin_access_token_encrypted'] ?? '')) !== ''
+            ? trim((string) ($systemSettings['vk_publication_token_source'] ?? 'oauth_vk_admin_login'))
+            : 'none',
         'scope_required_for_publication' => ['wall', 'photos', 'offline'],
         'group_id' => (string) ($settings['group_id'] ?? ''),
         'api_version' => (string) ($settings['api_version'] ?? VK_API_VERSION),
@@ -532,8 +534,8 @@ function getVkPublicationTokenDiagnostics(array $settings): array
     $tokenState = resolvePersistentAdminVkAccessToken();
     if (empty($tokenState['ok'])) {
         return [
-            'status' => 'not_connected',
-            'message' => 'User access token владельца сообщества VK не задан.',
+            'status' => 'NOT_CONNECTED',
+            'message' => 'Требуется вход через VK для публикации.',
             'expires_at' => '',
             'expires_in_seconds' => null,
             'expires_known' => false,
@@ -542,7 +544,7 @@ function getVkPublicationTokenDiagnostics(array $settings): array
 
     $expiresAt = (int) ($tokenState['expires_at'] ?? 0);
     return [
-        'status' => 'ok',
+        'status' => 'TOKEN_SAVED',
         'message' => 'User access token владельца сообщества VK готов к работе.',
         'expires_at' => $expiresAt > 0 ? date('c', $expiresAt) : '',
         'expires_in_seconds' => $expiresAt > 0 ? max(0, $expiresAt - time()) : null,
@@ -642,7 +644,16 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
 
     $issues = array_values(array_unique($issues));
     $hasToken = !empty($adminTokenState['ok']) && trim((string) ($adminTokenState['access_token'] ?? '')) !== '';
-    $status = empty($issues) ? 'connected' : ($hasToken ? 'attention' : 'disconnected');
+    $hasExpiredIssue = false;
+    foreach ($issues as $issue) {
+        if (mb_stripos((string) $issue, 'истёк') !== false) {
+            $hasExpiredIssue = true;
+            break;
+        }
+    }
+    $status = empty($issues)
+        ? 'READY_FOR_PUBLICATION'
+        : ($hasToken ? ($hasExpiredIssue ? 'TOKEN_EXPIRED' : 'CHECK_FAILED') : 'NOT_CONNECTED');
 
     saveSystemSettings([
         'vk_publication_status' => $status,

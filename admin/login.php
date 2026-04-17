@@ -11,7 +11,7 @@ $authErrorCode = trim((string) ($_GET['auth_error'] ?? ''));
 $authErrorMessages = [
     'session_expired' => 'Сессия входа через VK устарела. Попробуйте снова.',
     'invalid_callback' => 'VK вернул некорректные данные входа.',
-    'exchange_failed' => 'Не удалось завершить вход через VK. Попробуйте снова.',
+    'exchange_failed' => 'Не удалось завершить вход через VK для публикации (проверьте выдачу прав wall/photos). Попробуйте снова.',
     'profile_failed' => 'Не удалось получить профиль VK. Попробуйте снова.',
     'admin_access_denied' => 'Доступ в админку запрещён.',
 ];
@@ -113,9 +113,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 </form>
 
 <div class="login-form" id="admin-form-vk">
-<div class="divider">или</div>
+<h3 style="margin:0 0 8px;">Вход через VK</h3>
+<p style="font-size:14px;color:#666;margin:0 0 12px;">Используется для входа в админку и подключения публикации рисунков в сообщество.</p>
 <div id="vkid-admin-onetap-container"></div>
-<p style="font-size:14px;color:#666;margin-top:12px;">Используется официальная кнопка VK ID.</p>
+<p style="font-size:14px;color:#666;margin-top:12px;">Нажмите «Войти через VK для публикации».</p>
 </div>
 
 <div class="back-link">
@@ -212,7 +213,7 @@ function initVkAdminIdWidget() {
         redirectUrl: <?= json_encode(VK_ADMIN_REDIRECT_URI, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
-        scope: <?= json_encode(vk_scope_normalize(VKID_ADMIN_SCOPE, ','), JSON_UNESCAPED_UNICODE) ?>,
+        scope: <?= json_encode(vk_admin_publication_scope(), JSON_UNESCAPED_UNICODE) ?>,
         state: <?= json_encode((string) ($vkidSdkFlow['state'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
         codeVerifier: <?= json_encode((string) ($vkidSdkFlow['code_verifier'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
     });
