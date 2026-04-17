@@ -30,27 +30,113 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $action = (string)($_POST['action'] ?? 'save');
 
-    if ($action === 'create_template') {
-        $newType = (string)($_POST['template_type'] ?? 'contest_participant');
-        if (!array_key_exists($newType, $templateTypes)) {
-            $newType = 'contest_participant';
+    try {
+        if ($action === 'create_template') {
+	        $newType = (string)($_POST['template_type'] ?? 'contest_participant');
+	        if (!array_key_exists($newType, $templateTypes)) {
+	            $newType = 'contest_participant';
+	        }
+	        $newTitle = trim((string) ($_POST['template_title'] ?? ''));
+	        if ($newTitle === '') {
+	            $newTitle = (string) ($templateTypes[$newType] ?? 'Шаблон');
+	        }
+
+	        ensureDiplomaSchema();
+	        $defaults = diplomaTemplateDefaults($newType);
+
+	        $newId = 0;
+	        try {
+	            $pdo->prepare("INSERT INTO diploma_templates (
+	                contest_id, template_type, title, subtitle, body_text, award_text, contest_name_text, easter_text,
+	                signature_1, signature_2, position_1, position_2, footer_text, city, issue_date, diploma_prefix,
+	                show_date, show_number, show_signatures, show_background, show_frame,
+	                layout_json, styles_json, assets_json, created_at, updated_at
+	            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())")
+	            ->execute([
+	                $contestId,
+	                $newType,
+	                $newTitle,
+	                $defaults['subtitle'],
+	                $defaults['body_text'],
+	                $defaults['award_text'],
+	                $defaults['contest_name_text'],
+	                $defaults['easter_text'],
+	                $defaults['signature_1'],
+	                $defaults['signature_2'],
+	                $defaults['position_1'],
+	                $defaults['position_2'],
+	                $defaults['footer_text'],
+	                $defaults['city'],
+	                $defaults['issue_date'],
+	                $defaults['diploma_prefix'],
+	                $defaults['show_date'],
+	                $defaults['show_number'],
+	                $defaults['show_signatures'],
+	                $defaults['show_background'],
+	                $defaults['show_frame'],
+	                $defaults['layout_json'],
+	                $defaults['styles_json'],
+	                $defaults['assets_json'],
+	            ]);
+	            $newId = (int) $pdo->lastInsertId();
+	        } catch (Throwable $e) {
+	            // If unique constraint (contest_id, template_type) exists, reuse existing template.
+	            $existing = getOrCreateDiplomaTemplate($contestId, $newType);
+	            $newId = (int) ($existing['id'] ?? 0);
+	            if ($newId > 0) {
+	                saveDiplomaTemplate($newId, ['title' => $newTitle]);
+	            }
+	        }
+
+	        if ($newId <= 0) {
+	            throw new RuntimeException('Не удалось создать шаблон');
+	        }
+
+	        $_SESSION['success_message'] = 'Шаблон создан';
+	        redirect('/admin/diploma-template/' . $contestId . '?template_id=' . $newId);
         }
-        $new = getOrCreateDiplomaTemplate($contestId, $newType);
-        $_SESSION['success_message'] = 'Шаблон создан';
-        redirect('/admin/diploma-template/' . $contestId . '?template_id=' . (int)$new['id']);
-    }
 
-    if ($action === 'duplicate_template') {
-        $dupFrom = (int)($_POST['template_id'] ?? 0);
-        $newId = duplicateDiplomaTemplate($dupFrom);
-        $_SESSION['success_message'] = 'Шаблон продублирован';
-        redirect('/admin/diploma-template/' . $contestId . '?template_id=' . $newId);
-    }
+        if ($action === 'duplicate_template') {
+	        $dupFrom = (int)($_POST['template_id'] ?? 0);
+	        $newId = duplicateDiplomaTemplate($dupFrom);
+	        $_SESSION['success_message'] = 'Шаблон продублирован';
+	        redirect('/admin/diploma-template/' . $contestId . '?template_id=' . $newId);
+        }
 
-    if ($action === 'save') {
-        $tid = (int)($_POST['template_id'] ?? 0);
-        $templateRow = null;
-        foreach ($templates as $tpl) {
+        if ($action === 'delete_template') {
+	        $deleteId = (int) ($_POST['template_id'] ?? 0);
+	        if ($deleteId <= 0) {
+	            throw new RuntimeException('Шаблон не найден');
+	        }
+
+	        ensureDiplomaSchema();
+	        $tplStmt = $pdo->prepare('SELECT * FROM diploma_templates WHERE id = ? AND contest_id = ? LIMIT 1');
+	        $tplStmt->execute([$deleteId, $contestId]);
+	        $toDelete = $tplStmt->fetch();
+	        if (!$toDelete) {
+	            throw new RuntimeException('Шаблон не найден');
+	        }
+
+	        // Detach already generated diplomas from this template, keep files/links intact.
+	        $pdo->prepare('UPDATE participant_diplomas SET template_id = NULL, updated_at = NOW() WHERE template_id = ?')
+	            ->execute([$deleteId]);
+
+	        $pdo->prepare('DELETE FROM diploma_templates WHERE id = ? LIMIT 1')->execute([$deleteId]);
+	        $_SESSION['success_message'] = 'Шаблон удалён';
+
+	        $remaining = listContestDiplomaTemplates($contestId);
+	        $nextId = (int) (($remaining[0]['id'] ?? 0));
+	        $redirectUrl = '/admin/diploma-template/' . $contestId;
+	        if ($nextId > 0) {
+	            $redirectUrl .= '?template_id=' . $nextId;
+	        }
+	        redirect($redirectUrl);
+        }
+
+        if ($action === 'save') {
+	        $tid = (int)($_POST['template_id'] ?? 0);
+	        $templateRow = null;
+	        foreach ($templates as $tpl) {
             if ((int)$tpl['id'] === $tid) {
                 $templateRow = $tpl;
                 break;
@@ -114,8 +200,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_POST['show_background'] = '1';
         unset($_POST['show_frame'], $_POST['show_date'], $_POST['show_number'], $_POST['show_signatures']);
         saveDiplomaTemplate($tid, $_POST);
-        $_SESSION['success_message'] = 'Шаблон диплома сохранён';
-        redirect('/admin/diploma-template/' . $contestId . '?template_id=' . $tid);
+	        $_SESSION['success_message'] = 'Шаблон диплома сохранён';
+	        redirect('/admin/diploma-template/' . $contestId . '?template_id=' . $tid);
+        }
+    } catch (Throwable $e) {
+        $_SESSION['error_message'] = $e->getMessage();
+        redirect('/admin/diploma-template/' . $contestId . '?template_id=' . $selectedTemplateId);
     }
 }
 
@@ -186,25 +276,48 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
             <input type="hidden" name="action" value="create_template">
-            <label class="form-label" style="margin:0;">Создать шаблон
-                <select class="form-select" name="template_type">
+            <div class="form-group" style="min-width:260px;max-width:420px;flex:1;margin:0;">
+                <label class="form-label" style="margin:0;">Название диплома / сертификата</label>
+                <input class="form-input" type="text" name="template_title" required placeholder="Например: Диплом участника" value="">
+            </div>
+            <div class="form-group" style="margin:0;">
+                <div class="form-label" style="margin:0 0 6px;">Тип</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
                     <?php foreach ($templateTypes as $type => $label): ?>
-                        <option value="<?= e($type) ?>"><?= e($label) ?></option>
+                        <label class="btn btn--ghost btn--sm" style="display:inline-flex;align-items:center;gap:6px;">
+                            <input type="radio" name="template_type" value="<?= e($type) ?>" <?= $type === 'contest_participant' ? 'checked' : '' ?> style="margin:0;">
+                            <span><?= e($label) ?></span>
+                        </label>
                     <?php endforeach; ?>
-                </select>
-            </label>
+                </div>
+            </div>
             <button class="btn btn--primary" type="submit"><i class="fas fa-plus"></i> Создать</button>
         </form>
 
         <div style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;">
             <?php foreach ($templates as $tpl): ?>
                 <div class="card" style="border:1px solid #E5E7EB;">
-                    <div class="card__body" style="padding:12px;">
-                        <div class="font-semibold"><?= e($tpl['title']) ?></div>
-                        <div class="text-secondary" style="font-size:12px;"><?= e($templateTypes[$tpl['template_type']] ?? $tpl['template_type']) ?></div>
-                        <div style="margin-top:8px;display:flex;gap:8px;">
-                            <a class="btn btn--ghost btn--sm" href="/admin/diploma-template/<?= (int)$contestId ?>?template_id=<?= (int)$tpl['id'] ?>">Редактировать</a>
-                            <form method="POST">
+	                    <div class="card__body" style="padding:12px;">
+	                        <div class="font-semibold" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+	                            <div style="min-width:0;">
+	                                <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= e($tpl['title']) ?></div>
+	                                <div class="text-secondary" style="font-size:12px;"><?= e($templateTypes[$tpl['template_type']] ?? $tpl['template_type']) ?></div>
+	                            </div>
+                            <button
+                                type="button"
+                                class="btn btn--ghost btn--sm"
+                                title="Удалить"
+                                data-delete-template
+                                data-template-id="<?= (int) $tpl['id'] ?>"
+                                data-template-title="<?= e($tpl['title']) ?>"
+                                style="flex:0 0 auto;"
+                            >
+                                <i class="fas fa-trash"></i>
+	                            </button>
+	                        </div>
+	                        <div style="margin-top:8px;display:flex;gap:8px;">
+	                            <a class="btn btn--ghost btn--sm" href="/admin/diploma-template/<?= (int)$contestId ?>?template_id=<?= (int)$tpl['id'] ?>">Редактировать</a>
+	                            <form method="POST">
                                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                                 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                                 <input type="hidden" name="action" value="duplicate_template">
@@ -248,6 +361,12 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div>
                     <div class="form-group">
+                        <label class="form-label">Название диплома / сертификата</label>
+                        <input type="text" class="form-input" name="title" value="<?= e((string) ($selectedTemplate['title'] ?? '')) ?>" required>
+                        <div class="form-hint">Это название будет видно в админке и в статусе диплома.</div>
+                    </div>
+
+                    <div class="form-group">
                         <label class="form-label">Фон шаблона</label>
                         <input type="file" class="form-input" name="background_image" accept=".jpg,.jpeg,.png,.webp">
                         <?php if ($backgroundImageUrl !== ''): ?>
@@ -286,6 +405,31 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
+<div class="modal" id="deleteTemplateModal" aria-hidden="true">
+    <div class="modal__content" style="max-width:520px;">
+        <div class="modal__header">
+            <h3 class="modal__title">Удалить шаблон</h3>
+            <button type="button" class="modal__close" data-delete-template-close aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="modal__body">
+            <div class="alert alert--warning" style="margin:0;">
+                <strong>Это действие необратимо.</strong>
+                <div style="margin-top:6px;">Шаблон будет удалён: <span id="deleteTemplateTitle" style="font-weight:600;"></span></div>
+            </div>
+        </div>
+        <div class="modal__footer" style="display:flex;justify-content:flex-end;gap:8px;">
+            <button type="button" class="btn btn--ghost" data-delete-template-cancel>Отмена</button>
+            <form method="POST" id="deleteTemplateForm" style="margin:0;">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="delete_template">
+                <input type="hidden" name="template_id" id="deleteTemplateIdInput" value="">
+                <button type="submit" class="btn btn--danger"><i class="fas fa-trash"></i> Удалить</button>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 const defaults = <?= json_encode(defaultDiplomaLayout((string)($selectedTemplate['template_type'] ?? 'contest_participant')), JSON_UNESCAPED_UNICODE) ?>;
 let layout = JSON.parse(document.getElementById('layoutJsonInput').value || '{}');
@@ -307,6 +451,43 @@ const nameLeftInput = document.getElementById('nameLeftInput');
 const nameFontSizeInput = document.getElementById('nameFontSizeInput');
 const sheetRotationInput = document.getElementById('sheetRotationInput');
 let dragState = null;
+
+(() => {
+  const modal = document.getElementById('deleteTemplateModal');
+  const titleEl = document.getElementById('deleteTemplateTitle');
+  const idInput = document.getElementById('deleteTemplateIdInput');
+  const close = () => {
+    if (!modal) return;
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    if (idInput) idInput.value = '';
+    if (titleEl) titleEl.textContent = '';
+  };
+  const open = (id, title) => {
+    if (!modal) return;
+    if (idInput) idInput.value = String(id || '');
+    if (titleEl) titleEl.textContent = String(title || '');
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  };
+
+  document.querySelectorAll('[data-delete-template]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      open(btn.dataset.templateId || '', btn.dataset.templateTitle || '');
+    });
+  });
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) close();
+  });
+  document.querySelectorAll('[data-delete-template-close],[data-delete-template-cancel]').forEach((btn) => {
+    btn.addEventListener('click', close);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal?.classList.contains('active')) close();
+  });
+})();
 
 function resolvePreviewFontFamily(fontFamily) {
   const normalized = String(fontFamily || '').trim().toLowerCase();

@@ -127,7 +127,8 @@ function docxBuildBytes(string $documentXml): string
  * Build a DOCX table for participants export.
  *
  * Expected row keys:
- * - participant_number
+ * - id
+ * - public_number (optional)
  * - applicant_email
  * - applicant_fio
  * - organization_name
@@ -147,6 +148,18 @@ function buildParticipantsDocxBytes(array $rows, string $title = 'Список �
 
     $tableRows = [];
     foreach ($rows as $row) {
+        $displayNumber = trim((string) ($row['public_number'] ?? ''));
+        if ($displayNumber === '' && function_exists('getParticipantDisplayNumber')) {
+            $displayNumber = trim((string) getParticipantDisplayNumber((array) $row));
+        }
+        if ($displayNumber === '') {
+            $displayNumber = (string) ((int) ($row['id'] ?? 0));
+        }
+        $displayNumber = ltrim($displayNumber, '#');
+        if ($displayNumber !== '') {
+            $displayNumber = '#' . $displayNumber;
+        }
+
         $status = trim((string) ($row['work_status'] ?? ''));
         if ($status !== '' && function_exists('getWorkStatusLabel')) {
             // If status is a known code, convert to label; otherwise keep as-is.
@@ -155,7 +168,7 @@ function buildParticipantsDocxBytes(array $rows, string $title = 'Список �
         }
 
         $tableRows[] = [
-            (string) ($row['participant_number'] ?? ''),
+            $displayNumber,
             (string) ($row['applicant_email'] ?? ''),
             (string) ($row['applicant_fio'] ?? ''),
             (string) ($row['organization_name'] ?? ''),
@@ -202,7 +215,8 @@ function fetchParticipantsRowsForDocxExport(array $filters = []): array
 
     $sql = "
         SELECT
-            p.id AS participant_number,
+            p.id AS id,
+            p.public_number AS public_number,
             u.email AS applicant_email,
             COALESCE(NULLIF(TRIM(a.parent_fio), ''), NULLIF(TRIM(CONCAT_WS(' ', u.surname, u.name, u.patronymic)), ''), u.email) AS applicant_fio,
             COALESCE(NULLIF(TRIM(p.organization_name), ''), NULLIF(TRIM(u.organization_name), ''), '') AS organization_name,
