@@ -1,0 +1,52 @@
+name: Deploy blago
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy_test:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: test
+
+    steps:
+      - name: Run test deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.TEST_SSH_HOST }}
+          username: ${{ secrets.TEST_SSH_USER }}
+          key: ${{ secrets.TEST_SSH_KEY }}
+          port: ${{ secrets.TEST_SSH_PORT }}
+          script: |
+            set -e
+            cd "${{ secrets.TEST_PROJECT_PATH }}"
+            git fetch origin
+            git reset --hard origin/develop
+            php composer.phar install --no-dev --optimize-autoloader || true
+
+  deploy_prod:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Run production deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_SSH_PORT }}
+          script: |
+            set -e
+            cd "${{ secrets.PROD_PROJECT_PATH }}"
+            git fetch origin
+            git reset --hard origin/main
+            php composer.phar install --no-dev --optimize-autoloader || true
