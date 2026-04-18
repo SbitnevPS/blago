@@ -1,0 +1,29 @@
+name: Deploy test site
+
+on:
+  push:
+    branches:
+      - develop
+
+concurrency:
+  group: deploy-test-develop
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to test server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.TEST_SSH_HOST }}
+          username: ${{ secrets.TEST_SSH_USER }}
+          key: ${{ secrets.TEST_SSH_KEY }}
+          port: ${{ secrets.TEST_SSH_PORT }}
+          script: |
+            set -e
+            cd "${{ secrets.TEST_PROJECT_PATH }}"
+            git fetch origin
+            git reset --hard origin/develop
+            php composer.phar install --no-dev --optimize-autoloader || true
