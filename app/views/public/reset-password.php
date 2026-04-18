@@ -27,7 +27,7 @@ if ($token === '') {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Подтверждение восстановления - ДетскиеКонкурсы.рф</title>
+<title>Подтверждение восстановления - КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО</title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 </head>
 <body>

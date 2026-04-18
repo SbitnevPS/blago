@@ -1080,13 +1080,13 @@ function requestPasswordResetForEmail(string $email): void
     $html = buildPasswordResetRequestEmailTemplate([
         'user_name' => $userName,
         'reset_url' => $resetUrl,
-        'brand_name' => 'ДетскиеКонкурсы.рф',
+        'brand_name' => 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО',
         'site_url' => SITE_URL,
     ]);
     $text = buildPasswordResetRequestEmailText([
         'user_name' => $userName,
         'reset_url' => $resetUrl,
-        'brand_name' => 'ДетскиеКонкурсы.рф',
+        'brand_name' => 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО',
         'site_url' => SITE_URL,
     ]);
 
@@ -1179,7 +1179,7 @@ function activateTemporaryPasswordByResetToken(string $token): array
         'login' => (string) ($user['email'] ?? ''),
         'temporary_password' => $temporaryPassword,
         'expires_at' => $recoveryExpiresAt,
-        'brand_name' => 'ДетскиеКонкурсы.рф',
+        'brand_name' => 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО',
         'site_url' => SITE_URL,
     ]);
     $text = buildTemporaryPasswordEmailText([
@@ -1187,7 +1187,7 @@ function activateTemporaryPasswordByResetToken(string $token): array
         'login' => (string) ($user['email'] ?? ''),
         'temporary_password' => $temporaryPassword,
         'expires_at' => $recoveryExpiresAt,
-        'brand_name' => 'ДетскиеКонкурсы.рф',
+        'brand_name' => 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО',
         'site_url' => SITE_URL,
     ]);
     sendEmail((string) ($user['email'] ?? ''), 'Временный пароль для входа', $html, ['text' => $text]);
@@ -1563,7 +1563,7 @@ function getSystemSettings() {
         'application_revision_subject' => 'Заявка отправлена на корректировку',
         'application_revision_message' => 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.',
         'email_notifications_enabled' => 1,
-        'email_from_name' => 'ДетскиеКонкурсы.рф',
+        'email_from_name' => 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО',
         'email_from_address' => 'no-reply@kids-contests.ru',
         'email_reply_to' => '',
         'email_use_smtp' => MAIL_HOST !== '' ? 1 : 0,
