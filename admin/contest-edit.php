@@ -100,7 +100,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Ошибка безопасности';
     } else {
         $title = trim($_POST['title'] ?? '');
-        $description = sanitizeContestDescriptionHtml((string) ($_POST['description'] ?? ''));
+        $descriptionInput = (string) ($_POST['description'] ?? '');
+        if ($descriptionInput === '') {
+            $descriptionInput = (string) ($_POST['description_html'] ?? '');
+        }
+        $description = sanitizeContestDescriptionHtml($descriptionInput);
         $is_published = isset($_POST['is_published']) ? 1 : 0;
         $theme_style = normalizeContestThemeStyle($_POST['theme_style'] ?? 'blue');
         $requires_payment_receipt = isset($_POST['requires_payment_receipt']) ? 1 : 0;
@@ -109,6 +113,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if (empty($title)) {
             $error = 'Введите название конкурса';
+        } elseif (trim($descriptionInput) !== '' && $description === '') {
+            $error = 'Не удалось обработать описание конкурса. Попробуйте упростить форматирование (убрать сложные блоки/вставки) и сохранить ещё раз.';
         } else {
             // Загрузка документа
             $document_file = $contest['document_file'] ?? '';
@@ -307,6 +313,7 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
     <input type="hidden" name="cover_image_uploaded" id="cover_image_uploaded" value="">
     <input type="hidden" name="remove_cover_image" id="remove_cover_image" value="0">
     <input type="hidden" name="remove_document_file" id="remove_document_file" value="0">
+    <input type="hidden" name="description_html" id="description_html" value="<?= htmlspecialchars((string) ($contest['description'] ?? ''), ENT_QUOTES) ?>">
 
     <div class="contest-editor-layout">
         <div class="contest-editor-main">
@@ -575,109 +582,136 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/tinymce@5.10.9/tinymce.min.js" referrerpolicy="origin"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jodit@4.12.2/es2021/jodit.min.css">
+<script src="https://cdn.jsdelivr.net/npm/jodit@4.12.2/es2021/jodit.min.js" referrerpolicy="origin"></script>
 <script>
 (() => {
     const form = document.querySelector('.contest-editor-form');
-    const editorElements = Array.from(document.querySelectorAll('.js-rich-editor'));
-    let submitInProgress = false;
-
-    // TinyMCE может не успевать положить HTML в textarea, если нажать "Сохранить" сразу после ввода.
-    // Перехватываем submit, синхронизируем содержимое через getContent() и отправляем форму "вручную".
-    form?.addEventListener('submit', (event) => {
-        if (submitInProgress) {
-            return;
-        }
-
-        if (!form.reportValidity()) {
-            return;
-        }
-
-        if (!window.tinymce || editorElements.length === 0) {
-            return;
-        }
-
-        event.preventDefault();
-        submitInProgress = true;
-
-        for (const element of editorElements) {
-            try {
-                const editor = window.tinymce.get(element.id) || element._richEditorInstance;
-                if (editor && typeof editor.getContent === 'function') {
-                    element.value = editor.getContent();
-                }
-            } catch (e) {}
-        }
-
-        try {
-            window.tinymce.triggerSave();
-        } catch (e) {}
-
-        requestAnimationFrame(() => {
-            form.submit();
-        });
-    }, true);
-
-    if (!window.tinymce) {
-        console.error('TinyMCE не загрузился');
+    if (!window.Jodit) {
+        console.error('Jodit не загрузился');
         return;
     }
 
     const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
-    document.querySelectorAll('.js-rich-editor').forEach((element) => {
-        const uploadUrl = element.dataset.editorUploadUrl || '/admin/ckeditor-image-upload';
-        const contestId = element.dataset.contestId || '';
+    const editorElement = document.getElementById('description_editor');
+    const mirrorInput = document.getElementById('description_html');
+    if (!editorElement) {
+        return;
+    }
 
-        tinymce.init({
-            target: element,
-            menubar: false,
-            branding: false,
-            height: 420,
-            min_height: 420,
-            resize: true,
-            plugins: 'lists link image table code charmap paste',
-            toolbar: 'undo redo | formatselect | bold italic underline strikethrough | alignleft aligncenter alignright alignjustify | bullist numlist | blockquote table link image | removeformat code',
-            block_formats: 'Абзац=p; Заголовок 2=h2; Заголовок 3=h3; Заголовок 4=h4',
-            content_style: 'body{font-family:Arial,sans-serif;font-size:15px;line-height:1.7;} img{max-width:100%;height:auto;} table{width:100%;border-collapse:collapse;} table td, table th{border:1px solid #dbe2ef;padding:8px;} blockquote{border-left:4px solid #94a3b8;margin:0;padding:8px 16px;color:#475569;background:#f8fafc;}',
-            images_upload_handler: (blobInfo, success, failure, progress) => {
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', uploadUrl);
-                xhr.responseType = 'json';
-                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+    const uploadUrl = editorElement.dataset.editorUploadUrl || '/admin/ckeditor-image-upload';
+    const contestId = editorElement.dataset.contestId || '';
+    let editor = null;
 
-                xhr.upload.onprogress = (event) => {
-                    if (event.lengthComputable && typeof progress === 'function') {
-                        progress((event.loaded / event.total) * 100);
-                    }
-                };
+    const syncEditorContent = () => {
+        if (!editor) {
+            return editorElement.value || '';
+        }
 
-                xhr.onerror = () => failure('Не удалось загрузить изображение.');
-                xhr.onload = () => {
-                    const response = xhr.response || {};
-                    if (xhr.status < 200 || xhr.status >= 300 || !response.url) {
-                        failure((response.error && response.error.message) || 'Не удалось загрузить изображение.');
-                        return;
-                    }
-                    success(response.url);
-                };
+        editor.synchronizeValues();
+        const html = editor.value || '';
+        if (mirrorInput) {
+            mirrorInput.value = html;
+        }
 
-                const formData = new FormData();
-                formData.append('upload', blobInfo.blob(), blobInfo.filename());
+        return html;
+    };
+
+    editor = Jodit.make('#description_editor', {
+        language: 'ru',
+        height: 420,
+        minHeight: 420,
+        toolbarAdaptive: false,
+        showCharsCounter: false,
+        showWordsCounter: false,
+        showXPathInStatusbar: false,
+        askBeforePasteHTML: false,
+        askBeforePasteFromWord: false,
+        beautifyHTML: false,
+        enter: 'P',
+        defaultMode: Jodit.MODE_WYSIWYG,
+        buttons: [
+            'source',
+            '|',
+            'paragraph',
+            'fontsize',
+            'brush',
+            '|',
+            'bold',
+            'italic',
+            'underline',
+            'strikethrough',
+            '|',
+            'ul',
+            'ol',
+            '|',
+            'outdent',
+            'indent',
+            '|',
+            'left',
+            'center',
+            'right',
+            'justify',
+            '|',
+            'link',
+            'image',
+            'table',
+            'hr',
+            '|',
+            'undo',
+            'redo',
+            '|',
+            'eraser'
+        ],
+        uploader: {
+            url: uploadUrl,
+            format: 'json',
+            filesVariableName() {
+                return 'upload';
+            },
+            prepareData(formData) {
                 formData.append('csrf_token', csrfToken);
                 if (contestId) {
                     formData.append('contest_id', contestId);
                 }
-                xhr.send(formData);
             },
-            setup: (editor) => {
-                editor.on('change input undo redo', () => {
-                    editor.save();
-                });
-                element._richEditorInstance = editor;
+            isSuccess(resp) {
+                return Boolean(resp && resp.url && !resp.error);
+            },
+            getMessage(resp) {
+                return resp?.error?.message || '';
+            },
+            process(resp) {
+                return {
+                    files: resp?.url ? [resp.url] : [],
+                    path: '',
+                    baseurl: '',
+                    error: resp?.error ? 1 : 0,
+                    msg: resp?.error?.message || ''
+                };
+            },
+            defaultHandlerSuccess(data) {
+                if (Array.isArray(data.files)) {
+                    data.files.forEach((fileUrl) => {
+                        this.s.insertImage(fileUrl);
+                    });
+                }
             }
-        }).catch((error) => {
-            console.error('Ошибка инициализации TinyMCE:', error);
-        });
+        }
+    });
+
+    editor.events.on('change', syncEditorContent);
+    editor.events.on('afterSetMode', syncEditorContent);
+    syncEditorContent();
+
+    form?.addEventListener('submit', () => {
+        syncEditorContent();
+    });
+
+    form?.addEventListener('formdata', (event) => {
+        const html = syncEditorContent();
+        event.formData.set('description', html);
+        event.formData.set('description_html', html);
     });
 })();
 </script>

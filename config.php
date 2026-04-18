@@ -2047,10 +2047,25 @@ function sanitizeContestDescriptionHtml(string $html): string
 
     libxml_use_internal_errors(true);
     $document = new DOMDocument('1.0', 'UTF-8');
-    $document->loadHTML('<!DOCTYPE html><html><body><div id="contest-description-root">' . $html . '</div></body></html>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+    // DOMDocument::getElementById() is not reliable across PHP builds for HTML fragments.
+    // Wrap into a full HTML document with explicit UTF-8 and fall back to XPath lookup.
+    $wrappedHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>'
+        . '<div id="contest-description-root">' . $html . '</div>'
+        . '</body></html>';
+    $document->loadHTML($wrappedHtml, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
     libxml_clear_errors();
 
     $root = $document->getElementById('contest-description-root');
+    if (!$root) {
+        $xpath = new DOMXPath($document);
+        $nodeList = $xpath->query('//*[@id="contest-description-root"]');
+        if ($nodeList && $nodeList->length > 0) {
+            $candidate = $nodeList->item(0);
+            if ($candidate instanceof DOMElement) {
+                $root = $candidate;
+            }
+        }
+    }
     if (!$root) {
         return '';
     }
