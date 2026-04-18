@@ -113,7 +113,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Загрузка документа
             $document_file = $contest['document_file'] ?? '';
             $cover_image = $contest['cover_image'] ?? '';
-            if ($hasDocumentFileColumn && isset($_FILES['document_file']) && $_FILES['document_file']['error'] === UPLOAD_ERR_OK) {
+            $removeDocumentFile = $hasDocumentFileColumn && (int)($_POST['remove_document_file'] ?? 0) === 1;
+
+            $uploadedNewDocument = false;
+            if ($hasDocumentFileColumn && isset($_FILES['document_file']) && ($_FILES['document_file']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
                 $result = uploadFile($_FILES['document_file'], DOCUMENTS_PATH, ['pdf', 'doc', 'docx']);
                 if ($result['success']) {
                     // Удаляем старый файл
@@ -121,7 +124,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         unlink(DOCUMENTS_PATH . '/' . $document_file);
                     }
                     $document_file = $result['filename'];
+                    $uploadedNewDocument = true;
                 }
+            }
+            // Удаление документа (если не загружаем новый).
+            if ($hasDocumentFileColumn && $removeDocumentFile && !$uploadedNewDocument) {
+                if ($document_file && file_exists(DOCUMENTS_PATH . '/' . $document_file)) {
+                    unlink(DOCUMENTS_PATH . '/' . $document_file);
+                }
+                $document_file = '';
             }
 
             if ($hasCoverImageColumn) {
@@ -295,6 +306,7 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
     <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
     <input type="hidden" name="cover_image_uploaded" id="cover_image_uploaded" value="">
     <input type="hidden" name="remove_cover_image" id="remove_cover_image" value="0">
+    <input type="hidden" name="remove_document_file" id="remove_document_file" value="0">
 
     <div class="contest-editor-layout">
         <div class="contest-editor-main">
@@ -362,14 +374,19 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
                             <div class="form-group">
                                 <label class="form-label">Файл положения (PDF, DOC, DOCX)</label>
                                 <?php if (!empty($contest['document_file'])): ?>
-                                    <div class="contest-editor-file mb-md">
+                                    <div class="contest-editor-file mb-md" id="contestDocumentCurrentFile">
                                         <div>
                                             <strong><?= htmlspecialchars($contest['document_file']) ?></strong>
                                             <span>Текущий файл положения конкурса</span>
                                         </div>
-                                        <a href="/uploads/documents/<?= htmlspecialchars($contest['document_file']) ?>" target="_blank" class="btn btn--ghost btn--sm">
-                                            <i class="fas fa-eye"></i> Открыть
-                                        </a>
+                                        <div style="display:flex; gap:8px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
+                                            <a href="/uploads/documents/<?= htmlspecialchars($contest['document_file']) ?>" target="_blank" class="btn btn--ghost btn--sm">
+                                                <i class="fas fa-eye"></i> Открыть
+                                            </a>
+                                            <button type="button" class="btn btn--ghost btn--sm" id="contestDocumentRemoveBtn">
+                                                <i class="fas fa-trash"></i> Удалить файл
+                                            </button>
+                                        </div>
                                     </div>
                                 <?php endif; ?>
                                 <input type="file" name="document_file" id="contestDocumentInput" accept=".pdf,.doc,.docx" class="form-input">
@@ -561,6 +578,46 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
 <script src="https://cdn.jsdelivr.net/npm/tinymce@5.10.9/tinymce.min.js" referrerpolicy="origin"></script>
 <script>
 (() => {
+    const form = document.querySelector('.contest-editor-form');
+    const editorElements = Array.from(document.querySelectorAll('.js-rich-editor'));
+    let submitInProgress = false;
+
+    // TinyMCE может не успевать положить HTML в textarea, если нажать "Сохранить" сразу после ввода.
+    // Перехватываем submit, синхронизируем содержимое через getContent() и отправляем форму "вручную".
+    form?.addEventListener('submit', (event) => {
+        if (submitInProgress) {
+            return;
+        }
+
+        if (!form.reportValidity()) {
+            return;
+        }
+
+        if (!window.tinymce || editorElements.length === 0) {
+            return;
+        }
+
+        event.preventDefault();
+        submitInProgress = true;
+
+        for (const element of editorElements) {
+            try {
+                const editor = window.tinymce.get(element.id) || element._richEditorInstance;
+                if (editor && typeof editor.getContent === 'function') {
+                    element.value = editor.getContent();
+                }
+            } catch (e) {}
+        }
+
+        try {
+            window.tinymce.triggerSave();
+        } catch (e) {}
+
+        requestAnimationFrame(() => {
+            form.submit();
+        });
+    }, true);
+
     if (!window.tinymce) {
         console.error('TinyMCE не загрузился');
         return;
@@ -657,7 +714,10 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
     const initialImage = <?= json_encode(!empty($contest['cover_image']) ? '/uploads/contest-covers/' . rawurlencode((string)$contest['cover_image']) : '', JSON_UNESCAPED_UNICODE) ?>;
     const placeholderByTheme = <?= json_encode(array_combine(array_keys($themeOptions), array_map('getContestThemePlaceholderPath', array_keys($themeOptions))), JSON_UNESCAPED_UNICODE) ?>;
     const themeLabels = <?= json_encode($themeOptions, JSON_UNESCAPED_UNICODE) ?>;
-    const hasExistingDocument = <?= !empty($contest['document_file']) ? 'true' : 'false' ?>;
+    let hasExistingDocument = <?= !empty($contest['document_file']) ? 'true' : 'false' ?>;
+    const removeDocumentInput = document.getElementById('remove_document_file');
+    const currentDocumentEl = document.getElementById('contestDocumentCurrentFile');
+    const removeDocumentBtn = document.getElementById('contestDocumentRemoveBtn');
 
     if (!uploadArea || !input || !previewImage) return;
 
@@ -751,6 +811,30 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
         }
     };
 
+    removeDocumentBtn?.addEventListener('click', () => {
+        if (removeDocumentInput) {
+            removeDocumentInput.value = '1';
+        }
+        hasExistingDocument = false;
+        if (currentDocumentEl) {
+            currentDocumentEl.style.display = 'none';
+        }
+        updateContestSummary();
+    });
+
+    documentInput?.addEventListener('change', () => {
+        if (removeDocumentInput) {
+            removeDocumentInput.value = '0';
+        }
+        if (documentInput?.files?.length) {
+            hasExistingDocument = false;
+            if (currentDocumentEl) {
+                currentDocumentEl.style.display = 'none';
+            }
+        }
+        updateContestSummary();
+    });
+
     const uploadCover = async (file) => {
         title.textContent = 'Загрузка...';
         hint.textContent = 'Пожалуйста, подождите';
@@ -814,7 +898,6 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
     });
 
     contestTitleInput?.addEventListener('input', updateContestSummary);
-    documentInput?.addEventListener('change', updateContestSummary);
     publishedInput?.addEventListener('change', updateContestSummary);
     receiptRequiredInput?.addEventListener('change', updateContestSummary);
     dateFromInput?.addEventListener('change', updateContestSummary);

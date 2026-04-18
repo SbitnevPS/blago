@@ -941,6 +941,56 @@ function buildEmailVerificationUrl(string $token, int $userId): string
     return $baseUrl . '/email/verify?token=' . urlencode($token) . '&uid=' . $userId;
 }
 
+/**
+ * Создаёт токен, сохраняет его в users и отправляет письмо подтверждения email.
+ * Возвращает человеко-читаемое сообщение для UI.
+ *
+ * @return array{ok:bool, message:string, already_verified?:bool}
+ */
+function sendEmailVerificationForUserId(int $userId): array
+{
+    global $pdo;
+
+    $stmt = $pdo->prepare('SELECT id, name, email, email_verified FROM users WHERE id = ? LIMIT 1');
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch();
+
+    if (!$user || trim((string) ($user['email'] ?? '')) === '') {
+        return ['ok' => false, 'message' => 'Укажите email в профиле'];
+    }
+
+    if ((int) ($user['email_verified'] ?? 0) === 1) {
+        return ['ok' => true, 'message' => 'Адрес уже подтверждён', 'already_verified' => true];
+    }
+
+    $token = bin2hex(random_bytes(32));
+    $verificationUrl = buildEmailVerificationUrl($token, (int) $user['id']);
+    $userName = trim((string) ($user['name'] ?? ''));
+
+    $update = $pdo->prepare('UPDATE users SET email_verification_token = ?, email_verification_sent_at = NOW() WHERE id = ?');
+    $update->execute([$token, (int) $user['id']]);
+
+    $subject = 'Подтверждение адреса электронной почты';
+    $html = buildEmailVerificationTemplate([
+        'user_name' => $userName,
+        'verification_url' => $verificationUrl,
+    ]);
+    $text = buildEmailVerificationText([
+        'user_name' => $userName,
+        'verification_url' => $verificationUrl,
+    ]);
+
+    $sent = sendEmail((string) $user['email'], $subject, $html, ['alt_body' => $text]);
+    if (!$sent) {
+        return ['ok' => false, 'message' => 'Не удалось отправить письмо. Попробуйте позже.'];
+    }
+
+    return [
+        'ok' => true,
+        'message' => 'Письмо для подтверждения отправлено на ваш адрес электронной почты. Проверьте входящие сообщения.',
+    ];
+}
+
 function buildPasswordResetUrl(string $token): string
 {
     return rtrim((string) SITE_URL, '/') . '/reset-password?token=' . urlencode($token);

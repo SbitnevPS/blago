@@ -11,6 +11,9 @@ if (!isAuthenticated()) {
 $user = getCurrentUser();
 $avatar = getUserAvatarData($user ?? []);
 $emailVerified = isUserEmailVerified($user);
+$isPostRegisterFlow = (string) ($_GET['registered'] ?? '') === '1';
+$postRegisterRedirect = sanitize_internal_redirect((string) ($_GET['redirect'] ?? ''), '/contests');
+$postRegisterEmailStatus = trim((string) ($_GET['email_verification'] ?? ''));
 $error = '';
 $success = '';
 $missingRequiredFields = [];
@@ -185,6 +188,34 @@ generateCSRFToken();
         <div class="alert__message">Ваш адрес электронной почты не подтверждён. Пока адрес не будет подтверждён, отправка заявок на участие в конкурсах недоступна.</div>
     </div>
 </div>
+<?php endif; ?>
+
+<?php if ($isPostRegisterFlow && !$emailVerified): ?>
+    <?php
+        $postRegisterMessage = '';
+        $postRegisterIsError = false;
+        if ($postRegisterEmailStatus === 'sent') {
+            $postRegisterMessage = 'Мы отправили письмо со ссылкой для подтверждения email. Если письма нет, проверьте «Спам» или нажмите кнопку «Подтвердить адрес электронной почты» ниже.';
+        } elseif ($postRegisterEmailStatus === 'failed') {
+            $postRegisterMessage = 'Не удалось отправить письмо для подтверждения email автоматически. Нажмите кнопку «Подтвердить адрес электронной почты» ниже, чтобы отправить письмо ещё раз.';
+            $postRegisterIsError = true;
+        } elseif ($postRegisterEmailStatus === 'already') {
+            $postRegisterMessage = 'Адрес электронной почты уже подтверждён.';
+        }
+    ?>
+    <?php if ($postRegisterMessage !== ''): ?>
+    <div class="alert mb-lg" style="max-width:600px; margin:0 auto var(--space-lg); background:<?= $postRegisterIsError ? '#fef2f2' : '#eff6ff' ?>; border:1px solid <?= $postRegisterIsError ? '#fca5a5' : '#93c5fd' ?>; color:<?= $postRegisterIsError ? '#991b1b' : '#1d4ed8' ?>;">
+        <i class="fas <?= $postRegisterIsError ? 'fa-exclamation-circle' : 'fa-info-circle' ?> alert__icon"></i>
+        <div class="alert__content">
+            <div class="alert__message"><?= htmlspecialchars($postRegisterMessage) ?></div>
+            <?php if ($postRegisterRedirect !== '' && $postRegisterRedirect !== '/profile'): ?>
+                <div style="margin-top:12px;">
+                    <a class="btn btn--ghost" href="<?= htmlspecialchars($postRegisterRedirect) ?>">Продолжить</a>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 <?php endif; ?>
 
 <?php if ($forcePasswordChange): ?>

@@ -679,7 +679,6 @@ generateCSRFToken();
         <div class="application-hero__inner">
             <div class="application-hero__eyebrow"><i class="fas fa-bolt"></i> Онлайн-подача</div>
             <h1 class="application-hero__title"><?= e($contest['title']) ?></h1>
-            <p class="application-hero__text">Заполните форму по шагам: быстро, спокойно и без потери данных. Добавляйте нескольких участников и загружайте рисунки с превью.</p>
             <div class="application-prep-grid">
                 <div class="application-prep-item">👤 Данные участника</div>
                 <div class="application-prep-item">🖼 Отдельный рисунок</div>
