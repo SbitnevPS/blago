@@ -100,11 +100,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Ошибка безопасности';
     } else {
         $title = trim($_POST['title'] ?? '');
-        $descriptionInput = (string) ($_POST['description'] ?? '');
+        $descriptionInput = (string) ($_POST['description_html'] ?? '');
         if ($descriptionInput === '') {
-            $descriptionInput = (string) ($_POST['description_html'] ?? '');
+            $descriptionInput = (string) ($_POST['description'] ?? '');
         }
+        error_log('[contest-edit] description len=' . mb_strlen((string) ($_POST['description'] ?? '')));
+        error_log('[contest-edit] description_html len=' . mb_strlen((string) ($_POST['description_html'] ?? '')));
+        error_log('[contest-edit] descriptionInput len=' . mb_strlen($descriptionInput));
         $description = sanitizeContestDescriptionHtml($descriptionInput);
+        error_log('[contest-edit] sanitized description len=' . mb_strlen($description));
         $is_published = isset($_POST['is_published']) ? 1 : 0;
         $theme_style = normalizeContestThemeStyle($_POST['theme_style'] ?? 'blue');
         $requires_payment_receipt = isset($_POST['requires_payment_receipt']) ? 1 : 0;
@@ -605,11 +609,16 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
 
     const syncEditorContent = () => {
         if (!editor) {
-            return editorElement.value || '';
+            const plainValue = editorElement.value || '';
+            if (mirrorInput) {
+                mirrorInput.value = plainValue;
+            }
+            return plainValue;
         }
 
-        editor.synchronizeValues();
         const html = editor.value || '';
+        editor.synchronizeValues();
+        editorElement.value = html;
         if (mirrorInput) {
             mirrorInput.value = html;
         }
@@ -705,7 +714,11 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
     syncEditorContent();
 
     form?.addEventListener('submit', () => {
-        syncEditorContent();
+        const html = syncEditorContent();
+        editorElement.value = html;
+        if (mirrorInput) {
+            mirrorInput.value = html;
+        }
     });
 
     form?.addEventListener('formdata', (event) => {
