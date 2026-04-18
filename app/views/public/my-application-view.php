@@ -622,7 +622,7 @@ $currentPage = 'applications';
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Заявка #<?= $applicationId ?> - ДетскиеКонкурсы.рф</title>
+<title>Заявка #<?= $applicationId ?> - КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО</title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 <style>
 .application-page {max-width:1200px; margin:0 auto; display:flex; flex-direction:column; gap:16px;}

@@ -17,7 +17,7 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Конкурсы - ДетскиеКонкурсы.рф</title>
+<title>Конкурсы - КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО</title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 </head>
 <body>

@@ -22,7 +22,7 @@ function buildDiplomaEmailTemplate(array $data): string {
     $diplomaType = (string)($data['diploma_type'] ?? 'contest_participant');
     $isEncouragement = $diplomaType === 'encouragement';
 
-    $brandName = trim((string)($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $brandName = trim((string)($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
     $brandSubtitle = trim((string)($data['brand_subtitle'] ?? 'Всероссийские конкурсы детского творчества'));
     $userName = trim((string)($data['user_name'] ?? ''));
     $participantName = trim((string)($data['participant_name'] ?? ''));
@@ -149,7 +149,7 @@ function buildDiplomaEmailText(array $data): string {
     $diplomaType = (string)($data['diploma_type'] ?? 'contest_participant');
     $isEncouragement = $diplomaType === 'encouragement';
 
-    $brandName = trim((string)($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $brandName = trim((string)($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
     $userName = trim((string)($data['user_name'] ?? ''));
     $participantName = trim((string)($data['participant_name'] ?? ''));
     $contestTitle = trim((string)($data['contest_title'] ?? ''));
@@ -188,7 +188,7 @@ function buildDiplomaEmailText(array $data): string {
  * @param array<string,mixed> $data
  */
 function buildEmailVerificationTemplate(array $data): string {
-    $brandName = trim((string)($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $brandName = trim((string)($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
     $siteUrl = trim((string)($data['site_url'] ?? SITE_URL));
     $userName = trim((string)($data['user_name'] ?? ''));
     $verificationUrl = trim((string)($data['verification_url'] ?? ''));
@@ -219,7 +219,7 @@ function buildEmailVerificationTemplate(array $data): string {
  * @param array<string,mixed> $data
  */
 function buildEmailVerificationText(array $data): string {
-    $brandName = trim((string)($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $brandName = trim((string)($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
     $siteUrl = trim((string)($data['site_url'] ?? SITE_URL));
     $userName = trim((string)($data['user_name'] ?? ''));
     $verificationUrl = trim((string)($data['verification_url'] ?? ''));
@@ -244,7 +244,7 @@ function buildEmailVerificationText(array $data): string {
  */
 function buildPasswordResetRequestEmailTemplate(array $data): string
 {
-    $brandName = trim((string) ($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $brandName = trim((string) ($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
     $siteUrl = trim((string) ($data['site_url'] ?? SITE_URL));
     $userName = trim((string) ($data['user_name'] ?? ''));
     $resetUrl = trim((string) ($data['reset_url'] ?? ''));
@@ -277,7 +277,7 @@ function buildPasswordResetRequestEmailTemplate(array $data): string
  */
 function buildPasswordResetRequestEmailText(array $data): string
 {
-    $brandName = trim((string) ($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $brandName = trim((string) ($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
     $siteUrl = trim((string) ($data['site_url'] ?? SITE_URL));
     $userName = trim((string) ($data['user_name'] ?? ''));
     $resetUrl = trim((string) ($data['reset_url'] ?? ''));
@@ -304,7 +304,7 @@ function buildPasswordResetRequestEmailText(array $data): string
  */
 function buildTemporaryPasswordEmailTemplate(array $data): string
 {
-    $brandName = trim((string) ($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $brandName = trim((string) ($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
     $siteUrl = trim((string) ($data['site_url'] ?? SITE_URL));
     $userName = trim((string) ($data['user_name'] ?? ''));
     $login = trim((string) ($data['login'] ?? ''));
@@ -344,7 +344,7 @@ function buildTemporaryPasswordEmailTemplate(array $data): string
  */
 function buildTemporaryPasswordEmailText(array $data): string
 {
-    $brandName = trim((string) ($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $brandName = trim((string) ($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
     $siteUrl = trim((string) ($data['site_url'] ?? SITE_URL));
     $userName = trim((string) ($data['user_name'] ?? ''));
     $login = trim((string) ($data['login'] ?? ''));

@@ -1,7 +1,7 @@
 <footer class="footer">
     <div class="container">
         <div class="footer__inner">
-            <p class="footer__text">© <?= date('Y') ?> ДетскиеКонкурсы.рф</p>
+            <p class="footer__text">© <?= date('Y') ?> КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО</p>
             <div class="footer__links" aria-label="Правовые документы">
                 <a href="/legal/privacy" class="footer__link">Политика конфиденциальности</a>
                 <a href="/legal/cookies" class="footer__link">Политика Cookie</a>

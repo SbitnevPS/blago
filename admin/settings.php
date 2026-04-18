@@ -421,8 +421,8 @@ unset($_SESSION['success_message']);
                                     type="text"
                                     name="email_from_name"
                                     class="form-input"
-                                    value="<?= htmlspecialchars($settings['email_from_name'] ?? 'ДетскиеКонкурсы.рф') ?>"
-                                    placeholder="ДетскиеКонкурсы.рф"
+                                    value="<?= htmlspecialchars($settings['email_from_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО') ?>"
+                                    placeholder="КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО"
                                 >
                             </div>
                             <div class="form-group">
