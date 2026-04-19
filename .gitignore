@@ -28,6 +28,8 @@ composer.phar
 #######################################
 *.log
 deploy.log
+deploy.php
+deploy.sh
 
 #######################################
 # OS / Editor мусор
