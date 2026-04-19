@@ -8,6 +8,6 @@
 <script src="/js/admin-live-search.js" defer></script>
 <?php if (!empty($pageStyles) && is_array($pageStyles)): ?>
     <?php foreach ($pageStyles as $style): ?>
-<link rel="stylesheet" href="/css/<?= htmlspecialchars($style) ?>">
+<link rel="stylesheet" href="/css/<?= htmlspecialchars($style) ?>?v=1.0">
     <?php endforeach; ?>
 <?php endif; ?>
