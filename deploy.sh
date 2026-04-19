@@ -1,35 +1,40 @@
 #!/bin/bash
+set -e
 
-# deploy.sh — деплой проекта
-composer install --no-dev --optimize-autoloader
+PROJECT_DIR="/home/users/p/pavel-sbitnev/domains/test.tolkodobroe.info"
+BRANCH="develop"
 
-echo "[deploy] Starting deploy..."
+echo "[deploy] Starting deploy in ${PROJECT_DIR}"
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${PROJECT_DIR}"
 
-cd "$PROJECT_DIR" || {
-  echo "[deploy][error] Project directory not found"
-  exit 1
-}
+if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+  echo "[deploy] Aborting unfinished rebase"
+  git rebase --abort || true
+fi
 
-# 🔄 Обновляем код
+if [ -f .git/MERGE_HEAD ]; then
+  echo "[deploy] Aborting unfinished merge"
+  git merge --abort || true
+fi
+
 echo "[deploy] Fetching updates..."
 git fetch origin
 
-echo "[deploy] Reset to origin/main..."
-git reset --hard origin/main
+echo "[deploy] Reset to origin/${BRANCH}..."
+git reset --hard "origin/${BRANCH}"
 
-# 🧹 Очистка (если нужно)
 echo "[deploy] Cleaning..."
 git clean -fd
 
-# 📦 Установка зависимостей (если используешь composer)
-if [ -f "composer.json" ]; then
+if [ -f composer.phar ]; then
   echo "[deploy] Installing composer dependencies..."
-  composer install --no-dev --optimize-autoloader
+  php composer.phar install --no-dev --optimize-autoloader
+else
+  echo "[deploy] composer.phar not found, skipping composer install"
 fi
 
-# 🔐 Права (опционально)
-chmod -R 775 storage uploads 2>/dev/null
-
 echo "[deploy] Done."
+
+
+SetEnv DEPLOY_SECRET f51877bd0167d72d8cda5ef1dea438d770168a33
