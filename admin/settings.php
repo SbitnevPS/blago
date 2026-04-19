@@ -894,6 +894,19 @@ unset($_SESSION['success_message']);
     const successMessage = <?= json_encode($successMessage, JSON_UNESCAPED_UNICODE) ?>;
     const tabs = Array.from(document.querySelectorAll('[data-settings-tab]'));
     const panels = Array.from(document.querySelectorAll('[data-settings-panel]'));
+    const seenPanels = new Set();
+    panels.forEach((panel) => {
+        const panelName = panel.dataset.settingsPanel || '';
+        if (panelName === '') {
+            return;
+        }
+        if (seenPanels.has(panelName)) {
+            panel.remove();
+            return;
+        }
+        seenPanels.add(panelName);
+    });
+    const uniquePanels = Array.from(document.querySelectorAll('[data-settings-panel]'));
     const uploadArea = document.getElementById('homepageHeroUploadArea');
     const input = document.getElementById('homepageHeroInput');
     const hiddenInput = document.getElementById('homepage_hero_image');
@@ -914,7 +927,7 @@ unset($_SESSION['success_message']);
         tabs.forEach((tab) => {
             tab.classList.toggle('is-active', tab.dataset.settingsTab === tabName);
         });
-        panels.forEach((panel) => {
+        uniquePanels.forEach((panel) => {
             const isActive = panel.dataset.settingsPanel === tabName;
             panel.classList.toggle('is-active', isActive);
             panel.hidden = !isActive;
