@@ -4,7 +4,7 @@
 require_once __DIR__ . '/config.php';
 
 // 🔐 Секрет (должен совпадать с GitHub webhook)
-$secret = getenv('DEPLOY_SECRET');
+$secret = GITHUB_WEBHOOK_SECRET ?? '';
 
 if (!$secret) {
     http_response_code(500);
