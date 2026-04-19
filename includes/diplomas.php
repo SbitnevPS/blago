@@ -1558,8 +1558,8 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
         'diploma_number' => trim((string)($diploma['diploma_number'] ?? '')),
         'diploma_url' => $publicUrl,
         'site_url' => SITE_URL,
-        'brand_name' => 'ДетскиеКонкурсы.рф',
-        'brand_subtitle' => 'Всероссийские конкурсы детского творчества',
+        'brand_name' => siteBrandName(),
+        'brand_subtitle' => siteBrandSubtitle(),
     ];
 
     $ok = sendEmail($to, $subject, buildDiplomaEmailTemplate($emailData), [

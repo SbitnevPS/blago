@@ -7,11 +7,7 @@ $currentPage = 'legal-terms';
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<<<<<<< HEAD
-<title>Пользовательское соглашение - КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО</title>
-=======
 <title><?= htmlspecialchars(sitePageTitle('Пользовательское соглашение'), ENT_QUOTES, 'UTF-8') ?></title>
->>>>>>> origin/codex/extract-branding-settings-for-site-mj97vm
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 </head>
 <body>

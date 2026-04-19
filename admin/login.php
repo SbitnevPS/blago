@@ -67,11 +67,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<<<<<<< HEAD
-<title>Вход в админ-панель - КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО</title>
-=======
 <title><?= htmlspecialchars(sitePageTitle('Вход в админ-панель'), ENT_QUOTES, 'UTF-8') ?></title>
->>>>>>> origin/codex/extract-branding-settings-for-site-mj97vm
 <?php include __DIR__ . '/includes/admin-head.php'; ?>
 </head>
 <body>
@@ -80,11 +76,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <div class="admin-login-logo">
 <i class="fas fa-paint-brush"></i>
 <h1>Админ-панель</h1>
-<<<<<<< HEAD
-<p>КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО</p>
-=======
 <p><?= htmlspecialchars(siteBrandName(), ENT_QUOTES, 'UTF-8') ?></p>
->>>>>>> origin/codex/extract-branding-settings-for-site-mj97vm
 </div>
 
 <div class="login-card__tabs" style="margin-bottom:16px;">
