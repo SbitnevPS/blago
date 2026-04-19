@@ -3,6 +3,7 @@
 #######################################
 storage/private/
 config.local.php
+.htaccess
 
 #######################################
 # ENV
@@ -28,6 +29,8 @@ composer.phar
 #######################################
 *.log
 deploy.log
+delpoy.php
+deploy.sh
 
 #######################################
 # OS / Editor мусор
