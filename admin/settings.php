@@ -721,7 +721,6 @@ unset($_SESSION['success_message']);
                                 <span>Публиковать от имени сообщества</span>
                             </label>
                         </div>
-                        </div>
 
                         <div class="form-row">
                             <div class="form-group">
