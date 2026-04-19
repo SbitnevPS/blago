@@ -1,5 +1,5 @@
 <?php
-// config.php - Конфигурация базы данных и основные настройки!!
+// config.php - Конфигурация базы данных и основные настройки!!!
 
 define('ROOT_PATH', __DIR__);
 define('UPLOAD_PATH', ROOT_PATH . '/uploads');
