@@ -35,6 +35,3 @@ else
 fi
 
 echo "[deploy] Done."
-
-
-SetEnv DEPLOY_SECRET f51877bd0167d72d8cda5ef1dea438d770168a33
