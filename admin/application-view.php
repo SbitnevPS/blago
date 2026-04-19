@@ -15,9 +15,9 @@ $application_id = $_GET['id'] ?? 0;
 
 // Получаем заявку
 $stmt = $pdo->prepare("
- SELECT a.*, c.title as contest_title, 
+ SELECT a.*, c.title as contest_title, c.requires_payment_receipt AS contest_requires_payment_receipt,
  u.name, u.surname, u.avatar_url, u.email, u.vk_id,
- u.organization_region, u.organization_name, u.organization_address
+ u.organization_region, u.organization_name, u.organization_address, u.user_type
  FROM applications a
  JOIN contests c ON a.contest_id = c.id
  JOIN users u ON a.user_id = u.id
@@ -29,6 +29,10 @@ $application = $stmt->fetch();
 if (!$application) {
     redirect('/admin/applications');
 }
+
+$applicantEmail = trim((string) ($application['email'] ?? ''));
+$blacklistEntry = $applicantEmail !== '' ? mailingGetBlacklistEntry($applicantEmail) : null;
+$isApplicantBlacklisted = $blacklistEntry !== null;
 
 try {
     $hasOpenedByAdminColumn = (bool) $pdo->query("SHOW COLUMNS FROM applications LIKE 'opened_by_admin'")->fetch();
@@ -43,20 +47,64 @@ try {
 $stmt = $pdo->prepare("SELECT * FROM participants WHERE application_id = ?");
 $stmt->execute([$application_id]);
 $participants = $stmt->fetchAll();
-$works = getApplicationWorks((int)$application_id);
-$isApplicationApproved = (string) ($application['status'] ?? '') === 'approved';
-$displayPermissions = getApplicationDisplayPermissions($application, $works);
-$canShowBulkDiplomaActions = (bool) ($displayPermissions['can_show_bulk_diplomas'] ?? false);
-$showVkPublishPrompt = max(0, (int) ($_SESSION['vk_publish_prompt_application_id'] ?? 0)) === (int) $application_id;
-unset($_SESSION['vk_publish_prompt_application_id']);
+	$works = getApplicationWorks((int)$application_id);
+	$isApplicationApproved = (string) ($application['status'] ?? '') === 'approved';
+	$isApplicationFinal = in_array((string) ($application['status'] ?? ''), ['approved', 'rejected', 'cancelled'], true);
+	$isApplicationDecisionLocked = (string) ($application['status'] ?? '') === 'cancelled';
+	$showVkPublishPrompt = max(0, (int) ($_SESSION['vk_publish_prompt_application_id'] ?? 0)) === (int) $application_id;
+	unset($_SESSION['vk_publish_prompt_application_id']);
 $participantColumns = $pdo->query("DESCRIBE participants")->fetchAll(PDO::FETCH_COLUMN);
 $hasDrawingCompliantColumn = in_array('drawing_compliant', $participantColumns, true);
 $hasDrawingCommentColumn = in_array('drawing_comment', $participantColumns, true);
+$drawingCommentPresetsRaw = trim((string) getSystemSetting('drawing_comment_presets', ''));
+if ($drawingCommentPresetsRaw === '') {
+    $drawingCommentPresetsRaw = implode("\n", [
+        'Пожалуйста, загрузите более качественное изображение рисунка без затемнений и бликов.',
+        'Пожалуйста, проверьте соответствие работы теме конкурса и при необходимости замените рисунок.',
+        'Пожалуйста, убедитесь, что на изображении нет посторонних элементов, подписей и рамок.',
+    ]);
+}
+$drawingCommentPresets = array_values(array_filter(array_map(
+    static fn($item) => trim((string) $item),
+    preg_split('/\R/u', $drawingCommentPresetsRaw) ?: []
+), static fn($item) => $item !== ''));
 $hasNonCompliantDrawings = false;
+$hasRevisionCandidate = false;
+$allParticipantsDecidedForRevision = !empty($works);
+if ($hasDrawingCompliantColumn) {
+    foreach ($works as $workRow) {
+        $isCompliantRow = (int)($workRow['drawing_compliant'] ?? 1) === 1;
+        $isFinalDecision = in_array((string) ($workRow['status'] ?? 'pending'), ['accepted', 'reviewed_non_competitive'], true);
+        if (!$isFinalDecision && $isCompliantRow) {
+            $allParticipantsDecidedForRevision = false;
+        }
+        if (!$isCompliantRow) {
+            $hasNonCompliantDrawings = true;
+            $hasRevisionCandidate = true;
+        }
+    }
+} else {
+    $allParticipantsDecidedForRevision = false;
+}
+$revisionButtonDisabled = $isApplicationApproved || !$allParticipantsDecidedForRevision || !$hasRevisionCandidate;
+$declineButtonDisabled = true;
+if (!empty($works)) {
+    $allWorksFinallyRejected = true;
+    foreach ($works as $workRow) {
+        $status = (string) ($workRow['status'] ?? 'pending');
+        if ($status === 'accepted') {
+            $allWorksFinallyRejected = false;
+            break;
+        }
+        if ($status !== 'reviewed_non_competitive') {
+            $allWorksFinallyRejected = false;
+        }
+    }
+    $declineButtonDisabled = !$allWorksFinallyRejected;
+}
 if ($hasDrawingCompliantColumn) {
     foreach ($works as $workRow) {
         if ((int)($workRow['drawing_compliant'] ?? 1) === 0) {
-            $hasNonCompliantDrawings = true;
             break;
         }
     }
@@ -131,6 +179,23 @@ function findParticipantWorkId(array $works, int $participantId): int {
     return 0;
 }
 
+function resetApplicationDecisionStatusIfNeeded(int $applicationId, string $currentStatus): array {
+    global $pdo;
+    $normalizedStatus = normalizeApplicationStoredStatus($currentStatus);
+    if (!in_array($normalizedStatus, ['approved', 'rejected'], true)) {
+        return [
+            'status' => $normalizedStatus,
+            'was_reset' => false,
+        ];
+    }
+    $pdo->prepare("UPDATE applications SET status = 'submitted', updated_at = NOW() WHERE id = ?")
+        ->execute([$applicationId]);
+    return [
+        'status' => 'submitted',
+        'was_reset' => true,
+    ];
+}
+
 // Обработка изменения статуса
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
@@ -147,57 +212,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $_SESSION['success_message'] = 'Статус обновлён';
         redirect('/admin/applications');
 
-    } elseif ($_POST['action'] === 'download_participant_diploma') {
-        $workId = (int)($_POST['work_id'] ?? 0);
-        if ($workId <= 0) {
+    } elseif ($_POST['action'] === 'toggle_applicant_blacklist') {
+        if ($applicantEmail === '') {
             if ($isAjaxRequest) {
-                jsonResponse(['success' => false, 'error' => 'Работа не найдена'], 422);
+                jsonResponse(['success' => false, 'error' => 'У заявителя не указан email.'], 422);
             }
-            throw new RuntimeException('Работа не найдена');
+            throw new RuntimeException('У заявителя не указан email.');
         }
-        $workContext = getWorkDiplomaContext($workId);
-        if (!$workContext || (int) ($workContext['application_id'] ?? 0) !== (int) $application_id || !canShowIndividualDiplomaActions(['status' => (string) ($workContext['work_status'] ?? 'pending')])) {
-            throw new RuntimeException('Для выбранной работы диплом недоступен');
+
+        if ($isApplicantBlacklisted) {
+            mailingRemoveEmailFromBlacklist($applicantEmail);
+            $blacklistEntry = null;
+            $isApplicantBlacklisted = false;
+            $message = 'Email удалён из чёрного списка рассылки.';
+        } else {
+            $blacklistEntry = mailingAddEmailToBlacklist($applicantEmail, 'Добавлено из карточки заявки #' . (int) $application_id);
+            $isApplicantBlacklisted = true;
+            $message = 'Email добавлен в чёрный список рассылки.';
         }
-        $diploma = generateWorkDiploma($workId, false);
+
         if ($isAjaxRequest) {
             jsonResponse([
                 'success' => true,
-                'message' => 'Диплом сформирован и скачивается',
-                'download_url' => '/' . ltrim((string) ($diploma['file_path'] ?? ''), '/'),
+                'message' => $message,
+                'email' => (string) ($blacklistEntry['email'] ?? $applicantEmail),
+                'is_blacklisted' => $isApplicantBlacklisted ? 1 : 0,
             ]);
         }
-        $file = ROOT_PATH . '/' . $diploma['file_path'];
-        header('Content-Type: application/pdf');
-        header('Content-Disposition: attachment; filename="diploma_work_' . $workId . '.pdf"');
-        readfile($file);
-        exit;
-    } elseif ($_POST['action'] === 'send_participant_diploma') {
-        $workId = (int)($_POST['work_id'] ?? 0);
-        $ctx = getWorkDiplomaContext($workId);
-        if (!$ctx || (int) ($ctx['application_id'] ?? 0) !== (int) $application_id || !canShowIndividualDiplomaActions(['status' => (string) ($ctx['work_status'] ?? 'pending')])) {
-            throw new RuntimeException('Для выбранной работы диплом недоступен');
-        }
-        $diploma = generateWorkDiploma($workId, false);
-        sendDiplomaByEmail($ctx ?? [], $diploma);
-        if ($isAjaxRequest) {
-            jsonResponse(['success' => true, 'message' => 'Диплом участника отправлен']);
-        }
-        $_SESSION['success_message'] = 'Диплом участника отправлен';
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'link_participant_diploma') {
-        $workId = (int)($_POST['work_id'] ?? 0);
-        $ctx = getWorkDiplomaContext($workId);
-        if (!$ctx || (int) ($ctx['application_id'] ?? 0) !== (int) $application_id || !canShowIndividualDiplomaActions(['status' => (string) ($ctx['work_status'] ?? 'pending')])) {
-            throw new RuntimeException('Для выбранной работы диплом недоступен');
-        }
-        $diploma = generateWorkDiploma($workId, false);
-        $_SESSION['success_message'] = 'Ссылка участника: ' . getPublicDiplomaUrl($diploma['public_token']);
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'set_work_status') {
-        $workId = (int)($_POST['work_id'] ?? 0);
-        $participantId = (int)($_POST['participant_id'] ?? findWorkParticipantId($works, $workId));
-        $newStatus = (string)($_POST['work_status'] ?? 'pending');
+
+	        $_SESSION['success_message'] = $message;
+	        redirect('/admin/application/' . $application_id);
+
+	    } elseif ($_POST['action'] === 'set_work_status') {
+	        $workId = (int)($_POST['work_id'] ?? 0);
+	        $participantId = (int)($_POST['participant_id'] ?? findWorkParticipantId($works, $workId));
+	        $newStatus = (string)($_POST['work_status'] ?? 'pending');
         if ($workId <= 0 || !in_array($newStatus, ['pending', 'accepted', 'reviewed', 'reviewed_non_competitive'], true)) {
             if ($isAjaxRequest) {
                 jsonResponse(['success' => false, 'error' => 'Некорректный статус работы'], 422);
@@ -205,104 +254,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $_SESSION['success_message'] = 'Некорректный статус работы';
             redirect('/admin/application/' . $application_id);
         }
+        $comment = trim((string) ($_POST['comment'] ?? ''));
         updateWorkStatus($workId, $newStatus);
+        $applicationStatusReset = resetApplicationDecisionStatusIfNeeded((int) $application_id, (string) ($application['status'] ?? 'submitted'));
+        $application['status'] = (string) ($applicationStatusReset['status'] ?? 'submitted');
+        $isApplicationApproved = (string) ($application['status'] ?? '') === 'approved';
+        $isApplicationFinal = in_array((string) ($application['status'] ?? ''), ['approved', 'rejected', 'cancelled'], true);
+        $isApplicationDecisionLocked = (string) ($application['status'] ?? '') === 'cancelled';
 
         if ($participantId > 0 && $hasDrawingCompliantColumn) {
-            $isCompliant = $newStatus === 'accepted' ? 1 : 0;
-            if ($hasDrawingCommentColumn) {
-                $pdo->prepare("
-                    UPDATE participants
-                    SET drawing_compliant = ?, drawing_comment = CASE WHEN ? = 1 THEN NULL ELSE drawing_comment END
-                    WHERE id = ? AND application_id = ?
-                ")->execute([$isCompliant, $isCompliant, $participantId, $application_id]);
-            } else {
-                $pdo->prepare("
-                    UPDATE participants
-                    SET drawing_compliant = ?
-                    WHERE id = ? AND application_id = ?
-                ")->execute([$isCompliant, $participantId, $application_id]);
+            if ($newStatus === 'accepted') {
+                if ($hasDrawingCommentColumn) {
+                    $pdo->prepare("
+                        UPDATE participants
+                        SET drawing_compliant = 1, drawing_comment = NULL
+                        WHERE id = ? AND application_id = ?
+                    ")->execute([$participantId, $application_id]);
+                } else {
+                    $pdo->prepare("
+                        UPDATE participants
+                        SET drawing_compliant = 1
+                        WHERE id = ? AND application_id = ?
+                    ")->execute([$participantId, $application_id]);
+                }
             }
         }
         if ($isAjaxRequest) {
-            jsonResponse([
-                'success' => true,
-                'message' => 'Статус работы обновлён',
-                'work_status' => $newStatus,
-                'status_label' => getWorkStatusLabel($newStatus),
-                'status_class' => getWorkStatusBadgeClass($newStatus),
-                'diploma_available' => mapWorkStatusToDiplomaType($newStatus) !== null,
-            ]);
-        }
-        $_SESSION['success_message'] = 'Статус работы обновлён';
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'generate_all_diplomas') {
-        if (!$canShowBulkDiplomaActions) {
-            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
-        }
-        foreach ($works as $workRow) {
-            if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
-                continue;
-            }
-            generateWorkDiploma((int)$workRow['id'], false);
-        }
-        $_SESSION['success_message'] = 'Дипломы сформированы';
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'generate_and_send_all_diplomas') {
-        if (!$canShowBulkDiplomaActions) {
-            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
-        }
-        foreach ($works as $workRow) {
-            if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
-                continue;
-            }
-            $ctx = getWorkDiplomaContext((int)$workRow['id']);
-            $diploma = generateWorkDiploma((int)$workRow['id'], false);
-            sendDiplomaByEmail($ctx ?? [], $diploma);
-        }
-        $_SESSION['success_message'] = 'Дипломы сформированы и отправлены';
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'collect_all_diploma_links') {
-        if (!$canShowBulkDiplomaActions) {
-            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
-        }
-        foreach ($works as $workRow) {
-            if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
-                continue;
-            }
-            generateWorkDiploma((int)$workRow['id'], false);
-        }
-        $links = collectApplicationDiplomaLinks((int)$application_id);
-        $lines = array_map(static fn($it) => $it['participant'] . ': ' . $it['url'], $links);
-        $_SESSION['success_message'] = "Ссылки:
-" . implode("
-", $lines);
-        redirect('/admin/application/' . $application_id);
-    } elseif ($_POST['action'] === 'download_zip_diplomas') {
-        if (!$canShowBulkDiplomaActions) {
-            throw new RuntimeException('Массовые дипломные действия доступны только после принятия заявки.');
-        }
-        foreach ($works as $workRow) {
-            if (mapWorkStatusToDiplomaType((string)($workRow['status'] ?? 'pending')) === null) {
-                continue;
-            }
-            generateWorkDiploma((int)$workRow['id'], false);
-        }
-        $zipRelative = buildApplicationDiplomaZip((int)$application_id);
-        $zipFile = ROOT_PATH . '/' . $zipRelative;
-        header('Content-Type: application/zip');
-        header('Content-Disposition: attachment; filename="' . basename($zipFile) . '"');
-        readfile($zipFile);
-        exit;
-    } elseif ($_POST['action'] === 'approve_application') {
+	            jsonResponse([
+	                'success' => true,
+	                'message' => 'Статус работы обновлён',
+	                'work_status' => $newStatus,
+	                'status_label' => getWorkStatusLabel($newStatus),
+	                'status_class' => getWorkStatusBadgeClass($newStatus),
+	                'drawing_compliant' => $newStatus === 'accepted' ? 1 : null,
+	                'application_status' => (string) ($application['status'] ?? 'submitted'),
+	                'application_status_reset' => (bool) ($applicationStatusReset['was_reset'] ?? false),
+	            ]);
+	        }
+	        $_SESSION['success_message'] = 'Статус работы обновлён';
+	        redirect('/admin/application/' . $application_id);
+	    } elseif ($_POST['action'] === 'approve_application') {
         if ($hasDrawingCompliantColumn) {
-            $nonCompliantStmt = $pdo->prepare("
+            $unresolvedStmt = $pdo->prepare("
                 SELECT COUNT(*)
-                FROM participants
-                WHERE application_id = ? AND drawing_compliant = 0
+                FROM works w
+                WHERE w.application_id = ?
+                  AND w.status NOT IN ('accepted', 'reviewed_non_competitive')
             ");
-            $nonCompliantStmt->execute([$application_id]);
-            if ((int)$nonCompliantStmt->fetchColumn() > 0) {
-                $errorMessage = 'Нельзя принять заявку: есть работы, не соответствующие условиям конкурса.';
+            $unresolvedStmt->execute([$application_id]);
+            if ((int)$unresolvedStmt->fetchColumn() > 0) {
+                $errorMessage = 'Нельзя принять заявку: не по всем рисункам принято решение.';
                 if ($isAjaxRequest) {
                     jsonResponse(['success' => false, 'error' => $errorMessage], 422);
                 }
@@ -314,12 +315,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt->execute([$application_id]);
         $application['status'] = 'approved';
         $isApplicationApproved = true;
-
-        $workIdsStmt = $pdo->prepare("SELECT id FROM works WHERE application_id = ?");
-        $workIdsStmt->execute([$application_id]);
-        foreach ($workIdsStmt->fetchAll(PDO::FETCH_COLUMN) as $workId) {
-            updateWorkStatus((int) $workId, 'accepted');
-        }
+        $isApplicationFinal = true;
 
         $declinedSubject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
         $pdo->prepare("
@@ -334,6 +330,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             ->execute([$application_id]);
         disallowApplicationEdit($application_id);
 
+        if ($isAjaxRequest) {
+            jsonResponse([
+                'success' => true,
+                'message' => 'Заявка принята',
+            ]);
+        }
+
         $_SESSION['success_message'] = 'Заявка принята';
         $_SESSION['vk_publish_prompt_application_id'] = (int) $application_id;
         redirect('/admin/application/' . $application_id);
@@ -341,6 +344,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt = $pdo->prepare("UPDATE applications SET status = 'cancelled', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
         $application['status'] = 'cancelled';
+        $isApplicationFinal = true;
 
         $subject = getSystemSetting('application_cancelled_subject', 'Ваша заявка отменена');
         $message = getSystemSetting('application_cancelled_message', 'Ваша заявка отменена администратором.') . "\n\nНомер заявки: #" . $application_id;
@@ -350,11 +354,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $_SESSION['success_message'] = 'Заявка отменена';
         redirect('/admin/applications');
     } elseif ($_POST['action'] === 'decline_application') {
+        $worksForDeclineCheck = getApplicationWorks((int) $application_id);
+        $canDeclineApplication = !empty($worksForDeclineCheck);
+        foreach ($worksForDeclineCheck as $workRow) {
+            if ((string) ($workRow['status'] ?? 'pending') !== 'reviewed_non_competitive') {
+                $canDeclineApplication = false;
+                break;
+            }
+        }
+        if (!$canDeclineApplication) {
+            $_SESSION['error_message'] = 'Отклонить заявку можно только когда по всем рисункам принято решение «Рисунок отклонён».';
+            redirect('/admin/application/' . $application_id);
+        }
         // В ряде БД статус отклонения хранится как `rejected` (без `declined` в ENUM),
         // поэтому сохраняем совместимое значение.
         $stmt = $pdo->prepare("UPDATE applications SET status = 'rejected', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
         $application['status'] = 'rejected';
+        $isApplicationFinal = true;
 
         $subject = getSystemSetting('application_declined_subject', 'Ваша заявка отклонена');
         $message = getSystemSetting('application_declined_message', 'Ваша заявка отклонена администратором.') . "\n\nНомер заявки: #" . $application_id;
@@ -386,7 +403,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $participantId = intval($_POST['participant_id'] ?? 0);
  $isCompliant = isset($_POST['drawing_compliant']) ? 1 : 0;
  $workId = findParticipantWorkId($works, $participantId);
- $newWorkStatus = $isCompliant ? 'accepted' : 'reviewed';
  $comment = trim($_POST['comment'] ?? '');
 
  if ($participantId <= 0) {
@@ -429,15 +445,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  }
 
  if ($workId > 0) {
-     updateWorkStatus($workId, $newWorkStatus);
+     updateWorkStatus($workId, $isCompliant ? 'accepted' : 'reviewed');
+     $applicationStatusReset = resetApplicationDecisionStatusIfNeeded((int) $application_id, (string) ($application['status'] ?? 'submitted'));
+     $application['status'] = (string) ($applicationStatusReset['status'] ?? 'submitted');
+     $isApplicationApproved = (string) ($application['status'] ?? '') === 'approved';
+     $isApplicationFinal = in_array((string) ($application['status'] ?? ''), ['approved', 'rejected', 'cancelled'], true);
+     $isApplicationDecisionLocked = (string) ($application['status'] ?? '') === 'cancelled';
+ } else {
+     $applicationStatusReset = ['was_reset' => false];
  }
 
  if ($isAjaxRequest) {
-     jsonResponse(['success' => true]);
+     jsonResponse([
+         'success' => true,
+         'application_status' => (string) ($application['status'] ?? 'submitted'),
+         'application_status_reset' => (bool) ($applicationStatusReset['was_reset'] ?? false),
+     ]);
  }
  $_SESSION['success_message'] = 'Проверка рисунка обновлена';
  redirect('/admin/application/' . $application_id);
  } elseif ($_POST['action'] === 'send_to_revision') {
+     $worksForRevisionCheck = getApplicationWorks((int) $application_id);
+     $hasRevisionPath = false;
+     $hasUnresolvedRevisionDecision = false;
+     foreach ($worksForRevisionCheck as $workRow) {
+         $isCompliantRow = (int) ($workRow['drawing_compliant'] ?? 1) === 1;
+         $isFinalDecision = in_array((string) ($workRow['status'] ?? 'pending'), ['accepted', 'reviewed_non_competitive'], true);
+         if (!$isFinalDecision && $isCompliantRow) {
+             $hasUnresolvedRevisionDecision = true;
+             break;
+         }
+         if (!$isCompliantRow) {
+             $hasRevisionPath = true;
+         }
+     }
+
+     if ($hasUnresolvedRevisionDecision) {
+         $_SESSION['error_message'] = 'Нельзя отправить заявку на корректировку, пока по всем участникам не принято решение.';
+         redirect('/admin/application/' . $application_id);
+     }
+
+     if (!$hasRevisionPath) {
+         $_SESSION['error_message'] = 'Для отправки на корректировку выключите переключатель «Соответствует условиям конкурса» хотя бы у одного участника.';
+         redirect('/admin/application/' . $application_id);
+     }
+
      $participantsForRevisionStmt = $pdo->prepare("
          SELECT id, drawing_compliant, drawing_comment
          FROM participants
@@ -486,6 +538,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
      $messageText = getSystemSetting('application_revision_message', 'Ваша заявка отправлена на корректировку. Пожалуйста, внесите исправления.') . "\n\nНомер заявки: #" . $application_id;
      $pdo->prepare("INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, created_at) VALUES (?, ?, ?, ?, 'important', NOW())")
          ->execute([$application['user_id'], $admin['id'], $subject, $messageText]);
+
+    if ($isAjaxRequest) {
+        $vkStatusAfterRevision = getApplicationVkPublicationStatus((int) $application_id);
+        jsonResponse([
+            'success' => true,
+            'message' => 'Заявка отправлена на корректировку',
+            'application_status' => 'revision',
+            'open_vk_publish_prompt' => (int) ($vkStatusAfterRevision['remaining_count'] ?? 0) > 0,
+        ]);
+    }
 
     $_SESSION['success_message'] = 'Заявка отправлена на корректировку';
     redirect('/admin/applications');
@@ -556,6 +618,8 @@ generateCSRFToken();
 $currentPage = 'applications';
 $pageTitle = 'Заявка #' . $application_id;
 $breadcrumb = 'Заявки / Просмотр';
+$headerBackUrl = '/admin/applications';
+$headerBackLabel = 'Назад';
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -564,8 +628,10 @@ require_once __DIR__ . '/includes/header.php';
 $statusMeta = getApplicationDisplayMeta($application, buildApplicationWorkSummary($works));
 $submittedAt = !empty($application['created_at']) ? date('d.m.Y H:i', strtotime($application['created_at'])) : '—';
 $applicantName = trim((string) (($application['name'] ?? '') . ' ' . ($application['surname'] ?? ''))) ?: '—';
+$receiptMeta = getApplicationPaymentReceiptMeta($application);
 $paymentReceipt = trim((string) ($application['payment_receipt'] ?? ''));
 $paymentReceiptName = $paymentReceipt !== '' ? basename($paymentReceipt) : '—';
+$paymentReceiptUrl = (string) ($receiptMeta['file_url'] ?? '');
 $workStats = ['total' => count($works), 'accepted' => 0, 'reviewed' => 0, 'rejected' => 0];
 $nonCompliantCount = 0;
 foreach ($works as $workRow) {
@@ -574,7 +640,7 @@ foreach ($works as $workRow) {
         $workStats['accepted']++;
     } elseif ($status === 'reviewed') {
         $workStats['reviewed']++;
-    } elseif ($status === 'rejected') {
+    } elseif ($status === 'reviewed_non_competitive' || $status === 'rejected') {
         $workStats['rejected']++;
     }
     if ($hasDrawingCompliantColumn && (int) ($workRow['drawing_compliant'] ?? 1) === 0) {
@@ -590,9 +656,12 @@ $latestMessageStmt = $pdo->prepare("
 ");
 $latestMessageStmt->execute([(int) $application['user_id'], (int) $admin['id']]);
 $latestMessage = $latestMessageStmt->fetch() ?: null;
-$approveButtonDisabled = $hasNonCompliantDrawings || $isApplicationApproved;
+$approveButtonDisabled = $isApplicationApproved;
 $approveButtonIcon = $isApplicationApproved ? 'fa-check-double' : 'fa-check';
 $approveButtonText = $isApplicationApproved ? 'Заявка принята' : 'Принять заявку';
+$currentApplicationUiStatus = (string) ($statusMeta['status_code'] ?? 'draft');
+$isRevisionApplicationState = $currentApplicationUiStatus === 'revision';
+$isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejected';
 ?>
 
 <section class="application-hero card mb-lg">
@@ -602,16 +671,19 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                 <h2 class="application-hero__title">Заявка #<?= e($application_id) ?></h2>
                 <p class="application-hero__subtitle"><?= e($application['contest_title']) ?></p>
             </div>
-            <span class="badge application-hero__status <?= $statusMeta['badge_class'] ?>"><?= e($statusMeta['label']) ?></span>
+            <div class="flex gap-sm application-actions">
+                <span class="badge application-hero__status <?= $statusMeta['badge_class'] ?>"><?= e($statusMeta['label']) ?></span>
+                <span class="badge application-hero__status <?= e((string) ($receiptMeta['badge_class'] ?? 'badge--secondary')) ?>"><?= e((string) ($receiptMeta['label'] ?? '—')) ?></span>
+            </div>
         </div>
         <div class="application-hero__meta">
             <span class="application-meta-chip"><i class="fas fa-calendar-alt"></i>Подана: <?= e($submittedAt) ?></span>
             <span class="application-meta-chip"><i class="fas fa-user"></i><?= e($applicantName) ?></span>
             <a class="application-meta-chip" href="mailto:<?= e($application['email'] ?? '') ?>"><i class="fas fa-envelope"></i><?= e($application['email'] ?: '—') ?></a>
             <span class="application-meta-chip"><i class="fas fa-images"></i>Работ: <?= (int) $workStats['total'] ?></span>
+            <span class="application-meta-chip"><i class="fas fa-receipt"></i><?= e((string) ($receiptMeta['label'] ?? '—')) ?></span>
         </div>
         <div class="application-hero__actions">
-            <a href="/admin/applications" class="btn btn--ghost"><i class="fas fa-arrow-left"></i> К списку</a>
             <a href="/admin/user/<?= (int) $application['user_id'] ?>" class="btn btn--secondary"><i class="fas fa-user-circle"></i> Профиль заявителя</a>
             <button type="button" class="btn btn--primary" onclick="openMessageModal()"><i class="fas fa-paper-plane"></i> Связаться с заявителем</button>
             <a href="#application-actions" class="btn btn--ghost"><i class="fas fa-bolt"></i> К действиям</a>
@@ -653,7 +725,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
 <?php if ($hasNonCompliantDrawings): ?>
     <div class="alert alert--warning mb-lg">
         <i class="fas fa-exclamation-triangle alert__icon"></i>
-        <div class="alert__content"><div class="alert__message">Заявку нельзя принять: есть работы, отмеченные как несоответствующие условиям конкурса.</div></div>
+        <div class="alert__content"><div class="alert__message">Есть работы с пометкой о несоответствии. Для таких рисунков нужен комментарий с причиной и перечнем исправлений.</div></div>
     </div>
 <?php endif; ?>
 
@@ -669,9 +741,28 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                         <?php else: ?>
                             <div class="application-applicant__avatar application-applicant__avatar--empty"><i class="fas fa-user"></i></div>
                         <?php endif; ?>
-                        <div><div class="font-semibold"><?= e($applicantName) ?></div><a href="mailto:<?= e($application['email'] ?? '') ?>" class="text-secondary"><?= e($application['email'] ?: '—') ?></a></div>
+                        <div>
+                            <div class="font-semibold"><?= e($applicantName) ?></div>
+                            <a href="mailto:<?= e($application['email'] ?? '') ?>" class="text-secondary"><?= e($application['email'] ?: '—') ?></a>
+                            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                                <span class="badge <?= $isApplicantBlacklisted ? 'badge--error' : 'badge--secondary' ?>" id="applicantBlacklistBadge">
+                                    <?= $isApplicantBlacklisted ? 'В чёрном списке рассылки' : 'Не в чёрном списке' ?>
+                                </span>
+                                <?php if ($applicantEmail !== ''): ?>
+                                    <form method="POST" class="js-applicant-blacklist-form">
+                                        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                                        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                                        <input type="hidden" name="action" value="toggle_applicant_blacklist">
+                                        <button class="btn <?= $isApplicantBlacklisted ? 'btn--secondary' : 'btn--danger' ?> btn--sm" type="submit" id="applicantBlacklistButton">
+                                            <?= $isApplicantBlacklisted ? 'Убрать из чёрного списка' : 'Добавить в чёрный список' ?>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+                            <div class="text-secondary" style="margin-top:6px;font-size:12px;">Влияет только на модуль рассылки. Остальные действия с заявкой не ограничиваются.</div>
+                        </div>
                     </div>
-                    <dl class="application-kv-list"><dt>ФИО родителя/куратора</dt><dd><?= e($application['parent_fio'] ?: '—') ?></dd></dl>
+                    <dl class="application-kv-list"><dt>Тип профиля</dt><dd><?= e(getUserTypeLabel((string) ($application['user_type'] ?? 'parent'))) ?></dd><dt>ФИО родителя/куратора</dt><dd><?= e($application['parent_fio'] ?: '—') ?></dd></dl>
                 </div></article>
                 <article class="card"><div class="card__body">
                     <h3 class="application-card-title">Заявка</h3>
@@ -679,6 +770,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                         <dt>Номер</dt><dd>#<?= (int) $application_id ?></dd>
                         <dt>Конкурс</dt><dd><?= e($application['contest_title'] ?: '—') ?></dd>
                         <dt>Статус</dt><dd><span class="badge <?= e($statusMeta['badge_class']) ?>"><?= e($statusMeta['label']) ?></span></dd>
+                        <dt>Оплата</dt><dd><span class="badge <?= e((string) ($receiptMeta['badge_class'] ?? 'badge--secondary')) ?>"><?= e((string) ($receiptMeta['label'] ?? '—')) ?></span></dd>
                         <dt>Дата подачи</dt><dd><?= e($submittedAt) ?></dd>
                     </dl>
                 </div></article>
@@ -686,8 +778,8 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     <h3 class="application-card-title">Организация</h3>
                     <dl class="application-kv-list">
                         <dt>Регион</dt><dd><?= e($application['organization_region'] ?: '—') ?></dd>
-                        <dt>Название</dt><dd><?= e($application['organization_name'] ?: '—') ?></dd>
-                        <dt>Адрес</dt><dd><?= e($application['organization_address'] ?: '—') ?></dd>
+                        <dt>Название и адрес образовательного учреждения</dt><dd><?= e($application['organization_name'] ?: '—') ?></dd>
+                        <dt>Контактная информация организации</dt><dd><?= e($application['organization_address'] ?: '—') ?></dd>
                     </dl>
                 </div></article>
                 <article class="card"><div class="card__body">
@@ -695,15 +787,31 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     <dl class="application-kv-list">
                         <dt>Источник</dt><dd><?= e($application['source_info'] ?: '—') ?></dd>
                         <dt>Коллеги</dt><dd><?= e($application['colleagues_info'] ?: '—') ?></dd>
+                        <?php if (!empty($receiptMeta['is_required'])): ?>
+                            <dt>Требуется квитанция</dt><dd>Да</dd>
+                        <?php endif; ?>
                     </dl>
+                    <?php if (!empty($receiptMeta['is_required'])): ?>
                     <div class="application-file-block">
                         <i class="fas fa-file-invoice"></i>
                         <?php if ($paymentReceipt !== ''): ?>
-                            <div><strong><?= e($paymentReceiptName) ?></strong><a href="/uploads/documents/<?= e($paymentReceipt) ?>" target="_blank" class="application-file-block__link">Открыть квитанцию</a></div>
+                            <div>
+                                <strong><?= e($paymentReceiptName) ?></strong>
+                                <div class="flex gap-sm work-card__footer-actions">
+                                    <a href="<?= e($paymentReceiptUrl) ?>" target="_blank" class="application-file-block__link">Открыть квитанцию</a>
+                                    <a href="<?= e($paymentReceiptUrl) ?>" target="_blank" class="application-file-block__link" download>Скачать</a>
+                                </div>
+                            </div>
                         <?php else: ?>
-                            <div><strong>Квитанция не приложена</strong></div>
+                            <div>
+                                <strong><?= !empty($receiptMeta['is_required']) ? 'Квитанция пока не приложена' : 'Квитанция не приложена' ?></strong>
+                                <?php if (!empty($receiptMeta['is_required'])): ?>
+                                    <div class="text-secondary application-payment-note">Для этого конкурса квитанция обязательна и должна быть видна администратору.</div>
+                                <?php endif; ?>
+                            </div>
                         <?php endif; ?>
                     </div>
+                    <?php endif; ?>
                 </div></article>
             </div>
         </section>
@@ -717,7 +825,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     <div class="application-summary-item"><span>На корректировке</span><strong><?= (int) $workStats['reviewed'] ?></strong></div>
                     <div class="application-summary-item"><span>Отклонено/не соответствует</span><strong><?= (int) ($workStats['rejected'] + $nonCompliantCount) ?></strong></div>
                 </div>
-                <?php if ($hasNonCompliantDrawings): ?><p class="application-summary-warning">Есть блокирующие причины для принятия всей заявки.</p><?php endif; ?>
+                <?php if ($hasNonCompliantDrawings): ?><p class="application-summary-warning">Проверьте, что по всем несоответствующим рисункам заполнен комментарий.</p><?php endif; ?>
             </div></div>
 
             <?php foreach ($works as $i => $p): ?>
@@ -734,39 +842,57 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                             <div class="work-card__preview">
                                 <?php if ($p['drawing_file']): ?>
                                     <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
-                                    <img src="<?= e($drawingUrl) ?>" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" class="js-admin-drawing work-card__image" alt="Рисунок участника">
+                                    <?php $drawingPreviewUrl = getParticipantDrawingPreviewWebPath($application['email'] ?? '', $p['drawing_file']); ?>
+                                    <button
+                                        type="button"
+                                        class="work-card__image-button js-open-drawing-viewer"
+                                        data-image-src="<?= e($drawingUrl) ?>"
+                                        data-image-alt="Рисунок участника <?= e($p['fio'] ?: '') ?>"
+                                        aria-label="Открыть рисунок участника"
+                                    >
+                                        <img src="<?= e($drawingPreviewUrl) ?>" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" class="js-admin-drawing work-card__image" alt="Рисунок участника">
+                                        <span class="work-card__image-hint"><i class="fas fa-search-plus"></i> Нажмите для просмотра</span>
+                                    </button>
                                     <button type="button" class="btn btn--secondary js-open-editor mt-sm" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" data-image-src="<?= e($drawingUrl) ?>"><i class="fas fa-crop-alt"></i> Редактировать</button>
                                 <?php else: ?>
                                     <div class="drawing-empty-state"><i class="fas fa-image"></i><strong>Рисунок отсутствует</strong><span>Участник ещё не загрузил файл.</span></div>
                                 <?php endif; ?>
                             </div>
                             <div class="work-card__details">
-                                <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd><dt>Название рисунка</dt><dd><?= e(trim((string) ($p['title'] ?? '')) ?: '—') ?></dd></dl></section>
-                                <section class="work-section"><h4>Организация</h4><dl class="application-kv-list"><dt>Организация</dt><dd><?= e($p['organization_name'] ?? '—') ?></dd><dt>Адрес</dt><dd><?= e($p['organization_address'] ?? '—') ?></dd></dl></section>
-                                <?php $isComplianceLocked = $isApplicationApproved || ((string) ($p['status'] ?? 'pending')) === 'accepted'; ?>
+                                <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd></dl></section>
+                                <section class="work-section"><h4>Организация</h4><dl class="application-kv-list"><dt>Название и адрес образовательного учреждения</dt><dd><?= e($p['organization_name'] ?? '—') ?></dd><dt>Контактная информация организации</dt><dd><?= e($p['organization_address'] ?? '—') ?></dd></dl></section>
+                                <?php
+                                    $workStatus = (string) ($p['status'] ?? 'pending');
+                                    $isDecisionFinal = in_array($workStatus, ['accepted', 'reviewed_non_competitive'], true);
+                                    $isComplianceLocked = $isDecisionFinal || $isApplicationDecisionLocked;
+                                ?>
                                 <section class="work-section"><h4>Проверка работы</h4>
-                                    <form method="POST" class="js-drawing-compliance-form work-compliance-form">
+                                    <form method="POST" class="js-drawing-compliance-form work-compliance-form<?= $isComplianceLocked ? ' is-disabled' : '' ?>" data-compliance-form data-locked="<?= $isComplianceLocked ? '1' : '0' ?>">
                                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                                         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                                         <input type="hidden" name="action" value="toggle_drawing_compliance">
                                         <input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>">
                                         <input type="hidden" name="ajax" value="1">
                                         <label class="ios-toggle-wrap"><span class="ios-toggle-label">Соответствует условиям конкурса</span><span class="ios-toggle"><input type="checkbox" name="drawing_compliant" value="1" class="js-drawing-compliant-toggle" <?= isset($p['drawing_compliant']) && (int)$p['drawing_compliant'] === 1 ? 'checked' : '' ?> <?= $isComplianceLocked ? 'disabled aria-disabled="true"' : '' ?>><span class="ios-toggle__slider"></span></span></label>
+                                        <div class="js-drawing-comment-template-wrap mt-sm" <?= isset($p['drawing_compliant']) && (int)$p['drawing_compliant'] === 1 ? 'style="display:none;"' : '' ?>>
+                                            <label class="form-label">Вариант сообщения</label>
+                                            <select class="form-select js-drawing-comment-template" <?= $isComplianceLocked ? 'disabled aria-disabled="true"' : '' ?>>
+                                                <option value="__custom__" selected>Написать свой вариант</option>
+                                                <?php foreach ($drawingCommentPresets as $presetText): ?>
+                                                    <option value="<?= e($presetText) ?>"><?= e(mb_strimwidth($presetText, 0, 140, '...')) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
                                         <label class="form-label mt-sm">Что исправить</label>
                                         <textarea class="form-textarea js-drawing-comment" name="comment" rows="2" placeholder="Укажите, что нужно исправить" <?= $isComplianceLocked ? 'disabled aria-disabled="true"' : '' ?>><?= e($p['drawing_comment'] ?? '') ?></textarea>
                                     </form>
                                 </section>
-                                <section class="work-section"><h4>Действия по работе с дипломами</h4>
-                                    <div class="work-actions" data-work-controls data-work-id="<?= (int) $p['id'] ?>">
-                                        <?php $canAcceptWork = !$isApplicationApproved && ((string) ($p['status'] ?? 'pending')) !== 'accepted'; ?>
-                                        <form method="POST" class="js-work-async-form" data-accept-work-form style="<?= $canAcceptWork ? '' : 'display:none;' ?>"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--primary btn--sm" type="submit">Принять работу</button></form>
-                                        <div class="work-diploma-actions" style="display:<?= mapWorkStatusToDiplomaType((string)($p['status'] ?? 'pending')) !== null ? 'flex' : 'none' ?>;" data-diploma-actions>
-                                            <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="download_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--primary btn--sm" type="submit">Скачать диплом</button></form>
-                                            <form method="POST" class="js-work-async-form"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--secondary btn--sm" type="submit">Отправить на почту</button></form>
-                                            <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="link_participant_diploma"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><button class="btn btn--ghost btn--sm" type="submit">Получить ссылку</button></form>
-                                        </div>
-                                    </div>
-                                </section>
+	                                <section class="work-section"><h4>Действия по работе</h4>
+	                                    <div class="work-actions" data-work-controls data-work-id="<?= (int) $p['id'] ?>" data-work-status="<?= e($workStatus) ?>">
+	                                        <form method="POST" class="js-work-async-form" data-accept-work-form><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="accepted"><button class="btn btn--sm work-decision-btn <?= ((string) ($p['status'] ?? 'pending')) === 'accepted' ? 'work-decision-btn--accepted is-active' : '' ?>" type="submit" data-decision-button="accepted" <?= ((string) ($p['status'] ?? 'pending')) === 'reviewed_non_competitive' ? 'disabled aria-disabled="true"' : '' ?>>Рисунок принят</button></form>
+	                                        <form method="POST" class="js-work-async-form" data-reject-work-form><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="set_work_status"><input type="hidden" name="work_id" value="<?= (int)$p['id'] ?>"><input type="hidden" name="participant_id" value="<?= (int) ($p['participant_id'] ?? 0) ?>"><input type="hidden" name="work_status" value="reviewed_non_competitive"><input type="hidden" name="comment" value="<?= e((string) ($p['drawing_comment'] ?? '')) ?>" data-reject-comment-input><button class="btn btn--sm work-decision-btn <?= ((string) ($p['status'] ?? 'pending')) === 'reviewed_non_competitive' ? 'work-decision-btn--rejected is-active' : '' ?>" type="submit" data-decision-button="reviewed_non_competitive" <?= ((string) ($p['status'] ?? 'pending')) === 'accepted' ? 'disabled aria-disabled="true"' : '' ?>>Рисунок отклонён</button></form>
+	                                    </div>
+	                                </section>
                             </div>
                         </div>
                     </div>
@@ -779,48 +905,30 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
     <aside id="application-actions" class="application-sidebar">
         <div class="card application-sticky-panel">
             <div class="card__body">
-                <h3 class="application-card-title">Массовые действия по дипломам</h3>
-                <?php if ($canShowBulkDiplomaActions): ?>
-                <form method="POST" class="application-diploma-actions">
-                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                    <input type="hidden" name="action" value="generate_all_diplomas">
-                    <select class="form-select" name="bulk_diploma_action" id="bulkDiplomaActionSelect">
-                        <option value="generate_all_diplomas">Сформировать дипломы</option>
-                        <option value="generate_and_send_all_diplomas">Сформировать и отправить</option>
-                        <option value="collect_all_diploma_links">Получить ссылки</option>
-                        <option value="download_zip_diplomas">Скачать ZIP</option>
-                    </select>
-                    <button type="submit" class="btn btn--primary" id="bulkDiplomaActionRun">Выполнить</button>
-                </form>
-                <?php else: ?>
-                    <p class="text-secondary">Массовые дипломные действия доступны только после статуса «Заявка принята».</p>
-                <?php endif; ?>
-                <hr class="application-separator">
-                <h3 class="application-card-title">Действия с заявкой</h3>
-                <div class="card" style="margin-bottom: 14px;">
-                    <div class="card__body" style="padding: 12px;">
-                        <div style="font-weight: 600; margin-bottom: 6px;">Публикация в VK</div>
-                        <div class="flex items-center gap-sm" style="margin-bottom:8px; flex-wrap:wrap;">
+	                <h3 class="application-card-title">Действия с заявкой</h3>
+	                <div class="card vk-publication-card">
+                    <div class="card__body">
+                        <div class="vk-publication-card__title">Публикация в VK</div>
+                        <div class="flex items-center gap-sm vk-publication-card__meta">
                             <span class="badge <?= e((string) ($applicationVkStatus['badge_class'] ?? 'badge--secondary')) ?>">
                                 <?= e((string) ($applicationVkStatus['status_label'] ?? 'Не опубликована')) ?>
                             </span>
-                            <span class="text-secondary" style="font-size:12px;">
+                            <span class="text-secondary vk-publication-card__caption">
                                 Опубликовано <?= (int) ($applicationVkStatus['published_count'] ?? 0) ?> из <?= (int) ($applicationVkStatus['total_count'] ?? 0) ?>
                             </span>
                         </div>
                         <?php if (!empty($applicationVkStatus['last_attempt_at'])): ?>
-                            <div class="text-secondary" style="font-size: 13px; line-height: 1.35; margin-bottom: 6px;">
+                            <div class="text-secondary vk-publication-card__text">
                                 Последняя попытка: <?= e(date('d.m.Y H:i', strtotime((string) $applicationVkStatus['last_attempt_at']))) ?>
                             </div>
                         <?php endif; ?>
                         <?php if (!empty($applicationVkStatus['last_error'])): ?>
-                            <div class="text-secondary" style="font-size: 13px; line-height: 1.35; margin-bottom: 6px;">
+                            <div class="text-secondary vk-publication-card__text">
                                 Ошибка: <?= e((string) $applicationVkStatus['last_error']) ?>
                             </div>
                         <?php endif; ?>
                         <?php if (!empty($applicationVkStatus['last_post_url'])): ?>
-                            <a class="btn btn--ghost btn--sm" href="<?= e((string) $applicationVkStatus['last_post_url']) ?>" target="_blank" style="margin-bottom:8px;">
+                            <a class="btn btn--ghost btn--sm vk-publication-card__link" href="<?= e((string) $applicationVkStatus['last_post_url']) ?>" target="_blank">
                                 <i class="fas fa-up-right-from-square"></i> Открыть пост
                             </a>
                         <?php endif; ?>
@@ -841,10 +949,8 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     </div>
                 </div>
                 <div class="application-sidebar-actions">
-                    <?php if (!$isApplicationApproved): ?>
-                    <form method="POST" class="js-application-secondary-action" onsubmit="return confirm('Отправить заявку на корректировку?');"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning"><i class="fas fa-edit"></i> На корректировку</button></form>
-                    <form method="POST" class="js-application-secondary-action"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger"><i class="fas fa-times-circle"></i> Отклонить</button></form>
-                    <?php endif; ?>
+                    <form method="POST" class="js-application-secondary-action" id="sendToRevisionForm" onsubmit="return confirm('Отправить заявку на корректировку?');"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning <?= $isRevisionApplicationState ? 'is-current' : '' ?>" id="sendToRevisionButton" <?= $revisionButtonDisabled ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>><i class="fas fa-edit"></i> На корректировку</button></form>
+                    <form method="POST" class="js-application-secondary-action"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger <?= $isRejectedApplicationState ? 'is-current' : '' ?>" id="declineApplicationButton" <?= $declineButtonDisabled ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>><i class="fas fa-times-circle"></i> Отклонить</button></form>
                     <form method="POST" id="approveApplicationForm">
                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -852,7 +958,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                     </form>
                     <button
                         type="button"
-                        class="btn application-btn application-btn--success"
+                        class="btn application-btn application-btn--success <?= $isApplicationApproved ? 'is-current' : '' ?>"
                         id="approveApplicationButton"
                         data-id="<?= (int) $application_id ?>"
                         data-approved="<?= $isApplicationApproved ? '1' : '0' ?>"
@@ -865,85 +971,31 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
                         <a href="/admin/applications" class="btn btn--ghost"><i class="fas fa-list"></i> Закрыть</a>
                     <?php endif; ?>
                 </div>
-                <?php if ($hasNonCompliantDrawings): ?><p class="application-sidebar-hint">Недоступно: есть работы, не соответствующие условиям конкурса.</p><?php endif; ?>
+                <p class="application-sidebar-hint" style="<?= $isApplicationFinal || $approveButtonDisabled ? 'display:none;' : '' ?>">Кнопка станет активной, когда по каждой работе будет принято решение кнопкой «Рисунок принят» или «Рисунок отклонён».</p>
+                <p class="application-sidebar-hint" id="revisionApplicationHint" style="<?= $isApplicationFinal || !$revisionButtonDisabled ? 'display:none;' : '' ?>">Кнопка «На корректировку» станет активной, когда по всем участникам будет принято решение и хотя бы у одного участника будет выключен переключатель «Соответствует условиям конкурса».</p>
             </div>
         </div>
     </aside>
 </div>
 
-<style>
-@media (max-width: 768px) {
-    #vkPublishPromptModal .modal__content {
-        width: calc(100vw - 20px);
-        max-width: calc(100vw - 20px) !important;
-        margin: 10px;
-        max-height: calc(100vh - 20px);
-        display: flex;
-        flex-direction: column;
-    }
-    #vkPublishPromptModal .modal__body {
-        overflow-y: auto;
-    }
-    #vkPublishPromptModal .modal__footer {
-        flex-wrap: wrap;
-    }
-    #vkPublishPromptModal .modal__footer .btn {
-        flex: 1 1 180px;
-    }
-    #vkPublishPreview {
-        max-height: 42vh !important;
-    }
-}
-</style>
-
 <div class="modal" id="vkPublishPromptModal">
-    <div class="modal__content" style="max-width:700px;">
+    <div class="modal__content vk-publish-modal__content">
         <div class="modal__header">
             <h3 class="modal__title">Публикация в VK</h3>
+            <button type="button" class="modal__close vk-publish-modal__close" aria-label="Закрыть" id="vkPublishPromptModalClose">&times;</button>
         </div>
         <div class="modal__body">
-            <div id="vkPublishModalSummary" class="text-secondary" style="margin-bottom:10px;"></div>
-            <div id="vkPublishPreview" style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;"></div>
-            <div style="margin-top: 14px; border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px;">
-                <div style="font-weight: 600; margin-bottom: 8px;">Режим публикации</div>
-                <div class="form-group" style="margin-bottom:8px;">
-                    <label class="form-label" for="vkPublicationType">Тип публикации</label>
-                    <select class="form-select" id="vkPublicationType">
-                        <option value="standard">Обычная публикация</option>
-                        <option value="vk_donut">VK Donut paywall (диагностика)</option>
-                        <option value="donation_goal">Публикация с целью сбора</option>
-                    </select>
-                </div>
-                <div id="vkDonationSupportHint" class="text-secondary" style="display:none; margin-bottom:8px; font-size:13px;"></div>
-                <div id="vkDonutFields" style="display:none;">
-                    <div class="form-group" style="margin-bottom:8px;">
-                        <label class="form-label" for="vkDonutPaidDuration">paid_duration (сек.)</label>
-                        <input class="form-control" id="vkDonutPaidDuration" type="number" min="1" step="1" value="2592000">
-                    </div>
-                    <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-                        <input type="checkbox" id="vkDonutCanPublishFreeCopy" value="1">
-                        <span>Разрешить бесплатную копию (can_publish_free_copy)</span>
-                    </label>
-                </div>
-                <div id="vkDonationFields" style="display:none;">
-                <div class="form-group" style="margin-bottom:8px;">
-                    <label class="form-label" for="vkDonationGoalSelect">Цель доната</label>
-                    <select class="form-select" id="vkDonationGoalSelect">
-                        <option value="">Выберите цель доната</option>
-                    </select>
-                </div>
-                <div id="vkDonationGoalCard" style="display:none; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:8px; padding:10px;">
-                    <div style="font-weight:600;" id="vkDonationGoalCardTitle">—</div>
-                    <div class="text-secondary" style="margin-top:4px; font-size:13px;" id="vkDonationGoalCardDescription">—</div>
-                    <div class="text-secondary" style="margin-top:6px; font-size:12px;">VK donate ID: <span id="vkDonationGoalCardVkId">—</span></div>
-                </div>
-                </div>
+            <div id="vkPublishModalSummary" class="text-secondary vk-publish-modal__summary"></div>
+            <div id="vkPublishPreview" class="vk-publish-modal__preview"></div>
+            <div class="vk-publish-modal__section">
+                <div class="vk-publish-modal__section-title">Будут опубликованы только принятые и ещё не опубликованные рисунки</div>
             </div>
-            <div id="vkPublishPromptStatus" class="alert" style="display:none; margin-top:12px;"></div>
+            <div id="vkPublishPromptStatus" class="alert vk-publish-modal__status"></div>
         </div>
-        <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
+        <div class="modal__footer vk-publish-modal__footer">
             <button type="button" class="btn btn--primary" id="vkPublishPromptRun">Опубликовать</button>
             <button type="button" class="btn btn--secondary" id="vkPublishPromptSkip">Отмена</button>
+            <button type="button" class="btn btn--secondary is-hidden" id="vkPublishPromptClose">Закрыть</button>
         </div>
     </div>
 </div>
@@ -998,7 +1050,7 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
 <textarea name="message" class="form-textarea" rows="5" required placeholder="Введите текст сообщения"></textarea>
 </div>
 </div>
-<div class="modal__footer flex gap-md" style="padding:20px; border-top:1px solid #E5E7EB; display:flex; justify-content:flex-end; gap:12px;">
+<div class="modal__footer flex gap-md application-message-modal__footer">
 <button type="button" class="btn btn--ghost" onclick="closeMessageModal()">Отмена</button>
 <button type="submit" class="btn btn--primary"><i class="fas fa-paper-plane"></i> Отправить</button>
 </div>
@@ -1007,49 +1059,62 @@ $approveButtonText = $isApplicationApproved ? 'Заявка принята' : '�
 </div>
 
 <div class="modal" id="drawingEditorModal">
-<div class="modal__content" style="max-width: 1100px; width: 96%;">
+<div class="modal__content">
 <div class="modal__header">
 <h3>Редактирование рисунка</h3>
 <button type="button" class="modal__close" onclick="closeDrawingEditor()">&times;</button>
 </div>
 <div class="modal__body">
 <input type="hidden" id="editorParticipantId">
-<div class="flex gap-md mb-md" style="flex-wrap:wrap;">
+<div class="drawing-editor-toolbar">
 <button type="button" class="btn btn--secondary" onclick="rotateBy(-45)">-45°</button>
 <button type="button" class="btn btn--secondary" onclick="rotateBy(45)">+45°</button>
 <button type="button" class="btn btn--secondary" onclick="rotateBy(-90)">-90°</button>
 <button type="button" class="btn btn--secondary" onclick="rotateBy(90)">+90°</button>
-<label style="display:flex;align-items:center;gap:8px;">Угол:
-<input type="number" id="rotationInput" value="0" step="1" style="width:90px;" class="form-input">
+<label class="drawing-editor-angle">Угол:
+<input type="number" id="rotationInput" value="0" step="1" class="form-input drawing-editor-angle__input">
 </label>
 </div>
-<div style="max-height:70vh;overflow:auto;">
-<img id="editorImage" src="" alt="Рисунок" style="max-width:100%; display:block;">
+<div class="drawing-editor-stage">
+<img id="editorImage" src="" alt="Рисунок">
 </div>
-<div class="flex gap-md mt-lg">
-<button type="button" id="saveDrawingChanges" class="btn btn--primary" style="display:none;">Сохранить изменения</button>
-<button type="button" id="cancelDrawingChanges" class="btn btn--ghost" style="display:none;" onclick="resetDrawingEditor()">Отменить изменения</button>
 </div>
+<div class="modal__footer">
+<button type="button" id="saveDrawingChanges" class="btn btn--primary is-hidden">Сохранить изменения</button>
+<button type="button" id="cancelDrawingChanges" class="btn btn--ghost is-hidden" onclick="resetDrawingEditor()">Отмена изменений</button>
+<button type="button" class="btn btn--secondary" onclick="closeDrawingEditor()">Закрыть</button>
 </div>
 </div>
 </div>
 
-<script>
-const bulkDiplomaActionSelect = document.getElementById('bulkDiplomaActionSelect');
-const bulkDiplomaActionRun = document.getElementById('bulkDiplomaActionRun');
-if (bulkDiplomaActionSelect && bulkDiplomaActionRun) {
-    bulkDiplomaActionRun.addEventListener('click', (event) => {
-        const form = bulkDiplomaActionRun.closest('form');
-        if (!form) return;
-        const actionInput = form.querySelector('input[name=\"action\"]');
-        if (!actionInput) return;
-        actionInput.value = bulkDiplomaActionSelect.value;
-    });
-}
+<div class="modal" id="drawingViewerModal">
+<div class="modal__content">
+<div class="modal__header">
+<h3>Просмотр рисунка</h3>
+<button type="button" class="modal__close" onclick="closeDrawingViewer()">&times;</button>
+</div>
+<div class="modal__body">
+<div class="drawing-viewer-stage">
+<img id="drawingViewerImage" src="" alt="Рисунок участника">
+</div>
+</div>
+<div class="modal__footer">
+<button type="button" class="btn btn--secondary" onclick="closeDrawingViewer()">Закрыть</button>
+</div>
+</div>
+</div>
 
-let cropper = null;
+	<script>
+	let cropper = null;
 let currentRotation = 0;
 let editorDirty = false;
+const drawingEditorModal = document.getElementById('drawingEditorModal');
+const drawingViewerModal = document.getElementById('drawingViewerModal');
+const drawingViewerImage = document.getElementById('drawingViewerImage');
+
+function setPageModalScrollLocked(locked) {
+ document.body.style.overflow = locked ? 'hidden' : '';
+}
 
 function markEditorDirty(dirty) {
  editorDirty = dirty;
@@ -1058,12 +1123,11 @@ function markEditorDirty(dirty) {
 }
 
 function openDrawingEditor(participantId, imageSrc) {
- const modal = document.getElementById('drawingEditorModal');
  const image = document.getElementById('editorImage');
  document.getElementById('editorParticipantId').value = participantId;
  image.src = imageSrc;
- modal.classList.add('active');
- document.body.style.overflow = 'hidden';
+ drawingEditorModal.classList.add('active');
+ setPageModalScrollLocked(true);
  currentRotation = 0;
  document.getElementById('rotationInput').value = '0';
  markEditorDirty(false);
@@ -1085,13 +1149,27 @@ function openDrawingEditor(participantId, imageSrc) {
 }
 
 function closeDrawingEditor() {
- const modal = document.getElementById('drawingEditorModal');
- modal.classList.remove('active');
- document.body.style.overflow = '';
+ drawingEditorModal.classList.remove('active');
+ setPageModalScrollLocked(false);
  if (cropper) {
   cropper.destroy();
   cropper = null;
  }
+}
+
+function openDrawingViewer(imageSrc, imageAlt) {
+ if (!drawingViewerModal || !drawingViewerImage) return;
+ drawingViewerImage.src = imageSrc;
+ drawingViewerImage.alt = imageAlt || 'Рисунок участника';
+ drawingViewerModal.classList.add('active');
+ setPageModalScrollLocked(true);
+}
+
+function closeDrawingViewer() {
+ if (!drawingViewerModal || !drawingViewerImage) return;
+ drawingViewerModal.classList.remove('active');
+ drawingViewerImage.src = '';
+ setPageModalScrollLocked(false);
 }
 
 function rotateBy(deg) {
@@ -1123,6 +1201,34 @@ document.querySelectorAll('.js-open-editor').forEach((btn) => {
  btn.addEventListener('click', () => openDrawingEditor(btn.dataset.participantId, btn.dataset.imageSrc));
 });
 
+document.querySelectorAll('.js-open-drawing-viewer').forEach((button) => {
+ button.addEventListener('click', () => openDrawingViewer(button.dataset.imageSrc, button.dataset.imageAlt));
+});
+
+[drawingEditorModal, drawingViewerModal].forEach((modal) => {
+ if (!modal) return;
+ modal.addEventListener('click', (event) => {
+  if (event.target === modal) {
+   if (modal === drawingEditorModal) {
+    closeDrawingEditor();
+   } else if (modal === drawingViewerModal) {
+    closeDrawingViewer();
+   }
+  }
+ });
+});
+
+document.addEventListener('keydown', (event) => {
+ if (event.key !== 'Escape') return;
+ if (drawingEditorModal?.classList.contains('active')) {
+  closeDrawingEditor();
+  return;
+ }
+ if (drawingViewerModal?.classList.contains('active')) {
+  closeDrawingViewer();
+ }
+});
+
 document.getElementById('saveDrawingChanges').addEventListener('click', function() {
  if (!cropper) return;
  const cropData = cropper.getData(true);
@@ -1146,6 +1252,15 @@ document.getElementById('saveDrawingChanges').addEventListener('click', function
    }
    document.querySelectorAll(`.js-admin-drawing[data-participant-id="${participantId}"]`).forEach((img) => {
     img.src = data.updated_url;
+   });
+   document.querySelectorAll(`.js-open-editor[data-participant-id="${participantId}"]`).forEach((button) => {
+    button.dataset.imageSrc = data.updated_url;
+   });
+   document.querySelectorAll(`.js-admin-drawing[data-participant-id="${participantId}"]`).forEach((img) => {
+    const viewerButton = img.closest('.js-open-drawing-viewer');
+    if (viewerButton) {
+     viewerButton.dataset.imageSrc = data.updated_url;
+    }
    });
    closeDrawingEditor();
   })
@@ -1177,7 +1292,79 @@ document.querySelectorAll('.js-toast-alert').forEach((alertEl) => {
  alertEl.remove();
 });
 
-async function parseJsonResponse(response) {
+document.querySelectorAll('.js-applicant-blacklist-form').forEach((form) => {
+ form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = form.querySelector('button[type="submit"]');
+  const badge = document.getElementById('applicantBlacklistBadge');
+  const defaultHtml = button ? button.innerHTML : '';
+  if (button) {
+   button.disabled = true;
+   button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+  }
+
+  try {
+   const formData = new FormData(form);
+   formData.append('ajax', '1');
+   const response = await fetch('/admin/application/<?= e($application_id) ?>', {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    body: formData,
+   });
+   const data = await parseJsonResponse(response);
+   if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Не удалось обновить чёрный список');
+   }
+
+   if (badge) {
+    badge.className = 'badge ' + (Number(data.is_blacklisted) === 1 ? 'badge--error' : 'badge--secondary');
+    badge.textContent = Number(data.is_blacklisted) === 1 ? 'В чёрном списке рассылки' : 'Не в чёрном списке';
+   }
+   if (button) {
+    button.disabled = false;
+    button.removeAttribute('aria-disabled');
+    button.className = 'btn ' + (Number(data.is_blacklisted) === 1 ? 'btn--secondary' : 'btn--danger') + ' btn--sm';
+    button.innerHTML = Number(data.is_blacklisted) === 1 ? 'Убрать из чёрного списка' : 'Добавить в чёрный список';
+   }
+   showToast(data.message || 'Статус чёрного списка обновлён', 'success');
+  } catch (error) {
+   if (button) {
+    button.disabled = false;
+    button.innerHTML = defaultHtml;
+   }
+   showToast(error.message || 'Не удалось обновить чёрный список', 'error');
+  }
+ });
+});
+
+const applicationDecisionLocked = <?= $isApplicationDecisionLocked ? 'true' : 'false' ?>;
+
+function updateDecisionButtons(controls, status) {
+ if (!controls) return;
+ const acceptButton = controls.querySelector('[data-decision-button="accepted"]');
+ const rejectButton = controls.querySelector('[data-decision-button="reviewed_non_competitive"]');
+ if (!acceptButton || !rejectButton) return;
+
+ acceptButton.classList.toggle('is-active', status === 'accepted');
+ acceptButton.classList.toggle('work-decision-btn--accepted', status === 'accepted');
+ rejectButton.classList.toggle('is-active', status === 'reviewed_non_competitive');
+ rejectButton.classList.toggle('work-decision-btn--rejected', status === 'reviewed_non_competitive');
+
+ const acceptedFinal = status === 'accepted';
+ const rejectedFinal = status === 'reviewed_non_competitive';
+ const acceptDisabled = rejectedFinal;
+ const rejectDisabled = acceptedFinal;
+
+ acceptButton.disabled = acceptDisabled;
+ acceptButton.setAttribute('aria-disabled', acceptDisabled ? 'true' : 'false');
+ acceptButton.classList.toggle('is-disabled', acceptDisabled);
+
+ rejectButton.disabled = rejectDisabled;
+	rejectButton.setAttribute('aria-disabled', rejectDisabled ? 'true' : 'false');
+	rejectButton.classList.toggle('is-disabled', rejectDisabled);
+	}
+
+	async function parseJsonResponse(response) {
  const rawBody = await response.text();
  if (!rawBody) {
   throw new Error('Сервер вернул пустой ответ. Проверьте логи PHP и повторите попытку.');
@@ -1192,7 +1379,7 @@ async function parseJsonResponse(response) {
 document.querySelectorAll('.js-work-async-form').forEach((form) => {
  form.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const button = form.querySelector('button[type="submit"]');
+  const button = event.submitter || form.querySelector('button[type="submit"]');
   const defaultHtml = button ? button.innerHTML : '';
   if (button) {
    button.disabled = true;
@@ -1200,6 +1387,14 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
   }
 
   const formData = new FormData(form);
+  const controls = form.closest('[data-work-controls]');
+  if (formData.get('action') === 'set_work_status' && controls && button?.dataset?.decisionButton) {
+   const requestedStatus = String(formData.get('work_status') || '');
+   const currentStatus = String(controls.dataset.workStatus || 'pending');
+   if (requestedStatus !== '' && requestedStatus === currentStatus) {
+    formData.set('work_status', 'pending');
+   }
+  }
   formData.append('ajax', '1');
   const action = formData.get('action');
 
@@ -1214,49 +1409,34 @@ document.querySelectorAll('.js-work-async-form').forEach((form) => {
     throw new Error(data.error || 'Операция не выполнена');
    }
 
-   const controls = form.closest('[data-work-controls]');
    if (action === 'set_work_status' && controls) {
+    controls.dataset.workStatus = data.work_status || formData.get('work_status') || controls.dataset.workStatus || 'pending';
     const card = controls.closest('.card');
     const badge = card?.querySelector('[data-work-status-badge]');
     if (badge) {
      badge.className = 'badge ' + (data.status_class || '');
      badge.textContent = data.status_label || badge.textContent;
+	    }
+	    const workStatus = data.work_status || formData.get('work_status') || 'pending';
+	    const compliantToggle = card?.querySelector('.js-drawing-compliant-toggle');
+	    const commentField = card?.querySelector('.js-drawing-comment');
+	    if (compliantToggle && data.drawing_compliant !== null) {
+	      compliantToggle.checked = String(data.drawing_compliant) === '1';
     }
-    const diplomaActions = controls.querySelector('[data-diploma-actions]');
-    if (diplomaActions) {
-      diplomaActions.style.display = data.diploma_available ? 'flex' : 'none';
+    if (workStatus === 'accepted' && commentField) {
+      commentField.value = '';
     }
-    const acceptForm = controls.querySelector('[data-accept-work-form]');
-    if (acceptForm && formData.get('work_status') === 'accepted') {
-      acceptForm.style.display = 'none';
-    }
-
-    const workStatus = formData.get('work_status');
-    const compliantToggle = card?.querySelector('.js-drawing-compliant-toggle');
-    if (compliantToggle && (workStatus === 'accepted' || workStatus === 'reviewed' || workStatus === 'pending')) {
-      compliantToggle.checked = workStatus === 'accepted';
-    }
-    syncApproveApplicationButtonState();
-
-    if (workStatus === 'accepted') {
-      location.reload();
-      return;
-    }
-   }
-
-   if (action === 'download_participant_diploma' && data.download_url) {
-    const link = document.createElement('a');
-    link.href = data.download_url;
-    link.download = '';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-   }
-
-   showToast(data.message || 'Готово', 'success');
-  } catch (error) {
-   showToast(error.message || 'Не удалось выполнить действие', 'error');
-  } finally {
+    updateDecisionButtons(controls, workStatus);
+    syncComplianceFormState(card, workStatus);
+    syncApplicationActionState(data.application_status || 'submitted');
+	    syncRevisionApplicationButtonState();
+	    syncDeclineApplicationButtonState();
+	    syncApproveApplicationButtonState();
+	   }
+	   showToast(data.message || 'Готово', 'success');
+	  } catch (error) {
+	   showToast(error.message || 'Не удалось выполнить действие', 'error');
+	  } finally {
    if (button) {
     button.disabled = false;
     button.innerHTML = defaultHtml;
@@ -1290,7 +1470,12 @@ document.querySelectorAll('.js-subject-template').forEach((button) => {
 
 async function saveDrawingCompliance(form) {
  const toggle = form.querySelector('.js-drawing-compliant-toggle');
+ const comment = form.querySelector('.js-drawing-comment');
  if (!toggle) return;
+ if (!toggle.checked && !String(comment?.value || '').trim()) {
+  syncApproveApplicationButtonState();
+  return;
+ }
  const formData = new FormData(form);
  if (!toggle.checked) {
   formData.delete('drawing_compliant');
@@ -1304,29 +1489,80 @@ async function saveDrawingCompliance(form) {
   const data = await parseJsonResponse(response);
   if (!data.success) {
    alert(data.error || 'Не удалось сохранить проверку');
+  } else {
+   syncApplicationActionState(data.application_status || 'submitted');
   }
  } catch (error) {
   alert('Не удалось сохранить проверку');
  }
 }
 
+function syncDrawingCommentTemplateVisibility(form) {
+ const toggle = form.querySelector('.js-drawing-compliant-toggle');
+ const templateWrap = form.querySelector('.js-drawing-comment-template-wrap');
+ if (!toggle || !templateWrap) return;
+ templateWrap.style.display = toggle.checked ? 'none' : '';
+}
+
 document.querySelectorAll('.js-drawing-compliance-form').forEach((form) => {
  const toggle = form.querySelector('.js-drawing-compliant-toggle');
  const comment = form.querySelector('.js-drawing-comment');
+ const templateSelect = form.querySelector('.js-drawing-comment-template');
+ const controls = form.closest('.card')?.querySelector('[data-work-controls]');
  if (toggle) {
   toggle.addEventListener('change', () => {
+   if (form.dataset.locked === '1') {
+    return;
+   }
+   syncDrawingCommentTemplateVisibility(form);
+	   if (controls) {
+	    controls.dataset.workStatus = toggle.checked ? 'accepted' : (String(comment?.value || '').trim() ? 'reviewed' : 'pending');
+	    updateDecisionButtons(controls, controls.dataset.workStatus);
+	   }
    saveDrawingCompliance(form);
+   syncRevisionApplicationButtonState();
+   syncDeclineApplicationButtonState();
    syncApproveApplicationButtonState();
   });
  }
  if (comment) {
   let commentTimer = null;
   comment.addEventListener('input', () => {
+   if (form.dataset.locked === '1') {
+    return;
+   }
+   const rejectCommentInput = form.closest('.card')?.querySelector('[data-reject-comment-input]');
+   if (rejectCommentInput) {
+    rejectCommentInput.value = comment.value;
+   }
+	   if (controls && toggle && !toggle.checked) {
+	    controls.dataset.workStatus = comment.value.trim() ? 'reviewed' : 'pending';
+	    updateDecisionButtons(controls, controls.dataset.workStatus);
+	   }
    if (commentTimer) clearTimeout(commentTimer);
    commentTimer = setTimeout(() => saveDrawingCompliance(form), 500);
+   syncRevisionApplicationButtonState();
+   syncDeclineApplicationButtonState();
+   syncApproveApplicationButtonState();
+  });
+ }
+ if (templateSelect && comment) {
+  templateSelect.addEventListener('change', () => {
+   if (form.dataset.locked === '1') {
+    return;
+   }
+   const selectedValue = String(templateSelect.value || '');
+   if (selectedValue !== '__custom__') {
+    comment.value = selectedValue;
+    comment.dispatchEvent(new Event('input', { bubbles: true }));
+   } else {
+    comment.focus();
+   }
+   syncDrawingCommentTemplateVisibility(form);
   });
  }
  form.addEventListener('submit', (event) => event.preventDefault());
+ syncDrawingCommentTemplateVisibility(form);
 });
 
 
@@ -1341,21 +1577,98 @@ function ensureComplianceFieldsAvailable() {
  });
 }
 
+function syncComplianceFormState(card, workStatus) {
+ const form = card?.querySelector('[data-compliance-form]');
+ if (!form) return;
+ const shouldLock = applicationDecisionLocked || workStatus === 'accepted' || workStatus === 'reviewed_non_competitive';
+ form.dataset.locked = shouldLock ? '1' : '0';
+ form.classList.toggle('is-disabled', shouldLock);
+ const toggle = form.querySelector('.js-drawing-compliant-toggle');
+ const comment = form.querySelector('.js-drawing-comment');
+ const templateSelect = form.querySelector('.js-drawing-comment-template');
+ [toggle, comment].forEach((field) => {
+  if (!field) return;
+  field.disabled = shouldLock;
+  if (shouldLock) {
+   field.setAttribute('aria-disabled', 'true');
+  } else {
+   field.removeAttribute('aria-disabled');
+  }
+ });
+ if (templateSelect) {
+  templateSelect.disabled = shouldLock;
+  if (shouldLock) {
+   templateSelect.setAttribute('aria-disabled', 'true');
+  } else {
+   templateSelect.removeAttribute('aria-disabled');
+  }
+ }
+ syncDrawingCommentTemplateVisibility(form);
+}
+
+function syncApplicationActionState(applicationStatus, options = {}) {
+ const normalizedStatus = String(applicationStatus || 'submitted');
+ const approveButton = document.getElementById('approveApplicationButton');
+ const revisionButton = document.getElementById('sendToRevisionButton');
+ const declineButton = document.getElementById('declineApplicationButton');
+ const approveHint = document.querySelector('.application-sidebar-hint');
+ const revisionHint = document.getElementById('revisionApplicationHint');
+ const shouldShowSecondaryActions = options.showSecondaryActions !== false;
+
+ if (approveButton) {
+  const isApproved = normalizedStatus === 'approved';
+  approveButton.dataset.approved = isApproved ? '1' : '0';
+  approveButton.dataset.applicationStatus = normalizedStatus;
+  approveButton.classList.toggle('is-current', isApproved);
+  approveButton.innerHTML = isApproved
+   ? '<i class="fas fa-check-double"></i> Заявка принята'
+   : '<i class="fas fa-check"></i> Принять заявку';
+ }
+
+ if (revisionButton) {
+  revisionButton.classList.toggle('is-current', normalizedStatus === 'revision');
+ }
+
+ if (declineButton) {
+  declineButton.classList.toggle('is-current', normalizedStatus === 'rejected');
+ }
+
+ if (shouldShowSecondaryActions) {
+  document.querySelectorAll('.js-application-secondary-action').forEach((secondaryAction) => {
+   secondaryAction.style.display = '';
+  });
+ }
+
+ if (['approved', 'rejected', 'cancelled'].includes(normalizedStatus)) {
+  if (approveHint) {
+   approveHint.style.display = 'none';
+  }
+  if (revisionHint) {
+   revisionHint.style.display = 'none';
+  }
+ }
+}
+
 function syncApproveApplicationButtonState() {
  const approveButton = document.getElementById('approveApplicationButton');
  if (!approveButton) return;
+ const hint = document.querySelector('.application-sidebar-hint');
  const isApproved = approveButton.dataset.approved === '1';
- if (isApproved) {
+ if (applicationDecisionLocked || isApproved) {
   approveButton.disabled = true;
   approveButton.setAttribute('aria-disabled', 'true');
   approveButton.setAttribute('tabindex', '-1');
+  if (hint) {
+   hint.style.display = 'none';
+  }
   return;
  }
- const toggles = Array.from(document.querySelectorAll('.js-drawing-compliant-toggle'));
- const hasInvalid = toggles.some((toggle) => !toggle.checked);
+ const hasInvalid = Array.from(document.querySelectorAll('[data-work-controls]')).some((controls) => {
+  const status = controls.dataset.workStatus || 'pending';
+  return status !== 'accepted' && status !== 'reviewed_non_competitive';
+ });
  approveButton.disabled = hasInvalid;
  approveButton.setAttribute('aria-disabled', hasInvalid ? 'true' : 'false');
- const hint = document.querySelector('.application-sidebar-hint');
  if (hint) {
   hint.style.display = hasInvalid ? 'block' : 'none';
  }
@@ -1366,8 +1679,75 @@ function syncApproveApplicationButtonState() {
  }
 }
 
+function syncRevisionApplicationButtonState() {
+ const revisionButton = document.getElementById('sendToRevisionButton');
+ if (!revisionButton) return;
+ const revisionHint = document.getElementById('revisionApplicationHint');
+ const applicationStatus = String(document.getElementById('approveApplicationButton')?.dataset?.applicationStatus || 'submitted');
+ if (applicationDecisionLocked) {
+  revisionButton.disabled = true;
+  revisionButton.setAttribute('aria-disabled', 'true');
+  revisionButton.setAttribute('tabindex', '-1');
+  if (revisionHint) {
+   revisionHint.style.display = 'none';
+  }
+  return;
+ }
+ const cards = Array.from(document.querySelectorAll('[data-work-controls]'));
+ const hasUndecided = cards.some((controls) => {
+  const status = String(controls.dataset.workStatus || 'pending');
+  const card = controls.closest('.card');
+  const toggle = card?.querySelector('.js-drawing-compliant-toggle');
+  const isCompliant = toggle ? toggle.checked : true;
+  return status !== 'accepted' && status !== 'reviewed_non_competitive' && isCompliant;
+ });
+ const hasNonCompliant = cards.some((controls) => {
+  const card = controls.closest('.card');
+  const toggle = card?.querySelector('.js-drawing-compliant-toggle');
+  return toggle ? !toggle.checked : false;
+ });
+ const disabled = hasUndecided || !hasNonCompliant;
+ revisionButton.disabled = disabled;
+ revisionButton.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+ if (disabled) {
+  revisionButton.setAttribute('tabindex', '-1');
+ } else {
+  revisionButton.removeAttribute('tabindex');
+ }
+ if (revisionHint) {
+  revisionHint.style.display = ['approved', 'rejected', 'cancelled'].includes(applicationStatus) ? 'none' : (disabled ? 'block' : 'none');
+ }
+}
+
+function syncDeclineApplicationButtonState() {
+ const declineButton = document.getElementById('declineApplicationButton');
+ if (!declineButton) return;
+ if (applicationDecisionLocked) {
+  declineButton.disabled = true;
+  declineButton.setAttribute('aria-disabled', 'true');
+  declineButton.setAttribute('tabindex', '-1');
+  return;
+ }
+ const cards = Array.from(document.querySelectorAll('[data-work-controls]'));
+ const disabled = cards.length === 0 || cards.some((controls) => String(controls.dataset.workStatus || 'pending') !== 'reviewed_non_competitive');
+ declineButton.disabled = disabled;
+ declineButton.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+ if (disabled) {
+  declineButton.setAttribute('tabindex', '-1');
+ } else {
+  declineButton.removeAttribute('tabindex');
+ }
+}
+
+syncApplicationActionState('<?= e((string) ($application['status'] ?? 'submitted')) ?>', { showSecondaryActions: false });
 syncApproveApplicationButtonState();
+syncRevisionApplicationButtonState();
+syncDeclineApplicationButtonState();
 ensureComplianceFieldsAvailable();
+	document.querySelectorAll('[data-work-controls]').forEach((controls) => {
+	 updateDecisionButtons(controls, controls.dataset.workStatus || 'pending');
+	 syncComplianceFormState(controls.closest('.card'), controls.dataset.workStatus || 'pending');
+	});
 
 (() => {
     const modal = document.getElementById('vkPublishPromptModal');
@@ -1376,26 +1756,15 @@ ensureComplianceFieldsAvailable();
 
     const publishButton = document.getElementById('vkPublishPromptRun');
     const skipButton = document.getElementById('vkPublishPromptSkip');
+    const closeButton = document.getElementById('vkPublishPromptClose');
+    const closeIconButton = document.getElementById('vkPublishPromptModalClose');
     const statusBox = document.getElementById('vkPublishPromptStatus');
     const previewBox = document.getElementById('vkPublishPreview');
     const summaryBox = document.getElementById('vkPublishModalSummary');
     const openModalButton = document.getElementById('openVkPublishModalBtn');
-    const publicationTypeSelect = document.getElementById('vkPublicationType');
-    const donationFields = document.getElementById('vkDonationFields');
-    const donationGoalSelect = document.getElementById('vkDonationGoalSelect');
-    const donationGoalCard = document.getElementById('vkDonationGoalCard');
-    const donationGoalCardTitle = document.getElementById('vkDonationGoalCardTitle');
-    const donationGoalCardDescription = document.getElementById('vkDonationGoalCardDescription');
-    const donationGoalCardVkId = document.getElementById('vkDonationGoalCardVkId');
-    const donationSupportHint = document.getElementById('vkDonationSupportHint');
-    const donutFields = document.getElementById('vkDonutFields');
-    const donutPaidDurationInput = document.getElementById('vkDonutPaidDuration');
-    const donutFreeCopyInput = document.getElementById('vkDonutCanPublishFreeCopy');
     const applicationId = Number(approveButton.dataset.id || 0);
     const csrfToken = approveButton.dataset.csrf || '';
     let publishInProgress = false;
-    let donationAttachmentMessage = '';
-    let publicationCapabilities = {};
 
     const showStatus = (message, type = 'success') => {
         if (!statusBox) return;
@@ -1409,97 +1778,56 @@ ensureComplianceFieldsAvailable();
             return;
         }
         modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
     };
 
-    const toggleDonationFields = () => {
-        const publicationType = publicationTypeSelect?.value || 'standard';
-        const isDonationMode = publicationType === 'donation_goal';
-        const isDonutMode = publicationType === 'vk_donut';
-        if (donationFields) {
-            donationFields.style.display = isDonationMode ? 'block' : 'none';
-        }
-        if (donutFields) {
-            donutFields.style.display = isDonutMode ? 'block' : 'none';
-        }
-        if (!isDonationMode && donationGoalCard) {
-            donationGoalCard.style.display = 'none';
-        }
-        const capability = publicationCapabilities[publicationType] || null;
-        const capabilityMessage = capability?.message ? String(capability.message) : '';
-        if (donationSupportHint) {
-            const parts = [donationAttachmentMessage, capabilityMessage]
-                .map((part) => String(part || '').trim())
-                .filter(Boolean);
-            const uniqueParts = parts.filter((part, index) => parts.indexOf(part) === index);
-            const message = uniqueParts.join(' ');
-            donationSupportHint.style.display = message ? 'block' : 'none';
-            donationSupportHint.textContent = message;
-        }
-    };
-
-    const renderDonationGoals = (goals) => {
-        if (!donationGoalSelect) return;
-        donationGoalSelect.innerHTML = '';
-        const placeholderOption = document.createElement('option');
-        placeholderOption.value = '';
-        placeholderOption.textContent = 'Выберите цель доната';
-        donationGoalSelect.appendChild(placeholderOption);
-        if (!Array.isArray(goals) || goals.length === 0) {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = 'Нет активных целей';
-            donationGoalSelect.appendChild(option);
+    const setErrorState = (isErrorState) => {
+        if (!publishButton || !skipButton || !closeButton) {
             return;
         }
-
-        goals.forEach((item) => {
-            const option = document.createElement('option');
-            option.value = String(item.id ?? '');
-            option.textContent = String(item.title ?? '');
-            option.dataset.description = String(item.description ?? '');
-            option.dataset.vkDonateId = String(item.vk_donate_id ?? '');
-            donationGoalSelect.appendChild(option);
-        });
-    };
-
-    const updateDonationGoalCard = () => {
-        if (!donationGoalCard || !donationGoalSelect) return;
-        const selectedOption = donationGoalSelect.selectedOptions[0] || null;
-        const selectedGoalId = Number(donationGoalSelect.value || 0);
-        if (!selectedOption || selectedGoalId <= 0) {
-            donationGoalCard.style.display = 'none';
-            return;
-        }
-        donationGoalCard.style.display = 'block';
-        if (donationGoalCardTitle) donationGoalCardTitle.textContent = selectedOption.textContent || '—';
-        if (donationGoalCardDescription) donationGoalCardDescription.textContent = selectedOption.dataset.description || '—';
-        if (donationGoalCardVkId) donationGoalCardVkId.textContent = selectedOption.dataset.vkDonateId || '—';
+        publishButton.classList.toggle('is-hidden', isErrorState);
+        skipButton.classList.toggle('is-hidden', isErrorState);
+        closeButton.classList.toggle('is-hidden', !isErrorState);
+        publishButton.disabled = false;
+        skipButton.disabled = false;
+        closeButton.disabled = false;
     };
 
     if (skipButton) {
         skipButton.addEventListener('click', closeModal);
     }
+    if (closeButton) {
+        closeButton.addEventListener('click', closeModal);
+    }
+    if (closeIconButton) {
+        closeIconButton.addEventListener('click', closeModal);
+    }
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeModal();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && modal.classList.contains('active')) {
+            closeModal();
+        }
+    });
 
     const openPublishModal = async () => {
         if (!applicationId) {
             return;
         }
+        setErrorState(false);
         modal.classList.add('active');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
         if (previewBox) {
             previewBox.innerHTML = '<div class="text-secondary">Загрузка списка участников...</div>';
         }
         if (statusBox) {
             statusBox.style.display = 'none';
         }
-        if (publicationTypeSelect) {
-            publicationTypeSelect.value = 'standard';
-        }
-        if (donationGoalSelect) {
-            donationGoalSelect.innerHTML = '';
-        }
-        donationAttachmentMessage = '';
-        toggleDonationFields();
-        updateDonationGoalCard();
 
         try {
             const response = await fetch(`/admin/api/get-publish-data.php?id=${applicationId}`);
@@ -1523,24 +1851,17 @@ ensureComplianceFieldsAvailable();
                     previewBox.innerHTML = '<div class="text-secondary">Нет работ для публикации.</div>';
                 } else {
                     previewBox.innerHTML = participants.map((item) => `
-                        <div style="display:flex; gap:10px; align-items:flex-start; border:1px solid #E5E7EB; border-radius:10px; padding:8px;">
-                            ${item.preview_image ? `<img src="${item.preview_image}" style="width:52px;height:52px;border-radius:8px;object-fit:cover;">` : '<div style="width:52px;height:52px;border-radius:8px;background:#EEF2FF;display:flex;align-items:center;justify-content:center;"><i class="fas fa-image"></i></div>'}
-                            <div style="display:grid; gap:4px;">
+                        <div class="vk-preview-item">
+                            ${item.preview_image ? `<img src="${item.preview_image}" class="vk-preview-item__thumb">` : '<div class="vk-preview-item__thumb-placeholder"><i class="fas fa-image"></i></div>'}
+                            <div class="vk-preview-item__content">
                                 <strong>${item.fio || 'Без имени'}</strong>
-                                <div>${item.work_title || 'Без названия'}</div>
                                 <span class="badge ${item.is_ready_for_publish ? 'badge--success' : 'badge--warning'}">${item.is_ready_for_publish ? 'Готово к публикации' : 'Не готово'}</span>
-                                ${item.skip_reason ? `<div class="text-secondary" style="font-size:12px;">${item.skip_reason}</div>` : ''}
+                                ${item.skip_reason ? `<div class="text-secondary vk-preview-item__reason">${item.skip_reason}</div>` : ''}
                             </div>
                         </div>
                     `).join('');
                 }
             }
-            renderDonationGoals(data.donation_goals || []);
-            publicationCapabilities = data.publication_capabilities || {};
-            const support = data.donation_attachment_support || {};
-            donationAttachmentMessage = String(support.message || '');
-            toggleDonationFields();
-            updateDonationGoalCard();
         } catch (error) {
             if (previewBox) {
                 previewBox.innerHTML = '<div class="text-secondary">Данные недоступны.</div>';
@@ -1548,14 +1869,7 @@ ensureComplianceFieldsAvailable();
             showStatus(error.message || 'Ошибка загрузки данных публикации.', 'error');
         }
     };
-
-    publicationTypeSelect?.addEventListener('change', () => {
-        toggleDonationFields();
-        updateDonationGoalCard();
-    });
-    if (donationGoalSelect) {
-        donationGoalSelect.addEventListener('change', updateDonationGoalCard);
-    }
+    window.openVkPublishPromptModal = openPublishModal;
 
     approveButton.addEventListener('click', async () => {
         if (approveButton.disabled || !applicationId) {
@@ -1565,12 +1879,32 @@ ensureComplianceFieldsAvailable();
             approveButton.disabled = true;
             approveButton.setAttribute('aria-disabled', 'true');
             approveButton.setAttribute('tabindex', '-1');
-            document.querySelectorAll('.js-application-secondary-action').forEach((secondaryAction) => {
-                secondaryAction.style.display = 'none';
-            });
-            const approveForm = document.getElementById('approveApplicationForm');
-            if (approveForm) {
-                approveForm.submit();
+            try {
+                const formData = new FormData();
+                formData.append('action', 'approve_application');
+                formData.append('csrf_token', csrfToken);
+                formData.append('ajax', '1');
+                const response = await fetch('/admin/application/<?= e($application_id) ?>', {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData,
+                });
+                const data = await parseJsonResponse(response);
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Не удалось принять заявку.');
+                }
+                syncApplicationActionState('approved', { showSecondaryActions: false });
+                document.querySelectorAll('[data-work-controls]').forEach((controls) => {
+                    syncComplianceFormState(controls.closest('.card'), controls.dataset.workStatus || 'pending');
+                });
+                syncApproveApplicationButtonState();
+                syncRevisionApplicationButtonState();
+                syncDeclineApplicationButtonState();
+            } catch (error) {
+                approveButton.disabled = false;
+                approveButton.setAttribute('aria-disabled', 'false');
+                approveButton.removeAttribute('tabindex');
+                showToast(error.message || 'Не удалось принять заявку', 'error');
                 return;
             }
         }
@@ -1581,20 +1915,6 @@ ensureComplianceFieldsAvailable();
     if (publishButton) {
         publishButton.addEventListener('click', async () => {
             if (publishInProgress) {
-                return;
-            }
-            const publicationType = publicationTypeSelect?.value || 'standard';
-            const donationEnabled = publicationType === 'donation_goal';
-            const vkDonutEnabled = publicationType === 'vk_donut';
-            const donationGoalId = Number(donationGoalSelect?.value || 0);
-            const vkDonutPaidDuration = Number(donutPaidDurationInput?.value || 0);
-            const vkDonutCanPublishFreeCopy = !!donutFreeCopyInput?.checked;
-            if (donationEnabled && !donationGoalId) {
-                showStatus('Нельзя включить донат без выбора цели.', 'error');
-                return;
-            }
-            if (vkDonutEnabled && vkDonutPaidDuration <= 0) {
-                showStatus('Для VK Donut paywall укажите paid_duration > 0.', 'error');
                 return;
             }
             publishInProgress = true;
@@ -1613,31 +1933,27 @@ ensureComplianceFieldsAvailable();
                     },
                     body: JSON.stringify({
                         application_id: applicationId,
-                        publication_type: publicationType,
-                        donation_enabled: donationEnabled ? 1 : 0,
-                        donation_goal_id: donationGoalId,
-                        vk_donut_enabled: vkDonutEnabled ? 1 : 0,
-                        vk_donut_paid_duration: vkDonutPaidDuration,
-                        vk_donut_can_publish_free_copy: vkDonutCanPublishFreeCopy ? 1 : 0,
+                        publication_type: 'standard',
                         csrf_token: csrfToken,
                     }),
                 });
                 const data = await response.json();
                 if (!response.ok || !data.success) {
                     showStatus(data.error || 'Не удалось выполнить публикацию.', 'error');
+                    setErrorState(true);
                     return;
                 }
-                const modeTitle = publicationType === 'vk_donut'
-                    ? 'VK Donut paywall (диагностика)'
-                    : (publicationType === 'donation_goal' ? 'Публикация с целью сбора' : 'Обычная публикация');
-                showStatus(`Итог: опубликовано ${data.published || 0} из ${data.total || 0}. Режим: ${modeTitle}.`, 'success');
-                location.reload();
+                showStatus(`Итог: опубликовано ${data.published || 0} из ${data.total || 0}.`, 'success');
+                window.location.assign('/admin/applications');
             } catch (e) {
                 showStatus('Ошибка сети при публикации. Попробуйте ещё раз.', 'error');
+                setErrorState(true);
             } finally {
                 publishInProgress = false;
-                publishButton.disabled = false;
-                if (skipButton) {
+                if (!publishButton.classList.contains('is-hidden')) {
+                    publishButton.disabled = false;
+                }
+                if (skipButton && !skipButton.classList.contains('is-hidden')) {
                     skipButton.disabled = false;
                 }
             }
@@ -1648,6 +1964,56 @@ ensureComplianceFieldsAvailable();
         openPublishModal();
     }
 })();
+
+const sendToRevisionForm = document.getElementById('sendToRevisionForm');
+const sendToRevisionButton = document.getElementById('sendToRevisionButton');
+if (sendToRevisionForm && sendToRevisionButton) {
+ sendToRevisionForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (sendToRevisionButton.disabled) {
+   return;
+  }
+  if (!window.confirm('Отправить заявку на корректировку?')) {
+   return;
+  }
+
+  const defaultHtml = sendToRevisionButton.innerHTML;
+  sendToRevisionButton.disabled = true;
+  sendToRevisionButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+  try {
+   const formData = new FormData(sendToRevisionForm);
+   formData.append('ajax', '1');
+   const response = await fetch('/admin/application/<?= e($application_id) ?>', {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    body: formData,
+   });
+   const data = await parseJsonResponse(response);
+   if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Не удалось отправить заявку на корректировку.');
+   }
+
+   sendToRevisionButton.innerHTML = defaultHtml;
+   syncApplicationActionState(data.application_status || 'revision');
+   syncApproveApplicationButtonState();
+   syncRevisionApplicationButtonState();
+   syncDeclineApplicationButtonState();
+   showToast(data.message || 'Заявка отправлена на корректировку', 'success');
+
+   if (data.open_vk_publish_prompt && typeof window.openVkPublishPromptModal === 'function') {
+    await window.openVkPublishPromptModal();
+   } else {
+    window.location.assign('/admin/applications');
+   }
+  } catch (error) {
+   sendToRevisionButton.disabled = false;
+   sendToRevisionButton.setAttribute('aria-disabled', 'false');
+   sendToRevisionButton.innerHTML = defaultHtml;
+   showToast(error.message || 'Не удалось отправить заявку на корректировку', 'error');
+  }
+ });
+}
 </script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>

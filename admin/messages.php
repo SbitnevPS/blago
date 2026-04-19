@@ -31,6 +31,7 @@ $viewParam = (string) ($_GET['view'] ?? '');
 $messagesView = in_array($viewParam, ['main', 'disputes', 'disputes_archive'], true) ? $viewParam : 'main';
 $disputeThreadsCount = 0;
 $disputeUnreadTotal = 0;
+$messageWelcomeTemplate = (string) getSystemSetting('message_welcome_template', "Здравствуйте, {name}!\n\n");
 
 if (!function_exists('adminMessagesHasDisputeChatClosedColumn')) {
     function adminMessagesHasDisputeChatClosedColumn(PDO $pdo): bool {
@@ -464,11 +465,13 @@ if ($filterUserId > 0) {
     $where .= " AND am.user_id = ?";
     $params[] = $filterUserId;
 } elseif ($filterUserQuery !== '') {
-    $where .= " AND (u.name LIKE ? OR u.surname LIKE ? OR u.email LIKE ?)";
+    $userSearchConditions = build_user_search_conditions('u');
+    $where .= " AND (
+        " . implode("
+        OR ", $userSearchConditions) . "
+    )";
     $userSearchTerm = '%' . $filterUserQuery . '%';
-    $params[] = $userSearchTerm;
-    $params[] = $userSearchTerm;
-    $params[] = $userSearchTerm;
+    $params = array_merge($params, array_fill(0, count($userSearchConditions), $userSearchTerm));
 }
 if ($priority) {
 $where .= " AND am.priority = ?";
@@ -938,18 +941,30 @@ require_once __DIR__ . '/includes/header.php';
  placeholder="Поиск по теме, сообщению или пользователю..." 
  value="<?= htmlspecialchars($search) ?>">
 </div>
-<div style="flex:1; min-width:250px; position:relative;">
+<div
+ style="flex:1; min-width:250px; position:relative;"
+ <?= admin_live_search_attrs([
+  'endpoint' => '/admin/search-message-users',
+  'primary_template' => '{{name + surname||Без имени}}',
+  'secondary_template' => '{{email||Email не указан}}',
+  'value_template' => '{{name + surname||Без имени}} ({{email||Email не указан}})',
+  'limit' => 7,
+  'min_length' => 2,
+  'min_length_numeric' => 1,
+  'debounce' => 250,
+ ]) ?>>
 <label class="form-label">Поиск по родителю/куратору</label>
 <input
  type="text"
  name="user_query"
  id="filterUserSearch"
+ data-live-search-input
  class="form-input"
  placeholder="Фильтр по пользователю"
  value="<?= htmlspecialchars($filterUserQuery) ?>"
  autocomplete="off">
-<input type="hidden" name="user_id" id="filterUserId" value="<?= (int) $filterUserId ?>">
-<div id="filterUserResults" class="user-results"></div>
+<input type="hidden" name="user_id" id="filterUserId" data-live-search-hidden value="<?= (int) $filterUserId ?>">
+<div id="filterUserResults" class="user-results" data-live-search-results></div>
 </div>
 <div style="width:180px;">
 <label class="form-label">Приоритет</label>
@@ -1017,9 +1032,21 @@ foreach ($messages as $msg) {
 <?php else: ?>
 <div class="admin-list-cards">
 <?php foreach ($displayMessages as $msg): ?>
+<?php
+    $messageApplicationId = 0;
+    if (preg_match('/Номер заявки:\s*#(\d+)/u', (string) ($msg['message'] ?? ''), $messageAppMatch)) {
+        $messageApplicationId = (int) ($messageAppMatch[1] ?? 0);
+    } elseif (preg_match('/заявк[аеи]\s*#(\d+)/ui', (string) ($msg['subject'] ?? ''), $subjectAppMatch)) {
+        $messageApplicationId = (int) ($subjectAppMatch[1] ?? 0);
+    }
+?>
 <article class="admin-list-card message-row"
     data-message-id="<?= (int) $msg['id'] ?>"
     data-admin-id="<?= (int) ($msg['admin_id'] ?? 0) ?>"
+    data-user-id="<?= (int) ($msg['user_id'] ?? 0) ?>"
+    data-user-name="<?= e(trim((string) (($msg['user_name'] ?? '') . ' ' . ($msg['user_surname'] ?? '')))) ?>"
+    data-user-email="<?= e((string) ($msg['user_email'] ?? '')) ?>"
+    data-application-id="<?= $messageApplicationId ?>"
     data-message-subject="<?= e($msg['subject']) ?>"
     data-message-content="<?= e($msg['message']) ?>"
     data-message-priority="<?= e($msg['priority']) ?>"
@@ -1095,10 +1122,21 @@ foreach ($messages as $msg) {
 <div class="modal__body">
 <div class="form-group">
 <label class="form-label">Получатель</label>
-<div class="message-recipient-search">
-<input type="text" class="form-input" id="userSearch" placeholder="Начните вводить имя, фамилию или email..." autocomplete="off">
-<input type="hidden" name="user_id" id="userId">
-<div id="userResults" class="user-results">
+<div
+ class="message-recipient-search"
+ <?= admin_live_search_attrs([
+  'endpoint' => '/admin/search-users',
+  'primary_template' => '{{name + surname||Без имени}}',
+  'secondary_template' => '{{email||Email не указан}}',
+  'value_template' => '{{name + surname||Без имени}} ({{email||Email не указан}})',
+  'limit' => 7,
+  'min_length' => 2,
+  'min_length_numeric' => 1,
+  'debounce' => 300,
+ ]) ?>>
+<input type="text" class="form-input" id="userSearch" data-live-search-input placeholder="Начните вводить имя, фамилию или email..." autocomplete="off">
+<input type="hidden" name="user_id" id="userId" data-live-search-hidden>
+<div id="userResults" class="user-results" data-live-search-results>
 </div>
 </div>
 </div>
@@ -1176,6 +1214,10 @@ foreach ($messages as $msg) {
 <div id="viewMessageContent" style="white-space:pre-wrap; line-height:1.6;"></div>
 </div>
 <div class="modal__footer">
+<a href="#" class="btn btn--ghost" id="viewMessageApplicationBtn" style="display:none;">
+<i class="fas fa-external-link-alt"></i> Открыть заявку
+</a>
+<button type="button" class="btn btn--secondary" id="replyFromViewMessageBtn" onclick="openSendModalFromViewedMessage()">Написать сообщение пользователю</button>
 <button type="button" class="btn btn--primary" onclick="closeViewModal()">Закрыть</button>
 </div>
 </div>
@@ -1184,6 +1226,8 @@ foreach ($messages as $msg) {
 <script>
 const csrfTokenValue = document.querySelector('input[name="csrf_token"]')?.value || '';
 const selectedDisputeApplicationId = Number(<?= (int) $selectedDisputeApplicationId ?>);
+const messageWelcomeTemplate = <?= json_encode($messageWelcomeTemplate, JSON_UNESCAPED_UNICODE) ?>;
+let currentViewedMessage = null;
 let isDisputeChatOpen = Boolean(document.getElementById('disputeChatModal')?.classList.contains('active'));
 let pollTimerId = null;
 let latestDisputeMessageId = Math.max(
@@ -1204,9 +1248,13 @@ function filterByPriority(priority) {
  window.location.href = url.toString();
 }
 
-function viewMessage(subject, message, priority) {
+function viewMessage(subject, message, priority, options = {}) {
+ currentViewedMessage = options;
  document.getElementById('viewMessageSubject').textContent = subject;
- document.getElementById('viewMessageContent').textContent = message;
+ const cleanedMessage = Number(options.applicationId || 0) > 0
+  ? String(message || '').replace(/\n?Номер заявки:\s*#\d+\s*/u, '').trim()
+  : message;
+ document.getElementById('viewMessageContent').textContent = cleanedMessage;
 
  let priorityBadge = '';
  if (priority === 'critical') {
@@ -1217,12 +1265,29 @@ function viewMessage(subject, message, priority) {
   priorityBadge = '<span class="badge" style="background:#6B7280; color:white; padding:4px 12px;">Обычное</span>';
  }
  document.getElementById('viewMessagePriority').innerHTML = priorityBadge;
+ const replyButton = document.getElementById('replyFromViewMessageBtn');
+ if (replyButton) {
+  const hasUser = Number(options.userId || 0) > 0 && !options.isBroadcast;
+  replyButton.style.display = hasUser ? '' : 'none';
+ }
+ const applicationButton = document.getElementById('viewMessageApplicationBtn');
+ if (applicationButton) {
+  const applicationId = Number(options.applicationId || 0);
+  if (applicationId > 0) {
+   applicationButton.href = `/admin/application/${applicationId}`;
+   applicationButton.style.display = '';
+  } else {
+   applicationButton.href = '#';
+   applicationButton.style.display = 'none';
+  }
+ }
 
  document.getElementById('viewMessageModal').classList.add('active');
  document.body.style.overflow = 'hidden';
 }
 
 function closeViewModal() {
+ currentViewedMessage = null;
  document.getElementById('viewMessageModal').classList.remove('active');
  restoreBodyScrollIfNoModals();
 }
@@ -1354,13 +1419,15 @@ async function deleteSelectedMessages() {
  }
 }
 
-function openSendModal() {
+function openSendModal(prefill = null) {
  document.getElementById('sendMessageModal').classList.add('active');
  document.body.style.overflow = 'hidden';
 
  const userSearch = document.getElementById('userSearch');
  const userId = document.getElementById('userId');
  const sendToAll = document.getElementById('sendToAll');
+ const subjectInput = document.querySelector('#sendMessageForm input[name="subject"]');
+ const messageInput = document.querySelector('#sendMessageForm textarea[name="message"]');
 
  userSearch.value = '';
  userSearch.disabled = false;
@@ -1368,11 +1435,46 @@ function openSendModal() {
  userSearch.style.pointerEvents = 'auto';
  userId.value = '';
  sendToAll.checked = false;
+ if (subjectInput) {
+  subjectInput.value = '';
+ }
+ if (messageInput) {
+  messageInput.value = '';
+ }
+ toggleUserSelect();
+
+ if (prefill && Number(prefill.userId || 0) > 0) {
+  const userLabel = (prefill.userName || '').trim();
+  const emailLabel = (prefill.userEmail || '').trim();
+  userId.value = String(prefill.userId);
+  userSearch.value = emailLabel ? `${userLabel} (${emailLabel})` : userLabel;
+  if (subjectInput) {
+   const baseSubject = String(prefill.subject || '').trim();
+   subjectInput.value = baseSubject === '' ? '' : (baseSubject.startsWith('Re: ') ? baseSubject : `Re: ${baseSubject}`);
+  }
+  if (messageInput) {
+   const firstName = userLabel.split(/\s+/).filter(Boolean).slice(0, 1).join(' ');
+   const fullName = userLabel || 'пользователь';
+   messageInput.value = String(messageWelcomeTemplate || '')
+    .replaceAll('{name}', firstName || fullName)
+    .replaceAll('{full_name}', fullName)
+    .replaceAll('{email}', emailLabel);
+   messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+ }
 }
 
 function closeSendModal() {
- document.getElementById('sendMessageModal').classList.remove('active');
- restoreBodyScrollIfNoModals();
+document.getElementById('sendMessageModal').classList.remove('active');
+restoreBodyScrollIfNoModals();
+}
+
+function openSendModalFromViewedMessage() {
+ if (!currentViewedMessage || Number(currentViewedMessage.userId || 0) <= 0 || currentViewedMessage.isBroadcast) {
+  return;
+ }
+ closeViewModal();
+ openSendModal(currentViewedMessage);
 }
 
 function closeDisputeChatModal() {
@@ -1413,78 +1515,8 @@ function toggleUserSelect() {
  }
 }
 
-let searchTimeout;
-const userSearchInput = document.getElementById('userSearch');
-const userResults = document.getElementById('userResults');
-const userIdInput = document.getElementById('userId');
-const filterUserSearchInput = document.getElementById('filterUserSearch');
-const filterUserResults = document.getElementById('filterUserResults');
-const filterUserIdInput = document.getElementById('filterUserId');
 const messageField = document.querySelector('textarea[name="message"]');
 const messageCounter = document.getElementById('messageCounter');
-
-userSearchInput?.addEventListener('input', function() {
- clearTimeout(searchTimeout);
- const query = this.value.trim();
- userIdInput.value = '';
-
- if (query.length < 2) {
-  userResults.style.display = 'none';
-  userIdInput.value = '';
-  return;
- }
-
- searchTimeout = setTimeout(function() {
-  fetch('/admin/search-users?q=' + encodeURIComponent(query) + '&limit=7')
-   .then(response => response.json())
-   .then(users => {
-   if (users.length > 0) {
-     userResults.innerHTML = users.map(u =>
-      '<button type="button" class="user-results__item" onclick="selectUser(' + u.id + ', \'' + escapeHtml((u.name + ' ' + u.surname + ' (' + u.email + ')').trim()).replace(/'/g, '&#39;') + '\')">' +
-      '<div class="user-results__name">' + escapeHtml((u.name + ' ' + u.surname).trim()) + '</div>' +
-      '<div class="user-results__email">' + escapeHtml(u.email) + '</div>' +
-      '</button>'
-     ).join('');
-     userResults.style.display = 'block';
-    } else {
-     userResults.innerHTML = '<div class="user-results__empty">Пользователи не найдены</div>';
-     userResults.style.display = 'block';
-    }
-   });
-}, 300);
-});
-
-let filterSearchTimeout;
-filterUserSearchInput?.addEventListener('input', function() {
- clearTimeout(filterSearchTimeout);
- const query = this.value.trim();
- filterUserIdInput.value = '';
-
- if (query.length < 2) {
-  filterUserResults.style.display = 'none';
-  filterUserIdInput.value = '';
-  return;
- }
-
- filterSearchTimeout = setTimeout(function() {
-  fetch('/admin/search-users?q=' + encodeURIComponent(query) + '&limit=7')
-   .then(response => response.json())
-   .then(users => {
-    if (users.length > 0) {
-     filterUserResults.innerHTML = users.map(u =>
-      '<button type="button" class="user-results__item" onclick="selectFilterUser(' + u.id + ', \'' + escapeHtml((u.name + ' ' + u.surname + ' (' + u.email + ')').trim()).replace(/'/g, '&#39;') + '\')">' +
-      '<div class="user-results__name">' + escapeHtml((u.name + ' ' + u.surname).trim()) + '</div>' +
-      '<div class="user-results__email">' + escapeHtml(u.email) + '</div>' +
-      '</button>'
-     ).join('');
-     filterUserResults.style.display = 'block';
-    } else {
-     filterUserResults.innerHTML = '<div class="user-results__empty">Пользователи не найдены</div>';
-     filterUserResults.style.display = 'block';
-    }
-   });
- }, 250);
-});
 
 function updateMessageCounter() {
  if (!messageField || !messageCounter) return;
@@ -1495,18 +1527,6 @@ function updateMessageCounter() {
 if (messageField) {
  messageField.addEventListener('input', updateMessageCounter);
  updateMessageCounter();
-}
-
-function selectUser(id, name) {
- userIdInput.value = id;
- userSearchInput.value = name.replace(/&quot;/g, '"').trim();
- userResults.style.display = 'none';
-}
-
-function selectFilterUser(id, name) {
- filterUserIdInput.value = id;
- filterUserSearchInput.value = name.replace(/&quot;/g, '"').trim();
- filterUserResults.style.display = 'none';
 }
 
 function escapeHtml(text) {
@@ -1635,15 +1655,6 @@ function scheduleDisputePolling() {
  }, delay);
 }
 
-document.addEventListener('click', function(e) {
- if (userSearchInput && userResults && !userSearchInput.contains(e.target) && !userResults.contains(e.target)) {
-  userResults.style.display = 'none';
- }
- if (filterUserSearchInput && filterUserResults && !filterUserSearchInput.contains(e.target) && !filterUserResults.contains(e.target)) {
-  filterUserResults.style.display = 'none';
- }
-});
-
 function updatePriorityStyle(radio) {
  if (!radio) return;
  document.querySelectorAll('.priority-option').forEach(el => {
@@ -1676,12 +1687,6 @@ document.addEventListener('DOMContentLoaded', function() {
  });
  document.querySelectorAll('.message-select-checkbox').forEach((checkbox) => {
   checkbox.addEventListener('change', updateBulkSelectionState);
- });
-
- filterUserSearchInput?.addEventListener('keydown', function(event) {
-  if (event.key === 'Backspace' && !filterUserSearchInput.value.trim()) {
-   filterUserIdInput.value = '';
-  }
  });
 
  document.getElementById('sendMessageModal')?.addEventListener('click', function(e) {
@@ -1746,7 +1751,15 @@ document.addEventListener('DOMContentLoaded', function() {
    viewMessage(
     row.dataset.messageSubject || '',
     row.dataset.messageContent || '',
-    row.dataset.messagePriority || 'normal'
+    row.dataset.messagePriority || 'normal',
+    {
+     userId: Number(row.dataset.userId || 0),
+     userName: row.dataset.userName || '',
+     userEmail: row.dataset.userEmail || '',
+     subject: row.dataset.messageSubject || '',
+     applicationId: Number(row.dataset.applicationId || 0),
+     isBroadcast: row.dataset.messageBroadcast === '1'
+    }
    );
   });
  });
@@ -1759,7 +1772,15 @@ document.addEventListener('DOMContentLoaded', function() {
    viewMessage(
     row.dataset.messageSubject || '',
     row.dataset.messageContent || '',
-    row.dataset.messagePriority || 'normal'
+    row.dataset.messagePriority || 'normal',
+    {
+     userId: Number(row.dataset.userId || 0),
+     userName: row.dataset.userName || '',
+     userEmail: row.dataset.userEmail || '',
+     subject: row.dataset.messageSubject || '',
+     applicationId: Number(row.dataset.applicationId || 0),
+     isBroadcast: row.dataset.messageBroadcast === '1'
+    }
    );
   });
  });

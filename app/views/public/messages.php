@@ -166,8 +166,15 @@ $currentPage = 'messages';
 <main class="container messages-container">
 <div class="messages-page">
 <div class="messages-page__header">
+<div class="flex items-center justify-between gap-3 flex-wrap">
+<div>
 <h1>Сообщения</h1>
 <p class="text-secondary">Уведомления от администрации и переписки по вашим заявкам.</p>
+</div>
+<?php if ((int) $unreadCount > 0): ?>
+<button type="button" class="btn btn--ghost btn--sm" id="markAllMessagesReadBtn">Прочитать все</button>
+<?php endif; ?>
+</div>
 </div>
 
 <?php if (!empty($disputeChats)): ?>
@@ -410,6 +417,40 @@ function updateUnreadBadge() {
     } else if (badge) {
         badge.remove();
     }
+
+    const markAllButton = document.getElementById('markAllMessagesReadBtn');
+    if (markAllButton && currentUnreadCount <= 0) {
+        markAllButton.remove();
+    }
+}
+
+const markAllMessagesReadBtn = document.getElementById('markAllMessagesReadBtn');
+if (markAllMessagesReadBtn) {
+    markAllMessagesReadBtn.addEventListener('click', () => {
+        const formData = new URLSearchParams();
+        formData.append('mark_all', '1');
+        formData.append('csrf_token', '<?= generateCSRFToken() ?>');
+
+        fetch('/mark-message-read', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString(),
+        })
+            .then((response) => response.json())
+            .then((data) => {
+                if (!data.success) {
+                    return;
+                }
+
+                currentUnreadCount = 0;
+                updateUnreadBadge();
+                document.querySelectorAll('.message-card--unread').forEach((card) => {
+                    card.classList.remove('message-card--unread');
+                });
+            });
+    });
 }
         
 function hideMessage() {

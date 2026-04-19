@@ -11,7 +11,7 @@ $authErrorCode = trim((string) ($_GET['auth_error'] ?? ''));
 $authErrorMessages = [
     'session_expired' => 'Сессия входа через VK устарела. Попробуйте снова.',
     'invalid_callback' => 'VK вернул некорректные данные входа.',
-    'exchange_failed' => 'Не удалось завершить вход через VK. Попробуйте снова.',
+    'exchange_failed' => 'Не удалось завершить вход через VK для публикации (проверьте выдачу прав wall/photos). Попробуйте снова.',
     'profile_failed' => 'Не удалось получить профиль VK. Попробуйте снова.',
     'admin_access_denied' => 'Доступ в админку запрещён.',
 ];
@@ -26,6 +26,7 @@ if (strpos($redirectAfterAuth, '/admin') !== 0) {
     $redirectAfterAuth = '/admin';
 }
 $_SESSION['admin_auth_redirect'] = $redirectAfterAuth;
+$vkidSdkFlow = vkid_sdk_flow_prepare('admin');
 
 check_csrf();
 
@@ -36,25 +37,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($email === '' || $password === '') {
         $error = 'Заполните все поля';
     } else {
-        $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
-        $stmt->execute([$email]);
-        $admin = $stmt->fetch();
+        $authResult = authenticateUserByPassword($email, $password);
+        $admin = $authResult['user'] ?? null;
 
         if (!$admin) {
-            $error = 'Пользователь с таким email не найден';
+            $error = (string) ($authResult['message'] ?? 'Неверный пароль');
         } elseif (empty($admin['password'])) {
             $error = 'Для этого аккаунта не установлен пароль. Используйте вход через VK или создайте пароль.';
-        } elseif (!password_verify($password, $admin['password'])) {
-            $error = 'Неверный пароль';
         } elseif ((int) ($admin['is_admin'] ?? 0) !== 1) {
             $error = 'У вас нет доступа к админ-панели';
         } else {
             $_SESSION['admin_user_id'] = (int) $admin['id'];
             $_SESSION['is_admin'] = true;
 
-            $target = sanitize_internal_redirect($_SESSION['admin_auth_redirect'] ?? '/admin', '/admin');
+            $target = !empty($authResult['used_temporary_password'])
+                ? '/profile?force_password_change=1'
+                : sanitize_internal_redirect($_SESSION['admin_auth_redirect'] ?? '/admin', '/admin');
             if (strpos($target, '/admin') !== 0) {
-                $target = '/admin';
+                $target = !empty($authResult['used_temporary_password']) ? '/profile?force_password_change=1' : '/admin';
             }
             unset($_SESSION['admin_auth_redirect']);
             redirect($target);
@@ -113,9 +113,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 </form>
 
 <div class="login-form" id="admin-form-vk">
-<div class="divider">или</div>
+<h3 style="margin:0 0 8px;">Вход через VK</h3>
+<p style="font-size:14px;color:#666;margin:0 0 12px;">Используется для входа в админку и подключения публикации рисунков в сообщество.</p>
 <div id="vkid-admin-onetap-container"></div>
-<p style="font-size:14px;color:#666;margin-top:12px;">Используется официальная кнопка VK ID.</p>
+<p style="font-size:14px;color:#666;margin-top:12px;">Нажмите «Войти через VK для публикации».</p>
 </div>
 
 <div class="back-link">
@@ -212,7 +213,9 @@ function initVkAdminIdWidget() {
         redirectUrl: <?= json_encode(VK_ADMIN_REDIRECT_URI, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
-        scope: '',
+        scope: <?= json_encode(vk_admin_publication_scope(), JSON_UNESCAPED_UNICODE) ?>,
+        state: <?= json_encode((string) ($vkidSdkFlow['state'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
+        codeVerifier: <?= json_encode((string) ($vkidSdkFlow['code_verifier'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
     });
 
     const oneTap = new VKID.OneTap();
@@ -225,14 +228,7 @@ function initVkAdminIdWidget() {
             setAdminAuthError('Не удалось загрузить VK ID. Попробуйте обновить страницу или войдите по email.');
         })
         .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
-            const code = payload?.code || '';
-            const deviceId = payload?.device_id || '';
-
-            VKID.Auth.exchangeCode(code, deviceId)
-                .then(finishAdminVkLoginViaSdk)
-                .catch(function () {
-                    setAdminAuthError('Не удалось завершить вход через VK ID. Попробуйте снова.');
-                });
+            finishAdminVkLoginViaSdk(payload || {});
         });
 }
 </script>

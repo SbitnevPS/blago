@@ -4,6 +4,18 @@ $safePageTitle = htmlspecialchars($pageTitle ?? 'Админ-панель', ENT_Q
 $safeHeaderTitle = htmlspecialchars($pageTitle ?? 'Панель управления', ENT_QUOTES, 'UTF-8');
 $safeBreadcrumb = isset($breadcrumb) ? htmlspecialchars($breadcrumb, ENT_QUOTES, 'UTF-8') : null;
 $adminUnreadDisputes = function_exists('getAdminUnreadDisputeCount') ? getAdminUnreadDisputeCount() : 0;
+$adminNewApplications = 0;
+$hasOpenedByAdminColumn = function_exists('db_table_has_column') ? db_table_has_column('applications', 'opened_by_admin') : false;
+try {
+    if ($hasOpenedByAdminColumn) {
+        $adminNewApplications = (int) ($pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted' AND opened_by_admin = 0")->fetchColumn() ?: 0);
+    } else {
+        // Fallback for old installations: show all submitted as "new".
+        $adminNewApplications = (int) ($pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted'")->fetchColumn() ?: 0);
+    }
+} catch (Throwable $ignored) {
+    $adminNewApplications = 0;
+}
 $adminAvatar = getUserAvatarData($admin ?? []);
 ?>
 <!DOCTYPE html>
@@ -37,6 +49,9 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 <span class="badge badge--warning" style="margin-left:8px;"><?= (int) $adminUnreadDisputes ?></span>
 <?php endif; ?>
 </a>
+<a href="/admin/mailings" class="admin-sidebar__link <?= $currentPage === 'mailings' ? 'admin-sidebar__link--active' : '' ?>">
+<i class="fas fa-paper-plane"></i> Рассылки
+</a>
 
 <div class="admin-sidebar__section">Конкурсы</div>
 <a href="/admin/contests.php" class="admin-sidebar__link <?= $currentPage === 'contests' ? 'admin-sidebar__link--active' : '' ?>">
@@ -44,6 +59,9 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 </a>
 <a href="/admin/applications.php" class="admin-sidebar__link <?= $currentPage === 'applications' ? 'admin-sidebar__link--active' : '' ?>">
 <i class="fas fa-file-alt"></i> Заявки
+<?php if ($adminNewApplications > 0): ?>
+<span class="badge badge--warning" style="margin-left:8px;"><?= (int) $adminNewApplications ?></span>
+<?php endif; ?>
 </a>
 <a href="/admin/participants" class="admin-sidebar__link <?= $currentPage === 'participants' ? 'admin-sidebar__link--active' : '' ?>">
 <i class="fas fa-user-friends"></i> Участники
@@ -65,7 +83,7 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 <a href="/" class="admin-sidebar__link">
 <i class="fas fa-external-link-alt"></i> На сайт
 </a>
-<a href="/admin/logout.php" class="admin-sidebar__link admin-sidebar__link--logout">
+<a href="/admin/logout" class="admin-sidebar__link admin-sidebar__link--logout">
 <i class="fas fa-sign-out-alt"></i> Выход
 </a>
 </div>
@@ -76,7 +94,14 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 <main class="admin-content">
 <div class="admin-header">
 <div>
+<div class="flex items-center gap-md">
 <h1 class="admin-header__title"><?= $safeHeaderTitle ?></h1>
+<?php if (!empty($headerBackUrl) && !empty($headerBackLabel)): ?>
+<a href="<?= htmlspecialchars((string) $headerBackUrl, ENT_QUOTES, 'UTF-8') ?>" class="btn btn--secondary">
+<i class="fas fa-arrow-left"></i> <?= htmlspecialchars((string) $headerBackLabel, ENT_QUOTES, 'UTF-8') ?>
+</a>
+<?php endif; ?>
+</div>
  <?php if (isset($breadcrumb)): ?>
 <div class="admin-header__breadcrumb"><?= $safeBreadcrumb ?></div>
  <?php endif; ?>
@@ -94,7 +119,7 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 </div>
  <?php endif; ?>
 <span class="admin-user__name"><?= htmlspecialchars(getUserDisplayName($admin ?? []) ?: 'Админ') ?></span>
-<a href="/admin/logout.php" class="admin-user__logout">
+<a href="/admin/logout" class="admin-user__logout">
 <i class="fas fa-sign-out-alt"></i>
 </a>
 </div>

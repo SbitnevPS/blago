@@ -15,11 +15,14 @@ if (!verifyCSRFToken($csrfToken)) {
     jsonResponse(['success' => false, 'error' => 'Ошибка безопасности'], 403);
 }
 
-$readiness = verifyVkPublicationReadiness(true);
+$readiness = verifyVkPublicationReadiness(false, false, 'diagnostic');
 $status = !empty($readiness['ok']) ? 'ok' : 'error';
-$message = !empty($readiness['ok'])
-    ? 'Публикационный токен VK прошёл проверку. Публикация доступна.'
-    : implode('; ', $readiness['issues'] ?? ['Ошибка проверки VK']);
+$message = '';
+if (!empty($readiness['ok'])) {
+    $message = 'User access token VK прошёл проверку. Публикация изображений доступна.';
+} else {
+    $message = implode('; ', $readiness['issues'] ?? ['Ошибка проверки VK']);
+}
 $checks = $readiness['checks'] ?? [];
 vkPublicationLog('publication_token_test_completed', [
     'ok' => !empty($readiness['ok']),
@@ -33,4 +36,6 @@ jsonResponse([
     'message' => $message,
     'issues' => $readiness['issues'] ?? [],
     'checks' => $checks,
+    'runtime' => $readiness['runtime'] ?? [],
+    'steps' => $readiness['steps'] ?? [],
 ]);

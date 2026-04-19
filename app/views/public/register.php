@@ -28,10 +28,7 @@ $redirectAfterAuth = sanitize_internal_redirect($rawRedirect, '/contests');
 $_SESSION['user_auth_redirect'] = $redirectAfterAuth;
 
 $regions = require dirname(__DIR__, 2) . '/data/regions.php';
-$userTypeOptions = [
-    'parent' => 'Родитель',
-    'curator' => 'Куратор',
-];
+$userTypeOptions = getUserTypeOptions();
 
 $formData = [
     'name' => '',
@@ -68,7 +65,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $error = 'Пароль должен быть не менее 6 символов';
         } elseif ($password !== $passwordConfirm) {
             $error = 'Пароли не совпадают';
-        } elseif ($formData['organization_region'] !== '' && !in_array($formData['organization_region'], $regions, true)) {
+        } elseif ($formData['organization_region'] !== '' && !in_array($formData['organization_region'], array_map('normalizeRegionName', $regions), true)) {
             $error = 'Выберите регион из списка';
         } else {
             $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
@@ -92,9 +89,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     $formData['user_type'],
                 ]);
 
-                $_SESSION['user_id'] = (int) $pdo->lastInsertId();
+                $newUserId = (int) $pdo->lastInsertId();
+                $_SESSION['user_id'] = $newUserId;
+
+                $emailVerification = sendEmailVerificationForUserId($newUserId);
+                $emailVerificationStatus = $emailVerification['ok'] ? 'sent' : 'failed';
+                if (!empty($emailVerification['already_verified'])) {
+                    $emailVerificationStatus = 'already';
+                }
+
                 $success = 'Регистрация успешна!';
-                redirect($redirectAfterAuth);
+
+                $profileRedirect = '/profile?registered=1&email_verification=' . urlencode($emailVerificationStatus);
+                if ($redirectAfterAuth !== '') {
+                    $profileRedirect .= '&redirect=' . urlencode($redirectAfterAuth);
+                }
+
+                redirect($profileRedirect);
             }
         }
     }
@@ -169,7 +180,8 @@ generateCSRFToken();
 <select name="organization_region" class="form-select">
 <option value="">Выберите регион</option>
 <?php foreach ($regions as $region): ?>
-<option value="<?= e($region) ?>" <?= $formData['organization_region'] === $region ? 'selected' : '' ?>><?= e($region) ?></option>
+<?php $regionValue = normalizeRegionName((string) $region); ?>
+<option value="<?= e($regionValue) ?>" <?= $formData['organization_region'] === $regionValue ? 'selected' : '' ?>><?= e(getRegionSelectLabel((string) $region)) ?></option>
 <?php endforeach; ?>
 </select>
 </div>
@@ -177,6 +189,7 @@ generateCSRFToken();
 <div class="form-group">
 <label class="form-label">Email<span class="required">*</span></label>
 <input type="email" name="email" class="form-input" required placeholder="example@mail.ru" value="<?= htmlspecialchars($formData['email']) ?>">
+<div class="form-hint" style="margin-top:8px;">После регистрации мы отправим письмо со ссылкой для подтверждения электронной почты.</div>
 </div>
 
 <div class="form-group">

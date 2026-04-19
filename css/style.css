@@ -1,5 +1,5 @@
 /* ========================================
- ДетскиеКонкурсы.рф - Основные стили
+ КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО - Основные стили
  Минимализм, светлые тона
  ======================================== */
 
@@ -1033,6 +1033,83 @@ h4 {
 	margin-top: var(--space-xl);
 	padding-top: var(--space-xl);
 	border-top: 1px solid var(--color-border);
+}
+
+.contest-description {
+	display: grid;
+	gap: 16px;
+	line-height: 1.7;
+	color: var(--color-text-primary);
+}
+
+.contest-description h2,
+.contest-description h3,
+.contest-description h4 {
+	margin: 24px 0 12px;
+	line-height: 1.25;
+}
+
+.contest-description p,
+.contest-description ul,
+.contest-description ol,
+.contest-description blockquote,
+.contest-description table,
+.contest-description figure {
+	margin: 0;
+}
+
+.contest-description ul,
+.contest-description ol {
+	padding-left: 24px;
+	display: grid;
+	gap: 8px;
+}
+
+.contest-description blockquote {
+	padding: 14px 18px;
+	border-left: 4px solid var(--color-primary);
+	background: #F8FAFC;
+	border-radius: 0 12px 12px 0;
+	color: var(--color-text-secondary);
+}
+
+.contest-description a {
+	color: var(--color-primary);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.contest-description figure {
+	display: grid;
+	gap: 8px;
+}
+
+.contest-description img {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	border-radius: 14px;
+}
+
+.contest-description table {
+	width: 100%;
+	border-collapse: collapse;
+	overflow: hidden;
+	border-radius: 14px;
+	border: 1px solid var(--color-border);
+}
+
+.contest-description th,
+.contest-description td {
+	padding: 12px 14px;
+	border: 1px solid var(--color-border);
+	text-align: left;
+	vertical-align: top;
+}
+
+.contest-description th {
+	background: #F8FAFC;
+	font-weight: 700;
 }
 
 /* Application List */

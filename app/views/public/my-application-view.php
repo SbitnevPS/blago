@@ -163,38 +163,56 @@ foreach ($participants as $participantRow) {
     $participantByWorkId[(int)($participantRow['id'] ?? 0)] = $participantRow;
 }
 
-$workSummary = buildApplicationWorkSummary($participants);
-$uiStatusMeta = getApplicationUiStatusMeta($workSummary);
-$displayPermissions = getApplicationDisplayPermissions($application, $participants);
-$canShowBulkDiplomaActions = (bool) ($displayPermissions['can_show_bulk_diplomas'] ?? false);
+	$workSummary = buildApplicationWorkSummary($participants);
+	$uiStatusMeta = getApplicationUiStatusMeta($workSummary);
+	$displayPermissions = getApplicationDisplayPermissions($application, $participants);
 
-$ensureIndividualDiplomaActionsAllowed = static function (int $workId) use ($participantByWorkId, $applicationId) {
-    $workRow = $participantByWorkId[$workId] ?? null;
-    if ($workRow && canShowIndividualDiplomaActions($workRow)) {
-        return;
-    }
-    $_SESSION['error_message'] = 'Для выбранной работы диплом пока недоступен.';
-    redirect('/application/' . $applicationId);
-};
+	$workDiplomasByWorkId = [];
+	try {
+	    $diplomaStmt = $pdo->prepare('SELECT * FROM participant_diplomas WHERE application_id = ?');
+	    $diplomaStmt->execute([$applicationId]);
+	    $diplomaRows = $diplomaStmt->fetchAll();
+	    foreach ($diplomaRows as $row) {
+	        $workId = (int) ($row['work_id'] ?? 0);
+	        if ($workId <= 0 || !isset($participantByWorkId[$workId])) {
+	            continue;
+	        }
+	        $filePath = trim((string) ($row['file_path'] ?? ''));
+	        if ($filePath === '') {
+	            continue;
+	        }
+	        $absolutePath = ROOT_PATH . '/' . ltrim($filePath, '/');
+	        if (!is_file($absolutePath)) {
+	            continue;
+	        }
+	        $workDiplomasByWorkId[$workId] = (array) $row;
+	    }
+	} catch (Throwable $ignored) {
+	    $workDiplomasByWorkId = [];
+	}
+	$diplomasCount = count($workDiplomasByWorkId);
 
-$ensureBulkDiplomaActionsAllowed = static function () use ($canShowBulkDiplomaActions, $applicationId) {
-    if ($canShowBulkDiplomaActions) {
-        return;
-    }
-    $_SESSION['error_message'] = 'Массовые действия с дипломами доступны только после принятия заявки.';
-    redirect('/application/' . $applicationId);
-};
+	$ensureIndividualDiplomaActionsAllowed = static function (int $workId) use ($workDiplomasByWorkId, $applicationId) {
+	    if (isset($workDiplomasByWorkId[$workId])) {
+	        return;
+	    }
+	    $_SESSION['error_message'] = 'Для выбранной работы диплом пока недоступен.';
+	    redirect('/application/' . $applicationId);
+	};
 
 if (($_GET['action'] ?? '') === 'diploma_preview_one') {
     $workId = (int) ($_GET['work_id'] ?? 0);
     if (!isset($participantByWorkId[$workId])) {
         $_SESSION['error_message'] = 'Работа не найдена.';
         redirect('/application/' . $applicationId);
-    }
-    $ensureIndividualDiplomaActionsAllowed($workId);
-    try {
-        $diploma = generateWorkDiploma($workId, false);
-        redirect(getPublicDiplomaUrl((string) ($diploma['public_token'] ?? '')));
+	    }
+	    $ensureIndividualDiplomaActionsAllowed($workId);
+	    try {
+	        $diploma = $workDiplomasByWorkId[$workId] ?? null;
+	        if (!$diploma) {
+	            throw new RuntimeException('Диплом ещё не сформирован администратором.');
+	        }
+	        redirect(getPublicDiplomaUrl((string) ($diploma['public_token'] ?? '')));
     } catch (Throwable $e) {
         $_SESSION['error_message'] = $e->getMessage();
         redirect('/application/' . $applicationId);
@@ -207,79 +225,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && str_star
         redirect('/application/' . $applicationId);
     }
 
-    try {
-        if ($_POST['action'] === 'diploma_download_one') {
-            $workId = (int)($_POST['work_id'] ?? 0);
-            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
-            $ensureIndividualDiplomaActionsAllowed($workId);
-            $diploma = generateWorkDiploma($workId, false);
-            header('Content-Type: application/pdf');
-            header('Content-Disposition: attachment; filename="diploma_work_' . $workId . '.pdf"');
-            readfile(ROOT_PATH . '/' . $diploma['file_path']);
-            exit;
-        }
-        if ($_POST['action'] === 'diploma_link_one') {
-            $workId = (int)($_POST['work_id'] ?? 0);
-            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
-            $ensureIndividualDiplomaActionsAllowed($workId);
-            $diploma = generateWorkDiploma($workId, false);
-            $_SESSION['success_message'] = 'Ссылка скопирована: ' . getPublicDiplomaUrl((string)($diploma['public_token'] ?? ''));
-            redirect('/application/' . $applicationId);
-        }
-        if ($_POST['action'] === 'diploma_email_one') {
-            $workId = (int)($_POST['work_id'] ?? 0);
-            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
-            $ensureIndividualDiplomaActionsAllowed($workId);
-            $diploma = generateWorkDiploma($workId, false);
-            $ctx = getWorkDiplomaContext($workId);
-            if (!$ctx || !sendDiplomaByEmail($ctx, $diploma)) {
-                throw new RuntimeException('Не удалось отправить диплом на почту.');
-            }
+	    try {
+	        if ($_POST['action'] === 'diploma_download_one') {
+	            $workId = (int)($_POST['work_id'] ?? 0);
+	            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
+	            $ensureIndividualDiplomaActionsAllowed($workId);
+	            $diploma = $workDiplomasByWorkId[$workId] ?? null;
+	            if (!$diploma) { throw new RuntimeException('Диплом ещё не сформирован администратором'); }
+	            $absolutePath = ROOT_PATH . '/' . ltrim((string) ($diploma['file_path'] ?? ''), '/');
+	            if (!is_file($absolutePath)) { throw new RuntimeException('Файл диплома не найден'); }
+	            header('Content-Type: application/pdf');
+	            header('Content-Disposition: attachment; filename="diploma_work_' . $workId . '.pdf"');
+	            readfile($absolutePath);
+	            exit;
+	        }
+	        if ($_POST['action'] === 'diploma_link_one') {
+	            $workId = (int)($_POST['work_id'] ?? 0);
+	            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
+	            $ensureIndividualDiplomaActionsAllowed($workId);
+	            $diploma = $workDiplomasByWorkId[$workId] ?? null;
+	            if (!$diploma) { throw new RuntimeException('Диплом ещё не сформирован администратором'); }
+	            $_SESSION['success_message'] = 'Ссылка скопирована: ' . getPublicDiplomaUrl((string)($diploma['public_token'] ?? ''));
+	            redirect('/application/' . $applicationId);
+	        }
+	        if ($_POST['action'] === 'diploma_email_one') {
+	            $workId = (int)($_POST['work_id'] ?? 0);
+	            if (!isset($participantByWorkId[$workId])) { throw new RuntimeException('Работа не найдена'); }
+	            $ensureIndividualDiplomaActionsAllowed($workId);
+	            $diploma = $workDiplomasByWorkId[$workId] ?? null;
+	            if (!$diploma) { throw new RuntimeException('Диплом ещё не сформирован администратором'); }
+	            $ctx = getWorkDiplomaContext($workId);
+	            if (!$ctx || !sendDiplomaByEmail($ctx, $diploma)) {
+	                throw new RuntimeException('Не удалось отправить диплом на почту.');
+	            }
             $_SESSION['success_message'] = 'Диплом отправлен на почту.';
             redirect('/application/' . $applicationId);
         }
-        if ($_POST['action'] === 'diploma_download_all') {
-            $ensureBulkDiplomaActionsAllowed();
-            foreach ($participants as $participantRow) {
-                if (mapWorkStatusToDiplomaType((string)($participantRow['status'] ?? 'pending')) === null) {
-                    continue;
-                }
-                generateWorkDiploma((int)$participantRow['id'], false);
-            }
-            $zipRelative = buildApplicationDiplomaZip($applicationId);
-            $zipAbsolute = ROOT_PATH . '/' . $zipRelative;
+	        if ($_POST['action'] === 'diploma_download_all') {
+	            $attachedWorkIds = [];
+	            foreach ($participants as $participantRow) {
+	                $workId = (int)$participantRow['id'];
+	                if (isset($workDiplomasByWorkId[$workId])) {
+	                    $attachedWorkIds[] = $workId;
+	                }
+	            }
+	            if (!$attachedWorkIds) {
+	                throw new RuntimeException('Нет сформированных дипломов для скачивания.');
+	            }
+	            $zipRelative = buildApplicationDiplomaZip($applicationId, $attachedWorkIds);
+	            $zipAbsolute = ROOT_PATH . '/' . $zipRelative;
             header('Content-Type: application/zip');
             header('Content-Disposition: attachment; filename="' . basename($zipAbsolute) . '"');
             readfile($zipAbsolute);
             exit;
         }
-        if ($_POST['action'] === 'diploma_links_all') {
-            $ensureBulkDiplomaActionsAllowed();
-            foreach ($participants as $participantRow) {
-                if (mapWorkStatusToDiplomaType((string)($participantRow['status'] ?? 'pending')) === null) {
-                    continue;
-                }
-                generateWorkDiploma((int)$participantRow['id'], false);
-            }
-            $links = collectApplicationDiplomaLinks($applicationId);
-            $_SESSION['success_message'] = 'Ссылки скопированы: ' . implode(' | ', array_map(static fn($it) => $it['participant'] . ': ' . $it['url'], $links));
+	        if ($_POST['action'] === 'diploma_links_all') {
+	            $attachedWorkIds = [];
+	            foreach ($participants as $participantRow) {
+	                $workId = (int)$participantRow['id'];
+	                if (isset($workDiplomasByWorkId[$workId])) {
+	                    $attachedWorkIds[] = $workId;
+	                }
+	            }
+	            if (!$attachedWorkIds) {
+	                throw new RuntimeException('Нет сформированных дипломов для получения ссылок.');
+	            }
+	            $links = collectApplicationDiplomaLinks($applicationId, $attachedWorkIds);
+	            $_SESSION['success_message'] = 'Ссылки скопированы: ' . implode(' | ', array_map(static fn($it) => $it['participant'] . ': ' . $it['url'], $links));
             redirect('/application/' . $applicationId);
         }
-        if ($_POST['action'] === 'diploma_email_all') {
-            $ensureBulkDiplomaActionsAllowed();
-            $sent = 0;
-            foreach ($participants as $participantRow) {
-                $status = (string)($participantRow['status'] ?? 'pending');
-                if (mapWorkStatusToDiplomaType($status) === null) {
-                    continue;
-                }
-                $workId = (int)($participantRow['id'] ?? 0);
-                $diploma = generateWorkDiploma($workId, false);
-                $ctx = getWorkDiplomaContext($workId);
-                if ($ctx && sendDiplomaByEmail($ctx, $diploma)) {
-                    $sent++;
-                }
-            }
+	        if ($_POST['action'] === 'diploma_email_all') {
+	            $sent = 0;
+	            foreach ($participants as $participantRow) {
+	                $workId = (int)($participantRow['id'] ?? 0);
+	                $diploma = $workDiplomasByWorkId[$workId] ?? null;
+	                if (!$diploma) { continue; }
+	                $ctx = getWorkDiplomaContext($workId);
+	                if ($ctx && sendDiplomaByEmail($ctx, $diploma)) {
+	                    $sent++;
+	                }
+	            }
             if ($sent > 0) {
                 $_SESSION['success_message'] = 'Диплом отправлен на почту.';
             } else {
@@ -334,7 +359,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
 
     $fio = trim((string)($_POST['fio'] ?? ''));
     $age = max(0, (int)($_POST['age'] ?? 0));
-    $workTitle = trim((string)($_POST['work_title'] ?? ''));
     if ($fio === '') {
         $message = 'Укажите ФИО участника.';
         if ($isAjaxRequest) {
@@ -344,18 +368,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
         redirect('/application/' . $applicationId);
     }
 
-    if ($workTitle === '') {
-        $message = 'Укажите название рисунка.';
-        if ($isAjaxRequest) {
-            jsonResponse(['success' => false, 'error' => $message], 422);
-        }
-        $_SESSION['error_message'] = $message;
-        redirect('/application/' . $applicationId);
-    }
-
     $drawingFile = trim((string)($workRow['drawing_file'] ?? ''));
     $oldDrawingPath = $drawingFile !== '' ? getParticipantDrawingFsPath($user['email'] ?? '', $drawingFile) : null;
+    $oldThumbPath = $drawingFile !== '' ? getParticipantDrawingThumbFsPath($user['email'] ?? '', $drawingFile) : null;
     $newDrawingPath = null;
+    $newThumbPath = null;
 
     if (isset($_FILES['drawing_file']) && (int)($_FILES['drawing_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
         if ((int)$_FILES['drawing_file']['error'] !== UPLOAD_ERR_OK) {
@@ -390,8 +407,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
 
         $tmpUpload = (string)($_FILES['drawing_file']['tmp_name'] ?? '');
         $newFilename = sanitizeFilename($fio) . '_' . $age . '_' . bin2hex(random_bytes(4)) . '.jpg';
-        $saved = processAndSaveImage($tmpUpload, $userUploadPath, $newFilename);
-        if (!$saved) {
+        $saved = saveParticipantDrawingWithThumbnail($tmpUpload, $userUploadPath, $newFilename);
+        if (empty($saved['success'])) {
             $message = 'Не удалось обработать файл рисунка.';
             if ($isAjaxRequest) {
                 jsonResponse(['success' => false, 'error' => $message], 422);
@@ -400,8 +417,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
             redirect('/application/' . $applicationId);
         }
 
-        $newDrawingPath = (string)$saved;
-        $drawingFile = basename($newDrawingPath);
+        $newDrawingPath = (string)($saved['original_path'] ?? '');
+        $newThumbPath = (string)($saved['thumb_path'] ?? '');
+        $drawingFile = (string)($saved['filename'] ?? '');
     }
 
     $pdo->beginTransaction();
@@ -412,8 +430,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
             SET fio = ?, age = ?, drawing_file = ?
             WHERE id = ? AND application_id = ?
         ")->execute([$fio, $age, $drawingFile, $participantId, $applicationId]);
-        $pdo->prepare("UPDATE works SET title = ?, updated_at = NOW() WHERE id = ? AND application_id = ?")
-            ->execute([$workTitle, $workId, $applicationId]);
+        $pdo->prepare("UPDATE works SET updated_at = NOW() WHERE id = ? AND application_id = ?")
+            ->execute([$workId, $applicationId]);
         $pdo->prepare("
             UPDATE application_corrections
             SET is_resolved = 1, resolved_at = NOW()
@@ -444,6 +462,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
         if ($newDrawingPath && file_exists($newDrawingPath)) {
             @unlink($newDrawingPath);
         }
+        if ($newThumbPath && file_exists($newThumbPath)) {
+            @unlink($newThumbPath);
+        }
         $message = 'Не удалось сохранить изменения участника.';
         if ($isAjaxRequest) {
             jsonResponse(['success' => false, 'error' => $message], 500);
@@ -455,10 +476,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
     if ($newDrawingPath && $oldDrawingPath && file_exists($oldDrawingPath) && realpath($oldDrawingPath) !== realpath($newDrawingPath)) {
         @unlink($oldDrawingPath);
     }
+    if ($newThumbPath && $oldThumbPath && file_exists($oldThumbPath) && realpath($oldThumbPath) !== realpath($newThumbPath)) {
+        @unlink($oldThumbPath);
+    }
 
     $updatedDrawingUrl = $drawingFile !== '' ? getParticipantDrawingWebPath($user['email'] ?? '', $drawingFile) : null;
+    $updatedDrawingPreviewUrl = $drawingFile !== '' ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $drawingFile) : null;
     if ($updatedDrawingUrl) {
         $updatedDrawingUrl .= '?v=' . time();
+    }
+    if ($updatedDrawingPreviewUrl) {
+        $updatedDrawingPreviewUrl .= '?v=' . time();
     }
 
     $successMessage = $resubmittedForReview
@@ -473,8 +501,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
                 'work_id' => $workId,
                 'fio' => $fio,
                 'age' => $age > 0 ? $age : '—',
-                'work_title' => $workTitle,
                 'drawing_url' => $updatedDrawingUrl,
+                'drawing_preview_url' => $updatedDrawingPreviewUrl,
             ],
             'resubmitted_for_review' => $resubmittedForReview,
         ]);
@@ -503,15 +531,13 @@ foreach ($unresolvedCorrections as $correction) {
     }
 }
 
-$allPending = $workSummary['total'] > 0 && $workSummary['pending'] === $workSummary['total'];
-$hasDiplomas = $workSummary['diplomas'] > 0;
-$participantsWithDiplomas = array_values(array_filter($participants, static function (array $participantRow): bool {
-    $workStatus = (string)($participantRow['status'] ?? 'pending');
-    return mapWorkStatusToDiplomaType($workStatus) !== null;
-}));
-$hasParticipantsWithDiplomas = count($participantsWithDiplomas) > 0;
-$hasVkPublished = $workSummary['vk_published'] > 0;
-$vkPublicationLinks = [];
+	$allPending = $workSummary['total'] > 0 && $workSummary['pending'] === $workSummary['total'];
+	$participantsTotalCount = count($participants);
+	$participantsDiplomaCount = $diplomasCount;
+	$hasDiplomas = $participantsDiplomaCount > 0;
+	$hasVkPublished = $workSummary['vk_published'] > 0;
+	$diplomaLabels = diplomaTemplateTypes();
+	$vkPublicationLinks = [];
 foreach ($participants as $participantRow) {
     if (!empty($participantRow['vk_post_url'])) {
         $vkPublicationLinks[] = (string)$participantRow['vk_post_url'];
@@ -536,9 +562,26 @@ $statusDisplay = [
     'label' => (string) ($statusMeta['label'] ?? 'На рассмотрении'),
     'class' => (string) ($statusColorMap[$statusCode]['class'] ?? 'status-pill--pending'),
 ];
-$applicationProgressStep = $statusCode === 'approved' ? 3 : 2;
+$showWorkSummaryBadge = $statusCode !== 'draft' && (int) ($workSummary['total'] ?? 0) > 0;
+$applicationProgressStep = match ($statusCode) {
+    'draft' => 1,
+    'approved' => 3,
+    default => 2,
+};
+$applicationProgressLabels = $statusCode === 'draft'
+    ? ['Черновик', 'Отправка', 'Проверка']
+    : ['Подана', 'Проверка', 'Принята'];
+$applicationDateCaption = $statusCode === 'draft' ? 'Создана' : 'Подана';
 $userFullName = trim((string) (($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? '')));
-$userRegion = (string) ($user['region'] ?? $application['region'] ?? '—');
+$firstParticipantRegion = '';
+foreach ($participants as $participantRow) {
+    $candidateRegion = trim((string) ($participantRow['region'] ?? ''));
+    if ($candidateRegion !== '') {
+        $firstParticipantRegion = $candidateRegion;
+        break;
+    }
+}
+$userRegion = (string) ($user['organization_region'] ?? $application['organization_region'] ?? $firstParticipantRegion ?? '—');
 $userOrganization = (string) ($user['organization_name'] ?? $application['organization_name'] ?? '');
 $applicationDateLabel = date('d.m.Y H:i', strtotime((string) $application['created_at']));
 
@@ -618,7 +661,7 @@ $currentPage = 'applications';
 .participant-modern-card__name {margin:0; font-size:20px; line-height:1.2;}
 .participant-modern-card__subtitle {color:#475569; font-size:14px;}
 .participant-modern-card__facts {display:grid; grid-template-columns:1fr; gap:6px; color:#334155; font-size:14px;}
-.participant-modern-card__actions {display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;}
+.participant-modern-card__actions {display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; align-items: center;}
 .app-highlight {background:#FEF9C3; border:1px solid #FDE68A; color:#92400E; border-radius:12px; padding:12px;}
 .app-empty {text-align:center; padding:30px 16px; color:#64748B;}
 .app-skeleton {display:grid; gap:12px;}
@@ -673,19 +716,21 @@ $currentPage = 'applications';
         <div>
             <h1 class="app-card__title" style="margin-bottom:8px;"><?= htmlspecialchars($application['contest_title']) ?></h1>
             <div class="app-header__meta">
-                <span><i class="fas fa-calendar"></i> Подана: <?= $applicationDateLabel ?></span>
+                <span><i class="fas fa-calendar"></i> <?= e($applicationDateCaption) ?>: <?= $applicationDateLabel ?></span>
                 <span>ID заявки: #<?= (int) $applicationId ?></span>
             </div>
         </div>
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <span class="status-pill <?= e($statusDisplay['class']) ?>"><?= e($statusDisplay['label']) ?></span>
-            <span class="badge <?= e($uiStatusMeta['badge_class']) ?>"><?= e($uiStatusMeta['label']) ?></span>
+            <?php if ($showWorkSummaryBadge): ?>
+                <span class="badge <?= e($uiStatusMeta['badge_class']) ?>"><?= e($uiStatusMeta['label']) ?></span>
+            <?php endif; ?>
         </div>
     </div>
     <div class="application-progress" aria-label="Прогресс заявки">
-        <div class="application-progress__step <?= $applicationProgressStep >= 1 ? 'is-active' : '' ?>"><span class="application-progress__dot">1</span>Подана</div>
-        <div class="application-progress__step <?= $applicationProgressStep >= 2 ? 'is-active' : '' ?>"><span class="application-progress__dot">2</span>Проверка</div>
-        <div class="application-progress__step <?= $applicationProgressStep >= 3 ? 'is-active' : '' ?>"><span class="application-progress__dot">3</span>Принята</div>
+        <div class="application-progress__step <?= $applicationProgressStep >= 1 ? 'is-active' : '' ?>"><span class="application-progress__dot">1</span><?= e($applicationProgressLabels[0]) ?></div>
+        <div class="application-progress__step <?= $applicationProgressStep >= 2 ? 'is-active' : '' ?>"><span class="application-progress__dot">2</span><?= e($applicationProgressLabels[1]) ?></div>
+        <div class="application-progress__step <?= $applicationProgressStep >= 3 ? 'is-active' : '' ?>"><span class="application-progress__dot">3</span><?= e($applicationProgressLabels[2]) ?></div>
     </div>
 </section>
 
@@ -702,13 +747,18 @@ $currentPage = 'applications';
                 <div class="participants-grid">
                     <?php $galleryDisplayIndex = 0; ?>
                     <?php foreach ($participants as $index => $participant): ?>
-                        <?php
-                            $hasParticipantCorrection = !empty($participantCorrections[(int) ($participant['participant_id'] ?? 0)]);
-                            $workStatus = (string)($participant['status'] ?? 'pending');
-                            $isDiplomaAvailable = mapWorkStatusToDiplomaType($workStatus) !== null;
-                            $workTitle = trim((string) (($participant['work_title'] ?? $participant['title'] ?? '')));
-                            $participantVkUrl = trim((string)($participant['vk_post_url'] ?? ''));
-                            $drawingSrc = !empty($participant['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
+	                        <?php
+	                            $hasParticipantCorrection = !empty($participantCorrections[(int) ($participant['participant_id'] ?? 0)]);
+	                            $workStatus = (string)($participant['status'] ?? 'pending');
+	                            $workId = (int) ($participant['id'] ?? 0);
+	                            $workDiploma = $workId > 0 ? ($workDiplomasByWorkId[$workId] ?? null) : null;
+	                            $isDiplomaAvailable = $workDiploma !== null;
+	                            $diplomaLabel = $isDiplomaAvailable
+	                                ? (string) ($diplomaLabels[(string) ($workDiploma['diploma_type'] ?? '')] ?? ($workDiploma['diploma_type'] ?? ''))
+	                                : '';
+	                            $participantVkUrl = trim((string)($participant['vk_post_url'] ?? ''));
+	                            $drawingSrc = !empty($participant['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
+	                            $drawingPreviewSrc = !empty($participant['drawing_file']) ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $participant['drawing_file']) : '';
                             $participantGalleryIndex = null;
                             if ($drawingSrc !== '') {
                                 $participantGalleryIndex = $galleryDisplayIndex++;
@@ -717,7 +767,7 @@ $currentPage = 'applications';
                         <article class="app-card participant-modern-card<?= $hasParticipantCorrection ? ' participant-card--needs-fix' : '' ?>" data-work-id="<?= (int)($participant['id'] ?? 0) ?>">
                             <div class="participant-modern-card__image-wrap">
                                 <?php if ($drawingSrc !== ''): ?>
-                                    <img src="<?= e($drawingSrc) ?>" alt="Рисунок участника <?= e((string)($participant['fio'] ?? '')) ?>" class="participant-modern-card__image js-gallery-image" data-gallery-index="<?= (int) $participantGalleryIndex ?>">
+                                    <img src="<?= e($drawingPreviewSrc) ?>" alt="Рисунок участника <?= e((string)($participant['fio'] ?? '')) ?>" class="participant-modern-card__image js-gallery-image" data-gallery-index="<?= (int) $participantGalleryIndex ?>">
                                 <?php else: ?>
                                     <div class="participant-modern-card__image" style="display:flex;align-items:center;justify-content:center;color:#94A3B8;background:#F1F5F9;"><i class="fas fa-image"></i></div>
                                 <?php endif; ?>
@@ -726,18 +776,22 @@ $currentPage = 'applications';
                                 <div class="participant-modern-card__header">
                                     <div>
                                         <h3 class="participant-modern-card__name"><?= e((string)($participant['fio'] ?? 'Без имени')) ?></h3>
-                                        <div class="participant-modern-card__subtitle js-participant-work-subtitle"><?= $workTitle !== '' ? '«' . e($workTitle) . '»' : 'Работа #' . ($index + 1) ?></div>
+                                        <div class="participant-modern-card__subtitle js-participant-work-subtitle">Работа #<?= (int) ($index + 1) ?></div>
                                     </div>
-                                    <span class="badge <?= getWorkStatusBadgeClass($workStatus) ?>"><?= e(getWorkStatusLabel($workStatus)) ?></span>
+                                    <?php if ($effectiveApplicationStatus !== 'draft'): ?>
+                                        <span class="badge <?= getWorkStatusBadgeClass($workStatus) ?>"><?= e(getWorkStatusLabel($workStatus)) ?></span>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="participant-modern-card__subtitle"><?= e(getWorkStatusHint($workStatus)) ?></div>
-                                <div class="participant-modern-card__facts">
-                                    <div><strong>Возраст:</strong> <span class="js-participant-age"><?= e((string)($participant['age'] ?? '—')) ?></span></div>
-                                    <div><strong>Регион:</strong> <?= e((string)($participant['region'] ?? '—')) ?></div>
-                                    <div><strong>Организация:</strong> <?= e((string)($participant['organization_name'] ?? '—')) ?></div>
-                                    <div><strong>Название рисунка:</strong> <span class="js-participant-work-title"><?= e($workTitle !== '' ? $workTitle : '—') ?></span></div>
-                                    <div><strong>ID участника:</strong> #<?= (int) ($participant['participant_id'] ?? 0) ?></div>
-                                </div>
+	                                <div class="participant-modern-card__facts">
+	                                    <div><strong>Возраст:</strong> <span class="js-participant-age"><?= e((string)($participant['age'] ?? '—')) ?></span></div>
+	                                    <div><strong>Регион:</strong> <?= e((string)($participant['region'] ?? '—')) ?></div>
+	                                    <div><strong>Организация:</strong> <?= e((string)($participant['organization_name'] ?? '—')) ?></div>
+	                                    <div><strong>Номер участника:</strong> #<?= e(getParticipantDisplayNumber($participant)) ?></div>
+	                                    <?php if ($isDiplomaAvailable && $diplomaLabel !== ''): ?>
+	                                        <div><strong>Диплом:</strong> <?= e($diplomaLabel) ?></div>
+	                                    <?php endif; ?>
+	                                </div>
                                 <?php if ($hasParticipantCorrection): ?>
                                     <div class="app-highlight">
                                         <strong><i class="fas fa-tools"></i> Требует исправлений</strong>
@@ -751,13 +805,20 @@ $currentPage = 'applications';
                                         <button type="button" class="btn btn--ghost btn--sm js-gallery-open" data-gallery-index="<?= (int) $participantGalleryIndex ?>"><i class="fas fa-expand"></i> Увеличить</button>
                                     <?php endif; ?>
                                     <?php if ($hasParticipantCorrection): ?>
-                                        <button type="button" class="btn btn--primary btn--sm js-open-participant-edit" data-work-id="<?= (int)($participant['id'] ?? 0) ?>" data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>" data-age="<?= (int)($participant['age'] ?? 0) ?>" data-work-title="<?= htmlspecialchars($workTitle, ENT_QUOTES) ?>" data-drawing-url="<?= htmlspecialchars($drawingSrc, ENT_QUOTES) ?>"><i class="fas fa-pen"></i> Исправить</button>
+                                        <button type="button" class="btn btn--primary btn--sm js-open-participant-edit" data-work-id="<?= (int)($participant['id'] ?? 0) ?>" data-fio="<?= htmlspecialchars((string)($participant['fio'] ?? ''), ENT_QUOTES) ?>" data-age="<?= (int)($participant['age'] ?? 0) ?>" data-drawing-url="<?= htmlspecialchars($drawingSrc, ENT_QUOTES) ?>" data-drawing-preview-url="<?= htmlspecialchars($drawingPreviewSrc, ENT_QUOTES) ?>"><i class="fas fa-pen"></i> Исправить</button>
                                     <?php endif; ?>
-                                    <?php if ($isDiplomaAvailable): ?>
-                                        <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_one"><input type="hidden" name="work_id" value="<?= (int)$participant['id'] ?>"><button class="btn btn--primary btn--sm" type="submit"><i class="fas fa-download"></i> Скачать диплом</button></form>
-                                    <?php endif; ?>
+	                                    <?php if ($isDiplomaAvailable): ?>
+	                                        <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_one"><input type="hidden" name="work_id" value="<?= (int) ($participant['id'] ?? 0) ?>"><button class="btn btn--primary btn--sm" type="submit"><i class="fas fa-download"></i> Скачать диплом</button></form>
+	                                    <?php endif; ?>
                                     <?php if ($participantVkUrl !== ''): ?>
-                                        <a class="btn btn--secondary btn--sm" href="<?= e($participantVkUrl) ?>" target="_blank" rel="noopener"><i class="fab fa-vk"></i> Публикация</a>
+                                        <div class="participant-vk-card">
+                                            <div class="participant-vk-card__label"><i class="fab fa-vk"></i> Публикация</div>
+                                            <div class="participant-vk-card__actions">
+                                                <a class="btn btn--secondary btn--sm" href="<?= e($participantVkUrl) ?>" target="_blank" rel="noopener">Перейти</a>
+                                                <button type="button" class="btn btn--ghost btn--sm js-copy-vk-link" data-vk-url="<?= e($participantVkUrl) ?>">Скопировать ссылку</button>
+                                            </div>
+                                            <div class="participant-vk-card__copied" aria-live="polite" hidden>Ссылка скопирована</div>
+                                        </div>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -776,6 +837,7 @@ $currentPage = 'applications';
                 <div class="app-profile__meta">
                     <div class="app-profile__name"><?= e($userFullName !== '' ? $userFullName : 'Пользователь') ?></div>
                     <div><?= !empty($user['email']) ? e((string) $user['email']) : 'Email не указан' ?></div>
+                    <div><?= e(getUserTypeLabel((string) ($user['user_type'] ?? 'parent'))) ?></div>
                     <div><?= e($userRegion !== '' ? $userRegion : 'Регион не указан') ?></div>
                     <?php if ($userOrganization !== ''): ?><div><?= e($userOrganization) ?></div><?php endif; ?>
                 </div>
@@ -801,18 +863,30 @@ $currentPage = 'applications';
         <section class="app-card">
             <h2 class="app-card__title" style="font-size:18px;">Действия</h2>
             <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                <?php if ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
+                <?php if ($effectiveApplicationStatus === 'draft'): ?>
+                    <?php if ($canEdit): ?>
+                        <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary"><i class="fas fa-pen"></i> Продолжить заполнение</a>
+                    <?php endif; ?>
+                    <div class="app-highlight" style="width:100%;">
+                        <strong>Заявка сохранена как черновик.</strong>
+                        <div>Она ещё не отправлена на проверку. Проверьте данные и отправьте её после завершения заполнения.</div>
+                    </div>
+                <?php elseif ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
                     <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary"><i class="fas fa-pen"></i> Исправить заявку</a>
-                <?php elseif ($canShowBulkDiplomaActions && $hasDiplomas): ?>
-                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать все дипломы</button></form>
-                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_email_all"><button class="btn btn--secondary" type="submit"><i class="fas fa-envelope"></i> Отправить дипломы себе на почту</button></form>
+	                <?php elseif ($hasDiplomas): ?>
+	                    <div class="app-highlight" style="width:100%;">
+	                        <strong>Дипломы</strong>
+	                        <div>Участников: <?= (int) $participantsTotalCount ?>, дипломы сформированы: <?= (int) $participantsDiplomaCount ?></div>
+	                    </div>
+	                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать все дипломы</button></form>
+	                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_email_all"><button class="btn btn--secondary" type="submit"><i class="fas fa-envelope"></i> Отправить дипломы себе на почту</button></form>
                 <?php elseif (getApplicationCanonicalStatus($application) === 'rejected'): ?>
                     <div class="app-highlight" style="width:100%;">
                         <strong>Заявка отклонена.</strong>
                         <div>Причина доступна в комментариях администратора и чате оспаривания.</div>
                     </div>
                 <?php else: ?>
-                    <div style="color:#64748B;">Заявка находится на рассмотрении. Действия станут доступны после проверки.</div>
+                    <div style="color:#64748B;"><?= $effectiveApplicationStatus === 'corrected' ? 'Заявка повторно отправлена на проверку после исправлений.' : 'Заявка находится на рассмотрении. Действия станут доступны после проверки.' ?></div>
                 <?php endif; ?>
                 <a href="/messages" class="btn btn--ghost"><i class="fas fa-envelope"></i> Сообщения</a>
                 <a href="/my-applications" class="btn btn--secondary"><i class="fas fa-arrow-left"></i> К списку</a>
@@ -900,10 +974,10 @@ $currentPage = 'applications';
 $galleryImages = [];
 foreach ($participants as $participant) {
     if (!empty($participant['drawing_file'])) {
-        $galleryWorkTitle = trim((string) ($participant['work_title'] ?? $participant['title'] ?? ''));
         $galleryImages[] = [
             'src' => getParticipantDrawingWebPath($user['email'] ?? '', $participant['drawing_file']),
-            'title' => $galleryWorkTitle !== '' ? $galleryWorkTitle : ($participant['fio'] ?? 'Рисунок'),
+            'preview' => getParticipantDrawingPreviewWebPath($user['email'] ?? '', $participant['drawing_file']),
+            'title' => $participant['fio'] ?? 'Рисунок',
         ];
     }
 }
@@ -923,7 +997,6 @@ foreach ($participants as $participant) {
 <div class="modal__body">
     <div class="form-group"><label class="form-label">ФИО участника</label><input class="form-input" type="text" name="fio" id="participantEditFio" required></div>
     <div class="form-group"><label class="form-label">Возраст</label><input class="form-input" type="number" min="0" name="age" id="participantEditAge" required></div>
-    <div class="form-group"><label class="form-label">Название рисунка</label><input class="form-input" type="text" name="work_title" id="participantEditWorkTitle" required placeholder="Введите название рисунка"></div>
     <div class="participant-edit-drawing-row">
         <div class="participant-edit-drawing-box">
             <label class="form-label">Рисунок</label>
@@ -969,7 +1042,7 @@ function renderGalleryThumbs() {
  container.innerHTML = '';
  galleryItems.forEach((item, i) => {
   const thumb = document.createElement('img');
-  thumb.src = item.src;
+  thumb.src = item.preview || item.src;
   thumb.alt = item.title;
   thumb.style.cssText = `width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;border:${i === galleryCurrent ? '3px solid #6366F1' : '2px solid #E5E7EB'}`;
   thumb.addEventListener('click', () => openGallery(i));
@@ -1005,6 +1078,47 @@ document.querySelectorAll('.js-gallery-open').forEach((button) => {
  button.addEventListener('click', () => {
   const galleryIndex = Number(button.dataset.galleryIndex || 0);
   openGallery(galleryIndex);
+ });
+});
+
+async function copyTextToClipboard(text) {
+ if (navigator.clipboard?.writeText) {
+  await navigator.clipboard.writeText(text);
+  return;
+ }
+
+ const tempInput = document.createElement('textarea');
+ tempInput.value = text;
+ tempInput.setAttribute('readonly', 'readonly');
+ tempInput.style.position = 'absolute';
+ tempInput.style.left = '-9999px';
+ document.body.appendChild(tempInput);
+ tempInput.select();
+ document.execCommand('copy');
+ tempInput.remove();
+}
+
+document.querySelectorAll('.js-copy-vk-link').forEach((button) => {
+ let copiedTimer = null;
+ button.addEventListener('click', async () => {
+  const url = String(button.dataset.vkUrl || '').trim();
+  if (!url) return;
+
+  try {
+   await copyTextToClipboard(url);
+   const card = button.closest('.participant-vk-card');
+   const copiedNote = card?.querySelector('.participant-vk-card__copied');
+   if (!copiedNote) return;
+   copiedNote.hidden = false;
+   if (copiedTimer) {
+    clearTimeout(copiedTimer);
+   }
+   copiedTimer = setTimeout(() => {
+    copiedNote.hidden = true;
+   }, 1800);
+  } catch (error) {
+   // no-op: keep the UI quiet if copying is blocked
+  }
  });
 });
 
@@ -1044,7 +1158,6 @@ function openParticipantEditModal(button) {
  document.getElementById('participantEditWorkId').value = button.dataset.workId || '';
  document.getElementById('participantEditFio').value = button.dataset.fio || '';
  document.getElementById('participantEditAge').value = button.dataset.age || '';
- document.getElementById('participantEditWorkTitle').value = button.dataset.workTitle || '';
  clearParticipantDrawingObjectUrl();
  const drawingUrl = button.dataset.drawingUrl || '';
  if (drawingUrl) {
@@ -1115,17 +1228,10 @@ function updateParticipantCardAfterSave(participant) {
 
  const fio = (participant.fio || '').trim();
  const age = participant.age ?? '—';
- const workTitle = (participant.work_title || '').trim();
- const workTitleLabel = workTitle !== '' ? workTitle : '—';
 
  const nameNode = card.querySelector('.participant-modern-card__name');
  if (nameNode && fio !== '') {
   nameNode.textContent = fio;
- }
-
- const subtitleNode = card.querySelector('.js-participant-work-subtitle');
- if (subtitleNode) {
-  subtitleNode.textContent = workTitle !== '' ? `«${workTitle}»` : 'Без названия';
  }
 
  const ageNode = card.querySelector('.js-participant-age');
@@ -1133,22 +1239,22 @@ function updateParticipantCardAfterSave(participant) {
   ageNode.textContent = String(age);
  }
 
- const workTitleNode = card.querySelector('.js-participant-work-title');
- if (workTitleNode) {
-  workTitleNode.textContent = workTitleLabel;
- }
-
  const editButton = card.querySelector('.js-open-participant-edit');
  if (editButton) {
   editButton.dataset.fio = fio;
   editButton.dataset.age = String(age);
-  editButton.dataset.workTitle = workTitle;
+  if (participant.drawing_url) {
+   editButton.dataset.drawingUrl = participant.drawing_url;
+  }
+  if (participant.drawing_preview_url) {
+   editButton.dataset.drawingPreviewUrl = participant.drawing_preview_url;
+  }
  }
 
  if (participant.drawing_url) {
   const imageNode = card.querySelector('.participant-modern-card__image');
   if (imageNode) {
-   imageNode.src = participant.drawing_url;
+   imageNode.src = participant.drawing_preview_url || participant.drawing_url;
   }
  }
 }

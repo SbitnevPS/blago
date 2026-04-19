@@ -37,14 +37,18 @@ $messageTemplates = [
 
 $settings = getSystemSettings();
 $maskedSmtpPasswordPlaceholder = '••••••••';
-ensureVkDonatesSchema();
-$vkDonates = [];
-try {
-    $vkDonatesStmt = $pdo->query("SELECT id, title, description, vk_donate_id, is_active FROM vk_donates ORDER BY id DESC");
-    $vkDonates = $vkDonatesStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-} catch (Throwable $e) {
-    $vkDonates = [];
-}
+$defaultWelcomeMessageTemplate = "Здравствуйте, {name}!\n\n";
+$defaultDrawingCommentPresets = implode("\n", [
+    'Пожалуйста, загрузите более качественное изображение рисунка без затемнений и бликов.',
+    'Пожалуйста, проверьте соответствие работы теме конкурса и при необходимости замените рисунок.',
+    'Пожалуйста, убедитесь, что на изображении нет посторонних элементов, подписей и рамок.',
+]);
+$resolvedWelcomeMessageTemplate = trim((string) ($settings['message_welcome_template'] ?? '')) !== ''
+    ? (string) $settings['message_welcome_template']
+    : $defaultWelcomeMessageTemplate;
+$resolvedDrawingCommentPresets = trim((string) ($settings['drawing_comment_presets'] ?? '')) !== ''
+    ? (string) $settings['drawing_comment_presets']
+    : $defaultDrawingCommentPresets;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['action'] ?? '') === 'upload_homepage_hero_async') {
@@ -83,58 +87,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $section = 'notifications';
         }
 
-        if ($section === 'vk-donates') {
-            $donateAction = (string) ($_POST['donate_action'] ?? ($_POST['action'] ?? ''));
-            $donateId = max(0, (int) ($_POST['donate_id'] ?? 0));
-            $donateTitle = trim((string) ($_POST['donate_title'] ?? ''));
-            $donateDescription = trim((string) ($_POST['donate_description'] ?? ''));
-            $donateVkId = trim((string) ($_POST['donate_vk_id'] ?? ''));
-
-            try {
-                if ($donateAction === 'sync_vk_donates') {
-                    $syncResult = syncVkDonatesFromVk();
-                    $_SESSION['success_message'] = 'Синхронизация завершена: получено целей — ' . (int) ($syncResult['fetched'] ?? 0) . ', активных — ' . (int) ($syncResult['active_count'] ?? 0);
-                    $_SESSION['settings_active_tab'] = 'vk-donates';
-                    redirect('/admin/settings#vk-donates');
-                } elseif ($donateAction === 'create') {
-                    if ($donateTitle === '' || $donateVkId === '') {
-                        throw new RuntimeException('Для доната нужно указать название и VK Donut ID.');
-                    }
-                    $stmt = $pdo->prepare("INSERT INTO vk_donates (title, description, vk_donate_id, is_active) VALUES (?, ?, ?, 1)");
-                    $stmt->execute([$donateTitle, $donateDescription !== '' ? $donateDescription : null, $donateVkId]);
-                } elseif ($donateAction === 'update') {
-                    if ($donateId <= 0) {
-                        throw new RuntimeException('Не выбран донат для редактирования.');
-                    }
-                    if ($donateTitle === '' || $donateVkId === '') {
-                        throw new RuntimeException('Для доната нужно указать название и VK Donut ID.');
-                    }
-                    $stmt = $pdo->prepare("UPDATE vk_donates SET title = ?, description = ?, vk_donate_id = ? WHERE id = ? LIMIT 1");
-                    $stmt->execute([$donateTitle, $donateDescription !== '' ? $donateDescription : null, $donateVkId, $donateId]);
-                } elseif ($donateAction === 'toggle') {
-                    if ($donateId <= 0) {
-                        throw new RuntimeException('Не выбран донат для изменения статуса.');
-                    }
-                    $stmt = $pdo->prepare("UPDATE vk_donates SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ? LIMIT 1");
-                    $stmt->execute([$donateId]);
-                } elseif ($donateAction === 'delete') {
-                    if ($donateId <= 0) {
-                        throw new RuntimeException('Не выбран донат для удаления.');
-                    }
-                    $stmt = $pdo->prepare("DELETE FROM vk_donates WHERE id = ? LIMIT 1");
-                    $stmt->execute([$donateId]);
-                } else {
-                    throw new RuntimeException('Неизвестное действие для донатов.');
-                }
-
-                $_SESSION['success_message'] = 'Настройки донатов сохранены';
-                $_SESSION['settings_active_tab'] = 'vk-donates';
-                redirect('/admin/settings#vk-donates');
-            } catch (Throwable $e) {
-                $error = $e->getMessage() !== '' ? $e->getMessage() : 'Не удалось сохранить донат.';
-            }
-        }
-
         $payload = [
             'application_approved_subject' => (string) ($settings['application_approved_subject'] ?? ''),
             'application_approved_message' => (string) ($settings['application_approved_message'] ?? ''),
@@ -147,6 +99,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'vk_publication_group_id' => (string) ($settings['vk_publication_group_id'] ?? ''),
             'vk_publication_api_version' => (string) ($settings['vk_publication_api_version'] ?? '5.131'),
             'vk_publication_from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1 ? 1 : 0,
+            'vk_publication_admin_access_token_encrypted' => (string) ($settings['vk_publication_admin_access_token_encrypted'] ?? ''),
+            'vk_publication_admin_refresh_token_encrypted' => (string) ($settings['vk_publication_admin_refresh_token_encrypted'] ?? ''),
+            'vk_publication_admin_token_expires_at' => (int) ($settings['vk_publication_admin_token_expires_at'] ?? 0),
+            'vk_publication_admin_device_id' => (string) ($settings['vk_publication_admin_device_id'] ?? ''),
+            'vk_publication_admin_user_id' => (string) ($settings['vk_publication_admin_user_id'] ?? ''),
             'vk_publication_post_template' => (string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()),
             'email_notifications_enabled' => (int) ($settings['email_notifications_enabled'] ?? 1) === 1 ? 1 : 0,
             'email_from_name' => (string) ($settings['email_from_name'] ?? ''),
@@ -176,6 +133,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['application_declined_message'] = trim($_POST['application_declined_message'] ?? '');
             $payload['application_revision_subject'] = trim($_POST['application_revision_subject'] ?? '');
             $payload['application_revision_message'] = trim($_POST['application_revision_message'] ?? '');
+        } elseif ($section === 'message-templates') {
+            $payload['message_welcome_template'] = trim((string) ($_POST['message_welcome_template'] ?? $defaultWelcomeMessageTemplate));
+            $payload['drawing_comment_presets'] = trim((string) ($_POST['drawing_comment_presets'] ?? $defaultDrawingCommentPresets));
+            if ($payload['message_welcome_template'] === '') {
+                $payload['message_welcome_template'] = $defaultWelcomeMessageTemplate;
+            }
+            if ($payload['drawing_comment_presets'] === '') {
+                $payload['drawing_comment_presets'] = $defaultDrawingCommentPresets;
+            }
         } elseif ($section === 'email-delivery') {
             $payload['email_notifications_enabled'] = isset($_POST['email_notifications_enabled']) ? 1 : 0;
             $payload['email_from_name'] = trim($_POST['email_from_name'] ?? '');
@@ -256,31 +222,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['vk_publication_group_id'] = trim($_POST['vk_publication_group_id'] ?? '');
             $payload['vk_publication_api_version'] = trim($_POST['vk_publication_api_version'] ?? '5.131');
             $payload['vk_publication_from_group'] = isset($_POST['vk_publication_from_group']) ? 1 : 0;
-
-            $newPublicationToken = trim((string) ($_POST['vk_publication_token_new'] ?? ''));
-            $resetPublicationToken = isset($_POST['vk_publication_token_reset']) && (string) $_POST['vk_publication_token_reset'] === '1';
-            if ($resetPublicationToken) {
-                $payload['vk_publication_manual_token'] = '';
-                $payload['vk_publication_status'] = 'disconnected';
-                $payload['vk_publication_last_error'] = '';
-                $payload['vk_publication_technical_diagnostics'] = '';
-                $payload['vk_publication_vk_user_id'] = '';
-                $payload['vk_publication_vk_user_name'] = '';
-                $payload['vk_publication_group_name'] = '';
-                $payload['vk_publication_token_scope'] = '';
-                $payload['vk_publication_confirmed_permissions'] = '';
-            } elseif ($newPublicationToken !== '') {
-                $payload['vk_publication_manual_token'] = $newPublicationToken;
-                $payload['vk_publication_status'] = 'attention';
-            }
-        } elseif ($section === 'vk-publication') {
             $payload['vk_publication_post_template'] = trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate());
+            $adminAccessToken = trim((string) ($_POST['vk_publication_admin_access_token'] ?? ''));
+            if ($adminAccessToken !== '') {
+                $payload['vk_publication_admin_access_token_encrypted'] = vkPublicationEncryptValue($adminAccessToken);
+            }
+
+            $adminRefreshToken = trim((string) ($_POST['vk_publication_admin_refresh_token'] ?? ''));
+            if ($adminRefreshToken !== '') {
+                $payload['vk_publication_admin_refresh_token_encrypted'] = vkPublicationEncryptValue($adminRefreshToken);
+            }
+
+            $payload['vk_publication_admin_device_id'] = trim((string) ($_POST['vk_publication_admin_device_id'] ?? ''));
+            $payload['vk_publication_admin_user_id'] = trim((string) ($_POST['vk_publication_admin_user_id'] ?? ''));
+            $payload['vk_publication_admin_token_expires_at'] = max(0, (int) ($_POST['vk_publication_admin_token_expires_at'] ?? 0));
         } elseif ($section === 'homepage-banner') {
             $payload['homepage_hero_image'] = trim($_POST['homepage_hero_image'] ?? '');
         }
 
         if (empty($error) && saveSystemSettings($payload)) {
-            cleanupLegacyVkPublicationOauthData();
             $_SESSION['success_message'] = 'Настройки сохранены';
             $_SESSION['settings_active_tab'] = $section;
             redirect('/admin/settings');
@@ -297,16 +257,65 @@ if (!in_array($activeSettingsTab, ['notifications', 'email-delivery', 'site-bran
     $activeSettingsTab = 'notifications';
 }
 unset($_SESSION['settings_active_tab']);
-$vkPublicationSettings = getVkPublicationSettings();
-$vkReadiness = verifyVkPublicationReadiness(false);
-$vkStatus = !empty($vkReadiness['ok']) ? 'connected' : (($vkPublicationSettings['publication_token'] !== '') ? 'attention' : 'disconnected');
-$vkStatusLabel = $vkStatus === 'connected'
-    ? 'Публикационный токен готов'
-    : ($vkStatus === 'attention' ? 'Требуется внимание' : 'Публикационный токен не задан');
-$vkScopeDisplay = $vkPublicationSettings['token_scope'] !== '' ? $vkPublicationSettings['token_scope'] : 'не указан VK';
+$vkPublicationSettings = getVkPublicationRuntimeSettings(true);
+$vkReadiness = verifyVkPublicationReadiness(false, true, 'diagnostic');
+$vkAdminReady = trim((string) ($settings['vk_publication_admin_access_token_encrypted'] ?? '')) !== '';
+$vkSteps = is_array($vkReadiness['steps'] ?? null) ? $vkReadiness['steps'] : [];
+$vkRuntime = is_array($vkReadiness['runtime'] ?? null) ? $vkReadiness['runtime'] : [];
+$vkCapabilityMatrix = [];
+if (!empty($vkSteps['capabilities']['matrix']) && is_array($vkSteps['capabilities']['matrix'])) {
+    $vkCapabilityMatrix = $vkSteps['capabilities']['matrix'];
+}
+$vkIntegrationStatus = trim((string) ($settings['vk_publication_status'] ?? 'NOT_CONNECTED'));
+$vkStatusLabelMap = [
+    'NOT_CONNECTED' => 'Не подключено',
+    'TOKEN_SAVED' => 'Токен сохранён',
+    'READY_FOR_PUBLICATION' => 'Подключено',
+    'TOKEN_EXPIRED' => 'Срок токена истёк',
+    'CHECK_FAILED' => 'Проверка не пройдена',
+];
+$vkStatusLabel = $vkStatusLabelMap[$vkIntegrationStatus] ?? 'Не подключено';
+$vkStatusBadgeClass = $vkIntegrationStatus === 'READY_FOR_PUBLICATION'
+    ? 'badge--success'
+    : (($vkIntegrationStatus === 'TOKEN_SAVED' || $vkIntegrationStatus === 'TOKEN_EXPIRED' || $vkIntegrationStatus === 'CHECK_FAILED') ? 'badge--warning' : 'badge--secondary');
 $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== '' ? $vkPublicationSettings['confirmed_permissions'] : 'нет подтверждённых прав';
 $vkLastError = $vkPublicationSettings['last_error'] !== '' ? $vkPublicationSettings['last_error'] : '—';
-$vkTokenTypeLabel = $vkPublicationSettings['token_type'] === 'user' ? 'User token' : $vkPublicationSettings['token_type'];
+$vkTokenTypeRaw = trim((string) ($vkPublicationSettings['token_type'] ?? ''));
+$vkTokenTypeLabel = $vkTokenTypeRaw !== '' ? $vkTokenTypeRaw : '—';
+
+$vkStepShortStatus = static function (array $steps, string $key): string {
+    if (!array_key_exists($key, $steps) || !is_array($steps[$key])) {
+        return '—';
+    }
+    $step = $steps[$key];
+    $ok = $step['ok'] ?? null;
+    $skipped = !empty($step['skipped']);
+    $msg = mb_strtolower(trim((string) ($step['message'] ?? '')));
+
+    if ($ok === true) {
+        return 'OK';
+    }
+    if ($ok === false) {
+        if ($skipped && (str_contains($msg, 'unsupported') || str_contains($msg, 'n/a'))) {
+            return 'UNSUPPORTED';
+        }
+        return $skipped ? 'SKIPPED' : 'ERROR';
+    }
+    // ok === null
+    if ($skipped && str_contains($msg, 'unsupported')) {
+        return 'UNSUPPORTED';
+    }
+    if ($skipped) {
+        return 'SKIPPED';
+    }
+    if (str_contains($msg, 'not tested')) {
+        return 'NOT TESTED';
+    }
+    if (str_contains($msg, 'n/a')) {
+        return 'N/A';
+    }
+    return '—';
+};
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -347,12 +356,6 @@ unset($_SESSION['success_message']);
         </button>
         <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'vk-integration' ? ' is-active' : '' ?>" data-settings-tab="vk-integration" role="tab">
             <i class="fab fa-vk"></i> Интеграция VK
-        </button>
-        <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'vk-publication' ? ' is-active' : '' ?>" data-settings-tab="vk-publication" role="tab">
-            <i class="fas fa-bullhorn"></i> Публикация в VK
-        </button>
-        <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'vk-donates' ? ' is-active' : '' ?>" data-settings-tab="vk-donates" role="tab">
-            <i class="fas fa-hand-holding-heart"></i> Донаты VK
         </button>
         <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'homepage-banner' ? ' is-active' : '' ?>" data-settings-tab="homepage-banner" role="tab">
             <i class="fas fa-image"></i> Главная страница
@@ -618,51 +621,67 @@ unset($_SESSION['success_message']);
                 <input type="hidden" name="settings_section" value="vk-integration">
                     <div class="settings-section__header">
                         <h4><i class="fab fa-vk"></i> Интеграция VK</h4>
-                        <p>Два независимых контура: вход пользователей через VK ID и отдельная публикация работ в VK.</p>
+                        <p>Публикация работ в VK через user access token владельца сообщества.</p>
                     </div>
 
                     <div class="settings-vk-card">
-                        <div class="vk-connection-card" style="margin-bottom:16px;">
-                            <div class="vk-connection-card__header">
-                                <div>
-                                    <strong>Вход пользователей через VK ID</strong>
-                                    <div class="form-hint">Используется только для login/registration пользователей сайта (PKCE + state + callback).</div>
-                                </div>
-                                <span class="badge badge--secondary">VK ID Login</span>
-                            </div>
-                            <div class="vk-connection-card__meta">
-                                <div><strong>Start endpoint:</strong> <code>/auth/vk/user/start</code></div>
-                                <div><strong>Callback endpoint:</strong> <code>/auth/vk/user/callback</code></div>
-                                <div><strong>Назначение:</strong> вход пользователя на сайт, не используется для публикации.</div>
-                            </div>
-                        </div>
-
                         <div class="vk-connection-card">
                             <div class="vk-connection-card__header">
                                 <div>
                                     <strong>Публикация работ в VK</strong>
-                                    <div class="form-hint">Для публикации используется только вручную заданный publication token.</div>
+                                    <div class="form-hint">Проект публикует только рисунок + текст по шаблону. Для этого нужен режим <code>admin_user_token</code> с загрузкой локального изображения.</div>
                                 </div>
-                                <span class="badge <?= $vkStatus === 'connected' ? 'badge--success' : ($vkStatus === 'attention' ? 'badge--warning' : 'badge--secondary') ?>">
-                                    <?= htmlspecialchars($vkStatus === 'connected' ? 'Connected' : ($vkStatus === 'attention' ? 'Attention' : 'Disconnected')) ?>
+                                <span class="badge <?= htmlspecialchars($vkStatusBadgeClass) ?>">
+                                    <?= htmlspecialchars($vkIntegrationStatus) ?>
                                 </span>
                             </div>
 
                             <div class="vk-connection-card__meta">
+                                <div style="margin:2px 0 6px; font-weight:600;">Параметры ключа</div>
                                 <div><strong>Статус:</strong> <?= htmlspecialchars($vkStatusLabel) ?></div>
-                                <div><strong>VK user ID владельца токена:</strong> <?= htmlspecialchars($vkPublicationSettings['vk_user_id'] !== '' ? $vkPublicationSettings['vk_user_id'] : '—') ?></div>
-                                <div><strong>Владелец токена:</strong> <?= htmlspecialchars($vkPublicationSettings['vk_user_name'] !== '' ? $vkPublicationSettings['vk_user_name'] : '—') ?></div>
-                                <div><strong>Тип токена:</strong> <?= htmlspecialchars($vkTokenTypeLabel) ?></div>
-                                <div><strong>Маска токена:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
-                                <div><strong>Scope токена:</strong> <?= htmlspecialchars($vkScopeDisplay) ?></div>
-                                <div><strong>Подтверждённые права:</strong> <?= htmlspecialchars($vkConfirmedPermissions) ?></div>
+                                <div><strong>Auth mode:</strong> admin_user_token</div>
+                                <div><strong>Источник токена:</strong> <?= htmlspecialchars(($vkPublicationSettings['token_source'] ?? '') === 'oauth_vk_admin_login' ? 'OAuth VK admin login' : 'не задан') ?></div>
+                                <div><strong>Маска ключа:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
+                                <div><strong>Admin token:</strong> <code><?= htmlspecialchars(!empty($settings['vk_publication_admin_access_token_encrypted']) ? 'stored_encrypted' : '—') ?></code></div>
+                                <div><strong>Тип ключа:</strong> <?= htmlspecialchars($vkTokenTypeLabel) ?></div>
+                                <div><strong>Права ключа:</strong> <?= htmlspecialchars($vkConfirmedPermissions) ?></div>
+
+                                <div style="margin:10px 0 6px; font-weight:600;">Проверка публикации</div>
                                 <div><strong>ID сообщества:</strong> <?= htmlspecialchars($settings['vk_publication_group_id'] ?? '—') ?></div>
                                 <div><strong>Название сообщества:</strong> <?= htmlspecialchars(trim((string)($settings['vk_publication_group_name'] ?? '')) !== '' ? (string)$settings['vk_publication_group_name'] : '—') ?></div>
-                                <div><strong>Последняя проверка:</strong> <?= htmlspecialchars($vkPublicationSettings['last_checked_at'] !== '' ? $vkPublicationSettings['last_checked_at'] : '—') ?></div>
-                                <div><strong>Последняя успешная проверка:</strong> <?= htmlspecialchars($vkPublicationSettings['last_success_checked_at'] !== '' ? $vkPublicationSettings['last_success_checked_at'] : '—') ?></div>
-                                <div><strong>Последняя ошибка:</strong> <?= htmlspecialchars($vkLastError) ?></div>
-                                <div><strong>Техническая диагностика:</strong> <?= htmlspecialchars($vkPublicationSettings['technical_diagnostics'] !== '' ? $vkPublicationSettings['technical_diagnostics'] : '—') ?></div>
+                                <div><strong>groups.getById:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'groups_getById')) ?></div>
+
+                                <div style="margin:10px 0 6px; font-weight:600;">Проверка VK API</div>
+                                <div><strong>photos.getWallUploadServer:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'photos_getWallUploadServer')) ?></div>
+                                <div><strong>photos.saveWallPhoto:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'photos_saveWallPhoto')) ?></div>
+                                <div><strong>wall.post:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'wall_post')) ?></div>
+                                <?php if (!empty($vkCapabilityMatrix)): ?>
+                                    <div style="margin-top:10px;"><strong>Сценарии:</strong></div>
+                                    <?php
+                                    $fmt = static function ($value): string {
+                                        if ($value === true) return 'поддерживается';
+                                        if ($value === false) return 'не поддерживается';
+                                        return 'не проверено';
+                                    };
+                                    ?>
+                                    <?php if (isset($vkCapabilityMatrix['text_post_supported'])): ?>
+                                        <div>Текстовая публикация (диагностика): <?= htmlspecialchars($fmt($vkCapabilityMatrix['text_post_supported']['supported'] ?? null)) ?></div>
+                                        <div>Локальная загрузка рисунка: <?= htmlspecialchars($fmt($vkCapabilityMatrix['upload_local_image_supported']['supported'] ?? null)) ?></div>
+                                        <div>Attach media id: <?= htmlspecialchars($fmt($vkCapabilityMatrix['attach_existing_media_supported']['supported'] ?? null)) ?></div>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                                <div><strong>Последняя ошибка VK:</strong> <?= htmlspecialchars($vkLastError) ?></div>
+                                <div><strong>Последняя техническая ошибка:</strong> <?= htmlspecialchars(!empty($vkSteps['vk_api_error']['technical']) ? (string) $vkSteps['vk_api_error']['technical'] : '—') ?></div>
+                                <div style="margin:10px 0 6px; font-weight:600;">Диагностика</div>
+                                <div><strong>admin_user_token:</strong> <?= $vkAdminReady ? 'TOKEN_SAVED' : 'NOT_CONNECTED' ?></div>
                             </div>
+
+                            <?php if (empty($settings['vk_publication_admin_access_token_encrypted'])): ?>
+                                <div class="alert alert--warning" style="margin-top:12px;">
+                                    <i class="fas fa-triangle-exclamation"></i>
+                                    <?= htmlspecialchars('Требуется вход через VK для публикации на странице /admin/login.') ?>
+                                </div>
+                            <?php endif; ?>
 
                             <?php if (!empty($vkReadiness['issues'])): ?>
                                 <div class="alert alert--warning">
@@ -672,23 +691,17 @@ unset($_SESSION['success_message']);
                             <?php endif; ?>
 
                             <div class="vk-connection-card__actions">
+                                <a href="/admin/login?redirect=/admin/settings%23vk-integration" class="btn btn--primary btn--sm">
+                                    <i class="fab fa-vk"></i> Войти через VK для публикации
+                                </a>
                                 <button type="button" class="btn btn--ghost btn--sm" id="vkCheckBtn">
-                                    <i class="fas fa-plug-circle-check"></i> Проверить токен VK
+                                    <i class="fas fa-plug-circle-check"></i> Проверить доступ
                                 </button>
                             </div>
-                        </div>
 
-                        <div class="form-group" style="margin-top:12px;">
-                            <label class="form-label">Access token публикации (ввести новый)</label>
-                            <input type="password" name="vk_publication_token_new" class="form-input" value="" placeholder="vk1.a.... или service token" autocomplete="off">
-                            <div class="form-hint">Полный token не выводится в HTML. Оставьте пустым, чтобы сохранить текущий token без изменений.</div>
-                            <label class="form-checkbox" style="margin-top:8px;">
-                                <input type="checkbox" name="vk_publication_token_reset" value="1">
-                                <span class="form-checkbox__mark"></span>
-                                <span>Удалить сохранённый publication token</span>
-                            </label>
+                            <div id="vkCheckLiveResult" class="alert" style="display:none; margin-top:12px;"></div>
+                            <pre id="vkCheckLiveDetails" style="display:none; white-space:pre-wrap; background:#0B1220; color:#E5E7EB; padding:12px; border-radius:10px; border:1px solid #1F2937; margin-top:10px; font-size:12px; line-height:1.45;"></pre>
                         </div>
-
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">ID сообщества VK</label>
@@ -707,32 +720,45 @@ unset($_SESSION['success_message']);
                                 <span>Публиковать от имени сообщества</span>
                             </label>
                         </div>
+                        </div>
 
-                    </div>
-                    <div class="settings-actions">
-                        <button type="submit" class="btn btn--primary">
-                            <i class="fas fa-save"></i> Сохранить
-                        </button>
-                    </div>
-            </form>
-        </section>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Admin access token (replace-only)</label>
+                                <textarea name="vk_publication_admin_access_token" class="form-input" rows="3" placeholder="Оставьте пустым, чтобы не менять"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Admin refresh token (replace-only)</label>
+                                <textarea name="vk_publication_admin_refresh_token" class="form-input" rows="3" placeholder="Оставьте пустым, чтобы не менять"></textarea>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Admin token expires_at (unix ts)</label>
+                                <input type="text" name="vk_publication_admin_token_expires_at" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_token_expires_at'] ?? '')) ?>" placeholder="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Admin device_id</label>
+                                <input type="text" name="vk_publication_admin_device_id" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_device_id'] ?? '')) ?>" placeholder="device id">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Admin user_id</label>
+                                <input type="text" name="vk_publication_admin_user_id" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_user_id'] ?? '')) ?>" placeholder="vk user id">
+                            </div>
+                        </div>
 
-        <section id="vk-publication" class="settings-tab-panel<?= $activeSettingsTab === 'vk-publication' ? ' is-active' : '' ?>" data-settings-panel="vk-publication">
-            <form method="POST" class="settings-form">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="settings_section" value="vk-publication">
-                    <div class="settings-section__header">
-                        <h4><i class="fas fa-bullhorn"></i> Публикация в VK</h4>
-                        <p>Настройка шаблона текста для автоматической публикации работ в сообществе VK.</p>
-                    </div>
-
-                    <div class="settings-vk-card">
                         <div class="form-group">
                             <label class="form-label">Шаблон подписи поста VK</label>
-                            <textarea name="vk_publication_post_template" class="form-input" rows="8"><?= htmlspecialchars($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()) ?></textarea>
-                            <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {drawing_title}, {work_title}, {contest_title}, {nomination}, {participant_age}, {age_category}</div>
+                            <textarea name="vk_publication_post_template" id="vkPublicationTemplateInput" class="form-input" rows="8"><?= htmlspecialchars($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()) ?></textarea>
+                            <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {contest_title}, {participant_age}, {age_category}.</div>
+                            <div class="form-hint" style="margin-top:8px;">Компактный шаблон (готовая альтернатива):</div>
+                            <pre style="white-space:pre-wrap; background:#F8FAFC; padding:10px; border-radius:8px; border:1px solid #E2E8F0; margin-top:6px; font-size:12px;"><?= htmlspecialchars(compactVkPostTemplate()) ?></pre>
+                            <div style="margin-top:12px;">
+                                <label class="form-label" style="margin-bottom:6px;">Предпросмотр с тестовыми данными</label>
+                                <div id="vkPublicationTemplatePreview" style="white-space:pre-wrap; background:#FFFFFF; padding:14px; border-radius:10px; border:1px solid #D1D5DB; line-height:1.5;"></div>
+                            </div>
                         </div>
+
                     </div>
                     <div class="settings-actions">
                         <button type="submit" class="btn btn--primary">
@@ -740,99 +766,6 @@ unset($_SESSION['success_message']);
                         </button>
                     </div>
             </form>
-        </section>
-
-        <section id="vk-donates" class="settings-tab-panel<?= $activeSettingsTab === 'vk-donates' ? ' is-active' : '' ?>" data-settings-panel="vk-donates">
-            <div class="settings-form">
-                <div class="settings-section__header">
-                    <h4><i class="fas fa-hand-holding-heart"></i> Донаты VK для публикаций</h4>
-                    <p>Здесь задаются варианты донатов, которые можно выбрать при публикации заявки в VK.</p>
-                </div>
-                <form method="POST" class="settings-actions" style="justify-content:flex-start; margin-bottom:10px;">
-                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                    <input type="hidden" name="settings_section" value="vk-donates">
-                    <input type="hidden" name="action" value="sync_vk_donates">
-                    <button type="submit" class="btn btn--secondary">
-                        <i class="fab fa-vk"></i> Синхронизировать цели из VK
-                    </button>
-                </form>
-                <div class="form-hint" style="margin-bottom:12px;">
-                    Цели, созданные непосредственно во VK, появляются здесь после синхронизации.
-                </div>
-
-                <div class="settings-vk-card" style="margin-bottom:14px;">
-                    <?php if (empty($vkDonates)): ?>
-                        <div class="text-secondary">Пока нет созданных донатов. Добавьте первый вариант ниже.</div>
-                    <?php else: ?>
-                        <div style="display:grid; gap:10px;">
-                            <?php foreach ($vkDonates as $donate): ?>
-                                <form method="POST" class="settings-message-card" style="padding:14px; border:1px solid #e5e7eb; border-radius:12px;">
-                                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                                    <input type="hidden" name="settings_section" value="vk-donates">
-                                    <input type="hidden" name="donate_id" value="<?= (int) ($donate['id'] ?? 0) ?>">
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label class="form-label">Название</label>
-                                            <input type="text" name="donate_title" class="form-input" value="<?= htmlspecialchars((string) ($donate['title'] ?? '')) ?>" required>
-                                        </div>
-                                        <div class="form-group">
-                                            <label class="form-label">VK Donut ID</label>
-                                            <input type="text" name="donate_vk_id" class="form-input" value="<?= htmlspecialchars((string) ($donate['vk_donate_id'] ?? '')) ?>" required>
-                                        </div>
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label">Описание (необязательно)</label>
-                                        <textarea name="donate_description" class="form-input" rows="2"><?= htmlspecialchars((string) ($donate['description'] ?? '')) ?></textarea>
-                                    </div>
-                                    <div class="settings-actions" style="justify-content:flex-start;">
-                                        <button type="submit" name="donate_action" value="update" class="btn btn--primary btn--sm">
-                                            <i class="fas fa-save"></i> Сохранить
-                                        </button>
-                                        <button type="submit" name="donate_action" value="toggle" class="btn btn--ghost btn--sm">
-                                            <i class="fas <?= (int) ($donate['is_active'] ?? 0) === 1 ? 'fa-toggle-on' : 'fa-toggle-off' ?>"></i>
-                                            <?= (int) ($donate['is_active'] ?? 0) === 1 ? 'Отключить' : 'Включить' ?>
-                                        </button>
-                                        <button type="submit" name="donate_action" value="delete" class="btn btn--danger btn--sm" onclick="return confirm('Удалить этот донат?');">
-                                            <i class="fas fa-trash"></i> Удалить
-                                        </button>
-                                    </div>
-                                </form>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php endif; ?>
-                </div>
-
-                <form method="POST" class="settings-vk-card">
-                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                    <input type="hidden" name="settings_section" value="vk-donates">
-                    <input type="hidden" name="donate_action" value="create">
-                    <div class="settings-section__header" style="margin-bottom:12px;">
-                        <h5 style="margin:0;">Добавить новый донат</h5>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Название</label>
-                            <input type="text" name="donate_title" class="form-input" placeholder="Например: Поддержка проекта" required>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">VK Donut ID</label>
-                            <input type="text" name="donate_vk_id" class="form-input" placeholder="Например: 123456789" required>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Описание (необязательно)</label>
-                        <textarea name="donate_description" class="form-input" rows="2" placeholder="Короткое описание для админов"></textarea>
-                    </div>
-                    <div class="settings-actions">
-                        <button type="submit" class="btn btn--primary">
-                            <i class="fas fa-plus"></i> Добавить донат
-                        </button>
-                    </div>
-                </form>
-            </div>
         </section>
 
         <section id="homepage-banner" class="settings-tab-panel<?= $activeSettingsTab === 'homepage-banner' ? ' is-active' : '' ?>" data-settings-panel="homepage-banner">
@@ -1005,32 +938,157 @@ unset($_SESSION['success_message']);
         });
     }
 
-    const postJson = async (url) => {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': csrfToken,
-            },
-            body: JSON.stringify({}),
-        });
-        const payload = await response.json();
-        if (!response.ok || !payload.success) {
-            throw new Error(payload.error || payload.message || 'Ошибка запроса');
-        }
-        return payload;
-    };
-
     vkCheckBtn?.addEventListener('click', async () => {
+        const liveBox = document.getElementById('vkCheckLiveResult');
+        const liveDetails = document.getElementById('vkCheckLiveDetails');
+        const setLive = (message, type) => {
+            if (!liveBox) return;
+            liveBox.className = 'alert ' + (type === 'success' ? 'alert--success' : 'alert--error');
+            liveBox.style.display = 'block';
+            liveBox.textContent = message;
+        };
+        const setDetails = (text) => {
+            if (!liveDetails) return;
+            liveDetails.style.display = 'block';
+            liveDetails.textContent = text;
+        };
+
         try {
-            const payload = await postJson('/auth/vk/publication/test');
-            alert(payload.message || 'Подключение VK проверено');
-            window.location.reload();
+            const response = await fetch('/auth/vk/publication/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken,
+                },
+                body: JSON.stringify({}),
+            });
+            const payload = await response.json().catch(() => ({}));
+            const ok = !!(payload && payload.success);
+            setLive(payload.message || (ok ? 'Проверка VK завершена' : 'Проверка VK завершилась с ошибкой'), ok ? 'success' : 'error');
+
+            const runtime = payload.runtime || {};
+            const steps = payload.steps || {};
+            const lines = [];
+            lines.push(`Ключ задан: ${steps.token_present && steps.token_present.ok ? 'да' : 'нет'}`);
+            lines.push(`Источник ключа: ${runtime.token_source || '—'}`);
+            lines.push(`Маска ключа: ${runtime.token_masked || '—'}`);
+            const fmtStep = (step) => {
+                if (!step) return '—';
+                if (step.ok === true) return 'OK';
+                if (step.ok === false) return step.skipped ? 'SKIPPED' : 'ERROR';
+                if (step.ok === null) {
+                    if (step.skipped) return 'SKIPPED';
+                    if (String(step.message || '').toLowerCase().includes('n/a')) return 'N/A';
+                    if (String(step.message || '').toLowerCase().includes('not tested')) return 'NOT TESTED';
+                    return '—';
+                }
+                return '—';
+            };
+            lines.push(`groups.getById: ${fmtStep(steps.groups_getById)}`);
+            if (steps.photos_getWallUploadServer) {
+                const skipped = steps.photos_getWallUploadServer.skipped ? ' (SKIPPED)' : '';
+                lines.push(`photos.getWallUploadServer: ${fmtStep(steps.photos_getWallUploadServer)}${skipped}`);
+                if (!steps.photos_getWallUploadServer.ok && steps.photos_getWallUploadServer.message) {
+                    lines.push(`  причина: ${steps.photos_getWallUploadServer.message}`);
+                }
+            } else {
+                lines.push('photos.getWallUploadServer: —');
+            }
+            if (steps.photos_saveWallPhoto) {
+                lines.push(`photos.saveWallPhoto: ${fmtStep(steps.photos_saveWallPhoto)}`);
+            }
+            if (steps.wall_post) {
+                lines.push(`wall.post: ${fmtStep(steps.wall_post)}`);
+            }
+            if (payload.issues && payload.issues.length) {
+                lines.push('');
+                lines.push('Проблемы:');
+                payload.issues.forEach((issue) => lines.push('- ' + issue));
+            }
+            if (steps.vk_api_error && steps.vk_api_error.technical) {
+                lines.push('');
+                lines.push('Технически:');
+                lines.push(String(steps.vk_api_error.technical));
+            }
+            setDetails(lines.join('\n'));
         } catch (error) {
-            alert(error.message || 'Проверка VK завершилась с ошибкой');
-            window.location.reload();
+            setLive(error.message || 'Проверка VK завершилась с ошибкой', 'error');
         }
     });
+
+    const vkTemplateInput = document.getElementById('vkPublicationTemplateInput');
+    const vkTemplatePreview = document.getElementById('vkPublicationTemplatePreview');
+
+    const renderVkTemplatePreview = (template, values) => {
+        const lines = String(template || '').split(/\r?\n/u);
+        const rendered = [];
+
+        for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line) {
+                rendered.push('');
+                continue;
+            }
+
+            const tokens = Array.from(line.matchAll(/\{([a-z0-9_]+)\}/giu)).map((item) => item[1]);
+            if (tokens.length > 0) {
+                const allEmpty = tokens.every((token) => String(values[token] || '').trim() === '');
+                if (allEmpty) {
+                    continue;
+                }
+            }
+
+            let replaced = line.replace(/\{([a-z0-9_]+)\}/giu, (_, token) => String(values[token] || ''));
+            replaced = replaced.trim();
+            if (!replaced || /[:：]\s*$/u.test(replaced)) {
+                continue;
+            }
+            const core = replaced.replace(/[\p{Z}\p{P}\p{S}]+/gu, '');
+            if (!core) {
+                continue;
+            }
+            rendered.push(replaced);
+        }
+
+        const collapsed = [];
+        let prevEmpty = true;
+        for (const line of rendered) {
+            const isEmpty = String(line).trim() === '';
+            if (isEmpty) {
+                if (prevEmpty) {
+                    continue;
+                }
+                collapsed.push('');
+                prevEmpty = true;
+                continue;
+            }
+            collapsed.push(line);
+            prevEmpty = false;
+        }
+
+        return collapsed.join('\n').trim();
+    };
+
+    const refreshVkTemplatePreview = () => {
+        if (!vkTemplateInput || !vkTemplatePreview) {
+            return;
+        }
+        const sampleValues = {
+            participant_name: 'Анна',
+            participant_full_name: 'Иванова Анна Сергеевна',
+            organization_name: 'МБУ ДО «Детская школа искусств №1»',
+            region_name: 'Московская область',
+            contest_title: 'Мир глазами детей',
+            participant_age: '9',
+            age_category: '7-10 лет',
+            nomination: '',
+        };
+        const previewText = renderVkTemplatePreview(vkTemplateInput.value, sampleValues);
+        vkTemplatePreview.textContent = previewText || 'Введите шаблон, чтобы увидеть пример публикации.';
+    };
+
+    vkTemplateInput?.addEventListener('input', refreshVkTemplatePreview);
+    refreshVkTemplatePreview();
 
 })();
 </script>
