@@ -49,6 +49,7 @@ $resolvedWelcomeMessageTemplate = trim((string) ($settings['message_welcome_temp
 $resolvedDrawingCommentPresets = trim((string) ($settings['drawing_comment_presets'] ?? '')) !== ''
     ? (string) $settings['drawing_comment_presets']
     : $defaultDrawingCommentPresets;
+$submittedSettingsSection = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['action'] ?? '') === 'upload_homepage_hero_async') {
@@ -82,10 +83,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Ошибка безопасности';
     } else {
         $section = (string) ($_POST['settings_section'] ?? 'notifications');
+        $submittedSettingsSection = $section;
         $allowedSections = ['notifications', 'email-delivery', 'site-branding', 'vk-integration', 'vk-publication', 'vk-donates', 'homepage-banner'];
         if (!in_array($section, $allowedSections, true)) {
             $section = 'notifications';
         }
+        $submittedSettingsSection = $section;
 
         $payload = [
             'application_approved_subject' => (string) ($settings['application_approved_subject'] ?? ''),
@@ -254,10 +257,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $activeSettingsTab = (string) ($_SESSION['settings_active_tab'] ?? 'notifications');
+if (!empty($error) && $submittedSettingsSection !== '') {
+    $activeSettingsTab = $submittedSettingsSection;
+}
 if (!in_array($activeSettingsTab, ['notifications', 'email-delivery', 'site-branding', 'vk-integration', 'vk-publication', 'vk-donates', 'homepage-banner'], true)) {
     $activeSettingsTab = 'notifications';
 }
 unset($_SESSION['settings_active_tab']);
+$siteBrandingValues = [
+    'site_brand_name' => (string) ($settings['site_brand_name'] ?? siteBrandName()),
+    'site_brand_short_name' => (string) ($settings['site_brand_short_name'] ?? siteBrandShortName()),
+    'site_brand_subtitle' => (string) ($settings['site_brand_subtitle'] ?? siteBrandSubtitle()),
+    'site_projects_label' => (string) ($settings['site_projects_label'] ?? siteProjectsLabel()),
+];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $submittedSettingsSection === 'site-branding') {
+    $siteBrandingValues = [
+        'site_brand_name' => trim((string) ($_POST['site_brand_name'] ?? $siteBrandingValues['site_brand_name'])),
+        'site_brand_short_name' => trim((string) ($_POST['site_brand_short_name'] ?? $siteBrandingValues['site_brand_short_name'])),
+        'site_brand_subtitle' => trim((string) ($_POST['site_brand_subtitle'] ?? $siteBrandingValues['site_brand_subtitle'])),
+        'site_projects_label' => trim((string) ($_POST['site_projects_label'] ?? $siteBrandingValues['site_projects_label'])),
+    ];
+}
+$brandingPreviewName = $siteBrandingValues['site_brand_short_name'] !== ''
+    ? $siteBrandingValues['site_brand_short_name']
+    : 'Короткое название';
+$brandingPreviewTitle = $siteBrandingValues['site_brand_name'] !== ''
+    ? $siteBrandingValues['site_brand_name']
+    : 'Полное название бренда';
+$brandingPreviewSubtitle = $siteBrandingValues['site_brand_subtitle'] !== ''
+    ? $siteBrandingValues['site_brand_subtitle']
+    : 'Подзаголовок появится здесь после заполнения поля.';
+$brandingPreviewProjects = $siteBrandingValues['site_projects_label'] !== ''
+    ? $siteBrandingValues['site_projects_label']
+    : 'Подпись для блока «Конкурсы/Проекты».';
 $vkPublicationSettings = getVkPublicationRuntimeSettings(true);
 $vkReadiness = verifyVkPublicationReadiness(false, true, 'diagnostic');
 $vkAdminReady = trim((string) ($settings['vk_publication_admin_access_token_encrypted'] ?? '')) !== '';
@@ -555,61 +587,100 @@ unset($_SESSION['success_message']);
                 <input type="hidden" name="settings_section" value="site-branding">
                 <div class="settings-section__header">
                     <h4><i class="fas fa-palette"></i> Брендирование сайта</h4>
-                    <p>Изменения применяются во фронте, админке, письмах и дипломах из одного места.</p>
+                    <p>Изменения применяются на витрине сайта, в админке, письмах и дипломах из одной формы.</p>
                 </div>
 
-                <div class="settings-email-card">
-                    <div class="form-group">
-                        <label class="form-label">Полное название бренда</label>
-                        <input
-                            type="text"
-                            name="site_brand_name"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_brand_name'] ?? siteBrandName())) ?>"
-                            placeholder="ДетскиеКонкурсы.рф"
-                            required
-                        >
+                <div class="settings-branding-layout">
+                    <div class="settings-branding-card">
+                        <div class="settings-branding-card__header">
+                            <div>
+                                <h5>Основные поля бренда</h5>
+                                <p>Задайте единое название проекта и подписи для всех публичных и служебных экранов.</p>
+                            </div>
+                        </div>
+
+                        <div class="settings-branding-grid">
+                            <div class="form-group">
+                                <label class="form-label form-label--required" for="site_brand_name">Полное название бренда</label>
+                                <input
+                                    type="text"
+                                    id="site_brand_name"
+                                    name="site_brand_name"
+                                    class="form-input"
+                                    value="<?= htmlspecialchars($siteBrandingValues['site_brand_name']) ?>"
+                                    placeholder="ДетскиеКонкурсы.рф"
+                                    autocomplete="organization"
+                                    required
+                                >
+                                <div class="form-hint">Используется в заголовках страниц, письмах и дипломах.</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label form-label--required" for="site_brand_short_name">Короткое название бренда</label>
+                                <input
+                                    type="text"
+                                    id="site_brand_short_name"
+                                    name="site_brand_short_name"
+                                    class="form-input"
+                                    value="<?= htmlspecialchars($siteBrandingValues['site_brand_short_name']) ?>"
+                                    placeholder="ДетскиеКонкурсы"
+                                    autocomplete="organization-title"
+                                    required
+                                >
+                                <div class="form-hint">Показывается в компактных местах интерфейса и навигации.</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label" for="site_brand_subtitle">Подзаголовок бренда</label>
+                                <input
+                                    type="text"
+                                    id="site_brand_subtitle"
+                                    name="site_brand_subtitle"
+                                    class="form-input"
+                                    value="<?= htmlspecialchars($siteBrandingValues['site_brand_subtitle']) ?>"
+                                    placeholder="Всероссийские конкурсы детского творчества"
+                                >
+                                <div class="form-hint">Короткое пояснение для главной страницы и маркетинговых блоков.</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label form-label--required" for="site_projects_label">Подпись «Конкурсы/Проекты»</label>
+                                <input
+                                    type="text"
+                                    id="site_projects_label"
+                                    name="site_projects_label"
+                                    class="form-input"
+                                    value="<?= htmlspecialchars($siteBrandingValues['site_projects_label']) ?>"
+                                    placeholder="КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО"
+                                    required
+                                >
+                                <div class="form-hint">Отдельная подпись для блока с проектами и конкурсами.</div>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Короткое название бренда</label>
-                        <input
-                            type="text"
-                            name="site_brand_short_name"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_brand_short_name'] ?? siteBrandShortName())) ?>"
-                            placeholder="ДетскиеКонкурсы"
-                            required
-                        >
-                    </div>
+                    <aside class="settings-branding-preview" aria-label="Предпросмотр брендинга">
+                        <span class="settings-branding-preview__eyebrow">Предпросмотр</span>
+                        <strong class="settings-branding-preview__brand"><?= htmlspecialchars($brandingPreviewName) ?></strong>
+                        <div class="settings-branding-preview__title"><?= htmlspecialchars($brandingPreviewTitle) ?></div>
+                        <p class="settings-branding-preview__subtitle"><?= htmlspecialchars($brandingPreviewSubtitle) ?></p>
 
-                    <div class="form-group">
-                        <label class="form-label">Подзаголовок бренда</label>
-                        <input
-                            type="text"
-                            name="site_brand_subtitle"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_brand_subtitle'] ?? siteBrandSubtitle())) ?>"
-                            placeholder="Всероссийские конкурсы детского творчества"
-                        >
-                    </div>
+                        <div class="settings-branding-preview__meta">
+                            <span class="settings-branding-preview__chip">Сайт</span>
+                            <span class="settings-branding-preview__chip">Письма</span>
+                            <span class="settings-branding-preview__chip">Дипломы</span>
+                        </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Подпись «Конкурсы/Проекты»</label>
-                        <input
-                            type="text"
-                            name="site_projects_label"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_projects_label'] ?? siteProjectsLabel())) ?>"
-                            placeholder="КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО"
-                            required
-                        >
-                    </div>
+                        <div class="settings-branding-preview__projects">
+                            <span class="settings-branding-preview__label">Подпись блока</span>
+                            <strong><?= htmlspecialchars($brandingPreviewProjects) ?></strong>
+                        </div>
+                    </aside>
                 </div>
 
                 <div class="settings-actions">
                     <button type="submit" class="btn btn--primary">
-                        <i class="fas fa-save"></i> Сохранить
+                        <i class="fas fa-save"></i> Сохранить брендирование
                     </button>
                 </div>
             </form>
@@ -714,17 +785,17 @@ unset($_SESSION['success_message']);
                             </div>
                         </div>
 
-                        <div class="form-group">
-                            <label class="form-checkbox">
-                                <input type="checkbox" name="vk_publication_from_group" value="1" <?= (int) ($settings['vk_publication_from_group'] ?? 1) === 1 ? 'checked' : '' ?>>
-                                <span class="form-checkbox__mark"></span>
-                                <span>Публиковать от имени сообщества</span>
-                            </label>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">Admin access token (replace-only)</label>
+	                        <div class="form-group">
+	                            <label class="form-checkbox">
+	                                <input type="checkbox" name="vk_publication_from_group" value="1" <?= (int) ($settings['vk_publication_from_group'] ?? 1) === 1 ? 'checked' : '' ?>>
+	                                <span class="form-checkbox__mark"></span>
+	                                <span>Публиковать от имени сообщества</span>
+	                            </label>
+	                        </div>
+	
+	                        <div class="form-row">
+	                            <div class="form-group">
+	                                <label class="form-label">Admin access token (replace-only)</label>
                                 <textarea name="vk_publication_admin_access_token" class="form-input" rows="3" placeholder="Оставьте пустым, чтобы не менять"></textarea>
                             </div>
                             <div class="form-group">
@@ -753,20 +824,21 @@ unset($_SESSION['success_message']);
                             <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {contest_title}, {participant_age}, {age_category}.</div>
                             <div class="form-hint" style="margin-top:8px;">Компактный шаблон (готовая альтернатива):</div>
                             <pre style="white-space:pre-wrap; background:#F8FAFC; padding:10px; border-radius:8px; border:1px solid #E2E8F0; margin-top:6px; font-size:12px;"><?= htmlspecialchars(compactVkPostTemplate()) ?></pre>
-                            <div style="margin-top:12px;">
-                                <label class="form-label" style="margin-bottom:6px;">Предпросмотр с тестовыми данными</label>
-                                <div id="vkPublicationTemplatePreview" style="white-space:pre-wrap; background:#FFFFFF; padding:14px; border-radius:10px; border:1px solid #D1D5DB; line-height:1.5;"></div>
-                            </div>
-                        </div>
+	                            <div style="margin-top:12px;">
+	                                <label class="form-label" style="margin-bottom:6px;">Предпросмотр с тестовыми данными</label>
+	                                <div id="vkPublicationTemplatePreview" style="white-space:pre-wrap; background:#FFFFFF; padding:14px; border-radius:10px; border:1px solid #D1D5DB; line-height:1.5;"></div>
+	                            </div>
+	                        </div>
 
-                    </div>
-                    <div class="settings-actions">
-                        <button type="submit" class="btn btn--primary">
-                            <i class="fas fa-save"></i> Сохранить
-                        </button>
-                    </div>
-            </form>
-        </section>
+	                        <div class="settings-actions">
+	                            <button type="submit" class="btn btn--primary">
+	                                <i class="fas fa-save"></i> Сохранить
+	                            </button>
+	                        </div>
+	
+	                    </div>
+	            </form>
+	        </section>
 
         <section id="homepage-banner" class="settings-tab-panel<?= $activeSettingsTab === 'homepage-banner' ? ' is-active' : '' ?>" data-settings-panel="homepage-banner">
             <form method="POST" class="settings-form" id="homepageBannerForm">
