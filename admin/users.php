@@ -21,8 +21,27 @@ $where = '';
 $params = [];
 
 if ($search) {
-    $where = "WHERE name LIKE ? OR surname LIKE ? OR email LIKE ? OR vk_id LIKE ?";
-    $params = ["%$search%", "%$search%", "%$search%", "%$search%"];
+    $searchValue = trim((string) $search);
+    if ($searchValue !== '' && ctype_digit($searchValue)) {
+        $where = "WHERE u.id = ?";
+        $params = [(int) $searchValue];
+    } else {
+        $term = '%' . $searchValue . '%';
+        $hasPatronymic = function_exists('db_table_has_column') ? db_table_has_column('users', 'patronymic') : false;
+
+        $fioConditions = [
+            'u.name LIKE ?',
+            'u.surname LIKE ?',
+            "CONCAT_WS(' ', u.surname, u.name" . ($hasPatronymic ? ', u.patronymic' : '') . ") LIKE ?",
+            "CONCAT_WS(' ', u.name, u.surname" . ($hasPatronymic ? ', u.patronymic' : '') . ") LIKE ?",
+        ];
+        if ($hasPatronymic) {
+            $fioConditions[] = 'u.patronymic LIKE ?';
+        }
+
+        $where = 'WHERE (' . implode(' OR ', $fioConditions) . ')';
+        $params = array_fill(0, count($fioConditions), $term);
+    }
 }
 
 // Пагинация
@@ -57,9 +76,9 @@ require_once __DIR__ . '/includes/header.php';
         <form method="GET" class="flex gap-md" style="align-items: flex-end;">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
             <div style="flex: 1; max-width: 400px;">
-                <label class="form-label">Поиск</label>
+                <label class="form-label">Поиск по пользователю или ID</label>
                 <input type="text" name="search" class="form-input" 
-                       placeholder="Имя, фамилия, email, VK ID..." 
+                       placeholder="ID пользователя или ФИО" 
                        value="<?= htmlspecialchars($search) ?>">
             </div>
             <button type="submit" class="btn btn--primary">

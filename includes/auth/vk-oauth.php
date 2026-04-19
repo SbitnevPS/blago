@@ -102,12 +102,20 @@ function vk_flow_redirect_uri(string $flow): string
         return VK_ADMIN_REDIRECT_URI;
     }
 
+    if ($flow === 'publication') {
+        return VK_PUBLICATION_REDIRECT_URI;
+    }
+
     return VK_USER_REDIRECT_URI;
 }
 
 function vk_flow_default_redirect(string $flow): string
 {
-    return $flow === 'admin' ? '/admin' : '/contests';
+    if ($flow === 'admin' || $flow === 'publication') {
+        return '/admin/settings#vk-integration';
+    }
+
+    return '/contests';
 }
 
 function vk_flow_session_get(string $flow): ?array
@@ -146,24 +154,47 @@ function vk_flow_session_is_valid(string $flow, ?array $sessionFlow): bool
     return (
         ($sessionFlow['flow'] ?? '') === $flow
         && trim((string) ($sessionFlow['state'] ?? '')) !== ''
-        && trim((string) ($sessionFlow['code_verifier'] ?? '')) !== ''
         && trim((string) ($sessionFlow['redirect_uri'] ?? '')) === vk_flow_redirect_uri($flow)
     );
 }
 
+function vk_admin_publication_scope(): string
+{
+    $chunks = array_merge(
+        explode(',', vk_scope_normalize(VKID_ADMIN_SCOPE, ',')),
+        explode(',', vk_scope_normalize(VKID_PUBLICATION_SCOPE, ','))
+    );
+
+    $scopes = [];
+    foreach ($chunks as $chunk) {
+        $value = trim((string) $chunk);
+        if ($value !== '') {
+            $scopes[$value] = $value;
+        }
+    }
+
+    foreach (['wall', 'photos', 'offline'] as $requiredScope) {
+        $scopes[$requiredScope] = $requiredScope;
+    }
+
+    return implode(',', array_values($scopes));
+}
+
 function vk_build_auth_url(array $sessionFlow): string
 {
-    $verifier = (string) $sessionFlow['code_verifier'];
-    $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
+    $flow = (string) ($sessionFlow['flow'] ?? 'user');
+    $scope = $flow === 'admin'
+        ? vk_admin_publication_scope()
+        : ($flow === 'publication'
+            ? vk_scope_normalize(VKID_PUBLICATION_SCOPE, ',')
+            : vk_scope_normalize(VKID_USER_SCOPE, ','));
 
     return 'https://oauth.vk.com/authorize?' . http_build_query([
         'client_id' => VK_CLIENT_ID,
         'redirect_uri' => (string) $sessionFlow['redirect_uri'],
         'response_type' => 'code',
-        'scope' => 'email',
+        'scope' => $scope,
         'state' => (string) $sessionFlow['state'],
-        'code_challenge' => $challenge,
-        'code_challenge_method' => 'S256',
         'v' => VK_API_VERSION,
     ]);
 }
@@ -173,8 +204,8 @@ function vk_flow_prepare(string $flow, string $rawRedirect): array
     $defaultRedirect = vk_flow_default_redirect($flow);
     $safeRedirect = sanitize_internal_redirect($rawRedirect, $defaultRedirect);
 
-    if ($flow === 'admin' && strpos($safeRedirect, '/admin') !== 0) {
-        $safeRedirect = '/admin';
+    if (($flow === 'admin' || $flow === 'publication') && strpos($safeRedirect, '/admin') !== 0) {
+        $safeRedirect = '/admin/settings#vk-integration';
     }
 
     $sessionFlow = vk_flow_session_get($flow);
@@ -280,12 +311,76 @@ function vk_http_post_form(string $url, array $postFields = [], array $headers =
     ];
 }
 
+function vkid_exchange_sdk_code_for_tokens(string $code, string $deviceId, string $codeVerifier, string $redirectUri, string $state): array
+{
+    $code = trim($code);
+    $deviceId = trim($deviceId);
+    $codeVerifier = trim($codeVerifier);
+    $redirectUri = trim($redirectUri);
+    $state = trim($state);
+
+    if ($code === '' || $deviceId === '' || $codeVerifier === '' || $redirectUri === '' || $state === '') {
+        return ['ok' => false, 'error' => 'invalid_callback', 'payload' => []];
+    }
+
+    $response = vk_http_post_form('https://id.vk.ru/oauth2/auth', [
+        'grant_type' => 'authorization_code',
+        'client_id' => VK_CLIENT_ID,
+        'device_id' => $deviceId,
+        'redirect_uri' => $redirectUri,
+        'state' => $state,
+        'code' => $code,
+        'code_verifier' => $codeVerifier,
+    ]);
+
+    $json = is_array($response['json']) ? $response['json'] : [];
+    if (!$response['ok'] || !empty($json['error']) || empty($json['access_token'])) {
+        vk_auth_log('sdk_code_exchange_failed', [
+            'http_code' => $response['http_code'],
+            'curl_error' => $response['curl_error'],
+            'vk_error' => $json['error'] ?? '',
+            'vk_error_description' => $json['error_description'] ?? '',
+        ]);
+        return ['ok' => false, 'error' => 'exchange_failed', 'payload' => $json];
+    }
+
+    return ['ok' => true, 'error' => '', 'payload' => $json];
+}
+
+function vkid_refresh_token(string $refreshToken, string $deviceId, string $state = ''): array
+{
+    $refreshToken = trim($refreshToken);
+    $deviceId = trim($deviceId);
+    $state = trim($state);
+    if ($refreshToken === '' || $deviceId === '') {
+        return ['ok' => false, 'error' => 'missing_refresh_token', 'payload' => []];
+    }
+
+    $fields = [
+        'grant_type' => 'refresh_token',
+        'client_id' => VK_CLIENT_ID,
+        'device_id' => $deviceId,
+        'refresh_token' => $refreshToken,
+    ];
+    if ($state !== '') {
+        $fields['state'] = $state;
+    }
+
+    $response = vk_http_post_form('https://id.vk.ru/oauth2/auth', $fields);
+    $json = is_array($response['json']) ? $response['json'] : [];
+    if (!$response['ok'] || !empty($json['error']) || empty($json['access_token'])) {
+        return ['ok' => false, 'error' => (string) ($json['error'] ?? 'refresh_failed'), 'payload' => $json];
+    }
+
+    return ['ok' => true, 'error' => '', 'payload' => $json];
+}
+
 function vk_error_message(string $code): string
 {
     $messages = [
         'session_expired' => 'Сессия входа через VK устарела. Попробуйте снова.',
         'invalid_callback' => 'VK вернул некорректные данные входа.',
-        'exchange_failed' => 'Не удалось завершить вход через VK.',
+        'exchange_failed' => 'Не удалось завершить вход через VK для публикации (нужны права wall/photos).',
         'profile_failed' => 'Не удалось получить профиль VK.',
         'admin_access_denied' => 'Доступ в админку запрещён.',
     ];
@@ -296,7 +391,7 @@ function vk_error_message(string $code): string
 function vk_callback_fail(string $flow, string $errorCode): void
 {
     vk_flow_session_clear($flow);
-    $basePath = $flow === 'admin' ? '/admin/login' : '/login';
+    $basePath = $flow === 'admin' ? '/admin/login' : (($flow === 'publication') ? '/admin/settings#vk-integration' : '/login');
     header('Location: ' . $basePath . '?auth_error=' . urlencode($errorCode));
     exit;
 }
@@ -362,7 +457,7 @@ function vk_callback_handle(string $flow, PDO $pdo): void
         vk_callback_fail($flow, 'session_expired');
     }
 
-    if ($expectedState === '' || !hash_equals($expectedState, $state) || $storedVerifier === '') {
+    if ($expectedState === '' || !hash_equals($expectedState, $state)) {
         vk_auth_log('callback_state_or_verifier_failed', [
             'flow' => $flow,
             'state_valid' => ($expectedState !== '' && hash_equals($expectedState, $state)),
@@ -376,7 +471,6 @@ function vk_callback_handle(string $flow, PDO $pdo): void
         'client_secret' => VK_CLIENT_SECRET,
         'redirect_uri' => vk_flow_redirect_uri($flow),
         'code' => $code,
-        'code_verifier' => $storedVerifier,
         'grant_type' => 'authorization_code',
     ]);
     $tokenResponse = vk_http_get($tokenUrl);
@@ -972,6 +1066,23 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
 
     $_SESSION['user_id'] = $userId;
     $_SESSION['vk_token'] = $accessToken;
+    $expiresIn = (int) ($claims['expires_in'] ?? ($claims['expiresIn'] ?? 0));
+    $scope = vk_scope_normalize((string) ($claims['scope'] ?? ''));
+    $tokenType = trim((string) ($claims['token_type'] ?? ($claims['tokenType'] ?? '')));
+    $deviceId = trim((string) ($claims['device_id'] ?? ($claims['deviceId'] ?? '')));
+    $obtainedAt = time();
+    $expiresAt = $expiresIn > 0 ? ($obtainedAt + $expiresIn) : 0;
+    vkid_session_set_tokens('user', [
+        'access_token' => $accessToken,
+        'refresh_token' => $refreshToken,
+        'expires_in' => $expiresIn,
+        'obtained_at_ts' => $obtainedAt,
+        'expires_at_ts' => $expiresAt,
+        'scope' => $scope,
+        'token_type' => $tokenType,
+        'user_id' => $vkUserId,
+        'device_id' => $deviceId,
+    ]);
     vk_log_attempt('user', 'session_set', [
         'session_keys' => ['user_id', 'vk_token'],
         'user_id' => $userId,
@@ -1052,9 +1163,71 @@ function vk_admin_login_by_access_token(PDO $pdo, string $accessToken, string $r
         return ['ok' => false, 'error_code' => 'admin_access_denied'];
     }
 
+    $scope = vk_scope_normalize((string) ($claims['scope'] ?? ''), ',');
+    $scopeList = array_filter(array_map('trim', explode(',', $scope)));
+    $requiredScopes = ['wall', 'photos'];
+    foreach ($requiredScopes as $requiredScope) {
+        if (!in_array($requiredScope, $scopeList, true)) {
+            return ['ok' => false, 'error_code' => 'exchange_failed'];
+        }
+    }
+
     $_SESSION['admin_user_id'] = (int) $admin['id'];
     $_SESSION['is_admin'] = true;
     unset($_SESSION['admin_auth_redirect']);
+
+    $expiresIn = (int) ($claims['expires_in'] ?? ($claims['expiresIn'] ?? 0));
+    $scopeForSession = vk_scope_normalize((string) ($claims['scope'] ?? ''));
+    $tokenType = trim((string) ($claims['token_type'] ?? ($claims['tokenType'] ?? '')));
+    $deviceId = trim((string) ($claims['device_id'] ?? ($claims['deviceId'] ?? '')));
+    $obtainedAt = time();
+    $expiresAt = $expiresIn > 0 ? ($obtainedAt + $expiresIn) : 0;
+    vkid_session_set_tokens('admin', [
+        'access_token' => $accessToken,
+        'refresh_token' => $refreshToken,
+        'expires_in' => $expiresIn,
+        'obtained_at_ts' => $obtainedAt,
+        'expires_at_ts' => $expiresAt,
+        'scope' => $scopeForSession,
+        'token_type' => $tokenType,
+        'user_id' => $vkUserId,
+        'device_id' => $deviceId,
+    ]);
+
+    if (function_exists('saveSystemSettings')) {
+        $encrypt = static function (string $value): string {
+            if (function_exists('vkPublicationEncryptValue')) {
+                return (string) vkPublicationEncryptValue($value);
+            }
+            return $value;
+        };
+        saveSystemSettings([
+            'vk_publication_admin_access_token_encrypted' => $encrypt($accessToken),
+            'vk_publication_admin_refresh_token_encrypted' => $encrypt($refreshToken),
+            'vk_publication_admin_token_expires_at' => $expiresAt,
+            'vk_publication_admin_device_id' => $deviceId,
+            'vk_publication_admin_user_id' => $vkUserId,
+            'vk_publication_auth_mode' => 'admin_user_token',
+            'vk_publication_token_source' => 'oauth_vk_admin_login',
+            'vk_publication_status' => 'TOKEN_SAVED',
+        ]);
+    }
+
+    if (function_exists('verifyVkPublicationReadiness')) {
+        $readiness = verifyVkPublicationReadiness(false, false, 'admin_login');
+        if (empty($readiness['ok'])) {
+            saveSystemSettings([
+                'vk_publication_admin_access_token_encrypted' => '',
+                'vk_publication_admin_refresh_token_encrypted' => '',
+                'vk_publication_admin_token_expires_at' => 0,
+                'vk_publication_admin_device_id' => '',
+                'vk_publication_admin_user_id' => 0,
+                'vk_publication_status' => 'CHECK_FAILED',
+            ]);
+            vk_admin_session_reset();
+            return ['ok' => false, 'error_code' => 'exchange_failed'];
+        }
+    }
 
     return ['ok' => true, 'redirect_to' => $safeRedirect];
 }

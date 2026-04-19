@@ -33,22 +33,25 @@ try {
  $limit = max(1, min(7, $limit));
  $searchTerm = "%$query%";
  $idQuery = $isNumericQuery ? (int) $query : 0;
+ $searchConditions = build_user_search_conditions();
+ $searchSql = implode("\n     OR ", $searchConditions);
 
  $stmt = $pdo->prepare("
  SELECT id, name, surname, email 
  FROM users 
- WHERE is_admin =0
+ WHERE is_admin = 0
  AND (
-     name LIKE ?
-     OR surname LIKE ?
-     OR email LIKE ?
+     {$searchSql}
      OR (? > 0 AND id = ?)
  )
  ORDER BY surname ASC, name ASC
  LIMIT $limit
  ");
 
- $stmt->execute([$searchTerm, $searchTerm, $searchTerm, $idQuery, $idQuery]);
+ $params = array_fill(0, count($searchConditions), $searchTerm);
+ $params[] = $idQuery;
+ $params[] = $idQuery;
+ $stmt->execute($params);
  $users = $stmt->fetchAll();
 
  echo json_encode($users, JSON_UNESCAPED_UNICODE);

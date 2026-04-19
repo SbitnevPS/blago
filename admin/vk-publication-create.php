@@ -114,12 +114,8 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div class="form-group">
                     <label class="form-label">Статус работы</label>
-                    <select name="work_status" class="form-select">
-                        <option value="">Любой</option>
-                        <option value="pending">На рассмотрении</option>
-                        <option value="accepted">Принята</option>
-                        <option value="reviewed">Рассмотрена</option>
-                    </select>
+                    <input type="hidden" name="work_status" value="accepted">
+                    <input type="text" class="form-input" value="Рисунок принят" disabled>
                 </div>
             </div>
 
@@ -132,14 +128,6 @@ require_once __DIR__ . '/includes/header.php';
                     <label class="form-label">Образовательное учреждение</label>
                     <input type="text" name="organization_name" class="form-input" placeholder="Часть названия">
                 </div>
-            </div>
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="form-label">Название рисунка</label>
-                    <input type="text" name="drawing_title" class="form-input" placeholder="Часть названия работы">
-                </div>
-                <div class="form-group"></div>
             </div>
 
             <div class="form-row">
@@ -204,7 +192,13 @@ require_once __DIR__ . '/includes/header.php';
             <div class="form-group">
                 <label class="form-label">Шаблон текста поста</label>
                 <textarea name="post_template" id="postTemplate" class="form-input" rows="8"><?= e($settings['post_template']) ?></textarea>
-                <div class="form-hint">Переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {drawing_title}, {work_title}, {contest_title}, {nomination}, {participant_age}, {age_category}</div>
+                <div class="form-hint">Переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {contest_title}, {participant_age}, {age_category}. Поддерживается legacy-переменная: {nomination}.</div>
+                <div class="form-hint" style="margin-top:8px;">Компактный вариант (для ручной вставки):</div>
+                <pre style="white-space:pre-wrap; background:#F8FAFC; padding:10px; border-radius:8px; border:1px solid #E2E8F0; margin-top:6px; font-size:12px;"><?= e(compactVkPostTemplate()) ?></pre>
+                <div style="margin-top:12px;">
+                    <label class="form-label" style="margin-bottom:6px;">Живой предпросмотр шаблона</label>
+                    <div id="liveTemplatePreview" style="white-space:pre-wrap; background:#FFFFFF; padding:14px; border-radius:10px; border:1px solid #D1D5DB; line-height:1.5;"></div>
+                </div>
             </div>
 
             <div class="flex gap-md">
@@ -226,7 +220,7 @@ require_once __DIR__ . '/includes/header.php';
             <hr style="margin:16px 0; border:none; border-top:1px solid #E5E7EB;">
             <div>
                 <h4 style="margin-bottom:8px;">Пример текста поста</h4>
-                <pre id="previewPostText" style="white-space:pre-wrap; background:#F8FAFC; padding:12px; border-radius:8px; border:1px solid #E2E8F0;"></pre>
+                <div id="previewPostText" style="white-space:pre-wrap; background:#FFFFFF; padding:14px; border-radius:10px; border:1px solid #D1D5DB; line-height:1.5;"></div>
             </div>
         </div>
         <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
@@ -244,6 +238,8 @@ const previewModal = document.getElementById('previewModal');
 const previewSummary = document.getElementById('previewSummary');
 const previewPostText = document.getElementById('previewPostText');
 const filtersJsonInput = document.getElementById('filtersJson');
+const postTemplateInput = document.getElementById('postTemplate');
+const liveTemplatePreview = document.getElementById('liveTemplatePreview');
 
 function closePreviewModal() {
     previewModal.classList.remove('active');
@@ -284,6 +280,71 @@ async function fetchPreview() {
     previewModal.classList.add('active');
 }
 
+function renderTemplatePreview(template, values) {
+    const lines = String(template || '').split(/\r?\n/u);
+    const rendered = [];
+
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) {
+            rendered.push('');
+            continue;
+        }
+
+        const tokens = Array.from(line.matchAll(/\{([a-z0-9_]+)\}/giu)).map((item) => item[1]);
+        if (tokens.length > 0) {
+            const allEmpty = tokens.every((token) => String(values[token] || '').trim() === '');
+            if (allEmpty) {
+                continue;
+            }
+        }
+
+        let replaced = line.replace(/\{([a-z0-9_]+)\}/giu, (_, token) => String(values[token] || ''));
+        replaced = replaced.trim();
+        if (!replaced || /[:：]\s*$/u.test(replaced)) {
+            continue;
+        }
+        const core = replaced.replace(/[\p{Z}\p{P}\p{S}]+/gu, '');
+        if (!core) {
+            continue;
+        }
+        rendered.push(replaced);
+    }
+
+    const collapsed = [];
+    let prevEmpty = true;
+    for (const line of rendered) {
+        const isEmpty = String(line).trim() === '';
+        if (isEmpty) {
+            if (prevEmpty) {
+                continue;
+            }
+            collapsed.push('');
+            prevEmpty = true;
+            continue;
+        }
+        collapsed.push(line);
+        prevEmpty = false;
+    }
+
+    return collapsed.join('\n').trim();
+}
+
+function updateLiveTemplatePreview() {
+    const sampleValues = {
+        participant_name: 'Анна',
+        participant_full_name: 'Иванова Анна Сергеевна',
+        organization_name: 'МБУ ДО «Детская школа искусств №1»',
+        region_name: 'Московская область',
+        contest_title: 'Мир глазами детей',
+        participant_age: '9',
+        age_category: '7-10 лет',
+        nomination: '',
+    };
+    const text = renderTemplatePreview(postTemplateInput.value, sampleValues);
+    liveTemplatePreview.textContent = text || 'Введите шаблон, чтобы увидеть пример поста.';
+}
+
 previewButton.addEventListener('click', async () => {
     try {
         await fetchPreview();
@@ -291,6 +352,9 @@ previewButton.addEventListener('click', async () => {
         alert(error.message || 'Ошибка предпросмотра');
     }
 });
+
+postTemplateInput.addEventListener('input', updateLiveTemplatePreview);
+updateLiveTemplatePreview();
 
 function submitTask(mode) {
     const publishModeInput = document.createElement('input');

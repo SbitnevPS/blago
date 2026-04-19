@@ -22,6 +22,7 @@ if ($status === 'draft') {
 }
 $contest_id = $_GET['contest_id'] ?? '';
 $search = $_GET['search'] ?? '';
+$searchApplicationId = max(0, (int) ($_GET['search_application_id'] ?? 0));
 $searchUserId = max(0, (int) ($_GET['search_user_id'] ?? 0));
 $participantId = max(0, (int) ($_GET['participant_id'] ?? 0));
 $participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
@@ -175,7 +176,7 @@ if ($publishPromptApplicationId > 0) {
             }
             $imagePath = '';
             if ($imageFile !== '') {
-                $imagePath = getParticipantDrawingWebPath((string) ($promptApplication['applicant_email'] ?? ''), $imageFile);
+                $imagePath = getParticipantDrawingPreviewWebPath((string) ($promptApplication['applicant_email'] ?? ''), $imageFile);
             }
 
             $publishPromptData['participants'][] = [
@@ -225,31 +226,61 @@ if ($contest_id) {
     $params[] = $contest_id;
 }
 
-if ($searchUserId > 0) {
+if ($searchApplicationId > 0) {
+    $where[] = 'a.id = ?';
+    $params[] = $searchApplicationId;
+} elseif ($searchUserId > 0) {
     $where[] = 'a.user_id = ?';
     $params[] = $searchUserId;
 } elseif ($search) {
-    $where[] = '(u.name LIKE ? OR u.surname LIKE ? OR u.email LIKE ? OR a.id LIKE ?)';
-    $params = array_merge($params, ["%$search%", "%$search%", "%$search%", "%$search%"]);
+    $searchValue = trim((string) $search);
+    if ($searchValue !== '' && ctype_digit($searchValue)) {
+        $where[] = 'a.id = ?';
+        $params[] = (int) $searchValue;
+    } else {
+        $term = '%' . $searchValue . '%';
+        $where[] = "(
+            u.name LIKE ?
+            OR u.surname LIKE ?
+            OR CONCAT(u.surname, ' ', u.name) LIKE ?
+            OR CONCAT(u.name, ' ', u.surname) LIKE ?
+        )";
+        $params[] = $term;
+        $params[] = $term;
+        $params[] = $term;
+        $params[] = $term;
+    }
 }
 
 if ($participantId > 0) {
     $where[] = 'a.id IN (SELECT p.application_id FROM participants p WHERE p.id = ?)';
     $params[] = $participantId;
 } elseif ($participantQuery !== '') {
-    $where[] = 'EXISTS (
-        SELECT 1
-        FROM participants p
-        JOIN applications a2 ON a2.id = p.application_id
-        JOIN users pu ON pu.id = a2.user_id
-        WHERE p.application_id = a.id
-          AND (p.fio LIKE ? OR p.region LIKE ? OR pu.email LIKE ? OR CAST(p.id AS CHAR) LIKE ?)
-    )';
-    $participantTerm = '%' . $participantQuery . '%';
-    $params[] = $participantTerm;
-    $params[] = $participantTerm;
-    $params[] = $participantTerm;
-    $params[] = $participantTerm;
+    $participantQueryNormalized = ltrim(trim((string) $participantQuery), "# \t\n\r\0\x0B");
+    $isParticipantNumeric = $participantQueryNormalized !== '' && ctype_digit($participantQueryNormalized);
+
+    if ($isParticipantNumeric) {
+        $where[] = 'EXISTS (
+            SELECT 1
+            FROM participants p
+            WHERE p.application_id = a.id
+              AND p.public_number = ?
+        )';
+        $params[] = $participantQueryNormalized;
+    } else {
+        $where[] = 'EXISTS (
+            SELECT 1
+            FROM participants p
+            JOIN applications a2 ON a2.id = p.application_id
+            JOIN users pu ON pu.id = a2.user_id
+            WHERE p.application_id = a.id
+              AND (p.fio LIKE ? OR p.region LIKE ? OR pu.email LIKE ?)
+        )';
+        $participantTerm = '%' . $participantQueryNormalized . '%';
+        $params[] = $participantTerm;
+        $params[] = $participantTerm;
+        $params[] = $participantTerm;
+    }
 }
 
 $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
@@ -267,7 +298,7 @@ $totalPages = ceil($totalApps / $perPage);
 
 // Получаем заявки
 $stmt = $pdo->prepare("
-    SELECT a.*, c.title as contest_title, u.name, u.surname, u.email, u.avatar_url,
+    SELECT a.*, c.title as contest_title, c.requires_payment_receipt AS contest_requires_payment_receipt, u.name, u.surname, u.email, u.avatar_url,
            (SELECT COUNT(*) FROM participants WHERE application_id = a.id) as participants_count
     FROM applications a
     LEFT JOIN contests c ON a.contest_id = c.id
@@ -330,30 +361,53 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div style="flex: 1; min-width: 200px; max-width: 300px; position:relative;">
-                <label class="form-label">Поиск</label>
-                <input type="text" id="applicationsSearchInput" name="search" class="form-input" 
-                       placeholder="ID, имя, email..." value="<?= htmlspecialchars($search) ?>">
-                <input type="hidden" name="search_user_id" id="applicationsSearchUserId" value="<?= (int) $searchUserId ?>">
-                <div id="applicationsSearchResults" class="user-results"></div>
+            <div
+                style="flex: 1; min-width: 200px; max-width: 300px; position:relative;"
+                <?= admin_live_search_attrs([
+                    'endpoint' => '/admin/search-applications',
+                    'primary_template' => '#{{id}} · {{surname + name||Без имени}}',
+                    'secondary_template' => '{{contest_title||Конкурс не указан}} · {{email||Email не указан}}',
+                    'value_template' => '#{{id}} · {{surname + name||Без имени}}',
+                    'limit' => 7,
+                    'min_length' => 2,
+                    'min_length_numeric' => 1,
+                    'debounce' => 220,
+                ]) ?>>
+                <label class="form-label">Поиск по заявителю или заявке</label>
+                <input type="text" id="applicationsSearchInput" name="search" class="form-input" data-live-search-input
+                       placeholder="Номер заявки или ФИО заявителя" value="<?= htmlspecialchars($search) ?>">
+                <input type="hidden" name="search_application_id" id="applicationsSearchApplicationId" data-live-search-hidden value="<?= (int) $searchApplicationId ?>">
+                <input type="hidden" name="search_user_id" id="applicationsSearchUserId" data-live-search-hidden value="<?= (int) $searchUserId ?>">
+                <div id="applicationsSearchResults" class="user-results" data-live-search-results></div>
             </div>
-            <div style="flex:1; min-width: 260px; max-width: 380px; position:relative;">
+            <div
+                style="flex:1; min-width: 260px; max-width: 380px; position:relative;"
+                <?= admin_live_search_attrs([
+                    'endpoint' => '/admin/search-participants',
+                    'primary_template' => '#{{public_number||id}} · {{fio||Без имени}}',
+                    'secondary_template' => 'Регион: {{region||—}} · {{email||Email не указан}}',
+                    'value_template' => '#{{public_number||id}} · {{fio||Без имени}}',
+                    'min_length' => 2,
+                    'min_length_numeric' => 1,
+                    'debounce' => 220,
+                ]) ?>>
                 <label class="form-label">Поиск по участнику</label>
                 <input
                     type="text"
                     name="participant_query"
                     id="participantSearchInput"
+                    data-live-search-input
                     class="form-input"
-                    placeholder="ID, ФИО участника, регион или email заявителя"
+                    placeholder="Номер участника или ФИО"
                     value="<?= htmlspecialchars($participantQuery) ?>"
                     autocomplete="off">
-                <input type="hidden" name="participant_id" id="participantId" value="<?= (int) $participantId ?>">
-                <div id="participantSearchResults" class="user-results"></div>
+                <input type="hidden" name="participant_id" id="participantId" data-live-search-hidden value="<?= (int) $participantId ?>">
+                <div id="participantSearchResults" class="user-results" data-live-search-results></div>
             </div>
             <button type="submit" class="btn btn--primary">
                 <i class="fas fa-filter"></i> Фильтр
             </button>
-            <?php if ($status || $contest_id || $search || $searchUserId > 0 || $participantId > 0 || $participantQuery !== '' || $queue): ?>
+            <?php if ($status || $contest_id || $search || $searchApplicationId > 0 || $searchUserId > 0 || $participantId > 0 || $participantQuery !== '' || $queue): ?>
                 <a href="applications.php" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
@@ -368,6 +422,7 @@ require_once __DIR__ . '/includes/header.php';
         'submitted' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted'")->fetchColumn(),
         'revision' => $pdo->query("SELECT COUNT(*) FROM applications WHERE allow_edit = 1 AND status <> 'approved'")->fetchColumn(),
         'corrected' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'corrected'")->fetchColumn(),
+        'rejected' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'rejected'")->fetchColumn(),
     ];
     if ($hasOpenedByAdminColumn) {
         $statCounts['new'] = $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted' AND opened_by_admin = 0")->fetchColumn();
@@ -394,6 +449,9 @@ require_once __DIR__ . '/includes/header.php';
     </a>
     <a href="?status=corrected" class="stat-pill <?= $status === 'corrected' ? 'stat-pill--active' : '' ?>">
         Исправлена, и отправлена на проверку <span class="stat-pill__count"><?= $statCounts['corrected'] ?></span>
+    </a>
+    <a href="?status=rejected" class="stat-pill <?= $status === 'rejected' ? 'stat-pill--active' : '' ?>">
+        Отклонённые заявки <span class="stat-pill__count"><?= $statCounts['rejected'] ?></span>
     </a>
 </div>
 
@@ -424,6 +482,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php foreach ($applications as $app): ?>
                 <?php
                     $statusMeta = getApplicationDisplayMeta($app);
+                    $receiptMeta = getApplicationPaymentReceiptMeta($app);
                     $vkStatus = $applicationVkStatuses[(int) $app['id']] ?? getApplicationVkPublicationStatus((int) $app['id']);
                     $isCorrected = (string) ($statusMeta['status_code'] ?? '') === 'corrected';
                 ?>
@@ -431,7 +490,10 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="admin-list-card__accent <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>"></div>
                     <div class="admin-list-card__header">
                         <div class="admin-list-card__title-wrap">
-                            <h4 class="admin-list-card__title">Заявка #<?= (int) $app['id'] ?></h4>
+                            <div class="flex items-center gap-sm flex-wrap">
+                                <h4 class="admin-list-card__title">Заявка #<?= (int) $app['id'] ?></h4>
+                                <span class="text-secondary">Подача: <?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></span>
+                            </div>
                             <div class="admin-list-card__subtitle">
                                 <?= htmlspecialchars(trim(($app['name'] ?? '') . ' ' . ($app['surname'] ?? '')) ?: 'Без имени') ?>
                                 <?php if (!empty($app['email'])): ?>
@@ -443,8 +505,8 @@ require_once __DIR__ . '/includes/header.php';
                             <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
                                 <?= e((string) ($statusMeta['label'] ?? '—')) ?>
                             </span>
-                            <span class="badge <?= e((string) ($vkStatus['badge_class'] ?? 'badge--secondary')) ?>">
-                                VK: <?= e((string) ($vkStatus['status_code'] === 'partial' ? 'Частично' : ($vkStatus['status_code'] === 'published' ? 'Опублик.' : ($vkStatus['status_code'] === 'failed' ? 'Ошибка' : 'Не опублик.')))) ?>
+                            <span class="badge <?= e((string) ($receiptMeta['badge_class'] ?? 'badge--secondary')) ?>">
+                                <?= e((string) ($receiptMeta['label'] ?? '—')) ?>
                             </span>
                         </div>
                     </div>
@@ -454,8 +516,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                         <span><strong>Конкурс:</strong> <?= htmlspecialchars($app['contest_title'] ?? '—') ?></span>
                         <span><strong>Участников:</strong> <?= (int) $app['participants_count'] ?></span>
-                        <span><strong>VK:</strong> <?= (int) ($vkStatus['published_count'] ?? 0) ?>/<?= (int) ($vkStatus['total_count'] ?? 0) ?></span>
-                        <span><strong>Подача:</strong> <?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></span>
+                        <span><strong>Опубликовано:</strong> <?= (int) ($vkStatus['published_count'] ?? 0) ?> из <?= (int) ($app['participants_count'] ?? 0) ?></span>
                     </div>
                     <div class="admin-list-card__actions">
                         <label class="select-col" style="display:none;">
@@ -464,6 +525,11 @@ require_once __DIR__ . '/includes/header.php';
                         <a href="/admin/application/<?= (int) $app['id'] ?>" class="btn btn--primary btn--sm">
                             <i class="fas fa-eye"></i> Открыть заявку
                         </a>
+                        <?php if (!empty($receiptMeta['file_url'])): ?>
+                        <a href="<?= e((string) $receiptMeta['file_url']) ?>" target="_blank" class="btn btn--ghost btn--sm">
+                            <i class="fas fa-receipt"></i> Квитанция
+                        </a>
+                        <?php endif; ?>
                         <?php if (($app['status'] ?? '') === 'approved'): ?>
                         <button
                             type="button"
@@ -489,12 +555,12 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="flex gap-sm">
                 <?php if ($page > 1): ?>
-                    <a href="?page=<?= $page - 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
+                    <a href="?page=<?= $page - 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_application_id=<?= (int) $searchApplicationId ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-left"></i>
                     </a>
                 <?php endif; ?>
                 <?php if ($page < $totalPages): ?>
-                    <a href="?page=<?= $page + 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
+                    <a href="?page=<?= $page + 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_application_id=<?= (int) $searchApplicationId ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-right"></i>
                     </a>
                 <?php endif; ?>
@@ -508,29 +574,20 @@ require_once __DIR__ . '/includes/header.php';
     <div class="modal__content" style="max-width:700px;">
         <div class="modal__header">
             <h3 class="modal__title">Публикация в VK</h3>
+            <button type="button" class="modal__close vk-publish-modal__close" aria-label="Закрыть" id="vkPublishPromptModalClose">&times;</button>
         </div>
         <div class="modal__body">
             <div id="vkPublishModalSummary" class="text-secondary" style="margin-bottom:10px;"></div>
             <div id="vkPublishPreview" style="display:grid; gap:8px; max-height:320px; overflow:auto; padding-right:4px;"></div>
             <div style="margin-top: 14px; border: 1px solid #E5E7EB; border-radius: 12px; padding: 12px;">
-                <div style="font-weight: 600; margin-bottom: 8px;">Донаты VK</div>
-                <label class="form-checkbox" style="margin-bottom:8px;">
-                    <input type="checkbox" id="vkDonationEnabled" value="1">
-                    <span class="form-checkbox__mark"></span>
-                    <span>Прикрепить донат</span>
-                </label>
-                <div class="form-group" style="margin-bottom:8px;">
-                    <label class="form-label" for="vkDonationGoalSelect">Цель доната</label>
-                    <select class="form-select" id="vkDonationGoalSelect" disabled>
-                        <option value="">Выберите цель доната</option>
-                    </select>
-                </div>
+                <div style="font-weight: 600; margin-bottom: 8px;">Будут опубликованы только принятые и ещё не опубликованные рисунки</div>
             </div>
             <div id="vkPublishPromptStatus" class="alert" style="display:none; margin-top:12px;"></div>
         </div>
         <div class="modal__footer" style="display:flex; justify-content:flex-end; gap:8px;">
             <button type="button" class="btn btn--primary" id="vkPublishPromptRun">Опубликовать</button>
             <button type="button" class="btn btn--secondary" id="vkPublishPromptSkip">Отмена</button>
+            <button type="button" class="btn btn--secondary is-hidden" id="vkPublishPromptClose">Закрыть</button>
         </div>
     </div>
 </div>
@@ -643,14 +700,15 @@ require_once __DIR__ . '/includes/header.php';
 
     const publishButton = document.getElementById('vkPublishPromptRun');
     const skipButton = document.getElementById('vkPublishPromptSkip');
+    const closeButton = document.getElementById('vkPublishPromptClose');
+    const closeIconButton = document.getElementById('vkPublishPromptModalClose');
     const statusBox = document.getElementById('vkPublishPromptStatus');
     const previewBox = document.getElementById('vkPublishPreview');
     const summaryBox = document.getElementById('vkPublishModalSummary');
-    const donationEnabledCheckbox = document.getElementById('vkDonationEnabled');
-    const donationGoalSelect = document.getElementById('vkDonationGoalSelect');
     let applicationId = <?= (int) $publishPromptApplicationId ?>;
     const csrfToken = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE) ?>;
     let publishInProgress = false;
+    let errorState = false;
 
     const showStatus = (message, type = 'success') => {
         if (!statusBox) return;
@@ -662,11 +720,43 @@ require_once __DIR__ . '/includes/header.php';
     const closeModal = () => {
         if (publishInProgress) return;
         modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        setErrorState(false);
+    };
+
+    const setErrorState = (nextState) => {
+        errorState = Boolean(nextState);
+        if (!publishButton || !skipButton || !closeButton) {
+            return;
+        }
+        publishButton.classList.toggle('is-hidden', errorState);
+        skipButton.classList.toggle('is-hidden', errorState);
+        closeButton.classList.toggle('is-hidden', !errorState);
+        publishButton.disabled = false;
+        skipButton.disabled = false;
+        closeButton.disabled = false;
     };
 
     if (skipButton) {
         skipButton.addEventListener('click', closeModal);
     }
+    if (closeButton) {
+        closeButton.addEventListener('click', closeModal);
+    }
+    if (closeIconButton) {
+        closeIconButton.addEventListener('click', closeModal);
+    }
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeModal();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && modal.classList.contains('active')) {
+            closeModal();
+        }
+    });
 
     const renderParticipants = (items) => {
         if (!previewBox) return;
@@ -679,7 +769,6 @@ require_once __DIR__ . '/includes/header.php';
                 ${item.preview_image ? `<img src="${item.preview_image}" style="width:52px;height:52px;border-radius:8px;object-fit:cover;">` : '<div style="width:52px;height:52px;border-radius:8px;background:#EEF2FF;display:flex;align-items:center;justify-content:center;"><i class="fas fa-image"></i></div>'}
                 <div style="display:grid; gap:4px;">
                     <strong>${item.fio || 'Без имени'}</strong>
-                    <div>${item.work_title || 'Без названия'}</div>
                     <span class="badge ${item.is_ready_for_publish ? 'badge--success' : 'badge--warning'}">${item.is_ready_for_publish ? 'Готово к публикации' : 'Не готово'}</span>
                     ${item.skip_reason ? `<div class="text-secondary" style="font-size:12px;">${item.skip_reason}</div>` : ''}
                 </div>
@@ -705,43 +794,28 @@ require_once __DIR__ . '/includes/header.php';
             }
             summaryBox.textContent = txt;
         }
-        donationGoalSelect.innerHTML = '<option value="">Выберите цель доната</option>';
-        (data.donation_goals || []).forEach((goal) => {
-            const option = document.createElement('option');
-            option.value = String(goal.id || '');
-            option.textContent = String(goal.title || '');
-            donationGoalSelect.appendChild(option);
-        });
     };
 
     document.querySelectorAll('.js-open-vk-publish-modal').forEach((button) => {
         button.addEventListener('click', async () => {
             applicationId = Number(button.dataset.applicationId || 0);
+            setErrorState(false);
             modal.classList.add('active');
+            modal.setAttribute('aria-hidden', 'false');
+            document.body.style.overflow = 'hidden';
             if (statusBox) statusBox.style.display = 'none';
-            if (donationEnabledCheckbox) donationEnabledCheckbox.checked = false;
-            donationGoalSelect.disabled = true;
             try {
                 await loadPublishData();
             } catch (error) {
                 showStatus(error.message, 'error');
+                setErrorState(true);
             }
         });
-    });
-
-    donationEnabledCheckbox?.addEventListener('change', () => {
-        donationGoalSelect.disabled = !donationEnabledCheckbox.checked;
     });
 
     if (publishButton) {
         publishButton.addEventListener('click', async () => {
             if (publishInProgress || !applicationId) return;
-            const donationEnabled = !!donationEnabledCheckbox?.checked;
-            const donationGoalId = Number(donationGoalSelect?.value || 0);
-            if (donationEnabled && !donationGoalId) {
-                showStatus('Выберите цель доната.', 'error');
-                return;
-            }
             publishInProgress = true;
             publishButton.disabled = true;
             if (skipButton) skipButton.disabled = true;
@@ -756,15 +830,14 @@ require_once __DIR__ . '/includes/header.php';
                     },
                     body: JSON.stringify({
                         application_id: applicationId,
-                        donation_enabled: donationEnabled ? 1 : 0,
-                        donation_goal_id: donationGoalId,
+                        publication_type: 'standard',
                         csrf_token: csrfToken,
                     }),
                 });
                 const data = await response.json();
                 if (!response.ok || !data.success) {
                     showStatus(data.error || 'Не удалось выполнить публикацию.', 'error');
-                    publishButton.disabled = false;
+                    setErrorState(true);
                     return;
                 }
 
@@ -772,171 +845,32 @@ require_once __DIR__ . '/includes/header.php';
                 location.reload();
             } catch (e) {
                 showStatus('Ошибка сети при публикации. Попробуйте ещё раз.', 'error');
+                setErrorState(true);
             } finally {
                 publishInProgress = false;
-                publishButton.disabled = false;
-                if (skipButton) skipButton.disabled = false;
+                if (!errorState) {
+                    publishButton.disabled = false;
+                    if (skipButton) skipButton.disabled = false;
+                }
+                if (closeButton) {
+                    closeButton.disabled = false;
+                }
             }
         });
     }
 
     if (applicationId > 0) {
+        setErrorState(false);
         modal.classList.add('active');
-        loadPublishData().catch((error) => showStatus(error.message, 'error'));
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        loadPublishData().catch((error) => {
+            showStatus(error.message, 'error');
+            setErrorState(true);
+        });
     }
 })();
 
-(() => {
-    const input = document.getElementById('participantSearchInput');
-    const hiddenInput = document.getElementById('participantId');
-    const results = document.getElementById('participantSearchResults');
-    if (!input || !hiddenInput || !results) return;
-
-    let timer = null;
-
-    const hideResults = () => {
-        results.style.display = 'none';
-        results.innerHTML = '';
-    };
-
-    const renderItems = (items) => {
-        if (!Array.isArray(items) || items.length === 0) {
-            results.innerHTML = '<div class="user-results__empty">Ничего не найдено</div>';
-            results.style.display = 'block';
-            return;
-        }
-
-        const escapeHtml = (value) => String(value ?? '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/\"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-
-        results.innerHTML = items.map((item) => {
-            const fullName = `${item.fio || ''}`.trim() || 'Без имени';
-            const region = item.region ? `Регион: ${item.region}` : 'Регион: —';
-            const email = item.email || 'Email не указан';
-            const labelName = `#${item.id} · ${fullName}`;
-            const safeName = escapeHtml(labelName);
-            const safeRegion = escapeHtml(region);
-            const safeEmail = escapeHtml(email);
-            return `
-                <button type="button" class="user-results__item" data-id="${item.id}" data-name="${safeName}">
-                    <div class="user-results__name">${safeName}</div>
-                    <div class="user-results__email">${safeRegion} · ${safeEmail}</div>
-                </button>
-            `;
-        }).join('');
-        results.style.display = 'block';
-    };
-
-    input.addEventListener('input', () => {
-        hiddenInput.value = '';
-        const query = input.value.trim();
-        if (timer) clearTimeout(timer);
-        if (query.length < 2) {
-            hideResults();
-            return;
-        }
-
-        timer = setTimeout(async () => {
-            try {
-                const response = await fetch(`/admin/search-participants.php?q=${encodeURIComponent(query)}`);
-                const data = await response.json();
-                renderItems(data);
-            } catch (error) {
-                hideResults();
-            }
-        }, 220);
-    });
-
-    results.addEventListener('click', (event) => {
-        const item = event.target.closest('.user-results__item');
-        if (!item) return;
-        hiddenInput.value = item.dataset.id || '';
-        input.value = item.dataset.name || '';
-        hideResults();
-    });
-
-    document.addEventListener('click', (event) => {
-        if (!results.contains(event.target) && event.target !== input) {
-            hideResults();
-        }
-    });
-})();
-
-(() => {
-    const input = document.getElementById('applicationsSearchInput');
-    const hiddenInput = document.getElementById('applicationsSearchUserId');
-    const results = document.getElementById('applicationsSearchResults');
-    if (!input || !results || !hiddenInput) return;
-    let timer = null;
-
-    const hideResults = () => {
-        results.style.display = 'none';
-        results.innerHTML = '';
-    };
-
-    const escapeHtml = (value) => String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-
-    const renderItems = (items) => {
-        if (!Array.isArray(items) || !items.length) {
-            results.innerHTML = '<div class="user-results__empty">Ничего не найдено</div>';
-            results.style.display = 'block';
-            return;
-        }
-        results.innerHTML = items.map((item) => {
-            const fullName = `${item.surname || ''} ${item.name || ''}`.trim() || 'Без имени';
-            const email = item.email || 'Email не указан';
-            const displayValue = `${fullName} · ${email}`;
-            return `<button type="button" class="user-results__item" data-id="${Number(item.id || 0)}" data-value="${escapeHtml(displayValue)}">
-                <div class="user-results__name">${escapeHtml(fullName)}</div>
-                <div class="user-results__email">${escapeHtml(email)}</div>
-            </button>`;
-        }).join('');
-        results.style.display = 'block';
-    };
-
-    input.addEventListener('input', () => {
-        hiddenInput.value = '';
-        const query = input.value.trim();
-        if (timer) clearTimeout(timer);
-        const isNumericQuery = /^\d+$/.test(query);
-        if ((!isNumericQuery && query.length < 2) || (isNumericQuery && query.length < 1)) {
-            hideResults();
-            return;
-        }
-        timer = setTimeout(async () => {
-            try {
-                const response = await fetch(`/admin/search-users.php?q=${encodeURIComponent(query)}&limit=7`);
-                const data = await response.json();
-                renderItems(data);
-            } catch (e) {
-                hideResults();
-            }
-        }, 220);
-    });
-
-    results.addEventListener('click', (event) => {
-        const item = event.target.closest('.user-results__item');
-        if (!item) return;
-        hiddenInput.value = item.dataset.id || '';
-        input.value = item.dataset.value || '';
-        hideResults();
-    });
-
-    document.addEventListener('click', (event) => {
-        if (!results.contains(event.target) && event.target !== input) {
-            hideResults();
-        }
-    });
-})();
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

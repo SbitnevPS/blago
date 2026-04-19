@@ -18,16 +18,6 @@ if (!verifyCSRFToken($csrfToken)) {
 }
 
 $applicationId = max(0, (int) ($payload['application_id'] ?? 0));
-$publicationType = trim((string) ($payload['publication_type'] ?? 'standard'));
-$allowedTypes = ['standard', 'vk_donut', 'donation_goal'];
-if (!in_array($publicationType, $allowedTypes, true)) {
-    jsonResponse(['success' => false, 'error' => 'Некорректный тип публикации. Допустимо: standard, vk_donut или donation_goal.'], 422);
-}
-$donationEnabled = (int) ($payload['donation_enabled'] ?? 0) === 1;
-$donationGoalId = max(0, (int) ($payload['donation_goal_id'] ?? 0));
-$vkDonutEnabled = (int) ($payload['vk_donut_enabled'] ?? 0) === 1;
-$vkDonutPaidDuration = max(0, (int) ($payload['vk_donut_paid_duration'] ?? 0));
-$vkDonutCanPublishFreeCopy = (int) ($payload['vk_donut_can_publish_free_copy'] ?? 0) === 1;
 if ($applicationId <= 0) {
     jsonResponse(['success' => false, 'error' => 'Некорректный идентификатор заявки.'], 422);
 }
@@ -54,76 +44,13 @@ if (empty($workIds)) {
 }
 
 ensureVkPublicationSchema();
-$settings = getVkPublicationSettings();
-if ((int) ($settings['group_id'] ?? 0) <= 0) {
-    jsonResponse(['success' => false, 'error' => 'Не указан group_id сообщества VK. Проверьте настройки публикации.'], 422);
+$readiness = verifyVkPublicationReadiness(true, true, 'publish_local_image');
+if (empty($readiness['ok'])) {
+    $issues = $readiness['issues'] ?? [];
+    $message = is_array($issues) && !empty($issues) ? (string) $issues[0] : 'VK не готов к публикации.';
+    jsonResponse(['success' => false, 'error' => $message], 422);
 }
-if (trim((string) ($settings['publication_token'] ?? '')) === '') {
-    jsonResponse(['success' => false, 'error' => 'Не задан токен публикации VK. Проверьте настройки публикации.'], 422);
-}
-
-$extraWallParams = [];
-$goal = null;
-$publicationMeta = [
-    'publication_type' => $publicationType,
-    'vk_donut_enabled' => 0,
-    'vk_donut_paid_duration' => null,
-    'vk_donut_can_publish_free_copy' => 0,
-    'donation_enabled' => 0,
-    'donation_goal_id' => null,
-    'vk_donate_id' => null,
-];
-
-if ($publicationType === 'donation_goal' || $donationEnabled) {
-    if ($donationGoalId <= 0) {
-        jsonResponse(['success' => false, 'error' => 'Нельзя включить донат без выбора цели.'], 422);
-    }
-
-    $goal = getVkDonateById($donationGoalId);
-    if (!$goal || (int) ($goal['is_active'] ?? 0) !== 1) {
-        jsonResponse(['success' => false, 'error' => 'Выбранная цель доната неактивна или не найдена.'], 422);
-    }
-
-    $vkDonateId = trim((string) ($goal['vk_donate_id'] ?? ''));
-    if ($vkDonateId === '') {
-        jsonResponse(['success' => false, 'error' => 'Нельзя публиковать с пустым vk_donate_id.'], 422);
-    }
-
-    $publicationMeta = [
-        'publication_type' => 'donation_goal',
-        'vk_donut_enabled' => 0,
-        'vk_donut_paid_duration' => null,
-        'vk_donut_can_publish_free_copy' => 0,
-        'donation_enabled' => 1,
-        'donation_goal_id' => $donationGoalId,
-        'vk_donate_id' => $vkDonateId,
-    ];
-}
-$vkDonutSnapshot = null;
-if ($publicationType === 'vk_donut' || $vkDonutEnabled) {
-    if ($vkDonutPaidDuration <= 0) {
-        jsonResponse(['success' => false, 'error' => 'Для режима VK Donut paywall укажите paid_duration > 0.'], 422);
-    }
-    $vkDonutSnapshot = [
-        'is_donut' => 1,
-        'paid_duration' => $vkDonutPaidDuration,
-        'can_publish_free_copy' => $vkDonutCanPublishFreeCopy ? 1 : 0,
-    ];
-    $publicationMeta = [
-        'publication_type' => 'vk_donut',
-        'vk_donut_enabled' => 1,
-        'vk_donut_paid_duration' => $vkDonutPaidDuration,
-        'vk_donut_can_publish_free_copy' => $vkDonutCanPublishFreeCopy ? 1 : 0,
-        'vk_donut_settings_snapshot' => $vkDonutSnapshot,
-        'donation_enabled' => 0,
-        'donation_goal_id' => null,
-        'vk_donate_id' => null,
-    ];
-}
-$donationEnabled = ($publicationMeta['publication_type'] ?? 'standard') === 'donation_goal';
-
 $filters = normalizeVkTaskFilters([
-    'application_status' => 'approved',
     'work_status' => 'accepted',
     'exclude_vk_published' => 1,
     'required_data_only' => 1,
@@ -142,54 +69,40 @@ $taskId = createVkTaskFromPreview(
     'Публикация по заявке #' . $applicationId . ' от ' . date('d.m.Y H:i'),
     (int) getCurrentAdminId(),
     $preview,
-    'immediate',
-    $publicationMeta
+    'immediate'
 );
 
-$publishResult = publishVkTask($taskId, [
-    'wall_params' => $extraWallParams,
-]);
+$publishResult = publishVkTask($taskId);
 $taskAfterPublish = getVkTaskById($taskId);
 $postUrl = trim((string) ($taskAfterPublish['vk_post_url'] ?? ''));
 $published = (int) ($publishResult['published'] ?? 0);
 $failed = (int) ($publishResult['failed'] ?? 0);
 $apiError = trim((string) ($publishResult['error'] ?? ''));
-$isDonationHardFail = $donationEnabled && $failed > 0;
 
-if ($failed > 0 || $published <= 0 || $isDonationHardFail) {
+if ($failed > 0 || $published <= 0) {
     vkPublicationLog('application_publish_failed', [
         'application_id' => $applicationId,
-        'publication_type' => $publicationMeta['publication_type'] ?? 'standard',
+        'publication_type' => 'standard',
         'task_id' => $taskId,
-        'donation_enabled' => $donationEnabled ? 1 : 0,
-        'donation_goal_id' => $donationGoalId,
-        'vk_donate_id' => $publicationMeta['vk_donate_id'] ?? '',
         'error' => $apiError,
         'failed' => $failed,
         'published' => $published,
     ]);
     jsonResponse([
         'success' => false,
-        'publication_type' => $publicationMeta['publication_type'] ?? 'standard',
+        'publication_type' => 'standard',
         'task_id' => $taskId,
         'published' => $published,
         'failed' => $failed,
-        'error' => $apiError !== '' ? $apiError : ($isDonationHardFail
-            ? 'Публикация остановлена: не все работы удалось опубликовать с выбранным донатом.'
-            : 'VK вернул ошибку при публикации.'),
-        'donation_title' => $goal['title'] ?? '',
+        'error' => $apiError !== '' ? $apiError : 'VK вернул ошибку при публикации.',
         'post_url' => $postUrl !== '' ? $postUrl : null,
     ], 422);
 }
 
-$pdo->prepare("UPDATE applications SET status = 'approved', updated_at = NOW() WHERE id = ?")
-    ->execute([$applicationId]);
-
 jsonResponse([
     'success' => true,
     'task_id' => $taskId,
-    'publication_type' => $publicationMeta['publication_type'] ?? 'standard',
-    'donation_title' => $goal['title'] ?? '',
+    'publication_type' => 'standard',
     'published' => $published,
     'failed' => $failed,
     'total' => (int) ($publishResult['total'] ?? 0),
