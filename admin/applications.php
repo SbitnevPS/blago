@@ -27,6 +27,8 @@ $searchUserId = max(0, (int) ($_GET['search_user_id'] ?? 0));
 $participantId = max(0, (int) ($_GET['participant_id'] ?? 0));
 $participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
 $queue = $_GET['queue'] ?? '';
+$showArchived = (int) ($_GET['show_archived'] ?? 0) === 1;
+$supportsContestArchive = contest_archive_column_exists();
 $publishPromptApplicationId = max(0, (int) ($_SESSION['vk_publish_prompt_application_id'] ?? 0));
 $publishPromptData = null;
 unset($_SESSION['vk_publish_prompt_application_id']);
@@ -226,6 +228,10 @@ if ($contest_id) {
     $params[] = $contest_id;
 }
 
+if ($supportsContestArchive && !$showArchived) {
+    $where[] = 'COALESCE(c.is_archived, 0) = 0';
+}
+
 if ($searchApplicationId > 0) {
     $where[] = 'a.id = ?';
     $params[] = $searchApplicationId;
@@ -285,20 +291,51 @@ if ($participantId > 0) {
 
 $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
+$buildApplicationsUrl = static function (array $overrides = []) use ($status, $contest_id, $search, $searchApplicationId, $searchUserId, $participantId, $participantQuery, $queue, $showArchived): string {
+    $query = [
+        'status' => $status !== '' ? $status : null,
+        'contest_id' => $contest_id !== '' ? $contest_id : null,
+        'search' => $search !== '' ? $search : null,
+        'search_application_id' => $searchApplicationId > 0 ? $searchApplicationId : null,
+        'search_user_id' => $searchUserId > 0 ? $searchUserId : null,
+        'participant_id' => $participantId > 0 ? $participantId : null,
+        'participant_query' => $participantQuery !== '' ? $participantQuery : null,
+        'queue' => $queue !== '' ? $queue : null,
+        'show_archived' => $showArchived ? '1' : null,
+        'page' => null,
+    ];
+
+    foreach ($overrides as $key => $value) {
+        $query[$key] = $value;
+    }
+
+    $query = array_filter($query, static fn ($value) => $value !== null && $value !== '');
+    $queryString = http_build_query($query);
+
+    return 'applications.php' . ($queryString !== '' ? '?' . $queryString : '');
+};
+
+$buildApplicationViewUrl = static function (int $applicationId) use ($buildApplicationsUrl): string {
+    $listUrl = $buildApplicationsUrl();
+    $query = parse_url($listUrl, PHP_URL_QUERY);
+
+    return '/admin/application/' . $applicationId . ($query ? ('?' . $query) : '');
+};
+
 // Пагинация
 $page = max(1, intval($_GET['page'] ?? 1));
 $perPage = 20;
 $offset = ($page - 1) * $perPage;
 
 // Получаем общее количество
-$countStmt = $pdo->prepare("SELECT COUNT(*) FROM applications a LEFT JOIN users u ON a.user_id = u.id $whereClause");
+$countStmt = $pdo->prepare("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id LEFT JOIN users u ON a.user_id = u.id $whereClause");
 $countStmt->execute($params);
 $totalApps = $countStmt->fetchColumn();
 $totalPages = ceil($totalApps / $perPage);
 
 // Получаем заявки
 $stmt = $pdo->prepare("
-    SELECT a.*, c.title as contest_title, c.requires_payment_receipt AS contest_requires_payment_receipt, u.name, u.surname, u.email, u.avatar_url,
+    SELECT a.*, c.title as contest_title, c.requires_payment_receipt AS contest_requires_payment_receipt, COALESCE(c.is_archived, 0) AS contest_is_archived, u.name, u.surname, u.email, u.avatar_url,
            (SELECT COUNT(*) FROM participants WHERE application_id = a.id) as participants_count
     FROM applications a
     LEFT JOIN contests c ON a.contest_id = c.id
@@ -316,7 +353,7 @@ foreach ($applications as $appRow) {
 }
 
 // Список конкурсов для фильтра
-$contests = $pdo->query("SELECT id, title FROM contests ORDER BY created_at DESC")->fetchAll();
+$contests = $pdo->query("SELECT id, title, COALESCE(is_archived, 0) AS is_archived FROM contests ORDER BY COALESCE(is_archived, 0) ASC, created_at DESC")->fetchAll();
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -356,13 +393,18 @@ require_once __DIR__ . '/includes/header.php';
                     <option value="">Все конкурсы</option>
                     <?php foreach ($contests as $c): ?>
                         <option value="<?= $c['id'] ?>" <?= $contest_id == $c['id'] ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($c['title']) ?>
+                            <?= htmlspecialchars($c['title']) ?><?= (int) ($c['is_archived'] ?? 0) === 1 ? ' · Архивный' : '' ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
             </div>
+            <label class="contest-archive-filter-toggle" for="applicationsShowArchived">
+                <input type="checkbox" name="show_archived" id="applicationsShowArchived" value="1" <?= $showArchived ? 'checked' : '' ?>>
+                <span>Показать даже те, которые в архиве</span>
+            </label>
             <div
                 style="flex: 1; min-width: 200px; max-width: 300px; position:relative;"
+                data-select-url-field="view_url"
                 <?= admin_live_search_attrs([
                     'endpoint' => '/admin/search-applications',
                     'primary_template' => '#{{id}} · {{surname + name||Без имени}}',
@@ -376,8 +418,8 @@ require_once __DIR__ . '/includes/header.php';
                 <label class="form-label">Поиск по заявителю или заявке</label>
                 <input type="text" id="applicationsSearchInput" name="search" class="form-input" data-live-search-input
                        placeholder="Номер заявки или ФИО заявителя" value="<?= htmlspecialchars($search) ?>">
-                <input type="hidden" name="search_application_id" id="applicationsSearchApplicationId" data-live-search-hidden value="<?= (int) $searchApplicationId ?>">
-                <input type="hidden" name="search_user_id" id="applicationsSearchUserId" data-live-search-hidden value="<?= (int) $searchUserId ?>">
+                <input type="hidden" name="search_application_id" id="applicationsSearchApplicationId" data-live-search-hidden data-live-search-hidden-field="id" value="<?= (int) $searchApplicationId ?>">
+                <input type="hidden" name="search_user_id" id="applicationsSearchUserId" data-live-search-hidden data-live-search-hidden-field="user_id" value="<?= (int) $searchUserId ?>">
                 <div id="applicationsSearchResults" class="user-results" data-live-search-results></div>
             </div>
             <div
@@ -407,7 +449,7 @@ require_once __DIR__ . '/includes/header.php';
             <button type="submit" class="btn btn--primary">
                 <i class="fas fa-filter"></i> Фильтр
             </button>
-            <?php if ($status || $contest_id || $search || $searchApplicationId > 0 || $searchUserId > 0 || $participantId > 0 || $participantQuery !== '' || $queue): ?>
+            <?php if ($status || $contest_id || $search || $searchApplicationId > 0 || $searchUserId > 0 || $participantId > 0 || $participantQuery !== '' || $queue || $showArchived): ?>
                 <a href="applications.php" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
@@ -417,40 +459,41 @@ require_once __DIR__ . '/includes/header.php';
 <!-- Статистика -->
 <div class="flex gap-lg mb-lg" style="flex-wrap: wrap;">
     <?php
+    $archiveFilterSql = $supportsContestArchive && !$showArchived ? ' AND COALESCE(c.is_archived, 0) = 0' : '';
     $statCounts = [
-        'all' => $pdo->query("SELECT COUNT(*) FROM applications")->fetchColumn(),
-        'submitted' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted'")->fetchColumn(),
-        'revision' => $pdo->query("SELECT COUNT(*) FROM applications WHERE allow_edit = 1 AND status <> 'approved'")->fetchColumn(),
-        'corrected' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'corrected'")->fetchColumn(),
-        'rejected' => $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'rejected'")->fetchColumn(),
+        'all' => $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.status <> 'draft'" . $archiveFilterSql)->fetchColumn(),
+        'submitted' => $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.status = 'submitted'" . $archiveFilterSql)->fetchColumn(),
+        'revision' => $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.allow_edit = 1 AND a.status <> 'approved'" . $archiveFilterSql)->fetchColumn(),
+        'corrected' => $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.status = 'corrected'" . $archiveFilterSql)->fetchColumn(),
+        'rejected' => $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.status = 'rejected'" . $archiveFilterSql)->fetchColumn(),
     ];
     if ($hasOpenedByAdminColumn) {
-        $statCounts['new'] = $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted' AND opened_by_admin = 0")->fetchColumn();
-        $statCounts['work'] = $pdo->query("SELECT COUNT(*) FROM applications WHERE status = 'submitted' AND opened_by_admin = 1")->fetchColumn();
+        $statCounts['new'] = $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.status = 'submitted' AND a.opened_by_admin = 0" . $archiveFilterSql)->fetchColumn();
+        $statCounts['work'] = $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.status = 'submitted' AND a.opened_by_admin = 1" . $archiveFilterSql)->fetchColumn();
     }
     ?>
-    <a href="applications.php" class="stat-pill <?= !$status ? 'stat-pill--active' : '' ?>">
+    <a href="<?= e($buildApplicationsUrl(['status' => null, 'queue' => null])) ?>" class="stat-pill <?= !$status && $queue === '' ? 'stat-pill--active' : '' ?>">
         Все <span class="stat-pill__count"><?= $statCounts['all'] ?></span>
     </a>
     <?php if ($hasOpenedByAdminColumn): ?>
-    <a href="?queue=new" class="stat-pill <?= $queue === 'new' ? 'stat-pill--active' : '' ?>">
+    <a href="<?= e($buildApplicationsUrl(['status' => null, 'queue' => 'new'])) ?>" class="stat-pill <?= $queue === 'new' ? 'stat-pill--active' : '' ?>">
         Новые <span class="stat-pill__count"><?= (int) $statCounts['new'] ?></span>
     </a>
-    <a href="?queue=work" class="stat-pill <?= $queue === 'work' ? 'stat-pill--active' : '' ?>">
+    <a href="<?= e($buildApplicationsUrl(['status' => null, 'queue' => 'work'])) ?>" class="stat-pill <?= $queue === 'work' ? 'stat-pill--active' : '' ?>">
         В работе <span class="stat-pill__count"><?= (int) $statCounts['work'] ?></span>
     </a>
     <?php else: ?>
-    <a href="?status=submitted" class="stat-pill <?= $status === 'submitted' ? 'stat-pill--active' : '' ?>">
+    <a href="<?= e($buildApplicationsUrl(['status' => 'submitted', 'queue' => null])) ?>" class="stat-pill <?= $status === 'submitted' ? 'stat-pill--active' : '' ?>">
         В работе <span class="stat-pill__count"><?= $statCounts['submitted'] ?></span>
     </a>
     <?php endif; ?>
-    <a href="?status=revision" class="stat-pill <?= $status === 'revision' ? 'stat-pill--active' : '' ?>">
+    <a href="<?= e($buildApplicationsUrl(['status' => 'revision', 'queue' => null])) ?>" class="stat-pill <?= $status === 'revision' ? 'stat-pill--active' : '' ?>">
         Требует исправлений <span class="stat-pill__count"><?= $statCounts['revision'] ?></span>
     </a>
-    <a href="?status=corrected" class="stat-pill <?= $status === 'corrected' ? 'stat-pill--active' : '' ?>">
+    <a href="<?= e($buildApplicationsUrl(['status' => 'corrected', 'queue' => null])) ?>" class="stat-pill <?= $status === 'corrected' ? 'stat-pill--active' : '' ?>">
         Исправлена, и отправлена на проверку <span class="stat-pill__count"><?= $statCounts['corrected'] ?></span>
     </a>
-    <a href="?status=rejected" class="stat-pill <?= $status === 'rejected' ? 'stat-pill--active' : '' ?>">
+    <a href="<?= e($buildApplicationsUrl(['status' => 'rejected', 'queue' => null])) ?>" class="stat-pill <?= $status === 'rejected' ? 'stat-pill--active' : '' ?>">
         Отклонённые заявки <span class="stat-pill__count"><?= $statCounts['rejected'] ?></span>
     </a>
 </div>
@@ -485,8 +528,9 @@ require_once __DIR__ . '/includes/header.php';
                     $receiptMeta = getApplicationPaymentReceiptMeta($app);
                     $vkStatus = $applicationVkStatuses[(int) $app['id']] ?? getApplicationVkPublicationStatus((int) $app['id']);
                     $isCorrected = (string) ($statusMeta['status_code'] ?? '') === 'corrected';
+                    $isArchivedContest = (int) ($app['contest_is_archived'] ?? 0) === 1;
                 ?>
-                <article class="admin-list-card admin-list-card--application <?= $isCorrected ? 'admin-list-card--corrected' : '' ?>">
+                <article class="admin-list-card admin-list-card--application <?= $isCorrected ? 'admin-list-card--corrected' : '' ?> <?= $isArchivedContest ? 'admin-list-card--archived' : '' ?>">
                     <div class="admin-list-card__accent <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>"></div>
                     <div class="admin-list-card__header">
                         <div class="admin-list-card__title-wrap">
@@ -508,6 +552,9 @@ require_once __DIR__ . '/includes/header.php';
                             <span class="badge <?= e((string) ($receiptMeta['badge_class'] ?? 'badge--secondary')) ?>">
                                 <?= e((string) ($receiptMeta['label'] ?? '—')) ?>
                             </span>
+                            <?php if ($isArchivedContest): ?>
+                                <span class="badge badge--secondary">Архивный конкурс</span>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <div class="admin-list-card__meta">
@@ -522,7 +569,7 @@ require_once __DIR__ . '/includes/header.php';
                         <label class="select-col" style="display:none;">
                             <input type="checkbox" class="application-select-checkbox" value="<?= (int) $app['id'] ?>">
                         </label>
-                        <a href="/admin/application/<?= (int) $app['id'] ?>" class="btn btn--primary btn--sm">
+                        <a href="<?= e($buildApplicationViewUrl((int) $app['id'])) ?>" class="btn btn--primary btn--sm">
                             <i class="fas fa-eye"></i> Открыть заявку
                         </a>
                         <?php if (!empty($receiptMeta['file_url'])): ?>
@@ -555,12 +602,12 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="flex gap-sm">
                 <?php if ($page > 1): ?>
-                    <a href="?page=<?= $page - 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_application_id=<?= (int) $searchApplicationId ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
+                    <a href="<?= e($buildApplicationsUrl(['page' => $page - 1])) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-left"></i>
                     </a>
                 <?php endif; ?>
                 <?php if ($page < $totalPages): ?>
-                    <a href="?page=<?= $page + 1 ?>&status=<?= e($status) ?>&contest_id=<?= e($contest_id) ?>&search=<?= urlencode($search) ?>&search_application_id=<?= (int) $searchApplicationId ?>&search_user_id=<?= (int) $searchUserId ?>&participant_id=<?= (int) $participantId ?>&participant_query=<?= urlencode($participantQuery) ?>&queue=<?= e($queue) ?>" class="btn btn--ghost btn--sm">
+                    <a href="<?= e($buildApplicationsUrl(['page' => $page + 1])) ?>" class="btn btn--ghost btn--sm">
                         <i class="fas fa-chevron-right"></i>
                     </a>
                 <?php endif; ?>

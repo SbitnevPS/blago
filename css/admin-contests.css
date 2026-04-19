@@ -31,7 +31,7 @@
 
 .contests-stats {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 10px;
 }
 
@@ -128,9 +128,25 @@
     transition: box-shadow .2s ease, transform .2s ease;
 }
 
+.contest-card--archived {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border-color: #cbd5e1;
+}
+
 .contest-card:hover {
     box-shadow: 0 14px 32px rgba(15, 23, 42, 0.1);
     transform: translateY(-1px);
+}
+
+.contest-card.is-updating {
+    opacity: .7;
+    pointer-events: none;
+}
+
+.contest-card--removing {
+    opacity: 0;
+    transform: scale(.985);
+    transition: opacity .22s ease, transform .22s ease;
 }
 
 .contest-card__cover-wrap {
@@ -192,6 +208,18 @@
     border-color: #cbd5e1;
 }
 
+.contest-badge--archived {
+    background: #eef2ff;
+    color: #4338ca;
+    border-color: #c7d2fe;
+}
+
+.contest-badge--active-soft {
+    background: #ecfeff;
+    color: #155e75;
+    border-color: #a5f3fc;
+}
+
 .contest-badge--active {
     background: #dcfce7;
     color: #065f46;
@@ -240,6 +268,55 @@
     font-style: italic;
 }
 
+.contest-card__applications-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 50px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid #dbe4f0;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    color: #0f172a;
+    text-decoration: none;
+    transition: border-color .18s ease, background .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+
+.contest-card__applications-link:hover {
+    border-color: #bfdbfe;
+    background: linear-gradient(180deg, #ffffff 0%, #eff6ff 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
+}
+
+.contest-card__applications-label {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #475569;
+}
+
+.contest-card__applications-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: #e0e7ff;
+    color: #3730a3;
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.contest-card__applications-link .fa-arrow-up-right-from-square {
+    margin-left: auto;
+    color: #64748b;
+    font-size: 14px;
+}
+
 .contest-card__meta {
     margin: 0;
     padding: 0;
@@ -265,37 +342,65 @@
 
 .contest-card__footer {
     display: grid;
-    gap: 10px;
+    gap: 12px;
 }
 
 .contest-card__primary-actions,
 .contest-card__secondary-actions {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 12px;
 }
 
+.contest-card__secondary-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+}
+
+.contest-card__secondary-actions > * {
+    min-width: 0;
+}
+
+.contest-card__secondary-actions > :last-child {
+    grid-column: 1 / -1;
+}
+
 .contest-btn-main,
-.contest-btn-applications,
 .contest-btn-publish,
+.contest-btn-archive,
 .contest-btn-delete {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
     width: 100%;
+    min-height: 44px;
+    border-radius: 12px;
+    padding: 10px 14px;
+    line-height: 1.35;
+    text-align: center;
+    white-space: normal;
 }
 
-.contest-btn-applications--accent {
-    border-color: #c7d2fe;
-    color: #3730a3;
-    background: #eef2ff;
+.contest-btn-main {
+    min-height: 48px;
+    font-weight: 700;
 }
 
 .contest-btn-delete {
     color: #b91c1c;
     border-color: #fecaca;
     background: #fff5f5;
+}
+
+.contest-btn-archive {
+    border-color: #c7d2fe;
+    color: #4338ca;
+    background: #eef2ff;
+}
+
+.contest-btn-archive:hover {
+    background: #e0e7ff;
 }
 
 .contest-btn-delete:hover {
@@ -306,6 +411,17 @@
 .inline-form {
     display: block;
     width: 100%;
+    min-width: 0;
+}
+
+@media (max-width: 720px) {
+    .contest-card__secondary-actions {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .contest-card__secondary-actions > :last-child {
+        grid-column: auto;
+    }
 }
 
 .contests-empty-state-card {
@@ -477,6 +593,11 @@
 .contest-editor-switch-card--accent {
     background: linear-gradient(145deg, #fffaf0 0%, #fffbeb 100%);
     border-color: #fcd34d;
+}
+
+.contest-editor-switch-card--archive {
+    background: linear-gradient(145deg, #f8fafc 0%, #eef2ff 100%);
+    border-color: #c7d2fe;
 }
 
 .contest-editor-switch-card__text {

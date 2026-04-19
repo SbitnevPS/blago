@@ -21,6 +21,41 @@ if (!isAdmin()) {
 }
 
 try {
+    $buildApplicationsReturnUrl = static function (array $query): string {
+        $allowedKeys = [
+            'status',
+            'contest_id',
+            'search',
+            'search_application_id',
+            'search_user_id',
+            'participant_id',
+            'participant_query',
+            'queue',
+            'show_archived',
+            'page',
+        ];
+
+        $filtered = [];
+        foreach ($allowedKeys as $key) {
+            if (!array_key_exists($key, $query)) {
+                continue;
+            }
+
+            $value = $query[$key];
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            $filtered[$key] = is_scalar($value) ? (string) $value : '';
+        }
+
+        $queryString = http_build_query($filtered);
+        return '/admin/applications' . ($queryString !== '' ? ('?' . $queryString) : '');
+    };
+
+    $returnUrl = $buildApplicationsReturnUrl($_GET);
+    $returnQuery = (string) (parse_url($returnUrl, PHP_URL_QUERY) ?? '');
+
     $query = trim((string) ($_GET['q'] ?? ''));
     $isNumericQuery = ctype_digit($query);
     if (!$isNumericQuery && mb_strlen($query) < 2) {
@@ -32,10 +67,13 @@ try {
     $limit = max(1, min(7, $limit));
     $idQuery = $isNumericQuery ? (int) $query : 0;
     $searchTerm = '%' . $query . '%';
+    $supportsContestArchive = contest_archive_column_exists();
+    $archiveWhere = $supportsContestArchive ? ' AND COALESCE(c.is_archived, 0) = 0' : '';
 
     $stmt = $pdo->prepare("
         SELECT
             a.id,
+            a.user_id,
             a.status,
             c.title AS contest_title,
             u.name,
@@ -53,6 +91,7 @@ try {
               OR CONCAT(u.name, ' ', u.surname) LIKE ?
             )
         )
+        $archiveWhere
         ORDER BY a.id DESC
         LIMIT $limit
     ");
@@ -68,6 +107,11 @@ try {
 
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
+
+    foreach ($rows as &$row) {
+        $row['view_url'] = '/admin/application/' . (int) ($row['id'] ?? 0) . ($returnQuery !== '' ? ('?' . $returnQuery) : '');
+    }
+    unset($row);
 
     echo json_encode($rows, JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {

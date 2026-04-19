@@ -50,11 +50,13 @@ CREATE TABLE IF NOT EXISTS contests (
     cover_image VARCHAR(255) NULL,
     theme_style VARCHAR(50) NOT NULL DEFAULT 'blue',
     is_published TINYINT(1) DEFAULT 0,
+    is_archived TINYINT(1) NOT NULL DEFAULT 0,
     date_from DATE,
     date_to DATE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_published (is_published),
+    INDEX idx_is_archived (is_archived),
     INDEX idx_dates (date_from, date_to)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

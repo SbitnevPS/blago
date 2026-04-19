@@ -1125,11 +1125,12 @@ function renderDiplomaVars(string $text, array $vars): string {
         '{place}' => (string)($vars['place'] ?? 'Участник'),
         '{date}' => (string)($vars['date'] ?? ''),
         '{diploma_number}' => (string)($vars['diploma_number'] ?? ''),
+        '{participant_diploma_number}' => (string)($vars['participant_diploma_number'] ?? ''),
         '{nomination}' => (string)($vars['nomination'] ?? 'Творческая номинация'),
         '{age_category}' => (string)($vars['age_category'] ?? ''),
         '{city}' => (string)($vars['city'] ?? ''),
         '{issue_date}' => (string)($vars['date'] ?? ''),
-        '{certificate_number}' => (string)($vars['diploma_number'] ?? ''),
+        '{certificate_number}' => (string)($vars['participant_diploma_number'] ?? $vars['diploma_number'] ?? ''),
     ]);
 }
 
@@ -1290,6 +1291,12 @@ function getDiplomaTemplateStyles(array $template): array {
     return is_array($styles) ? $styles : [];
 }
 
+function getDiplomaNumberLabel(array $template): string {
+    $styles = getDiplomaTemplateStyles($template);
+    $label = trim((string)($styles['diploma_number_label'] ?? ''));
+    return $label !== '' ? $label : 'Номер диплома';
+}
+
 function getDiplomaSheetRotation(array $template): int {
     $styles = getDiplomaTemplateStyles($template);
     $rotation = (int)($styles['sheet_rotation'] ?? 0);
@@ -1301,6 +1308,16 @@ function getDiplomaPageFormat(array $template): string {
 }
 
 function prepareDiplomaRenderState(array $ctx, array $template, array $diplomaRow): array {
+    $participantDisplayNumber = '';
+    if (function_exists('getParticipantDisplayNumber')) {
+        $participantDisplayNumber = trim((string)getParticipantDisplayNumber($ctx));
+    }
+    if ($participantDisplayNumber === '') {
+        $participantId = (int)($ctx['participant_id'] ?? 0);
+        $participantDisplayNumber = $participantId > 0 ? (string)$participantId : '';
+    }
+    $participantDiplomaNumber = $participantDisplayNumber !== '' ? '#' . ltrim($participantDisplayNumber, '#') : '';
+
     $vars = [
         'participant_name' => $ctx['participant_certificate_name'] ?? $ctx['participant_name'],
         'participant_full_name' => $ctx['participant_full_name'],
@@ -1309,6 +1326,7 @@ function prepareDiplomaRenderState(array $ctx, array $template, array $diplomaRo
         'place' => $ctx['place'] ?? 'Участник',
         'date' => !empty($template['issue_date']) ? date('d.m.Y', strtotime((string)$template['issue_date'])) : date('d.m.Y'),
         'diploma_number' => $diplomaRow['diploma_number'],
+        'participant_diploma_number' => $participantDiplomaNumber,
         'nomination' => $ctx['nomination'] ?? 'Творческая номинация',
         'age_category' => (($ageCategory = getParticipantAgeCategoryLabel((int)($ctx['age'] ?? 0))) !== '' ? ('Возрастная категория: ' . $ageCategory) : ''),
         'city' => (string)($template['city'] ?? 'Москва'),
@@ -1323,7 +1341,7 @@ function prepareDiplomaRenderState(array $ctx, array $template, array $diplomaRo
             if (!is_array($cfg)) {
                 continue;
             }
-            $layout[$key]['visible'] = $key === 'participant_name' ? 1 : 0;
+            $layout[$key]['visible'] = in_array($key, ['participant_name', 'diploma_number'], true) ? 1 : 0;
         }
         unset($layout['name_line']);
     }
@@ -1335,6 +1353,7 @@ function prepareDiplomaRenderState(array $ctx, array $template, array $diplomaRo
         ? 'border:10px solid #EAB308; box-shadow: inset 0 0 0 4px #FDE68A;'
         : 'border:0;';
     $pageSize = getDiplomaPageSizeMm($template);
+    $diplomaNumberLabel = getDiplomaNumberLabel($template);
 
     $mapText = [
         'title' => (string)($template['title'] ?? ''),
@@ -1343,7 +1362,7 @@ function prepareDiplomaRenderState(array $ctx, array $template, array $diplomaRo
         'body_text' => (string)($template['body_text'] ?? ''),
         'award_text' => (string)($template['award_text'] ?? ''),
         'contest_title' => (string)($template['contest_name_text'] ?? '{contest_title}'),
-        'diploma_number' => '№ ' . (string)($diplomaRow['diploma_number'] ?? ''),
+        'diploma_number' => $participantDiplomaNumber !== '' ? ($diplomaNumberLabel . ': ' . $participantDiplomaNumber) : '',
         'date' => $vars['date'],
         'city' => (string)($template['city'] ?? ''),
         'signatures' => (string)($template['signature_1'] ?? '') . ' / ' . (string)($template['signature_2'] ?? ''),

@@ -121,7 +121,7 @@ require_once __DIR__ . '/includes/header.php';
 <i class="fas fa-receipt"></i>
 </a>
 <?php endif; ?>
-<a href="/admin/application/<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
+<a href="/admin/application/<?= $app['id'] ?>?return_url=<?= urlencode((string) ($_SERVER['REQUEST_URI'] ?? '/admin/application-list.php')) ?>" class="btn btn--ghost btn--sm">
 <i class="fas fa-eye"></i>
 </a>
 </td>

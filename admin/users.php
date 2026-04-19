@@ -14,6 +14,7 @@ $admin = getCurrentUser();
 $currentPage = 'users';
 $pageTitle = 'Пользователи';
 $breadcrumb = 'Управление пользователями';
+$usersReturnUrl = (string) ($_SERVER['REQUEST_URI'] ?? '/admin/users');
 
 // Поиск
 $search = $_GET['search'] ?? '';
@@ -126,7 +127,7 @@ require_once __DIR__ . '/includes/header.php';
                         <span><strong>Регистрация:</strong> <?= date('d.m.Y', strtotime($user['created_at'])) ?></span>
                     </div>
                     <div class="admin-list-card__actions">
-                        <a href="/admin/user/<?= (int) $user['id'] ?>" class="btn btn--primary btn--sm"><i class="fas fa-eye"></i> Профиль</a>
+                        <a href="/admin/user/<?= (int) $user['id'] ?>?return_url=<?= urlencode($usersReturnUrl) ?>" class="btn btn--primary btn--sm"><i class="fas fa-eye"></i> Профиль</a>
                     </div>
                 </article>
             <?php endforeach; ?>

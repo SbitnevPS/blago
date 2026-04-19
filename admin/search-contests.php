@@ -32,12 +32,13 @@ try {
             title,
             date_from,
             date_to,
-            is_published
+            is_published,
+            COALESCE(is_archived, 0) AS is_archived
         FROM contests
         WHERE (id = ? AND ? > 0)
            OR title LIKE ?
            OR CAST(id AS CHAR) LIKE ?
-        ORDER BY created_at DESC, id DESC
+        ORDER BY COALESCE(is_archived, 0) ASC, created_at DESC, id DESC
         LIMIT $limit
     ");
     $stmt->execute([$exactContestId, $exactContestId, $searchTerm, $searchTerm]);
@@ -60,7 +61,11 @@ try {
         $items[] = [
             'id' => (int) ($contest['id'] ?? 0),
             'title' => (string) ($contest['title'] ?? ''),
-            'meta' => ((int) ($contest['is_published'] ?? 0) === 1 ? 'Опубликован' : 'Черновик') . ' · ' . $period,
+            'meta' => ((int) ($contest['is_archived'] ?? 0) === 1 ? 'Архивный' : 'Активный')
+                . ' · '
+                . ((int) ($contest['is_published'] ?? 0) === 1 ? 'Опубликован' : 'Черновик')
+                . ' · '
+                . $period,
         ];
     }
 

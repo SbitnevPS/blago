@@ -14,6 +14,17 @@ $admin = getCurrentUser();
 $contest_id = $_GET['id'] ?? 0;
 $isEdit = !empty($contest_id);
 $themeOptions = getContestThemeStyles();
+$rawContestReturnUrl = trim((string) ($_GET['return_url'] ?? ($_POST['return_url'] ?? '')));
+$contestReturnUrl = '/admin/contests';
+if ($rawContestReturnUrl !== '' && str_starts_with($rawContestReturnUrl, '/admin/')) {
+    $contestReturnUrl = $rawContestReturnUrl;
+} else {
+    $refererPath = (string) parse_url((string) ($_SERVER['HTTP_REFERER'] ?? ''), PHP_URL_PATH);
+    $refererQuery = (string) parse_url((string) ($_SERVER['HTTP_REFERER'] ?? ''), PHP_URL_QUERY);
+    if ($refererPath !== '' && str_starts_with($refererPath, '/admin/contest') === false && str_starts_with($refererPath, '/admin/')) {
+        $contestReturnUrl = $refererPath . ($refererQuery !== '' ? ('?' . $refererQuery) : '');
+    }
+}
 
 $columnExists = static function (PDO $pdo, string $table, string $column): bool {
     if (!preg_match('/^[a-zA-Z0-9_]+$/', $table) || !preg_match('/^[a-zA-Z0-9_]+$/', $column)) {
@@ -33,6 +44,7 @@ $hasCoverImageColumn = $columnExists($pdo, 'contests', 'cover_image');
 $hasThemeStyleColumn = $columnExists($pdo, 'contests', 'theme_style');
 $hasRequiresPaymentReceiptColumn = $columnExists($pdo, 'contests', 'requires_payment_receipt');
 $hasPublishedColumn = $columnExists($pdo, 'contests', 'is_published');
+$hasArchivedColumn = $columnExists($pdo, 'contests', 'is_archived');
 $hasDateFromColumn = $columnExists($pdo, 'contests', 'date_from');
 $hasDateToColumn = $columnExists($pdo, 'contests', 'date_to');
 $hasUpdatedAtColumn = $columnExists($pdo, 'contests', 'updated_at');
@@ -44,7 +56,7 @@ if ($isEdit) {
     $contest = $stmt->fetch();
     
     if (!$contest) {
-        redirect('/admin/contests');
+        redirect($contestReturnUrl);
     }   
 } else {
     $contest = [
@@ -55,6 +67,7 @@ if ($isEdit) {
         'theme_style' => 'blue',
         'requires_payment_receipt' => 0,
         'is_published' => 0,
+        'is_archived' => 0,
         'date_from' => date('Y-m-d'),
         'date_to' => ''
     ];
@@ -110,6 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $description = sanitizeContestDescriptionHtml($descriptionInput);
         error_log('[contest-edit] sanitized description len=' . mb_strlen($description));
         $is_published = isset($_POST['is_published']) ? 1 : 0;
+        $is_archived = isset($_POST['is_archived']) ? 1 : 0;
         $theme_style = normalizeContestThemeStyle($_POST['theme_style'] ?? 'blue');
         $requires_payment_receipt = isset($_POST['requires_payment_receipt']) ? 1 : 0;
         $date_from = !empty($_POST['date_from']) ? $_POST['date_from'] : null;
@@ -199,6 +213,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $updateFields[] = 'is_published = ?';
                     $updateValues[] = $is_published;
                 }
+                if ($hasArchivedColumn) {
+                    $updateFields[] = 'is_archived = ?';
+                    $updateValues[] = $is_archived;
+                }
                 if ($hasDateFromColumn) {
                     $updateFields[] = 'date_from = ?';
                     $updateValues[] = $date_from;
@@ -238,6 +256,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $insertColumns[] = 'is_published';
                     $insertValues[] = $is_published;
                 }
+                if ($hasArchivedColumn) {
+                    $insertColumns[] = 'is_archived';
+                    $insertValues[] = $is_archived;
+                }
                 if ($hasDateFromColumn) {
                     $insertColumns[] = 'date_from';
                     $insertValues[] = $date_from;
@@ -272,6 +294,8 @@ $currentPage = 'contests';
 $pageTitle = $isEdit ? 'Редактирование конкурса' : 'Новый конкурс';
 $breadcrumb = 'Конкурсы / ' . ($isEdit ? 'Редактирование' : 'Создание');
 $pageStyles = ['admin-contests.css'];
+$headerBackUrl = $contestReturnUrl;
+$headerBackLabel = 'Назад';
 
 require_once __DIR__ . '/includes/header.php';
 
@@ -280,13 +304,14 @@ $coverPreviewSrc = !empty($contest['cover_image'])
     ? '/uploads/contest-covers/' . rawurlencode((string) $contest['cover_image'])
     : getContestThemePlaceholderPath($selectedThemeStyle);
 $isPublished = (int) ($contest['is_published'] ?? 0) === 1;
+$isArchived = (int) ($contest['is_archived'] ?? 0) === 1;
 $requiresPaymentReceipt = (int) ($contest['requires_payment_receipt'] ?? 0) === 1;
 $publicContestUrl = $isEdit ? '/contest/' . (int) $contest_id : '';
 $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (int) $contest_id : '';
 ?>
 
 <div class="flex items-center gap-md mb-lg">
-    <a href="/admin/contests" class="btn btn--ghost">
+    <a href="<?= htmlspecialchars($contestReturnUrl) ?>" class="btn btn--ghost">
         <i class="fas fa-arrow-left"></i> К списку
     </a>
 </div>
@@ -312,6 +337,7 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
 <?php endif; ?>
 
 <form method="POST" enctype="multipart/form-data" class="contest-editor-form">
+    <input type="hidden" name="return_url" value="<?= htmlspecialchars($contestReturnUrl) ?>">
     <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
     <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
     <input type="hidden" name="cover_image_uploaded" id="cover_image_uploaded" value="">
@@ -480,6 +506,19 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
                                 </span>
                             </label>
                         <?php endif; ?>
+
+                        <?php if ($hasArchivedColumn): ?>
+                            <label class="contest-editor-switch-card contest-editor-switch-card--archive" for="contestArchivedInput">
+                                <div class="contest-editor-switch-card__text">
+                                    <strong>Перевести конкурс в архив</strong>
+                                    <span>Архивные конкурсы остаются доступными в админке, но по умолчанию скрываются из рабочих списков заявок, участников и дипломов.</span>
+                                </div>
+                                <span class="ios-toggle">
+                                    <input type="checkbox" name="is_archived" id="contestArchivedInput" <?= $isArchived ? 'checked' : '' ?>>
+                                    <span class="ios-toggle__slider"></span>
+                                </span>
+                            </label>
+                        <?php endif; ?>
                     </div>
 
                     <div class="contest-editor-dates mt-lg">
@@ -521,6 +560,9 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
                         <div class="contest-editor-summary-card__badges">
                             <span class="contest-badge <?= $isPublished ? 'contest-badge--published' : 'contest-badge--draft' ?>" id="contestSummaryPublishBadge">
                                 <?= $isPublished ? 'Опубликован' : 'Черновик' ?>
+                            </span>
+                            <span class="contest-badge <?= $isArchived ? 'contest-badge--archived' : 'contest-badge--active-soft' ?>" id="contestSummaryArchiveBadge">
+                                <?= $isArchived ? 'Архивный' : 'Активный' ?>
                             </span>
                             <span class="contest-badge <?= $requiresPaymentReceipt ? 'contest-badge--upcoming' : 'contest-badge--none' ?>" id="contestSummaryReceiptBadge">
                                 <?= $requiresPaymentReceipt ? 'Нужна квитанция' : 'Без квитанции' ?>
@@ -747,12 +789,14 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
     const documentInput = document.getElementById('contestDocumentInput');
     const publishedInput = document.getElementById('contestPublishedInput');
     const receiptRequiredInput = document.getElementById('contestReceiptRequiredInput');
+    const archivedInput = document.getElementById('contestArchivedInput');
     const dateFromInput = document.getElementById('contestDateFromInput');
     const dateToInput = document.getElementById('contestDateToInput');
     const summaryImage = document.getElementById('contestSummaryCardImage');
     const summaryTitle = document.getElementById('contestSummaryTitle');
     const summaryDescription = document.getElementById('contestSummaryDescription');
     const summaryPublishBadge = document.getElementById('contestSummaryPublishBadge');
+    const summaryArchiveBadge = document.getElementById('contestSummaryArchiveBadge');
     const summaryReceiptBadge = document.getElementById('contestSummaryReceiptBadge');
     const summaryDates = document.getElementById('contestSummaryDates');
     const summaryDocument = document.getElementById('contestSummaryDocument');
@@ -820,6 +864,9 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
         const isPublished = !!publishedInput?.checked;
         updateBadge(summaryPublishBadge, isPublished ? 'contest-badge--published' : 'contest-badge--draft', isPublished ? 'Опубликован' : 'Черновик');
 
+        const isArchived = !!archivedInput?.checked;
+        updateBadge(summaryArchiveBadge, isArchived ? 'contest-badge--archived' : 'contest-badge--active-soft', isArchived ? 'Архивный' : 'Активный');
+
         const receiptRequired = !!receiptRequiredInput?.checked;
         updateBadge(summaryReceiptBadge, receiptRequired ? 'contest-badge--upcoming' : 'contest-badge--none', receiptRequired ? 'Нужна квитанция' : 'Без квитанции');
 
@@ -848,7 +895,9 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
         }
 
         if (summaryDescription) {
-            if (receiptRequired) {
+            if (isArchived) {
+                summaryDescription.textContent = 'Конкурс сохранится в системе, но в рабочих списках админки будет скрыт по умолчанию как архивный.';
+            } else if (receiptRequired) {
                 summaryDescription.textContent = 'Заявитель увидит обязательный блок загрузки квитанции или скриншота об оплате.';
             } else if (documentInput?.files?.length || hasExistingDocument) {
                 summaryDescription.textContent = 'Карточка конкурса уже содержит положение и выглядит более завершённой для заявителя.';
@@ -947,6 +996,7 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
     contestTitleInput?.addEventListener('input', updateContestSummary);
     publishedInput?.addEventListener('change', updateContestSummary);
     receiptRequiredInput?.addEventListener('change', updateContestSummary);
+    archivedInput?.addEventListener('change', updateContestSummary);
     dateFromInput?.addEventListener('change', updateContestSummary);
     dateToInput?.addEventListener('change', updateContestSummary);
 

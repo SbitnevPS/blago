@@ -37,6 +37,7 @@
     const rawId = item?.[config.idField];
 
     return {
+      raw: item,
       id: Number(rawId || 0),
       primary,
       secondary,
@@ -46,10 +47,10 @@
 
   const initLiveSearch = (root, index) => {
     const input = root.querySelector('[data-live-search-input]');
-    const hiddenInput = root.querySelector('[data-live-search-hidden]');
+    const hiddenInputs = Array.from(root.querySelectorAll('[data-live-search-hidden]'));
     const results = root.querySelector('[data-live-search-results]');
 
-    if (!input || !hiddenInput || !results) {
+    if (!input || hiddenInputs.length === 0 || !results) {
       return;
     }
 
@@ -66,6 +67,7 @@
 
     const queryParam = root.dataset.queryParam || 'q';
     const idField = root.dataset.idField || 'id';
+    const selectUrlField = root.dataset.selectUrlField || '';
     const secondaryTemplate = root.dataset.secondaryTemplate || '';
     const emptyText = root.dataset.emptyText || 'Ничего не найдено';
     const limitRaw = Number.parseInt(root.dataset.limit || '7', 10);
@@ -79,6 +81,33 @@
       primaryTemplate,
       secondaryTemplate,
       valueTemplate,
+    };
+
+    const resolveHiddenTargets = () => {
+      const targets = new Map();
+      hiddenInputs.forEach((hiddenInput, hiddenIndex) => {
+        const field = hiddenInput.dataset.liveSearchHiddenField || (hiddenIndex === 0 ? idField : '');
+        if (field) {
+          targets.set(field, hiddenInput);
+        }
+      });
+      return targets;
+    };
+
+    const setHiddenValues = (item = null) => {
+      const hiddenTargets = resolveHiddenTargets();
+      hiddenInputs.forEach((hiddenInput) => {
+        hiddenInput.value = '';
+      });
+
+      if (!item) {
+        return;
+      }
+
+      hiddenTargets.forEach((hiddenInput, field) => {
+        const rawValue = item?.[field];
+        hiddenInput.value = rawValue === undefined || rawValue === null ? '' : String(rawValue);
+      });
     };
 
     let timerId = null;
@@ -126,9 +155,16 @@
     };
 
     const selectItem = (item) => {
-      hiddenInput.value = String(item.id || '');
+      setHiddenValues(item);
       input.value = item.value || '';
       hideResults();
+
+      if (selectUrlField) {
+        const targetUrl = normalizeText(item?.raw?.[selectUrlField] ?? item?.[selectUrlField]);
+        if (targetUrl !== '') {
+          window.location.assign(targetUrl);
+        }
+      }
     };
 
     const setActiveIndex = (nextIndex) => {
@@ -233,7 +269,7 @@
     };
 
     input.addEventListener('input', () => {
-      hiddenInput.value = '';
+      setHiddenValues(null);
       const query = input.value.trim();
 
       if (timerId) {
@@ -263,7 +299,7 @@
 
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Backspace' && !input.value.trim()) {
-        hiddenInput.value = '';
+        setHiddenValues(null);
       }
 
       if (!isResultsOpen()) {

@@ -10,11 +10,16 @@ function docxEscapeText(string $text): string
     return htmlspecialchars($text, ENT_XML1 | ENT_COMPAT, 'UTF-8');
 }
 
-function docxCell(string $text, int $widthTwips = 0, bool $bold = false): string
+function docxCell(string $text, int $widthTwips = 0, bool $bold = false, int $fontSizeHalfPoints = 18): string
 {
     $safe = docxEscapeText($text);
     $w = $widthTwips > 0 ? '<w:tcW w:w="' . (int) $widthTwips . '" w:type="dxa"/>' : '<w:tcW w:w="0" w:type="auto"/>';
-    $rPr = $bold ? '<w:rPr><w:b/></w:rPr>' : '';
+    $fontSize = max(14, (int) $fontSizeHalfPoints);
+    $rPr = '<w:rPr>'
+        . ($bold ? '<w:b/>' : '')
+        . '<w:sz w:val="' . $fontSize . '"/>'
+        . '<w:szCs w:val="' . $fontSize . '"/>'
+        . '</w:rPr>';
 
     return '<w:tc>'
         . '<w:tcPr>' . $w . '</w:tcPr>'
@@ -31,7 +36,7 @@ function docxBuildDocumentXmlWithTable(string $title, array $headers, array $row
 {
     $title = trim($title);
     $titleXml = $title !== ''
-        ? '<w:p><w:r><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:t xml:space="preserve">' . docxEscapeText($title) . '</w:t></w:r></w:p>'
+        ? '<w:p><w:r><w:rPr><w:b/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">' . docxEscapeText($title) . '</w:t></w:r></w:p>'
         : '';
 
     $tblGrid = '';
@@ -45,14 +50,14 @@ function docxBuildDocumentXmlWithTable(string $title, array $headers, array $row
 
     $headerCells = [];
     foreach ($headers as $i => $h) {
-        $headerCells[] = docxCell((string) $h, (int) ($columnWidthsTwips[$i] ?? 0), true);
+        $headerCells[] = docxCell((string) $h, (int) ($columnWidthsTwips[$i] ?? 0), true, 16);
     }
     $bodyRowsXml = [docxTableRow($headerCells)];
 
     foreach ($rows as $row) {
         $cells = [];
         foreach ($headers as $i => $_) {
-            $cells[] = docxCell((string) ($row[$i] ?? ''), (int) ($columnWidthsTwips[$i] ?? 0), false);
+            $cells[] = docxCell((string) ($row[$i] ?? ''), (int) ($columnWidthsTwips[$i] ?? 0), false, 15);
         }
         $bodyRowsXml[] = docxTableRow($cells);
     }
@@ -72,7 +77,10 @@ function docxBuildDocumentXmlWithTable(string $title, array $headers, array $row
         . '<w:body>'
         . $titleXml
         . $tbl
-        . '<w:sectPr/>'
+        . '<w:sectPr>'
+        . '<w:pgSz w:w="11906" w:h="16838" w:orient="portrait"/>'
+        . '<w:pgMar w:top="720" w:right="540" w:bottom="720" w:left="540" w:header="450" w:footer="450" w:gutter="0"/>'
+        . '</w:sectPr>'
         . '</w:body>'
         . '</w:document>';
 }
@@ -177,8 +185,8 @@ function buildParticipantsDocxBytes(array $rows, string $title = 'Список �
         ];
     }
 
-    // Rough widths in twips (1/20 pt). Total around A4 portrait content width.
-    $widths = [1500, 2400, 3200, 3400, 1100, 2500];
+    // Tuned for A4 portrait with tighter margins and compact type.
+    $widths = [1000, 1700, 1900, 2300, 700, 1400];
     $xml = docxBuildDocumentXmlWithTable($title, $headers, $tableRows, $widths);
     return docxBuildBytes($xml);
 }

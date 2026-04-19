@@ -19,6 +19,7 @@ if (empty($admin)) {
 $currentPage = 'messages';
 $pageTitle = 'Сообщения';
 $breadcrumb = 'Все отправленные сообщения';
+$messagesReturnUrl = (string) ($_SERVER['REQUEST_URI'] ?? '/admin/messages');
 
 $disputeThreadSubjectPrefix = 'Оспаривание решения по заявке #';
 $selectedDisputeApplicationId = intval($_GET['dispute_application_id'] ?? 0);
@@ -726,7 +727,7 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
                     </div>
                     <div class="admin-list-card__meta">
-                        <span><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a></span>
+                        <span><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $thread['application_id'] ?>?return_url=<?= urlencode($messagesReturnUrl) ?>">#<?= (int) $thread['application_id'] ?></a></span>
                         <span><strong>Обновлён:</strong> <?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></span>
                     </div>
                     <div class="admin-list-card__actions">
@@ -766,7 +767,7 @@ require_once __DIR__ . '/includes/header.php';
                         <span class="badge badge--secondary">Архив</span>
                     </div>
                     <div class="admin-list-card__meta">
-                        <span><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a></span>
+                        <span><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $thread['application_id'] ?>?return_url=<?= urlencode($messagesReturnUrl) ?>">#<?= (int) $thread['application_id'] ?></a></span>
                         <span><strong>Дата:</strong> <?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></span>
                     </div>
                     <div class="admin-list-card__actions">
@@ -786,7 +787,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="modal__header">
             <h3>Чат по заявке #<?= (int) $selectedDisputeApplicationId ?></h3>
             <div class="flex items-center gap-sm">
-                <a href="/admin/application/<?= (int) $selectedDisputeApplicationId ?>" class="btn btn--ghost btn--sm">
+                <a href="/admin/application/<?= (int) $selectedDisputeApplicationId ?>?return_url=<?= urlencode($messagesReturnUrl) ?>" class="btn btn--ghost btn--sm">
                     <i class="fas fa-external-link-alt"></i> Открыть заявку
                 </a>
                 <button type="button" class="modal__close" onclick="closeDisputeChatModal()">&times;</button>

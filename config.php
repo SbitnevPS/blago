@@ -776,6 +776,99 @@ function db_table_has_column(string $table, string $column): bool
     return $cache[$cacheKey];
 }
 
+function db_table_has_column_uncached(string $table, string $column): bool
+{
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table) || !preg_match('/^[A-Za-z0-9_]+$/', $column)) {
+        return false;
+    }
+
+    global $pdo;
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+              AND COLUMN_NAME = ?
+        ");
+        $stmt->execute([$table, $column]);
+        return (int) $stmt->fetchColumn() > 0;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function ensureContestArchiveSchema(): void
+{
+    static $ensured = false;
+
+    if ($ensured) {
+        return;
+    }
+
+    $ensured = true;
+
+    if (db_table_has_column_uncached('contests', 'is_archived')) {
+        return;
+    }
+
+    global $pdo;
+
+    try {
+        $pdo->exec("
+            ALTER TABLE contests
+            ADD COLUMN is_archived TINYINT(1) NOT NULL DEFAULT 0 AFTER is_published,
+            ADD INDEX idx_is_archived (is_archived)
+        ");
+    } catch (Throwable $e) {
+        // Ignore: schema may already be updated in another request.
+    }
+}
+
+function contest_archive_column_exists(): bool
+{
+    static $checked = false;
+    static $exists = false;
+
+    if (!$checked) {
+        ensureContestArchiveSchema();
+        $exists = db_table_has_column_uncached('contests', 'is_archived');
+        $checked = true;
+    }
+
+    return $exists;
+}
+
+function isContestArchived(array $contest): bool
+{
+    return contest_archive_column_exists() && (int) ($contest['is_archived'] ?? 0) === 1;
+}
+
+function getContestArchiveBadgeMeta(array $contest): array
+{
+    if (isContestArchived($contest)) {
+        return [
+            'label' => 'Архивный',
+            'class' => 'contest-badge--archived',
+        ];
+    }
+
+    return [
+        'label' => 'Активный',
+        'class' => 'contest-badge--active-soft',
+    ];
+}
+
+function buildContestArchiveFilterSql(string $qualifiedColumn = 'c.is_archived', bool $includeArchived = false): string
+{
+    if ($includeArchived || !contest_archive_column_exists()) {
+        return '';
+    }
+
+    return ' AND COALESCE(' . $qualifiedColumn . ', 0) = 0 ';
+}
+
 function build_user_search_conditions(string $alias = ''): array
 {
     $qualifiedAlias = trim($alias);

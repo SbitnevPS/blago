@@ -18,6 +18,19 @@ $contest_id = $_GET['contest_id'] ?? '';
 $participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
 $participantId = (int) ($_GET['participant_id'] ?? 0);
 $ageCategory = trim((string) ($_GET['age_category'] ?? ''));
+$showArchived = (int) ($_GET['show_archived'] ?? 0) === 1;
+$sameParticipantsThreshold = (int) ($_GET['same_participants'] ?? 0);
+$supportsContestArchive = contest_archive_column_exists();
+
+$sameParticipantsOptions = [
+    0 => 'Все участники',
+    2 => 'От 2-х',
+    3 => 'От 3-х',
+];
+
+if (!array_key_exists($sameParticipantsThreshold, $sameParticipantsOptions)) {
+    $sameParticipantsThreshold = 0;
+}
 
 $hasParticipantOvzColumn = false;
 try {
@@ -71,10 +84,19 @@ if ($isDocxExportRequest) {
 
 $where = [];
 $params = [];
+$duplicateWhere = ["TRIM(COALESCE(p2.fio, '')) <> ''"];
+$duplicateParams = [];
 
 if ($contest_id !== '' && ctype_digit((string) $contest_id)) {
     $where[] = 'a.contest_id = ?';
     $params[] = (int) $contest_id;
+    $duplicateWhere[] = 'a2.contest_id = ?';
+    $duplicateParams[] = (int) $contest_id;
+}
+
+if ($supportsContestArchive && !$showArchived) {
+    $where[] = 'COALESCE(c.is_archived, 0) = 0';
+    $duplicateWhere[] = 'COALESCE(c2.is_archived, 0) = 0';
 }
 
 if ($participantId > 0) {
@@ -94,19 +116,24 @@ if ($ageCategory !== '') {
     switch ($ageCategory) {
         case '5-7':
             $where[] = 'p.age BETWEEN 5 AND 7';
+            $duplicateWhere[] = 'p2.age BETWEEN 5 AND 7';
             break;
         case '8-10':
             $where[] = 'p.age BETWEEN 8 AND 10';
+            $duplicateWhere[] = 'p2.age BETWEEN 8 AND 10';
             break;
         case '11-13':
             $where[] = 'p.age BETWEEN 11 AND 13';
+            $duplicateWhere[] = 'p2.age BETWEEN 11 AND 13';
             break;
         case '14-17':
             $where[] = 'p.age BETWEEN 14 AND 17';
+            $duplicateWhere[] = 'p2.age BETWEEN 14 AND 17';
             break;
         case 'ovz':
             if ($hasParticipantOvzColumn) {
                 $where[] = 'COALESCE(p.has_ovz, 0) = 1';
+                $duplicateWhere[] = 'COALESCE(p2.has_ovz, 0) = 1';
             } else {
                 $ovzPatterns = ['%овз%', '%ограничен%', '%инвалид%'];
                 $where[] = '('
@@ -121,19 +148,42 @@ if ($ageCategory !== '') {
                 $params[] = $ovzPatterns[2];
                 $params[] = $ovzPatterns[0];
                 $params[] = $ovzPatterns[1];
+                $duplicateWhere[] = '('
+                    . 'LOWER(COALESCE(a2.recommendations_wishes, \'\')) LIKE ? OR '
+                    . 'LOWER(COALESCE(a2.source_info, \'\')) LIKE ? OR '
+                    . 'LOWER(COALESCE(a2.colleagues_info, \'\')) LIKE ? OR '
+                    . 'LOWER(COALESCE(p2.organization_name, \'\')) LIKE ? OR '
+                    . 'LOWER(COALESCE(p2.organization_address, \'\')) LIKE ?'
+                    . ')';
+                $duplicateParams[] = $ovzPatterns[0];
+                $duplicateParams[] = $ovzPatterns[1];
+                $duplicateParams[] = $ovzPatterns[2];
+                $duplicateParams[] = $ovzPatterns[0];
+                $duplicateParams[] = $ovzPatterns[1];
             }
             break;
     }
 }
 
 $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+$duplicateWhereClause = 'WHERE ' . implode(' AND ', $duplicateWhere);
+$duplicateJoin = '';
+$duplicateSelect = '1 AS same_participants_count,';
 
-$buildParticipantsUrl = static function (array $overrides = []) use ($contest_id, $participantQuery, $participantId, $ageCategory): string {
+if ($sameParticipantsThreshold > 0) {
+    $duplicateJoin = "\n    INNER JOIN (\n        SELECT LOWER(TRIM(p2.fio)) AS fio_key, COUNT(*) AS same_participants_count\n        FROM participants p2\n        INNER JOIN applications a2 ON p2.application_id = a2.id\n        LEFT JOIN contests c2 ON a2.contest_id = c2.id\n        $duplicateWhereClause\n        GROUP BY LOWER(TRIM(p2.fio))\n        HAVING COUNT(*) >= ?\n    ) same_participants ON same_participants.fio_key = LOWER(TRIM(p.fio))\n";
+    $duplicateSelect = 'same_participants.same_participants_count,';
+    $duplicateParams[] = $sameParticipantsThreshold;
+}
+
+$buildParticipantsUrl = static function (array $overrides = []) use ($contest_id, $participantQuery, $participantId, $ageCategory, $sameParticipantsThreshold, $showArchived): string {
     $query = [
         'contest_id' => $contest_id !== '' ? (string) $contest_id : null,
         'participant_query' => $participantQuery !== '' ? $participantQuery : null,
         'participant_id' => $participantId > 0 ? $participantId : null,
         'age_category' => $ageCategory !== '' ? $ageCategory : null,
+        'same_participants' => $sameParticipantsThreshold > 0 ? (string) $sameParticipantsThreshold : null,
+        'show_archived' => $showArchived ? '1' : null,
         'page' => null,
     ];
 
@@ -150,18 +200,19 @@ $buildParticipantsUrl = static function (array $overrides = []) use ($contest_id
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = 25;
 $offset = ($page - 1) * $perPage;
+$participantsReturnUrl = (string) ($_SERVER['REQUEST_URI'] ?? '/admin/participants');
 
-$countStmt = $pdo->prepare("\n    SELECT COUNT(*)\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    $whereClause\n");
-$countStmt->execute($params);
+$countStmt = $pdo->prepare("\n    SELECT COUNT(*)\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    $duplicateJoin    $whereClause\n");
+$countStmt->execute(array_merge($duplicateParams, $params));
 $totalParticipants = (int) $countStmt->fetchColumn();
 $totalPages = max(1, (int) ceil($totalParticipants / $perPage));
 
 $ovzSelect = $hasParticipantOvzColumn ? 'COALESCE(p.has_ovz, 0) AS has_ovz,' : '0 AS has_ovz,';
-$listStmt = $pdo->prepare("\n    SELECT p.id, p.public_number, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           $ovzSelect\n           a.status AS application_status, a.allow_edit,\n           c.title AS contest_title,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $whereClause\n    ORDER BY p.created_at DESC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
-$listStmt->execute($params);
+$listStmt = $pdo->prepare("\n    SELECT p.id, p.public_number, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           $ovzSelect\n           $duplicateSelect\n           a.status AS application_status, a.allow_edit,\n           c.title AS contest_title, COALESCE(c.is_archived, 0) AS contest_is_archived,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $duplicateJoin    $whereClause\n    ORDER BY p.fio ASC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
+$listStmt->execute(array_merge($duplicateParams, $params));
 $participants = $listStmt->fetchAll();
 
-$contests = $pdo->query('SELECT id, title FROM contests ORDER BY created_at DESC')->fetchAll();
+$contests = $pdo->query('SELECT id, title, COALESCE(is_archived, 0) AS is_archived FROM contests ORDER BY COALESCE(is_archived, 0) ASC, created_at DESC')->fetchAll();
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -176,7 +227,21 @@ require_once __DIR__ . '/includes/header.php';
                     <option value="">Все конкурсы</option>
                     <?php foreach ($contests as $contest): ?>
                         <option value="<?= (int) $contest['id'] ?>" <?= (string) $contest_id === (string) $contest['id'] ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($contest['title']) ?>
+                            <?= htmlspecialchars($contest['title']) ?><?= (int) ($contest['is_archived'] ?? 0) === 1 ? ' · Архивный' : '' ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <label class="contest-archive-filter-toggle" for="participantsShowArchived">
+                <input type="checkbox" name="show_archived" id="participantsShowArchived" value="1" <?= $showArchived ? 'checked' : '' ?>>
+                <span>Показать архивные конкурсы</span>
+            </label>
+            <div style="min-width: 220px;">
+                <label class="form-label">Показать одинаковых участников</label>
+                <select name="same_participants" class="form-select">
+                    <?php foreach ($sameParticipantsOptions as $optionValue => $optionLabel): ?>
+                        <option value="<?= (int) $optionValue ?>" <?= $sameParticipantsThreshold === (int) $optionValue ? 'selected' : '' ?>>
+                            <?= e($optionLabel) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
@@ -206,7 +271,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div id="participantSearchResults" class="user-results" data-live-search-results></div>
             </div>
             <button type="submit" class="btn btn--primary"><i class="fas fa-filter"></i> Применить</button>
-            <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0 || $ageCategory !== ''): ?>
+            <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0 || $ageCategory !== '' || $sameParticipantsThreshold > 0 || $showArchived): ?>
                 <a href="/admin/participants" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
@@ -254,14 +319,16 @@ require_once __DIR__ . '/includes/header.php';
                         'status' => (string) ($participant['application_status'] ?? 'draft'),
                         'allow_edit' => (int) ($participant['allow_edit'] ?? 0),
                     ]);
+                    $isArchivedContest = (int) ($participant['contest_is_archived'] ?? 0) === 1;
                     $participantAge = (int) ($participant['age'] ?? 0);
                     $participantAgeCategory = getParticipantAgeCategoryLabel($participantAge);
                     $drawingUrl = !empty($participant['drawing_file'])
                         ? getParticipantDrawingPreviewWebPath((string) ($participant['applicant_email'] ?? ''), (string) $participant['drawing_file'])
                         : '';
                     $isDiplomaEnabled = (string) ($statusMeta['status_code'] ?? '') === 'approved';
+                    $sameParticipantsCount = max(1, (int) ($participant['same_participants_count'] ?? 1));
                 ?>
-                <article class="admin-list-card admin-list-card--participant">
+                <article class="admin-list-card admin-list-card--participant <?= $isArchivedContest ? 'admin-list-card--archived' : '' ?>">
                     <div class="admin-list-card__header">
                         <div class="admin-list-card__title-wrap" style="display:flex; gap:12px; align-items:center;">
                             <?php if ($drawingUrl !== ''): ?>
@@ -271,12 +338,27 @@ require_once __DIR__ . '/includes/header.php';
                             <?php endif; ?>
                             <div>
                                 <h4 class="admin-list-card__title"><?= htmlspecialchars($participant['fio'] ?: 'Без имени') ?></h4>
-                                <div class="admin-list-card__subtitle">#<?= e(getParticipantDisplayNumber($participant)) ?> · <?= htmlspecialchars($participant['contest_title'] ?: 'Конкурс не указан') ?></div>
+                                <div class="admin-list-card__subtitle">
+                                    #<?= e(getParticipantDisplayNumber($participant)) ?>
+                                    ·
+                                    <a href="/admin/application/<?= (int) ($participant['application_id'] ?? 0) ?>?return_url=<?= urlencode($participantsReturnUrl) ?>" style="color:#7C3AED;text-decoration:none;">
+                                        Заявка #<?= (int) ($participant['application_id'] ?? 0) ?>
+                                    </a>
+                                    · <?= htmlspecialchars($participant['contest_title'] ?: 'Конкурс не указан') ?>
+                                </div>
                             </div>
                         </div>
-                        <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
-                            <?= e((string) ($statusMeta['label'] ?? '—')) ?>
-                        </span>
+                        <div class="admin-list-card__statuses">
+                            <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
+                                <?= e((string) ($statusMeta['label'] ?? '—')) ?>
+                            </span>
+                            <?php if ($sameParticipantsCount >= 2): ?>
+                                <span class="badge badge--secondary">Совпадений: <?= $sameParticipantsCount ?></span>
+                            <?php endif; ?>
+                            <?php if ($isArchivedContest): ?>
+                                <span class="badge badge--secondary">Архивный конкурс</span>
+                            <?php endif; ?>
+                        </div>
                     </div>
                     <div class="admin-list-card__meta">
                         <span><strong>Возраст:</strong> <?= $participantAge ?: '—' ?></span>
@@ -287,9 +369,9 @@ require_once __DIR__ . '/includes/header.php';
                         <span><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?: '—') ?></span>
                     </div>
                     <div class="admin-list-card__actions">
-                        <a href="/admin/participant/<?= (int) $participant['id'] ?>" class="btn btn--ghost btn--sm"><i class="fas fa-eye"></i> Открыть</a>
+                        <a href="/admin/participant/<?= (int) $participant['id'] ?>?return_url=<?= urlencode($participantsReturnUrl) ?>" class="btn btn--ghost btn--sm"><i class="fas fa-eye"></i> Открыть</a>
                         <?php if ($isDiplomaEnabled): ?>
-                            <a href="/admin/participant/<?= (int) $participant['id'] ?>#diploma-actions" class="btn btn--primary btn--sm"><i class="fas fa-award"></i> Диплом</a>
+                            <a href="/admin/participant/<?= (int) $participant['id'] ?>?return_url=<?= urlencode($participantsReturnUrl) ?>#diploma-actions" class="btn btn--primary btn--sm"><i class="fas fa-award"></i> Диплом</a>
                         <?php endif; ?>
                     </div>
                 </article>
@@ -329,9 +411,9 @@ require_once __DIR__ . '/includes/header.php';
                     <select name="contest_id" class="form-select" id="participantsDocxContest">
                         <option value="0">Все конкурсы</option>
                         <?php foreach ($contests as $contest): ?>
-                            <option value="<?= (int) $contest['id'] ?>" <?= (string) $contest_id === (string) $contest['id'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars((string) $contest['title']) ?>
-                            </option>
+                        <option value="<?= (int) $contest['id'] ?>" <?= (string) $contest_id === (string) $contest['id'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars((string) $contest['title']) ?><?= (int) ($contest['is_archived'] ?? 0) === 1 ? ' · Архивный' : '' ?>
+                        </option>
                         <?php endforeach; ?>
                     </select>
                     <div class="form-hint">Экспортирует участников заявок выбранного конкурса.</div>

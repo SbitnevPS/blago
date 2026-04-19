@@ -1512,6 +1512,11 @@ body:has(#application-actions) .admin-content {
   box-shadow: inset 0 0 0 1px #bae6fd;
 }
 
+.admin-list-card--archived {
+  border-color: #cbd5e1;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
 .admin-list-card__header {
   display: flex;
   justify-content: space-between;
@@ -1552,6 +1557,26 @@ body:has(#application-actions) .admin-content {
   gap: 8px;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.contest-archive-filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.contest-archive-filter-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #4338ca;
 }
 
 .admin-list-card__avatar,

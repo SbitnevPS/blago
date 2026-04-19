@@ -12,6 +12,18 @@ check_csrf();
 
 $admin = getCurrentUser();
 $user_id = $_GET['id'] ??0;
+$currentUserViewUri = (string) ($_SERVER['REQUEST_URI'] ?? ('/admin/user/' . $user_id));
+$rawUserReturnUrl = trim((string) ($_GET['return_url'] ?? ''));
+$userReturnUrl = '/admin/users';
+if ($rawUserReturnUrl !== '' && str_starts_with($rawUserReturnUrl, '/admin/')) {
+    $userReturnUrl = $rawUserReturnUrl;
+} else {
+    $refererPath = (string) parse_url((string) ($_SERVER['HTTP_REFERER'] ?? ''), PHP_URL_PATH);
+    $refererQuery = (string) parse_url((string) ($_SERVER['HTTP_REFERER'] ?? ''), PHP_URL_QUERY);
+    if ($refererPath !== '' && !str_starts_with($refererPath, '/admin/user/') && str_starts_with($refererPath, '/admin/')) {
+        $userReturnUrl = $refererPath . ($refererQuery !== '' ? ('?' . $refererQuery) : '');
+    }
+}
 
 // Получаем пользователя
 $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
@@ -19,7 +31,7 @@ $stmt->execute([$user_id]);
 $user = $stmt->fetch();
 
 if (!$user) {
- redirect('users.php');
+ redirect($userReturnUrl);
 }
 
 // Получаем заявки пользователя
@@ -48,6 +60,8 @@ $messages = $stmt->fetchAll();
 $currentPage = 'users';
 $pageTitle = htmlspecialchars($user['name'] . ' ' . $user['surname']);
 $breadcrumb = 'Пользователи / Просмотр';
+$headerBackUrl = $userReturnUrl;
+$headerBackLabel = 'Назад';
 $hasSuccessMessage = isset($_GET['success']) && $_GET['success'] == '1';
 $userAvatar = getUserAvatarData($user ?? []);
 
@@ -71,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
  $success = 'Сообщение отправлено';
             
  // Перенаправление для избежания повторной отправки
- header('Location: user-view.php?id=' . $user_id . '&success=1');
+ header('Location: user-view.php?id=' . $user_id . '&success=1&return_url=' . urlencode($userReturnUrl));
  exit;
  }
  }
@@ -81,7 +95,7 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <div class="user-view-actions mb-lg">
-    <a href="users.php" class="btn btn--ghost">
+    <a href="<?= htmlspecialchars($userReturnUrl) ?>" class="btn btn--ghost">
         <i class="fas fa-arrow-left"></i> Назад
     </a>
     <button type="button" class="btn btn--primary" onclick="openMessageModal()">
@@ -204,7 +218,7 @@ require_once __DIR__ . '/includes/header.php';
 </td>
 <td data-label="Дата"><?= date('d.m.Y', strtotime($app['created_at'])) ?></td>
 <td data-label="Действия">
-<a href="/admin/application/<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
+<a href="/admin/application/<?= $app['id'] ?>?return_url=<?= urlencode($currentUserViewUri) ?>" class="btn btn--ghost btn--sm">
 <i class="fas fa-eye"></i>
 </a>
 </td>

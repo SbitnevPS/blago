@@ -8,11 +8,16 @@ if (!isAdmin()) {
 check_csrf();
 
 $contestId = (int)($_GET['id'] ?? 0);
+$rawDiplomaReturnUrl = trim((string) ($_GET['return_url'] ?? ($_POST['return_url'] ?? '')));
+$diplomaReturnUrl = '/admin/diplomas';
+if ($rawDiplomaReturnUrl !== '' && str_starts_with($rawDiplomaReturnUrl, '/admin/')) {
+    $diplomaReturnUrl = $rawDiplomaReturnUrl;
+}
 $stmt = $pdo->prepare('SELECT * FROM contests WHERE id = ?');
 $stmt->execute([$contestId]);
 $contest = $stmt->fetch();
 if (!$contest) {
-    redirect('/admin/diplomas');
+    redirect($diplomaReturnUrl);
 }
 
 $templateTypes = diplomaTemplateTypes();
@@ -25,13 +30,16 @@ if (!in_array($activeEditorTab, ['diploma-layout', 'email-template'], true)) {
 if ($selectedTemplateId <= 0 && !empty($templates)) {
     $selectedTemplateId = (int)$templates[0]['id'];
 }
-$buildEditorUrl = static function (int $contestId, int $templateId = 0, string $tab = 'diploma-layout'): string {
+$buildEditorUrl = static function (int $contestId, int $templateId = 0, string $tab = 'diploma-layout') use ($diplomaReturnUrl): string {
     $params = [];
     if ($templateId > 0) {
         $params['template_id'] = $templateId;
     }
     if ($tab !== '') {
         $params['tab'] = $tab;
+    }
+    if ($diplomaReturnUrl !== '') {
+        $params['return_url'] = $diplomaReturnUrl;
     }
 
     $query = http_build_query($params);
@@ -223,17 +231,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $layoutInput['participant_name']['font_family'] = trim((string)($_POST['name_font_family'] ?? ($layoutInput['participant_name']['font_family'] ?? 'dejavuserif')));
         $layoutInput['participant_name']['color'] = trim((string)($_POST['name_color'] ?? ($layoutInput['participant_name']['color'] ?? '#334155')));
 
+        if (!isset($layoutInput['diploma_number']) || !is_array($layoutInput['diploma_number'])) {
+            $layoutInput['diploma_number'] = defaultDiplomaLayout((string)($templateRow['template_type'] ?? 'contest_participant'))['diploma_number'] ?? [];
+        }
+        $layoutInput['diploma_number']['font_size'] = (int)($_POST['diploma_number_font_size'] ?? ($layoutInput['diploma_number']['font_size'] ?? 9));
+        $layoutInput['diploma_number']['color'] = trim((string)($_POST['diploma_number_color'] ?? ($layoutInput['diploma_number']['color'] ?? '#6B7280')));
+        $layoutInput['diploma_number']['visible'] = 1;
+
         $styles = json_decode((string)($_POST['styles_json'] ?? '{}'), true);
         if (!is_array($styles)) {
             $styles = [];
         }
         $styles['sheet_rotation'] = ((int)($_POST['sheet_rotation'] ?? 0) === 90) ? 90 : 0;
+        $styles['diploma_number_label'] = trim((string)($_POST['diploma_number_label'] ?? 'Номер диплома'));
 
         $_POST['layout_json'] = json_encode($layoutInput, JSON_UNESCAPED_UNICODE);
         $_POST['assets_json'] = json_encode($assets, JSON_UNESCAPED_UNICODE);
         $_POST['styles_json'] = json_encode($styles, JSON_UNESCAPED_UNICODE);
         $_POST['show_background'] = '1';
-        unset($_POST['show_frame'], $_POST['show_date'], $_POST['show_number'], $_POST['show_signatures']);
+        $_POST['show_number'] = '1';
+        unset($_POST['show_frame'], $_POST['show_date'], $_POST['show_signatures']);
         saveDiplomaTemplate($tid, $_POST);
 	        $_SESSION['success_message'] = 'Шаблон диплома сохранён';
 	        redirect($buildEditorUrl($contestId, $tid, 'diploma-layout'));
@@ -293,12 +310,18 @@ $layout = json_decode((string)($selectedTemplate['layout_json'] ?? ''), true);
 if (!is_array($layout) || !$layout) {
     $layout = defaultDiplomaLayout((string)($selectedTemplate['template_type'] ?? 'contest_participant'));
 }
+if (!isset($layout['diploma_number']) || !is_array($layout['diploma_number'])) {
+    $layout['diploma_number'] = defaultDiplomaLayout((string)($selectedTemplate['template_type'] ?? 'contest_participant'))['diploma_number'] ?? [];
+}
+$layout['diploma_number']['visible'] = 1;
 $assets = json_decode((string)($selectedTemplate['assets_json'] ?? '{}'), true);
 if (!is_array($assets)) {
     $assets = [];
 }
 $styles = getDiplomaTemplateStyles($selectedTemplate);
 $sheetRotation = getDiplomaSheetRotation($selectedTemplate);
+$diplomaNumberLabel = getDiplomaNumberLabel($selectedTemplate);
+$diplomaNumberLayout = is_array($layout['diploma_number'] ?? null) ? $layout['diploma_number'] : [];
 $participantNameLayout = is_array($layout['participant_name'] ?? null) ? $layout['participant_name'] : [];
 $backgroundImageUrl = !empty($assets['background_image']) ? getDiplomaAssetWebPath((string)$assets['background_image']) : '';
 $emailBlockDefinitions = diplomaEmailEditorBlocks();
@@ -322,6 +345,8 @@ $emailPreviewText = buildDiplomaEmailText($emailPreviewData);
 $currentPage = 'diplomas';
 $pageTitle = 'Шаблоны дипломов';
 $breadcrumb = 'Дипломы / Шаблоны';
+$headerBackUrl = $diplomaReturnUrl;
+$headerBackLabel = 'Назад';
 require_once __DIR__ . '/includes/header.php';
 
 $successMessage = (string)($_SESSION['success_message'] ?? '');
@@ -450,7 +475,7 @@ unset($_SESSION['success_message'], $_SESSION['error_message']);
                 <div style="display:grid;grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);gap:18px;align-items:start;">
                     <div>
                         <h4 class="mb-md">Предпросмотр шаблона</h4>
-                        <div class="text-secondary" style="margin-bottom:10px;font-size:13px;">Перетащите блок с ФИО мышкой, чтобы изменить его положение на сертификате.</div>
+                        <div class="text-secondary" style="margin-bottom:10px;font-size:13px;">Перетащите мышкой блок ФИО или номер диплома, чтобы точно выставить их на макете.</div>
                         <div id="diplomaCanvas" style="position:relative;width:100%;aspect-ratio:<?= $sheetRotation === 90 ? '1.414/1' : '1/1.414' ?>;background:linear-gradient(180deg,#FFF9E6 0%, #F7FBFF 50%, #FFF1F2 100%);border:6px solid #EAB308;border-radius:8px;overflow:hidden;">
                         </div>
                     </div>
@@ -485,8 +510,53 @@ unset($_SESSION['success_message'], $_SESSION['error_message']);
                             <input class="form-input" type="number" min="8" max="72" step="1" name="name_font_size" id="nameFontSizeInput" value="<?= e((string)($participantNameLayout['font_size'] ?? 18)) ?>">
                         </div>
 
-                        <div class="alert" style="margin-top:10px;background:#EEF2FF;border:1px solid #C7D2FE;color:#3730A3;">
-                            Доступно только: смена фона, поворот листа, перемещение блока ФИО и изменение размера шрифта.
+                        <div class="diploma-editor-panel">
+                            <div class="diploma-editor-panel__header">
+                                <h4>Номер диплома</h4>
+                                <p>Можно менять подпись перед номером, размер шрифта и цвет, а сам блок двигать прямо в предпросмотре.</p>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label" for="diplomaNumberLabelInput">Подпись перед номером</label>
+                                <input
+                                    type="text"
+                                    class="form-input"
+                                    id="diplomaNumberLabelInput"
+                                    name="diploma_number_label"
+                                    maxlength="60"
+                                    value="<?= e($diplomaNumberLabel) ?>"
+                                    placeholder="Номер диплома"
+                                >
+                            </div>
+
+                            <div class="diploma-editor-grid">
+                                <div class="form-group" style="margin:0;">
+                                    <label class="form-label" for="diplomaNumberFontSizeInput">Размер шрифта</label>
+                                    <input
+                                        class="form-input"
+                                        type="number"
+                                        min="8"
+                                        max="36"
+                                        step="1"
+                                        name="diploma_number_font_size"
+                                        id="diplomaNumberFontSizeInput"
+                                        value="<?= e((string)($diplomaNumberLayout['font_size'] ?? 9)) ?>"
+                                    >
+                                </div>
+
+                                <div class="form-group" style="margin:0;">
+                                    <label class="form-label" for="diplomaNumberColorInput">Цвет текста</label>
+                                    <select class="form-select" name="diploma_number_color" id="diplomaNumberColorInput">
+                                        <option value="#FFFFFF" <?= strtoupper((string)($diplomaNumberLayout['color'] ?? '')) === '#FFFFFF' ? 'selected' : '' ?>>Белый</option>
+                                        <option value="#6B7280" <?= in_array(strtoupper((string)($diplomaNumberLayout['color'] ?? '')), ['#6B7280', '#64748B'], true) ? 'selected' : '' ?>>Серый</option>
+                                        <option value="#111111" <?= strtoupper((string)($diplomaNumberLayout['color'] ?? '')) === '#111111' ? 'selected' : '' ?>>Чёрный</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="diploma-editor-hint">
+                                Для удобства в предпросмотре показывается тестовое значение <strong>#26134</strong>.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -494,7 +564,7 @@ unset($_SESSION['success_message'], $_SESSION['error_message']);
                 <div class="flex gap-md mt-lg">
                     <button class="btn btn--primary" type="submit"><i class="fas fa-save"></i> Сохранить шаблон</button>
                     <a class="btn btn--ghost" href="<?= e($buildEditorUrl((int)$contestId, (int)$selectedTemplateId, 'diploma-layout')) ?>&preview=1" target="_blank" rel="noopener">Предпросмотр PDF</a>
-                    <a class="btn btn--ghost" href="/admin/diplomas">Назад</a>
+                    <a class="btn btn--ghost" href="<?= e($diplomaReturnUrl) ?>">Назад</a>
                 </div>
             </form>
             <?php endif; ?>
@@ -577,7 +647,7 @@ unset($_SESSION['success_message'], $_SESSION['error_message']);
 
                         <div class="flex gap-md mt-lg">
                             <button class="btn btn--primary" type="submit"><i class="fas fa-save"></i> Сохранить шаблон письма</button>
-                            <a class="btn btn--ghost" href="/admin/diplomas">Назад</a>
+                            <a class="btn btn--ghost" href="<?= e($diplomaReturnUrl) ?>">Назад</a>
                         </div>
                     </div>
 
@@ -684,6 +754,7 @@ if (templateEditorForm) {
 
   const samples = {
     participant_name: 'Иванов Иван Иванович',
+    diploma_number: '',
   };
 
   const canvas = document.getElementById('diplomaCanvas');
@@ -692,6 +763,9 @@ if (templateEditorForm) {
   const nameTopInput = document.getElementById('nameTopInput');
   const nameLeftInput = document.getElementById('nameLeftInput');
   const nameFontSizeInput = document.getElementById('nameFontSizeInput');
+  const diplomaNumberLabelInput = document.getElementById('diplomaNumberLabelInput');
+  const diplomaNumberFontSizeInput = document.getElementById('diplomaNumberFontSizeInput');
+  const diplomaNumberColorInput = document.getElementById('diplomaNumberColorInput');
   const sheetRotationInput = document.getElementById('sheetRotationInput');
   let dragState = null;
 
@@ -712,6 +786,11 @@ if (templateEditorForm) {
     });
   }
 
+  function getDiplomaNumberPreviewText() {
+    const label = String(diplomaNumberLabelInput?.value || 'Номер диплома').trim() || 'Номер диплома';
+    return `${label}: #26134`;
+  }
+
   function persistLayout() {
     layoutInput.value = JSON.stringify(layout);
     stylesInput.value = JSON.stringify(styles);
@@ -724,6 +803,17 @@ if (templateEditorForm) {
     if (layout.participant_name) {
       layout.participant_name.font_size = value;
     }
+    persistLayout();
+    renderCanvas();
+  }
+
+  function syncDiplomaNumberSettings() {
+    if (layout.diploma_number) {
+      layout.diploma_number.font_size = Number(diplomaNumberFontSizeInput?.value || layout.diploma_number?.font_size || 9);
+      layout.diploma_number.color = String(diplomaNumberColorInput?.value || layout.diploma_number?.color || '#6B7280');
+      layout.diploma_number.visible = 1;
+    }
+    styles.diploma_number_label = String(diplomaNumberLabelInput?.value || 'Номер диплома').trim() || 'Номер диплома';
     persistLayout();
     renderCanvas();
   }
@@ -741,12 +831,13 @@ if (templateEditorForm) {
     canvas.style.backgroundImage = assets.background_image ? `url(${<?= json_encode('/uploads/diplomas/', JSON_UNESCAPED_UNICODE) ?>}${encodeURIComponent(String(assets.background_image))})` : '';
     canvas.style.backgroundSize = assets.background_image ? '100% 100%' : '';
     canvas.style.backgroundPosition = assets.background_image ? 'center center' : '';
-    ['participant_name'].forEach((key) => {
+    samples.diploma_number = getDiplomaNumberPreviewText();
+    ['participant_name', 'diploma_number'].forEach((key) => {
       const cfg = layout[key];
       if (!cfg || (cfg.visible ?? 1) !== 1) return;
       const el = document.createElement('div');
       el.dataset.key = key;
-      el.className = 'tpl-item tpl-item--selected';
+      el.className = `tpl-item tpl-item--selected tpl-item--${key}`;
       el.style.position = 'absolute';
       el.style.left = `${cfg.x}%`;
       el.style.top = `${cfg.y}%`;
@@ -761,7 +852,7 @@ if (templateEditorForm) {
       el.style.userSelect = 'none';
       el.style.overflow = 'hidden';
       el.style.padding = '0';
-      el.style.outline = '1px dashed #2563EB';
+      el.style.outline = key === 'diploma_number' ? '1px dashed #0f766e' : '1px dashed #2563EB';
       el.style.outlineOffset = '0';
       el.textContent = samples[key] || key;
 
@@ -770,7 +861,7 @@ if (templateEditorForm) {
       }
 
       el.addEventListener('mousedown', (e) => {
-        dragState = { startX: e.clientX, startY: e.clientY };
+        dragState = { key, startX: e.clientX, startY: e.clientY };
         e.preventDefault();
       });
       canvas.appendChild(el);
@@ -782,9 +873,11 @@ if (templateEditorForm) {
     const rect = canvas.getBoundingClientRect();
     const dx = ((e.clientX - dragState.startX) / rect.width) * 100;
     const dy = ((e.clientY - dragState.startY) / rect.height) * 100;
-    layout.participant_name.x = Math.max(0, Math.min(99, Number(layout.participant_name.x) + dx));
-    layout.participant_name.y = Math.max(0, Math.min(99, Number(layout.participant_name.y) + dy));
-    dragState = { startX: e.clientX, startY: e.clientY };
+    const activeKey = dragState.key;
+    if (!layout[activeKey]) return;
+    layout[activeKey].x = Math.max(0, Math.min(99, Number(layout[activeKey].x) + dx));
+    layout[activeKey].y = Math.max(0, Math.min(99, Number(layout[activeKey].y) + dy));
+    dragState = { key: activeKey, startX: e.clientX, startY: e.clientY };
     persistLayout();
     renderCanvas();
   });
@@ -793,6 +886,9 @@ if (templateEditorForm) {
     dragState = null;
   });
   nameFontSizeInput?.addEventListener('input', syncNameFontSize);
+  diplomaNumberLabelInput?.addEventListener('input', syncDiplomaNumberSettings);
+  diplomaNumberFontSizeInput?.addEventListener('input', syncDiplomaNumberSettings);
+  diplomaNumberColorInput?.addEventListener('change', syncDiplomaNumberSettings);
   sheetRotationInput?.addEventListener('change', () => {
     syncSheetRotation();
     renderCanvas();
@@ -805,6 +901,7 @@ if (templateEditorForm) {
 
 <style>
 .tpl-item--selected {box-shadow:0 0 0 1px #2563EB inset;}
+.tpl-item--diploma_number {box-shadow:0 0 0 1px rgba(15, 118, 110, .45) inset;}
 
 .diploma-editor-tabs {
   display: flex;
@@ -843,6 +940,46 @@ if (templateEditorForm) {
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, .9fr);
   gap: 18px;
   align-items: start;
+}
+
+.diploma-editor-panel {
+  margin-top: 18px;
+  border: 1px solid #dbeafe;
+  border-radius: 18px;
+  padding: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.diploma-editor-panel__header {
+  margin-bottom: 14px;
+}
+
+.diploma-editor-panel__header h4 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.diploma-editor-panel__header p {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.diploma-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.diploma-editor-hint {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .diploma-email-layout__main {
@@ -944,6 +1081,12 @@ if (templateEditorForm) {
 
   .diploma-email-preview__frame {
     min-height: 560px;
+  }
+}
+
+@media (max-width: 720px) {
+  .diploma-editor-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

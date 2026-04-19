@@ -13,6 +13,44 @@ check_csrf();
 $admin = getCurrentUser();
 $application_id = $_GET['id'] ?? 0;
 
+$buildApplicationsReturnUrl = static function (array $query): string {
+    $allowedKeys = [
+        'status',
+        'contest_id',
+        'search',
+        'search_application_id',
+        'search_user_id',
+        'participant_id',
+        'participant_query',
+        'queue',
+        'show_archived',
+        'page',
+    ];
+
+    $filtered = [];
+    foreach ($allowedKeys as $key) {
+        if (!array_key_exists($key, $query)) {
+            continue;
+        }
+
+        $value = $query[$key];
+        if ($value === null || $value === '') {
+            continue;
+        }
+
+        $filtered[$key] = is_scalar($value) ? (string) $value : '';
+    }
+
+    $queryString = http_build_query($filtered);
+    return '/admin/applications' . ($queryString !== '' ? ('?' . $queryString) : '');
+};
+
+$applicationsReturnUrl = $buildApplicationsReturnUrl($_GET);
+$rawApplicationsReturnUrl = trim((string) ($_GET['return_url'] ?? ''));
+if ($rawApplicationsReturnUrl !== '' && str_starts_with($rawApplicationsReturnUrl, '/admin/')) {
+    $applicationsReturnUrl = $rawApplicationsReturnUrl;
+}
+
 // Получаем заявку
 $stmt = $pdo->prepare("
  SELECT a.*, c.title as contest_title, c.requires_payment_receipt AS contest_requires_payment_receipt,
@@ -27,7 +65,7 @@ $stmt->execute([$application_id]);
 $application = $stmt->fetch();
 
 if (!$application) {
-    redirect('/admin/applications');
+    redirect($applicationsReturnUrl);
 }
 
 $applicantEmail = trim((string) ($application['email'] ?? ''));
@@ -210,7 +248,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt->execute([$newStatus, $application_id]);
         $application['status'] = $newStatus;
         $_SESSION['success_message'] = 'Статус обновлён';
-        redirect('/admin/applications');
+        redirect($applicationsReturnUrl);
 
     } elseif ($_POST['action'] === 'toggle_applicant_blacklist') {
         if ($applicantEmail === '') {
@@ -241,7 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
 	        $_SESSION['success_message'] = $message;
-	        redirect('/admin/application/' . $application_id);
+	        redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
 
 	    } elseif ($_POST['action'] === 'set_work_status') {
 	        $workId = (int)($_POST['work_id'] ?? 0);
@@ -252,7 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 jsonResponse(['success' => false, 'error' => 'Некорректный статус работы'], 422);
             }
             $_SESSION['success_message'] = 'Некорректный статус работы';
-            redirect('/admin/application/' . $application_id);
+            redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
         }
         $comment = trim((string) ($_POST['comment'] ?? ''));
         updateWorkStatus($workId, $newStatus);
@@ -292,7 +330,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 	            ]);
 	        }
 	        $_SESSION['success_message'] = 'Статус работы обновлён';
-	        redirect('/admin/application/' . $application_id);
+	        redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
 	    } elseif ($_POST['action'] === 'approve_application') {
         if ($hasDrawingCompliantColumn) {
             $unresolvedStmt = $pdo->prepare("
@@ -308,7 +346,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     jsonResponse(['success' => false, 'error' => $errorMessage], 422);
                 }
                 $_SESSION['error_message'] = $errorMessage;
-                redirect('/admin/application/' . $application_id);
+                redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
             }
         }
         $stmt = $pdo->prepare("UPDATE applications SET status = 'approved', updated_at = NOW() WHERE id = ?");
@@ -339,7 +377,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
         $_SESSION['success_message'] = 'Заявка принята';
         $_SESSION['vk_publish_prompt_application_id'] = (int) $application_id;
-        redirect('/admin/application/' . $application_id);
+        redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
     } elseif ($_POST['action'] === 'cancel_application') {
         $stmt = $pdo->prepare("UPDATE applications SET status = 'cancelled', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
@@ -352,7 +390,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt->execute([$application['user_id'], $admin['id'], $subject, $message]);
 
         $_SESSION['success_message'] = 'Заявка отменена';
-        redirect('/admin/applications');
+        redirect($applicationsReturnUrl);
     } elseif ($_POST['action'] === 'decline_application') {
         $worksForDeclineCheck = getApplicationWorks((int) $application_id);
         $canDeclineApplication = !empty($worksForDeclineCheck);
@@ -364,7 +402,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
         if (!$canDeclineApplication) {
             $_SESSION['error_message'] = 'Отклонить заявку можно только когда по всем рисункам принято решение «Рисунок отклонён».';
-            redirect('/admin/application/' . $application_id);
+            redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
         }
         // В ряде БД статус отклонения хранится как `rejected` (без `declined` в ENUM),
         // поэтому сохраняем совместимое значение.
@@ -379,14 +417,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt->execute([$application['user_id'], $admin['id'], $subject, $message]);
 
         $_SESSION['success_message'] = 'Заявка отклонена';
-        redirect('/admin/applications');
+        redirect($applicationsReturnUrl);
 
 } elseif ($_POST['action'] === 'delete') {
  // Удаляем участников и заявку
  $pdo->prepare("DELETE FROM participants WHERE application_id = ?")->execute([$application_id]);
  $pdo->prepare("DELETE FROM applications WHERE id = ?")->execute([$application_id]);
  $_SESSION['success_message'] = 'Заявка удалена';
- redirect('/admin/applications');
+ redirect($applicationsReturnUrl);
  } elseif ($_POST['action'] === 'send_message') {
  $subject = trim($_POST['subject'] ?? '');
  $message = trim($_POST['message'] ?? '');
@@ -410,7 +448,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
          jsonResponse(['success' => false, 'error' => 'Некорректный участник'], 422);
      }
      $_SESSION['success_message'] = 'Не удалось сохранить проверку';
-     redirect('/admin/application/' . $application_id);
+     redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
  }
 
  if ($hasDrawingCompliantColumn && $hasDrawingCommentColumn) {
@@ -482,12 +520,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
      if ($hasUnresolvedRevisionDecision) {
          $_SESSION['error_message'] = 'Нельзя отправить заявку на корректировку, пока по всем участникам не принято решение.';
-         redirect('/admin/application/' . $application_id);
+         redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
      }
 
      if (!$hasRevisionPath) {
          $_SESSION['error_message'] = 'Для отправки на корректировку выключите переключатель «Соответствует условиям конкурса» хотя бы у одного участника.';
-         redirect('/admin/application/' . $application_id);
+         redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
      }
 
      $participantsForRevisionStmt = $pdo->prepare("
@@ -507,7 +545,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
      if (empty($needRevision)) {
          $_SESSION['success_message'] = 'Нет участников, отмеченных как несоответствующие условиям конкурса.';
-         redirect('/admin/application/' . $application_id);
+         redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
      }
 
      foreach ($needRevision as $participantRow) {
@@ -550,7 +588,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 
     $_SESSION['success_message'] = 'Заявка отправлена на корректировку';
-    redirect('/admin/applications');
+    redirect($applicationsReturnUrl);
  } elseif ($_POST['action'] === 'save_drawing_edit') {
      header('Content-Type: application/json');
      $participantId = intval($_POST['participant_id'] ?? 0);
@@ -618,7 +656,7 @@ generateCSRFToken();
 $currentPage = 'applications';
 $pageTitle = 'Заявка #' . $application_id;
 $breadcrumb = 'Заявки / Просмотр';
-$headerBackUrl = '/admin/applications';
+$headerBackUrl = $applicationsReturnUrl;
 $headerBackLabel = 'Назад';
 
 require_once __DIR__ . '/includes/header.php';
@@ -684,7 +722,7 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
             <span class="application-meta-chip"><i class="fas fa-receipt"></i><?= e((string) ($receiptMeta['label'] ?? '—')) ?></span>
         </div>
         <div class="application-hero__actions">
-            <a href="/admin/user/<?= (int) $application['user_id'] ?>" class="btn btn--secondary"><i class="fas fa-user-circle"></i> Профиль заявителя</a>
+            <a href="/admin/user/<?= (int) $application['user_id'] ?>?return_url=<?= urlencode((string) ($_SERVER['REQUEST_URI'] ?? ('/admin/application/' . $application_id))) ?>" class="btn btn--secondary"><i class="fas fa-user-circle"></i> Профиль заявителя</a>
             <button type="button" class="btn btn--primary" onclick="openMessageModal()"><i class="fas fa-paper-plane"></i> Связаться с заявителем</button>
             <a href="#application-actions" class="btn btn--ghost"><i class="fas fa-bolt"></i> К действиям</a>
             <form method="POST">
@@ -834,7 +872,7 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                         <div><h3>Работа #<?= $i + 1 ?></h3><p class="text-secondary"><?= e($p['fio'] ?: 'Участник не указан') ?></p></div>
                         <div class="work-card__header-actions">
                             <span class="badge <?= getWorkStatusBadgeClass((string)($p['status'] ?? 'pending')) ?>" data-work-status-badge><?= e(getWorkStatusLabel((string)($p['status'] ?? 'pending'))) ?></span>
-                            <?php if (!empty($p['participant_id'])): ?><a href="/admin/participant/<?= (int) $p['participant_id'] ?>" class="btn btn--ghost btn--sm"><i class="fas fa-user"></i> Профиль</a><?php endif; ?>
+                            <?php if (!empty($p['participant_id'])): ?><a href="/admin/participant/<?= (int) $p['participant_id'] ?>?return_url=<?= urlencode((string) ($_SERVER['REQUEST_URI'] ?? ('/admin/application/' . $application_id))) ?>" class="btn btn--ghost btn--sm"><i class="fas fa-user"></i> Профиль</a><?php endif; ?>
                         </div>
                     </div>
                     <div class="card__body">
@@ -859,7 +897,7 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                                 <?php endif; ?>
                             </div>
                             <div class="work-card__details">
-                                <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd></dl></section>
+                                <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Номер участника</dt><dd><?php if (!empty($p['participant_id'])): ?><a href="/admin/participant/<?= (int) $p['participant_id'] ?>?return_url=<?= urlencode((string) ($_SERVER['REQUEST_URI'] ?? ('/admin/application/' . $application_id))) ?>" style="color:#7C3AED;text-decoration:none;"><?= e(getParticipantDisplayNumber((array) $p)) ?></a><?php else: ?>—<?php endif; ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd></dl></section>
                                 <section class="work-section"><h4>Организация</h4><dl class="application-kv-list"><dt>Название и адрес образовательного учреждения</dt><dd><?= e($p['organization_name'] ?? '—') ?></dd><dt>Контактная информация организации</dt><dd><?= e($p['organization_address'] ?? '—') ?></dd></dl></section>
                                 <?php
                                     $workStatus = (string) ($p['status'] ?? 'pending');
@@ -968,7 +1006,7 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                         <i class="fas <?= e($approveButtonIcon) ?>"></i> <?= e($approveButtonText) ?>
                     </button>
                     <?php if ($isApplicationApproved): ?>
-                        <a href="/admin/applications" class="btn btn--ghost"><i class="fas fa-list"></i> Закрыть</a>
+                        <a href="<?= e($applicationsReturnUrl) ?>" class="btn btn--ghost"><i class="fas fa-list"></i> Закрыть</a>
                     <?php endif; ?>
                 </div>
                 <p class="application-sidebar-hint" style="<?= $isApplicationFinal || $approveButtonDisabled ? 'display:none;' : '' ?>">Кнопка станет активной, когда по каждой работе будет принято решение кнопкой «Рисунок принят» или «Рисунок отклонён».</p>

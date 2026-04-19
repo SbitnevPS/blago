@@ -25,6 +25,8 @@ try {
 
     $limit = (int) ($_GET['limit'] ?? 7);
     $limit = max(1, min(7, $limit));
+    $supportsContestArchive = contest_archive_column_exists();
+    $archiveWhere = $supportsContestArchive ? ' AND COALESCE(c.is_archived, 0) = 0' : '';
 
     if ($isNumericQuery) {
         // Numeric input searches by assigned public number (e.g. 26123).
@@ -39,8 +41,10 @@ try {
                 a.id AS application_id
             FROM participants p
             JOIN applications a ON a.id = p.application_id
+            LEFT JOIN contests c ON c.id = a.contest_id
             JOIN users u ON u.id = a.user_id
             WHERE p.public_number LIKE ?
+            $archiveWhere
             ORDER BY p.public_number ASC, p.id ASC
             LIMIT $limit
         ");
@@ -57,10 +61,12 @@ try {
                 a.id AS application_id
             FROM participants p
             JOIN applications a ON a.id = p.application_id
+            LEFT JOIN contests c ON c.id = a.contest_id
             JOIN users u ON u.id = a.user_id
-            WHERE p.fio LIKE ?
+            WHERE (p.fio LIKE ?
                OR p.region LIKE ?
-               OR u.email LIKE ?
+               OR u.email LIKE ?)
+              $archiveWhere
             ORDER BY p.fio ASC, p.id ASC
             LIMIT $limit
         ");
