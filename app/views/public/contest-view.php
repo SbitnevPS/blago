@@ -18,7 +18,7 @@ $applicationUrl = getApplicationAccessUrl((int) $contest['id']);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><?= htmlspecialchars($contest['title']) ?> - ДетскиеКонкурсы.рф</title>
+<title><?= htmlspecialchars(sitePageTitle((string) ($contest['title'] ?? 'Конкурс')), ENT_QUOTES, 'UTF-8') ?></title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 </head>
 <body>

@@ -11,7 +11,7 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><?= $safePageTitle ?> - ДетскиеКонкурсы.рф</title>
+<title><?= htmlspecialchars(sitePageTitle((string) ($pageTitle ?? 'Админ-панель')), ENT_QUOTES, 'UTF-8') ?></title>
 <?php include __DIR__ . '/admin-head.php'; ?>
 
 </head>
@@ -20,7 +20,7 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 <aside class="admin-sidebar" id="adminSidebar">
 <div class="admin-sidebar__logo">
 <i class="fas fa-paint-brush"></i>
-<span>ДетскиеКонкурсы</span>
+<span><?= htmlspecialchars(siteBrandShortName(), ENT_QUOTES, 'UTF-8') ?></span>
 </div>
         
 <nav class="admin-sidebar__nav">
