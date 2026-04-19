@@ -1,35 +1,27 @@
 #!/bin/bash
+set -e
 
-# deploy.sh — деплой проекта
-composer install --no-dev --optimize-autoloader
+PROJECT_DIR="/home/users/p/pavel-sbitnev/domains/test.tolkodobroe.info"
+BRANCH="develop"
 
-echo "[deploy] Starting deploy..."
+echo "[deploy] Starting deploy in ${PROJECT_DIR}"
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "${PROJECT_DIR}"
 
-cd "$PROJECT_DIR" || {
-  echo "[deploy][error] Project directory not found"
-  exit 1
-}
-
-# 🔄 Обновляем код
-echo "[deploy] Fetching updates..."
-git fetch origin
-
-echo "[deploy] Reset to origin/main..."
-git reset --hard origin/main
-
-# 🧹 Очистка (если нужно)
-echo "[deploy] Cleaning..."
-git clean -fd
-
-# 📦 Установка зависимостей (если используешь composer)
-if [ -f "composer.json" ]; then
-  echo "[deploy] Installing composer dependencies..."
-  composer install --no-dev --optimize-autoloader
+if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+  git rebase --abort || true
 fi
 
-# 🔐 Права (опционально)
-chmod -R 775 storage uploads 2>/dev/null
+if [ -f .git/MERGE_HEAD ]; then
+  git merge --abort || true
+fi
+
+git fetch origin
+git reset --hard "origin/${BRANCH}"
+git clean -fd
+
+if [ -f composer.phar ]; then
+  php composer.phar install --no-dev --optimize-autoloader
+fi
 
 echo "[deploy] Done."
