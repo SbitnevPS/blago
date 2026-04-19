@@ -23,6 +23,7 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title><?= htmlspecialchars(sitePageTitle((string) ($pageTitle ?? 'Админ-панель')), ENT_QUOTES, 'UTF-8') ?></title>
 <?php include __DIR__ . '/admin-head.php'; ?>
 
@@ -33,6 +34,7 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 <div class="admin-sidebar__logo">
 <i class="fas fa-paint-brush"></i>
 <span><?= htmlspecialchars(siteBrandShortName(), ENT_QUOTES, 'UTF-8') ?></span>
+
 </div>
         
 <nav class="admin-sidebar__nav">

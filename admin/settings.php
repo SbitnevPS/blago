@@ -594,6 +594,53 @@ unset($_SESSION['success_message']);
                     </div>
 
                     <div class="form-group">
+        <section id="site-branding" class="settings-tab-panel<?= $activeSettingsTab === 'site-branding' ? ' is-active' : '' ?>" data-settings-panel="site-branding">
+            <form method="POST" class="settings-form">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="settings_section" value="site-branding">
+                <div class="settings-section__header">
+                    <h4><i class="fas fa-palette"></i> Брендирование сайта</h4>
+                    <p>Изменения применяются во фронте, админке, письмах и дипломах из одного места.</p>
+                </div>
+
+                <div class="settings-email-card">
+                    <div class="form-group">
+                        <label class="form-label">Полное название бренда</label>
+                        <input
+                            type="text"
+                            name="site_brand_name"
+                            class="form-input"
+                            value="<?= htmlspecialchars((string) ($settings['site_brand_name'] ?? siteBrandName())) ?>"
+                            placeholder="ДетскиеКонкурсы.рф"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Короткое название бренда</label>
+                        <input
+                            type="text"
+                            name="site_brand_short_name"
+                            class="form-input"
+                            value="<?= htmlspecialchars((string) ($settings['site_brand_short_name'] ?? siteBrandShortName())) ?>"
+                            placeholder="ДетскиеКонкурсы"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Подзаголовок бренда</label>
+                        <input
+                            type="text"
+                            name="site_brand_subtitle"
+                            class="form-input"
+                            value="<?= htmlspecialchars((string) ($settings['site_brand_subtitle'] ?? siteBrandSubtitle())) ?>"
+                            placeholder="Всероссийские конкурсы детского творчества"
+                        >
+                    </div>
+
+                    <div class="form-group">
                         <label class="form-label">Подпись «Конкурсы/Проекты»</label>
                         <input
                             type="text"
