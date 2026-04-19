@@ -547,6 +547,7 @@
 .contest-editor-stack {
     display: grid;
     gap: 20px;
+    min-width: 0;
 }
 
 .contest-editor-file {
@@ -558,11 +559,19 @@
     border-radius: 14px;
     background: #f8fafc;
     padding: 14px 16px;
+    flex-wrap: wrap;
+}
+
+.contest-editor-file > div:first-child {
+    min-width: 0;
+    flex: 1 1 220px;
 }
 
 .contest-editor-file strong {
     display: block;
     color: #0f172a;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .contest-editor-file span {
@@ -570,6 +579,7 @@
     margin-top: 4px;
     color: #64748b;
     font-size: 13px;
+    overflow-wrap: anywhere;
 }
 
 .contest-editor-switch-grid {
@@ -808,6 +818,16 @@ body.is-modal-open {
     }
 }
 
+@media (max-width: 1480px) {
+    .contest-editor-split {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .contest-cover-layout {
+        align-items: stretch;
+    }
+}
+
 @media (max-width: 1180px) {
     .contests-stats {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -910,16 +930,26 @@ body.is-modal-open {
     align-items: flex-start;
     gap: 16px;
     flex-wrap: wrap;
+    min-width: 0;
 }
 
 .contest-cover-dropzone {
     margin-top: 0;
-    width: 300px;
+    width: min(300px, 100%);
+    flex: 1 1 280px;
     min-height: 300px;
     display: flex;
     flex-direction: column;
     justify-content: center;
     padding: 16px;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.contest-cover-preview {
+    width: min(300px, 100%);
+    flex: 1 1 280px;
+    min-width: 0;
 }
 
 .contest-cover-modal {
@@ -977,6 +1007,7 @@ body.is-modal-open {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 10px;
+    min-width: 0;
 }
 
 .contest-theme-option {
@@ -987,6 +1018,7 @@ body.is-modal-open {
     border-radius: 10px;
     padding: 10px;
     cursor: pointer;
+    min-width: 0;
 }
 
 .contest-theme-option input {
@@ -1037,6 +1069,8 @@ body.is-modal-open {
 .contest-theme-option__label {
     font-size: 14px;
     font-weight: 600;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .contest-theme-option:has(input:checked) {

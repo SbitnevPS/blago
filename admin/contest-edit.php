@@ -113,15 +113,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Ошибка безопасности';
     } else {
         $title = trim($_POST['title'] ?? '');
-        $descriptionInput = (string) ($_POST['description_html'] ?? '');
-        if ($descriptionInput === '') {
-            $descriptionInput = (string) ($_POST['description'] ?? '');
-        }
-        error_log('[contest-edit] description len=' . mb_strlen((string) ($_POST['description'] ?? '')));
-        error_log('[contest-edit] description_html len=' . mb_strlen((string) ($_POST['description_html'] ?? '')));
-        error_log('[contest-edit] descriptionInput len=' . mb_strlen($descriptionInput));
+        $descriptionHtmlInput = (string) ($_POST['description_html'] ?? '');
+        $descriptionTextareaInput = (string) ($_POST['description'] ?? '');
+        $descriptionInput = trim($descriptionHtmlInput) !== '' ? $descriptionHtmlInput : $descriptionTextareaInput;
         $description = sanitizeContestDescriptionHtml($descriptionInput);
-        error_log('[contest-edit] sanitized description len=' . mb_strlen($description));
         $is_published = isset($_POST['is_published']) ? 1 : 0;
         $is_archived = isset($_POST['is_archived']) ? 1 : 0;
         $theme_style = normalizeContestThemeStyle($_POST['theme_style'] ?? 'blue');
@@ -343,7 +338,7 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
     <input type="hidden" name="cover_image_uploaded" id="cover_image_uploaded" value="">
     <input type="hidden" name="remove_cover_image" id="remove_cover_image" value="0">
     <input type="hidden" name="remove_document_file" id="remove_document_file" value="0">
-    <input type="hidden" name="description_html" id="description_html" value="<?= htmlspecialchars((string) ($contest['description'] ?? ''), ENT_QUOTES) ?>">
+    <input type="hidden" name="description_html" id="description_html" value="">
 
     <div class="contest-editor-layout">
         <div class="contest-editor-main">
@@ -757,16 +752,18 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
 
     form?.addEventListener('submit', () => {
         const html = syncEditorContent();
-        editorElement.value = html;
+        const normalizedHtml = typeof html === 'string' && html !== '' ? html : (editorElement.value || mirrorInput?.value || '');
+        editorElement.value = normalizedHtml;
         if (mirrorInput) {
-            mirrorInput.value = html;
+            mirrorInput.value = normalizedHtml;
         }
     });
 
     form?.addEventListener('formdata', (event) => {
         const html = syncEditorContent();
-        event.formData.set('description', html);
-        event.formData.set('description_html', html);
+        const normalizedHtml = typeof html === 'string' && html !== '' ? html : (editorElement.value || mirrorInput?.value || '');
+        event.formData.set('description', normalizedHtml);
+        event.formData.set('description_html', normalizedHtml);
     });
 })();
 </script>

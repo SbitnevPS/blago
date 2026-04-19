@@ -2063,6 +2063,8 @@ body:has(#application-actions) .admin-content {
   margin-top: 8px;
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .is-hidden {

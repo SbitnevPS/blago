@@ -2362,7 +2362,11 @@ function sanitizeContestDescriptionHtml(string $html): string
         }
     };
 
-    $sanitizeNode($root);
+    for ($child = $root->firstChild; $child !== null; ) {
+        $next = $child->nextSibling;
+        $sanitizeNode($child);
+        $child = $next;
+    }
 
     $output = '';
     foreach ($root->childNodes as $childNode) {
