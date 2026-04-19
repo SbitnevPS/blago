@@ -100,6 +100,7 @@ $routes = [
  '/profile' => ['file' => 'app/views/public/profile.php', 'name' => 'profile'],
  '/email/send-verification' => ['file' => 'app/views/public/email-send-verification.php', 'name' => 'email-send-verification'],
  '/email/verification-status' => ['file' => 'app/views/public/email-verification-status.php', 'name' => 'email-verification-status'],
+ '/email/verification-pending' => ['file' => 'app/views/public/email-verification-pending.php', 'name' => 'email-verification-pending'],
  '/email/verify' => ['file' => 'app/views/public/email-verify.php', 'name' => 'email-verify'],
  '/email-verification-required' => ['file' => 'app/views/public/email-verification-required.php', 'name' => 'email-verification-required'],
  

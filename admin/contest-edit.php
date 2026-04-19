@@ -115,8 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $title = trim($_POST['title'] ?? '');
         $descriptionHtmlInput = (string) ($_POST['description_html'] ?? '');
         $descriptionTextareaInput = (string) ($_POST['description'] ?? '');
-        $descriptionInput = trim($descriptionHtmlInput) !== '' ? $descriptionHtmlInput : $descriptionTextareaInput;
-        $description = sanitizeContestDescriptionHtml($descriptionInput);
+        $description = trim($descriptionHtmlInput) !== '' ? $descriptionHtmlInput : $descriptionTextareaInput;
         $is_published = isset($_POST['is_published']) ? 1 : 0;
         $is_archived = isset($_POST['is_archived']) ? 1 : 0;
         $theme_style = normalizeContestThemeStyle($_POST['theme_style'] ?? 'blue');
@@ -126,8 +125,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if (empty($title)) {
             $error = 'Введите название конкурса';
-        } elseif (trim($descriptionInput) !== '' && $description === '') {
-            $error = 'Не удалось обработать описание конкурса. Попробуйте упростить форматирование (убрать сложные блоки/вставки) и сохранить ещё раз.';
         } else {
             // Загрузка документа
             $document_file = $contest['document_file'] ?? '';

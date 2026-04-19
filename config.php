@@ -943,7 +943,7 @@ function check_csrf() {
     }
 }
 
-function resolveSessionUser(?int $userId): ?array
+function resolveSessionUser(?int $userId, bool $forceRefresh = false): ?array
 {
     static $cache = [];
 
@@ -951,7 +951,7 @@ function resolveSessionUser(?int $userId): ?array
         return null;
     }
 
-    if (array_key_exists($userId, $cache)) {
+    if (!$forceRefresh && array_key_exists($userId, $cache)) {
         return $cache[$userId];
     }
 
@@ -2475,8 +2475,12 @@ function getContestPublicStatus(array $contest) {
 // Функция для получения заявок пользователя
 function getUserApplications($userId) {
     global $pdo;
+    $contestArchivedSelect = contest_archive_column_exists()
+        ? 'COALESCE(c.is_archived, 0) as contest_is_archived,'
+        : '0 as contest_is_archived,';
     $stmt = $pdo->prepare("
         SELECT a.*, c.title as contest_title, c.id as contest_id,
+               $contestArchivedSelect
                (SELECT COUNT(*) FROM participants WHERE application_id = a.id) as participants_count
         FROM applications a
         JOIN contests c ON a.contest_id = c.id

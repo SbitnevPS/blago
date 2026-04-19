@@ -15,6 +15,27 @@ if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
 }
 
 $user = getCurrentUser();
+if (!is_array($user)) {
+    jsonResponse(['success' => false, 'message' => 'Пользователь не найден'], 422);
+}
+
+$postedEmail = trim((string) ($_POST['email'] ?? ''));
+if (empty($user['email']) && $postedEmail !== '') {
+    if (!filter_var($postedEmail, FILTER_VALIDATE_EMAIL)) {
+        jsonResponse(['success' => false, 'message' => 'Введите корректный email'], 422);
+    }
+
+    $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ? AND id != ? LIMIT 1');
+    $stmt->execute([$postedEmail, (int) $user['id']]);
+    if ($stmt->fetch()) {
+        jsonResponse(['success' => false, 'message' => 'Этот email уже используется другим пользователем'], 422);
+    }
+
+    $stmt = $pdo->prepare('UPDATE users SET email = ?, email_verified = 0, email_verified_at = NULL, email_verification_token = NULL, email_verification_sent_at = NULL, updated_at = NOW() WHERE id = ?');
+    $stmt->execute([$postedEmail, (int) $user['id']]);
+    $user = getCurrentUser();
+}
+
 if (!is_array($user) || empty($user['email'])) {
     jsonResponse(['success' => false, 'message' => 'Укажите email в профиле'], 422);
 }

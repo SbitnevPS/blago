@@ -208,8 +208,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Обработка формы
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+ $isAjaxRequest = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest'
+     || (int) ($_POST['autosave'] ?? 0) === 1;
  if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
  $error = 'Ошибка безопасности. Обновите страницу.';
+ if ($isAjaxRequest) {
+     jsonResponse(['success' => false, 'message' => $error], 422);
+ }
  } else {
  $action = $_POST['action'];
  $existingParticipantsById = [];
@@ -600,6 +605,14 @@ $user['user_type'] = $user_type;
  $success_application_id = $application_id;
  $success_participant_count = $participant_count;
  } else {
+ if ($isAjaxRequest) {
+     jsonResponse([
+         'success' => true,
+         'message' => 'Черновик сохранён',
+         'application_id' => (int) $application_id,
+         'participant_count' => (int) $participant_count,
+     ]);
+ }
  $_SESSION['success_message'] = 'Заявка сохранена как черновик';
  redirect('/my-applications');
  }
@@ -614,6 +627,9 @@ $user['user_type'] = $user_type;
  }
  }
  $error = 'Ошибка при сохранении заявки: ' . $e->getMessage();
+ if ($isAjaxRequest) {
+     jsonResponse(['success' => false, 'message' => $error], 422);
+ }
  }
  }
  }
@@ -671,7 +687,7 @@ generateCSRFToken();
 <?php include dirname(__DIR__) . '/partials/header.php'; ?>
 
 <main class="container application-wizard-page">
-    <div class="flex items-center gap-md mb-lg">
+    <div class="flex items-center gap-md mb-lg application-wizard-page__back">
         <a href="/contest/<?= e($contest_id) ?>" class="btn btn--ghost"><i class="fas fa-arrow-left"></i> Назад</a>
     </div>
 
@@ -764,7 +780,7 @@ generateCSRFToken();
                                 <input type="email" name="organization_email" class="form-input" id="orgEmail" value="<?= htmlspecialchars($initialFormData['organization_email']) ?>" placeholder="school@example.ru">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Название и адрес образовательного учреждения</label>
+                                <label class="form-label">Название образовательного учреждения</label>
                                 <input type="text" name="organization_name" class="form-input" id="orgName" placeholder="Например: ДШИ №1" value="<?= htmlspecialchars($initialFormData['organization_name']) ?>">
                             </div>
                             <div class="form-group" id="orgAddressGroup" <?= (($initialFormData['user_type'] ?? 'parent') === 'parent') ? 'style="display:none;"' : '' ?>>
@@ -811,9 +827,8 @@ generateCSRFToken();
                 </section>
 
                 <section class="wizard-step card mb-lg" data-step="2" hidden>
-                    <div class="card__header wizard-card-head">
+                    <div class="card__header">
                         <h3>Шаг 2. Участники</h3>
-                        <button type="button" class="btn btn--secondary" id="addParticipantBtn"><i class="fas fa-plus"></i> Добавить участника</button>
                     </div>
                     <div class="card__body">
                         <div id="participantsEmpty" class="empty-state" style="display:none;">
@@ -822,6 +837,9 @@ generateCSRFToken();
                             <div class="empty-state__text">В карточке участника сразу заполняются данные и загружается рисунок.</div>
                         </div>
                         <div id="participantsContainer"></div>
+                        <div class="wizard-step__footer-action">
+                            <button type="button" class="btn btn--secondary btn--lg" id="addParticipantBtn"><i class="fas fa-plus"></i> Добавить участника</button>
+                        </div>
                     </div>
                 </section>
 
@@ -895,7 +913,9 @@ generateCSRFToken();
 
         <aside class="application-sidebar card">
             <div class="card__body">
-                <h4>Прогресс заявки</h4>
+                <div class="application-sidebar__eyebrow">Состояние формы</div>
+                <h4 class="application-sidebar__title">Прогресс заявки</h4>
+                <p class="application-sidebar__subtitle">Панель обновляется автоматически по мере заполнения шагов.</p>
                 <div class="sidebar-stat" id="statParticipants">Участников: 0</div>
                 <div class="sidebar-stat" id="statDrawings">Рисунков: 0</div>
                 <?php if ($contestRequiresPaymentReceipt): ?>
@@ -930,6 +950,23 @@ generateCSRFToken();
     </div>
 </div>
 
+<div class="modal" id="duplicateParticipantsModal" aria-hidden="true">
+    <div class="modal__content application-duplicates-modal">
+        <div class="modal__header">
+            <h3 class="modal__title">Обнаружены повторяющиеся участники</h3>
+            <button type="button" class="modal__close" id="duplicateParticipantsModalClose" aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="modal__body">
+            <p>Мы нашли совпадающие ФИО у участников в этой заявке.</p>
+            <p>Скорее всего, один и тот же участник был добавлен случайно дважды или более раз. Для каждого участника можно загрузить только один рисунок, поэтому удалите повторяющегося участника и попробуйте снова.</p>
+            <ul class="review-list application-duplicates-list" id="duplicateParticipantsList"></ul>
+        </div>
+        <div class="modal__footer">
+            <button type="button" class="btn btn--primary" id="duplicateParticipantsModalConfirm">Хорошо</button>
+        </div>
+    </div>
+</div>
+
 <?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>
 
 <script>
@@ -957,12 +994,20 @@ const paymentStepNumber = <?= $contestRequiresPaymentReceipt ? (int) $paymentSte
 const finalReviewStep = <?= (int) $reviewStepNumber ?>;
 const minParticipantAge = 5;
 const maxParticipantAge = 17;
+const duplicateParticipantsModal = document.getElementById('duplicateParticipantsModal');
+const duplicateParticipantsList = document.getElementById('duplicateParticipantsList');
+const applicationIdInput = document.querySelector('input[name="application_id"]');
 const steps = needsPaymentReceipt
     ? ['Заявитель', 'Участники и рисунки', 'Квитанция об оплате', 'Проверка и отправка']
     : ['Заявитель', 'Участники и рисунки', 'Проверка и отправка'];
 const draftKey = `applicationDraft:${contestId}:<?= intval($user['id'] ?? 0) ?>`;
 let currentStep = 1;
 let participantCount = 0;
+let autoSaveTimerId = null;
+let autoSaveInFlight = false;
+let autoSaveQueued = false;
+let lastAutoSaveSignature = '';
+let isSubmittingApplication = false;
 const isEditingServerDraft = <?= $editingApplication ? 'true' : 'false' ?>;
 const initialPaymentReceipt = <?= json_encode([
     'fileName' => $hasExistingPaymentReceipt ? basename($existingPaymentReceipt) : '',
@@ -1215,6 +1260,149 @@ function validateStep(step) {
     return valid;
 }
 
+function normalizeParticipantFioPart(value) {
+    return String(value || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+}
+
+function getParticipantDuplicateGroups() {
+    const groups = new Map();
+    const cards = [...document.querySelectorAll('#participantsContainer .participant-form')];
+
+    cards.forEach((card) => {
+        const index = Number(card.dataset.index);
+        const surname = card.querySelector(`[name="participants[${index}][surname]"]`)?.value || '';
+        const name = card.querySelector(`[name="participants[${index}][name]"]`)?.value || '';
+        const patronymic = card.querySelector(`[name="participants[${index}][patronymic]"]`)?.value || '';
+        const key = [
+            normalizeParticipantFioPart(surname),
+            normalizeParticipantFioPart(name),
+            normalizeParticipantFioPart(patronymic),
+        ].join('|');
+
+        if (!key || key === '||') {
+            return;
+        }
+
+        const previewNode = document.getElementById(`preview_img_${index}`);
+        const displayName = [surname, name, patronymic].map((part) => String(part || '').trim()).filter(Boolean).join(' ');
+        const entry = {
+            index,
+            label: `Участник ${index + 1}`,
+            fio: displayName || `Участник ${index + 1}`,
+            previewUrl: previewNode?.src || '',
+            fullPreviewUrl: previewNode?.dataset.fullSrc || previewNode?.src || '',
+        };
+
+        if (!groups.has(key)) {
+            groups.set(key, []);
+        }
+        groups.get(key).push(entry);
+    });
+
+    return [...groups.values()].filter((items) => items.length > 1);
+}
+
+function clearDuplicateParticipantHighlights() {
+    document.querySelectorAll('#participantsContainer .participant-form').forEach((card) => {
+        card.classList.remove('participant-form--duplicate');
+    });
+}
+
+function highlightDuplicateParticipantGroups(groups) {
+    clearDuplicateParticipantHighlights();
+    groups.forEach((group) => {
+        group.forEach((item) => {
+            const card = document.querySelector(`.participant-form[data-index="${item.index}"]`);
+            card?.classList.add('participant-form--duplicate');
+        });
+    });
+}
+
+function focusFirstDuplicateParticipant(groups) {
+    const firstDuplicate = groups[0]?.[0];
+    if (!firstDuplicate) return;
+
+    focusDuplicateParticipantByIndex(firstDuplicate.index);
+}
+
+function focusDuplicateParticipantByIndex(index) {
+    const targetIndex = Number(index);
+    if (Number.isNaN(targetIndex)) return;
+
+    const card = document.querySelector(`.participant-form[data-index="${targetIndex}"]`);
+    const body = card?.querySelector('.participant-form__body');
+    if (body) {
+        body.hidden = false;
+    }
+
+    card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => {
+        card?.querySelector('input, textarea, select')?.focus();
+    }, 160);
+}
+
+function openDuplicateParticipantsModal(groups) {
+    if (!duplicateParticipantsModal || !duplicateParticipantsList) {
+        return;
+    }
+
+    highlightDuplicateParticipantGroups(groups);
+
+    duplicateParticipantsList.innerHTML = groups.map((group) => {
+        return group.map((item) => {
+            const thumbnail = item.previewUrl
+                ? `<img src="${item.previewUrl}" alt="${item.fio}" class="review-item__thumb">`
+                : '<div class="review-item__thumb review-item__thumb--empty">Нет рисунка</div>';
+
+            return `
+                <li class="review-item review-item--card application-duplicates-list__item" data-duplicate-participant-index="${item.index}" tabindex="0" role="button" aria-label="Перейти к ${item.fio}">
+                    <div class="review-item__thumb-wrap">${thumbnail}</div>
+                    <div class="review-item__meta">
+                        <strong>${item.fio}</strong>
+                        <span>${item.label}</span>
+                        <span>Совпадающее ФИО в этой заявке</span>
+                    </div>
+                </li>
+            `;
+        }).join('');
+    }).join('');
+
+    duplicateParticipantsList.querySelectorAll('[data-duplicate-participant-index]').forEach((item) => {
+        item.addEventListener('click', () => {
+            const index = item.getAttribute('data-duplicate-participant-index');
+            closeDuplicateParticipantsModal();
+            focusDuplicateParticipantByIndex(index);
+        });
+        item.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                const index = item.getAttribute('data-duplicate-participant-index');
+                closeDuplicateParticipantsModal();
+                focusDuplicateParticipantByIndex(index);
+            }
+        });
+    });
+
+    duplicateParticipantsModal.classList.add('active');
+    duplicateParticipantsModal.setAttribute('aria-hidden', 'false');
+}
+
+function closeDuplicateParticipantsModal(options = {}) {
+    if (!duplicateParticipantsModal) {
+        return;
+    }
+
+    duplicateParticipantsModal.classList.remove('active');
+    duplicateParticipantsModal.setAttribute('aria-hidden', 'true');
+
+    if (options.focusFirstDuplicate) {
+        focusFirstDuplicateParticipant(getParticipantDuplicateGroups());
+    }
+}
+
 function syncNavigationButtons(isReadyToSubmit = false) {
     const prevBtn = document.getElementById('prevStepBtn');
     const nextBtn = document.getElementById('nextStepBtn');
@@ -1259,6 +1447,13 @@ function updateProgress() {
 function goStep(step) {
     document.getElementById('formAction').value = 'submit';
     if (step > currentStep && !validateStep(currentStep)) return;
+    if (currentStep === 2 && step > currentStep) {
+        const duplicateGroups = getParticipantDuplicateGroups();
+        if (duplicateGroups.length > 0) {
+            openDuplicateParticipantsModal(duplicateGroups);
+            return;
+        }
+    }
     currentStep = step;
     updateProgress();
     saveLocalDraft();
@@ -1274,8 +1469,8 @@ function buildDrawingActionButtons(index, hasFile, isLoading = false) {
     }
 
     return `
-        <button type="button" class="btn btn--ghost" onclick="viewDrawing(${index}); return false;">Просмотр</button>
-        <button type="button" class="btn btn--ghost" onclick="removeDrawing(${index}); return false;">Удалить</button>
+        <button type="button" class="btn btn--ghost" onclick="viewDrawing(${index}); return false;"><i class="fas fa-search-plus"></i> Посмотреть рисунок</button>
+        <button type="button" class="btn btn--ghost" onclick="replaceDrawing(${index}); return false;"><i class="fas fa-arrows-rotate"></i> Заменить рисунок</button>
     `;
 }
 
@@ -1331,6 +1526,10 @@ function openDrawingPicker(index) {
     }
 }
 
+function replaceDrawing(index) {
+    openDrawingPicker(index);
+}
+
 function createParticipantForm(index, data = null) {
     const hasPreview = !!(data?.preview);
     const fullPreview = data?.full_preview || data?.preview || '';
@@ -1342,7 +1541,6 @@ function createParticipantForm(index, data = null) {
             <div class="participant-form__title"><span class="participant-form__number">${index + 1}</span> Участник ${index + 1}</div>
             <div class="flex gap-sm">
                 <button type="button" class="btn btn--ghost" onclick="toggleParticipant(${index})">Свернуть</button>
-                ${index > 0 ? `<button type="button" class="participant-form__remove" onclick="removeParticipant(${index})"><i class="fas fa-trash"></i></button>` : ''}
             </div>
         </div>
         <div class="participant-form__body">
@@ -1389,8 +1587,25 @@ function createParticipantForm(index, data = null) {
                     </div>
                 </div>
             </div>
+            <div class="participant-form__footer">
+                <button type="button" class="participant-form__remove participant-form__remove--full" data-remove-participant-button onclick="removeParticipant(${index})">
+                    <i class="fas fa-trash"></i> Удалить участника
+                </button>
+            </div>
         </div>`;
     return container;
+}
+
+function syncParticipantRemoveButtons() {
+    const cards = [...document.querySelectorAll('#participantsContainer .participant-form')];
+    const canRemove = cards.length >= 2;
+
+    cards.forEach((card) => {
+        const button = card.querySelector('[data-remove-participant-button]');
+        if (!button) return;
+        button.hidden = !canRemove;
+        button.disabled = !canRemove;
+    });
 }
 
 function toggleParticipant(index) {
@@ -1416,6 +1631,7 @@ function addParticipant(data = null, options = {}) {
     container.appendChild(card);
     initUploadArea(participantCount);
     participantCount++;
+    syncParticipantRemoveButtons();
     updateParticipantsState();
     if (options.scrollIntoView) {
         scrollToParticipantForm(card);
@@ -1446,6 +1662,7 @@ function removeParticipant(index) {
         initUploadArea(participantCount);
         participantCount++;
     });
+    syncParticipantRemoveButtons();
     updateParticipantsState();
 }
 
@@ -1673,6 +1890,115 @@ function saveLocalDraft() {
     localStorage.setItem(draftKey, JSON.stringify(data));
 }
 
+function hasFilledParticipantData() {
+    const cards = [...document.querySelectorAll('#participantsContainer .participant-form')];
+    return cards.some((card) => {
+        const index = Number(card.dataset.index);
+        const values = [
+            card.querySelector(`[name="participants[${index}][surname]"]`)?.value || '',
+            card.querySelector(`[name="participants[${index}][name]"]`)?.value || '',
+            card.querySelector(`[name="participants[${index}][patronymic]"]`)?.value || '',
+            card.querySelector(`[name="participants[${index}][age]"]`)?.value || '',
+            document.getElementById(`temp_file_${index}`)?.value || '',
+            document.getElementById(`existing_file_${index}`)?.value || '',
+        ];
+
+        return values.some((value) => String(value || '').trim() !== '');
+    });
+}
+
+function getAutoSaveSignature() {
+    const form = document.getElementById('applicationForm');
+    if (!form) return '';
+
+    const formData = new FormData(form);
+    const entries = [];
+
+    for (const [key, value] of formData.entries()) {
+        if (key === 'csrf' || key === 'csrf_token') continue;
+
+        if (value instanceof File) {
+            entries.push(`${key}:${value.name}:${value.size}:${value.lastModified}`);
+        } else {
+            entries.push(`${key}:${String(value)}`);
+        }
+    }
+
+    entries.push(`step:${currentStep}`);
+    return entries.sort().join('|');
+}
+
+async function autoSaveDraft(options = {}) {
+    const {force = false, keepalive = false} = options;
+    if (isSubmittingApplication || autoSaveInFlight) {
+        if (!keepalive) {
+            autoSaveQueued = true;
+        }
+        return;
+    }
+
+    if (!hasFilledParticipantData()) {
+        return;
+    }
+
+    const signature = getAutoSaveSignature();
+    if (!force && signature !== '' && signature === lastAutoSaveSignature) {
+        return;
+    }
+
+    const form = document.getElementById('applicationForm');
+    if (!form) return;
+
+    autoSaveInFlight = true;
+    try {
+        const formData = new FormData(form);
+        formData.set('action', 'save_draft');
+        formData.set('autosave', '1');
+
+        const response = await fetch('/application-form?contest_id=' + contestId, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            body: formData,
+            credentials: 'same-origin',
+            keepalive
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || 'Не удалось выполнить автосохранение.');
+        }
+
+        if (applicationIdInput && data.application_id) {
+            applicationIdInput.value = String(data.application_id);
+            const nextUrl = new URL(window.location.href);
+            nextUrl.searchParams.set('edit', String(data.application_id));
+            window.history.replaceState({}, '', nextUrl.toString());
+        }
+
+        lastAutoSaveSignature = signature;
+    } catch (error) {
+    } finally {
+        autoSaveInFlight = false;
+        if (autoSaveQueued && !keepalive) {
+            autoSaveQueued = false;
+            autoSaveDraft({force: true});
+        }
+    }
+}
+
+function startAutoSave() {
+    if (autoSaveTimerId) {
+        window.clearInterval(autoSaveTimerId);
+    }
+
+    autoSaveTimerId = window.setInterval(() => {
+        autoSaveDraft();
+    }, 10000);
+}
+
 function tryRestoreDraft() {
     if (isEditingServerDraft) return;
     const raw = localStorage.getItem(draftKey);
@@ -1712,6 +2038,14 @@ function closeDrawingPreviewModal() {
 function goToMyApplications() { window.location.href = '/my-applications'; }
 
 document.addEventListener('DOMContentLoaded', function () {
+    document.getElementById('duplicateParticipantsModalClose')?.addEventListener('click', () => closeDuplicateParticipantsModal());
+    document.getElementById('duplicateParticipantsModalConfirm')?.addEventListener('click', () => closeDuplicateParticipantsModal({ focusFirstDuplicate: true }));
+    duplicateParticipantsModal?.addEventListener('click', function (event) {
+        if (event.target === duplicateParticipantsModal) {
+            closeDuplicateParticipantsModal();
+        }
+    });
+
     const applicationUserType = document.getElementById('applicationUserType');
     const orgAddressGroup = document.getElementById('orgAddressGroup');
     const orgAddress = document.getElementById('orgAddress');
@@ -1769,10 +2103,13 @@ document.addEventListener('DOMContentLoaded', function () {
     } else {
         addParticipant();
     }
+    syncParticipantRemoveButtons();
 
     tryRestoreDraft();
     updateProgress();
     updateSidebar();
+    lastAutoSaveSignature = getAutoSaveSignature();
+    startAutoSave();
 
     document.getElementById('addParticipantBtn').addEventListener('click', () => {
         addParticipant(null, { scrollIntoView: true });
@@ -1780,6 +2117,9 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('nextStepBtn').addEventListener('click', () => goStep(Math.min(currentStep + 1, steps.length)));
     document.getElementById('prevStepBtn').addEventListener('click', () => goStep(Math.max(currentStep - 1, 1)));
     document.getElementById('applicationForm').addEventListener('input', (e) => {
+        if (e.target.matches('input[name^="participants["][name$="[surname]"], input[name^="participants["][name$="[name]"], input[name^="participants["][name$="[patronymic]"]')) {
+            clearDuplicateParticipantHighlights();
+        }
         if (e.target.matches('input[name^="participants["][name$="[age]"]')) {
             validateAgeField(e.target);
         } else if (e.target.matches('[required]') && String(e.target.value || '').trim()) {
@@ -1800,7 +2140,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         const action = actionField.value;
         if (action === 'submit') {
+            isSubmittingApplication = true;
             if (currentStep !== steps.length || !isApplicationReadyToSubmit()) {
+                isSubmittingApplication = false;
                 e.preventDefault();
                 if (!validateStep(1)) {
                     goStep(1);
@@ -1822,6 +2164,12 @@ document.addEventListener('DOMContentLoaded', function () {
             if (btn) {
                 btn.disabled = true;
             }
+        }
+    });
+
+    window.addEventListener('beforeunload', function () {
+        if (!isSubmittingApplication && hasFilledParticipantData()) {
+            autoSaveDraft({ force: true, keepalive: true });
         }
     });
 

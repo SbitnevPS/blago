@@ -6,6 +6,28 @@ $user = getCurrentUser();
 $userAvatar = getUserAvatarData($user ?? []);
 $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) :0;
 ?>
+<div class="mobile-topbar">
+    <div class="container">
+        <div class="mobile-topbar__inner">
+            <a href="/" class="mobile-topbar__brand">
+                <i class="fas fa-paint-brush mobile-topbar__brand-icon"></i>
+                <span><?= htmlspecialchars(siteBrandName(), ENT_QUOTES, 'UTF-8') ?></span>
+            </a>
+            <?php if (isAuthenticated()): ?>
+                <div class="mobile-topbar__user">
+                    <?php if ($userAvatar['url'] !== ''): ?>
+                        <img src="<?= htmlspecialchars($userAvatar['url']) ?>" alt="<?= htmlspecialchars($userAvatar['label']) ?>" class="mobile-topbar__avatar">
+                    <?php else: ?>
+                        <div class="mobile-topbar__avatar mobile-topbar__avatar--placeholder" title="<?= htmlspecialchars($userAvatar['label']) ?>">
+                            <span class="mobile-topbar__avatar-initials"><?= htmlspecialchars($userAvatar['initials']) ?></span>
+                        </div>
+                    <?php endif; ?>
+                    <span class="mobile-topbar__user-name" data-profile-display-name><?= htmlspecialchars(getUserDisplayName($user ?? []) ?: 'Пользователь') ?></span>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
 <nav class="navbar">
     <div class="container">
         <div class="navbar__inner">
@@ -31,7 +53,7 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
 
                     <!-- Выпадающее меню пользователя -->
                     <div class="navbar__user-dropdown" id="userDropdown">
-                        <div class="navbar__user-trigger" onclick="toggleUserMenu()">
+                        <button type="button" class="navbar__user-trigger" onclick="toggleUserMenu()" aria-expanded="false" aria-controls="userDropdownMenu" id="userDropdownTrigger">
                             <?php if ($userAvatar['url'] !== ''): ?>
                                 <img src="<?= htmlspecialchars($userAvatar['url']) ?>" alt="<?= htmlspecialchars($userAvatar['label']) ?>" class="navbar__avatar">
                             <?php else: ?>
@@ -39,10 +61,29 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
                                     <span class="navbar__avatar-initials"><?= htmlspecialchars($userAvatar['initials']) ?></span>
                                 </div>
                             <?php endif; ?>
-                            <span class="navbar__user-name"><?= htmlspecialchars(getUserDisplayName($user ?? []) ?: 'Пользователь') ?></span>
-                        </div>
+                            <span class="navbar__user-name" data-profile-display-name><?= htmlspecialchars(getUserDisplayName($user ?? []) ?: 'Пользователь') ?></span>
+                        </button>
 
-                        <div class="navbar__user-menu">
+                        <div class="navbar__user-menu" id="userDropdownMenu">
+                            <div class="navbar__user-menu__profile">
+                                <div class="navbar__user-menu__profile-avatar">
+                                    <?php if ($userAvatar['url'] !== ''): ?>
+                                        <img src="<?= htmlspecialchars($userAvatar['url']) ?>" alt="<?= htmlspecialchars($userAvatar['label']) ?>" class="navbar__avatar">
+                                    <?php else: ?>
+                                        <div class="navbar__avatar navbar__avatar--placeholder" title="<?= htmlspecialchars($userAvatar['label']) ?>">
+                                            <span class="navbar__avatar-initials"><?= htmlspecialchars($userAvatar['initials']) ?></span>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="navbar__user-menu__profile-copy">
+                                    <strong data-profile-display-name><?= htmlspecialchars(getUserDisplayName($user ?? []) ?: 'Пользователь') ?></strong>
+                                    <?php if (!empty($user['email'])): ?>
+                                        <span data-profile-email><?= htmlspecialchars((string) $user['email']) ?></span>
+                                    <?php else: ?>
+                                        <span data-profile-email>Добавьте email в профиле</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
                             <a href="/profile" class="navbar__user-menu__item">
                                 <i class="fas fa-user-cog"></i> Редактировать профиль
                             </a>
@@ -110,16 +151,35 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
 <script>
 function toggleUserMenu() {
 const dropdown = document.getElementById('userDropdown');
+const trigger = document.getElementById('userDropdownTrigger');
 if (dropdown) {
-    dropdown.classList.toggle('active');
+    const isActive = dropdown.classList.toggle('active');
+    if (trigger) {
+        trigger.setAttribute('aria-expanded', isActive ? 'true' : 'false');
+    }
 }
 }
 
 // Закрыть меню при клике вне
 document.addEventListener('click', function(e) {
 const dropdown = document.getElementById('userDropdown');
+const trigger = document.getElementById('userDropdownTrigger');
 if (dropdown && !dropdown.contains(e.target)) {
 dropdown.classList.remove('active');
+if (trigger) {
+trigger.setAttribute('aria-expanded', 'false');
+}
+}
+});
+
+document.addEventListener('keydown', function (e) {
+const dropdown = document.getElementById('userDropdown');
+const trigger = document.getElementById('userDropdownTrigger');
+if (e.key === 'Escape' && dropdown) {
+dropdown.classList.remove('active');
+if (trigger) {
+trigger.setAttribute('aria-expanded', 'false');
+}
 }
 });
 
