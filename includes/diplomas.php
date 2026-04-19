@@ -235,6 +235,14 @@ function ensureDiplomaSchema(): void {
     }
 
     try {
+        $contestColumns = $pdo->query("SHOW COLUMNS FROM contests")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('diploma_email_template_json', $contestColumns, true)) {
+            $pdo->exec("ALTER TABLE contests ADD COLUMN diploma_email_template_json LONGTEXT NULL");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS diploma_templates (
             id INT AUTO_INCREMENT PRIMARY KEY,
             contest_id INT NULL,
@@ -267,6 +275,21 @@ function ensureDiplomaSchema(): void {
             KEY idx_contest (contest_id),
             UNIQUE KEY uniq_contest_type (contest_id, template_type)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $hasLegacyUnique = false;
+        $indexes = $pdo->query("SHOW INDEX FROM diploma_templates")->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($indexes as $indexRow) {
+            if (($indexRow['Key_name'] ?? '') === 'uniq_contest_type') {
+                $hasLegacyUnique = true;
+                break;
+            }
+        }
+        if ($hasLegacyUnique) {
+            $pdo->exec("ALTER TABLE diploma_templates DROP INDEX uniq_contest_type");
+        }
     } catch (Throwable $e) {
     }
 
@@ -304,6 +327,54 @@ function ensureDiplomaSchema(): void {
         $pdo->exec("UPDATE participant_diplomas SET diploma_type = 'contest_participant' WHERE diploma_type IS NULL OR diploma_type = ''");
     } catch (Throwable $e) {
     }
+}
+
+function getContestDiplomaEmailTemplateSettings(int $contestId): array
+{
+    global $pdo;
+    ensureDiplomaSchema();
+
+    if ($contestId <= 0) {
+        return diplomaEmailTemplateDefaults();
+    }
+
+    try {
+        $stmt = $pdo->prepare('SELECT diploma_email_template_json FROM contests WHERE id = ? LIMIT 1');
+        $stmt->execute([$contestId]);
+        $json = (string) ($stmt->fetchColumn() ?: '');
+    } catch (Throwable $e) {
+        return diplomaEmailTemplateDefaults();
+    }
+
+    if ($json === '') {
+        return diplomaEmailTemplateDefaults();
+    }
+
+    $decoded = json_decode($json, true);
+    if (!is_array($decoded)) {
+        return diplomaEmailTemplateDefaults();
+    }
+
+    return normalizeDiplomaEmailTemplateSettings($decoded);
+}
+
+function saveContestDiplomaEmailTemplateSettings(int $contestId, array $settings): void
+{
+    global $pdo;
+    ensureDiplomaSchema();
+
+    if ($contestId <= 0) {
+        throw new RuntimeException('Конкурс не найден');
+    }
+
+    $normalized = normalizeDiplomaEmailTemplateSettings($settings);
+    $json = json_encode($normalized, JSON_UNESCAPED_UNICODE);
+    if ($json === false) {
+        throw new RuntimeException('Не удалось сериализовать шаблон письма');
+    }
+
+    $stmt = $pdo->prepare('UPDATE contests SET diploma_email_template_json = ? WHERE id = ? LIMIT 1');
+    $stmt->execute([$json, $contestId]);
 }
 
 function ensureApplicationWorks(int $applicationId): void {
@@ -514,6 +585,19 @@ function getAllowedDiplomaTypesForWorkStatus(string $status): array {
         return ['encouragement'];
     }
     return [];
+}
+
+function getAvailableContestDiplomaTemplatesForWorkStatus(int $contestId, string $status): array
+{
+    $allowedTypes = getAllowedDiplomaTypesForWorkStatus($status);
+    if (empty($allowedTypes)) {
+        return [];
+    }
+
+    $templates = listContestDiplomaTemplates($contestId);
+    return array_values(array_filter($templates, static function (array $template) use ($allowedTypes): bool {
+        return in_array((string) ($template['template_type'] ?? ''), $allowedTypes, true);
+    }));
 }
 
 function isDiplomaTypeAllowedForWorkStatus(string $status, string $type): bool {
@@ -731,7 +815,7 @@ function getOrCreateDiplomaTemplate(?int $contestId, string $type): array {
 
 function getDiplomaTemplateForContest(int $contestId, string $type): array {
     global $pdo;
-    $stmt = $pdo->prepare('SELECT * FROM diploma_templates WHERE contest_id = ? AND template_type = ? LIMIT 1');
+    $stmt = $pdo->prepare('SELECT * FROM diploma_templates WHERE contest_id = ? AND template_type = ? ORDER BY updated_at DESC, id DESC LIMIT 1');
     $stmt->execute([$contestId, $type]);
     $row = $stmt->fetch();
     if ($row) {
@@ -756,29 +840,52 @@ function getDiplomaTemplateById(int $templateId): ?array {
     return $row ? (array)$row : null;
 }
 
+function resolveRequestedDiplomaTemplate(array $ctx, $requestedTemplate = null): ?array
+{
+    $status = (string)($ctx['work_status'] ?? 'pending');
+    $contestId = (int)($ctx['contest_id'] ?? 0);
+    $allowedTypes = getAllowedDiplomaTypesForWorkStatus($status);
+    if (empty($allowedTypes)) {
+        return null;
+    }
+
+    if (is_int($requestedTemplate) || (is_string($requestedTemplate) && ctype_digit(trim($requestedTemplate)))) {
+        $templateId = (int) $requestedTemplate;
+        if ($templateId > 0) {
+            $template = getDiplomaTemplateById($templateId);
+            if ($template
+                && (int)($template['contest_id'] ?? 0) === $contestId
+                && in_array((string)($template['template_type'] ?? ''), $allowedTypes, true)
+            ) {
+                return $template;
+            }
+            return null;
+        }
+    }
+
+    $requestedType = is_string($requestedTemplate) ? trim($requestedTemplate) : '';
+    if ($requestedType !== '' && in_array($requestedType, $allowedTypes, true)) {
+        return getDiplomaTemplateForContest($contestId, $requestedType);
+    }
+    if ($requestedType !== '') {
+        return null;
+    }
+
+    $fallbackType = mapWorkStatusToDiplomaType($status);
+    if ($fallbackType === null) {
+        return null;
+    }
+
+    return getDiplomaTemplateForContest($contestId, $fallbackType);
+}
+
 function listContestDiplomaTemplates(int $contestId): array {
     global $pdo;
     ensureDiplomaSchema();
 
     $stmt = $pdo->prepare("SELECT * FROM diploma_templates WHERE contest_id = ? ORDER BY updated_at DESC");
     $stmt->execute([$contestId]);
-    $rows = $stmt->fetchAll() ?: [];
-
-    // гарантируем наличие минимум двух типов
-    foreach (['contest_participant', 'participant_certificate', 'encouragement'] as $type) {
-        $exists = false;
-        foreach ($rows as $r) {
-            if (($r['template_type'] ?? '') === $type) {
-                $exists = true;
-                break;
-            }
-        }
-        if (!$exists) {
-            $rows[] = getOrCreateDiplomaTemplate($contestId, $type);
-        }
-    }
-
-    return $rows;
+    return $stmt->fetchAll() ?: [];
 }
 
 function saveDiplomaTemplate(int $templateId, array $data): void {
@@ -1371,7 +1478,7 @@ function renderDiplomaPdf(\Mpdf\Mpdf $mpdf, array $ctx, array $template, array $
     }
 }
 
-function generateWorkDiploma(int $workId, bool $forceRegenerate = false, ?string $requestedType = null): array {
+function generateWorkDiploma(int $workId, bool $forceRegenerate = false, $requestedTemplate = null): array {
     ensureDiplomaStorage();
     ensureDiplomaSchema();
 
@@ -1380,12 +1487,33 @@ function generateWorkDiploma(int $workId, bool $forceRegenerate = false, ?string
         throw new RuntimeException('Работа не найдена');
     }
 
-    $diplomaType = normalizeRequestedDiplomaType((string)$ctx['work_status'], $requestedType);
-    if ($diplomaType === null) {
-        throw new RuntimeException('Для работы в статусе "На рассмотрении" диплом недоступен');
+    $requestedTemplateValue = is_string($requestedTemplate) ? trim($requestedTemplate) : $requestedTemplate;
+    $hasExplicitRequestedTemplate = false;
+    if (is_int($requestedTemplateValue)) {
+        $hasExplicitRequestedTemplate = $requestedTemplateValue > 0;
+    } elseif (is_string($requestedTemplateValue)) {
+        $hasExplicitRequestedTemplate = $requestedTemplateValue !== '';
     }
 
-    $template = getDiplomaTemplateForContest((int)$ctx['contest_id'], $diplomaType);
+    $template = resolveRequestedDiplomaTemplate($ctx, $requestedTemplate);
+    if (!$template) {
+        $status = (string)($ctx['work_status'] ?? 'pending');
+        if (!canShowIndividualDiplomaActions(['status' => $status])) {
+            throw new RuntimeException('Для работы со статусом "' . getWorkStatusLabel($status) . '" диплом недоступен.');
+        }
+
+        if ($hasExplicitRequestedTemplate) {
+            throw new RuntimeException('Выбранный вариант диплома недоступен для этого участника. Можно использовать только варианты текущего конкурса и текущего статуса работы.');
+        }
+
+        throw new RuntimeException('Для текущего конкурса не создан подходящий вариант диплома для этого участника.');
+    }
+
+    $diplomaType = (string)($template['template_type'] ?? '');
+    if ($diplomaType === '') {
+        throw new RuntimeException('Шаблон диплома выбран некорректно');
+    }
+
     $diploma = getOrCreateWorkDiploma($ctx, $template, $diplomaType);
     if (($diploma['diploma_type'] ?? '') !== $diplomaType || (int)($diploma['template_id'] ?? 0) !== (int)($template['id'] ?? 0)) {
         $forceRegenerate = true;
@@ -1548,8 +1676,7 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
 
     $publicUrl = getPublicDiplomaUrl((string)($diploma['public_token'] ?? ''));
     $attachmentName = 'diploma.pdf';
-    $embeddedImages = getDiplomaEmailEmbeddedImages($diplomaType);
-    $availableImageCidMap = getAvailableDiplomaEmailImageCidMap($embeddedImages);
+    $emailTemplate = getContestDiplomaEmailTemplateSettings((int) ($ctx['contest_id'] ?? 0));
     $emailData = [
         'diploma_type' => $diplomaType,
         'user_name' => trim((string)($ctx['user_name'] ?? '')),
@@ -1560,7 +1687,13 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
         'site_url' => SITE_URL,
         'brand_name' => siteBrandName(),
         'brand_subtitle' => siteBrandSubtitle(),
+        'attachment_name' => $attachmentName,
+        'email_template' => $emailTemplate,
     ];
+    $customSubject = buildDiplomaEmailSubject($emailData);
+    if ($customSubject !== '') {
+        $subject = $customSubject;
+    }
 
     $ok = sendEmail($to, $subject, buildDiplomaEmailTemplate($emailData), [
         'text' => buildDiplomaEmailText($emailData),
@@ -1570,7 +1703,6 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
                 'name' => $attachmentName,
             ],
         ],
-        'embedded_images' => $embeddedImages,
     ]);
     if ($ok) {
         $pdo->prepare('UPDATE participant_diplomas SET email_sent_at = NOW(), updated_at = NOW() WHERE id = ?')->execute([(int)$diploma['id']]);
@@ -1579,7 +1711,7 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
     return $ok;
 }
 
-function findExistingWorkDiploma(int $workId, ?string $requestedType = null): ?array {
+function findExistingWorkDiploma(int $workId, $requestedTemplate = null): ?array {
     global $pdo;
 
     $stmt = $pdo->prepare('SELECT * FROM participant_diplomas WHERE work_id = ? LIMIT 1');
@@ -1589,8 +1721,15 @@ function findExistingWorkDiploma(int $workId, ?string $requestedType = null): ?a
         return null;
     }
 
-    if ($requestedType !== null && $requestedType !== '' && (string)($row['diploma_type'] ?? '') !== $requestedType) {
-        return null;
+    if (is_int($requestedTemplate) || (is_string($requestedTemplate) && ctype_digit(trim($requestedTemplate)))) {
+        $templateId = (int) $requestedTemplate;
+        if ($templateId > 0 && (int)($row['template_id'] ?? 0) !== $templateId) {
+            return null;
+        }
+    } elseif (is_string($requestedTemplate) && trim($requestedTemplate) !== '') {
+        if ((string)($row['diploma_type'] ?? '') !== trim($requestedTemplate)) {
+            return null;
+        }
     }
 
     $filePath = trim((string)($row['file_path'] ?? ''));

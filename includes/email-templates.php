@@ -15,127 +15,276 @@ function getDiplomaEmailTypeLabel(string $diplomaType): string
     };
 }
 
+function diplomaEmailEditorBlocks(): array
+{
+    return [
+        'eyebrow' => [
+            'label' => 'Верхняя метка',
+            'hint' => 'Короткая строка над заголовком письма.',
+            'default_enabled' => 1,
+            'default_text' => 'Письмо с дипломом',
+        ],
+        'headline' => [
+            'label' => 'Заголовок',
+            'hint' => 'Главный заголовок письма.',
+            'default_enabled' => 1,
+            'default_text' => 'Ваш диплом готов',
+        ],
+        'greeting' => [
+            'label' => 'Приветствие',
+            'hint' => 'Персональное обращение к получателю.',
+            'default_enabled' => 1,
+            'default_text' => 'Здравствуйте, {recipient_name}!',
+        ],
+        'intro' => [
+            'label' => 'Основной текст',
+            'hint' => 'Краткое пояснение, почему отправлено письмо.',
+            'default_enabled' => 1,
+            'default_text' => 'Для заявки по конкурсу «{contest_title}» сформирован {diploma_type_label_lower} на имя {participant_name}. PDF-файл приложен к письму, а онлайн-версия доступна по кнопке ниже.',
+        ],
+        'details' => [
+            'label' => 'Блок с данными диплома',
+            'hint' => 'Заголовок карточки с ключевыми данными диплома.',
+            'default_enabled' => 1,
+            'default_text' => 'Данные диплома',
+        ],
+        'cta' => [
+            'label' => 'Кнопка',
+            'hint' => 'Текст кнопки перехода к онлайн-версии диплома.',
+            'default_enabled' => 1,
+            'default_text' => 'Открыть диплом',
+        ],
+        'link_note' => [
+            'label' => 'Текст со ссылкой',
+            'hint' => 'Запасной текст со ссылкой, если кнопка не сработала.',
+            'default_enabled' => 1,
+            'default_text' => 'Если кнопка не работает, откройте ссылку напрямую: {diploma_url}',
+        ],
+        'attachment' => [
+            'label' => 'Блок о вложении',
+            'hint' => 'Сообщение о PDF, который приложен к письму.',
+            'default_enabled' => 1,
+            'default_text' => 'PDF диплома приложен к письму отдельным вложением: {attachment_name}.',
+        ],
+        'footer' => [
+            'label' => 'Подвал письма',
+            'hint' => 'Финальный служебный блок внизу письма.',
+            'default_enabled' => 1,
+            'default_text' => "Вы получили это письмо, потому что на сайте {brand_name} для вашей заявки был сформирован диплом.\n\nС уважением, оргкомитет конкурса.\n{site_url}\nЭто автоматическое письмо, пожалуйста, не отвечайте на него напрямую.",
+        ],
+    ];
+}
+
+function diplomaEmailTemplateDefaults(): array
+{
+    $defaults = [
+        'subject' => 'Ваш {diploma_type_label_lower} готов',
+        'blocks' => [],
+    ];
+
+    foreach (diplomaEmailEditorBlocks() as $key => $meta) {
+        $defaults['blocks'][$key] = [
+            'enabled' => (int) ($meta['default_enabled'] ?? 1) === 1 ? 1 : 0,
+            'text' => (string) ($meta['default_text'] ?? ''),
+        ];
+    }
+
+    return $defaults;
+}
+
+function normalizeDiplomaEmailTemplateSettings(array $settings = []): array
+{
+    $defaults = diplomaEmailTemplateDefaults();
+    $normalized = [
+        'subject' => trim((string) ($settings['subject'] ?? $defaults['subject'])),
+        'blocks' => [],
+    ];
+
+    if ($normalized['subject'] === '') {
+        $normalized['subject'] = $defaults['subject'];
+    }
+
+    foreach ($defaults['blocks'] as $key => $defaultBlock) {
+        $sourceBlock = is_array($settings['blocks'][$key] ?? null) ? $settings['blocks'][$key] : [];
+        $normalized['blocks'][$key] = [
+            'enabled' => array_key_exists('enabled', $sourceBlock)
+                ? ((int) $sourceBlock['enabled'] === 1 ? 1 : 0)
+                : (int) ($defaultBlock['enabled'] ?? 1),
+            'text' => trim((string) ($sourceBlock['text'] ?? $defaultBlock['text'] ?? '')),
+        ];
+    }
+
+    return $normalized;
+}
+
+function diplomaEmailTemplateVariables(array $data): array
+{
+    $diplomaTypeLabel = getDiplomaEmailTypeLabel((string) ($data['diploma_type'] ?? 'contest_participant'));
+    $recipientName = trim((string) ($data['user_name'] ?? ''));
+    if ($recipientName === '') {
+        $recipientName = trim((string) ($data['participant_name'] ?? ''));
+    }
+
+    return [
+        '{recipient_name}' => $recipientName !== '' ? $recipientName : 'участник',
+        '{participant_name}' => trim((string) ($data['participant_name'] ?? '')) !== ''
+            ? trim((string) ($data['participant_name'] ?? ''))
+            : 'Участник',
+        '{contest_title}' => trim((string) ($data['contest_title'] ?? '')) !== ''
+            ? trim((string) ($data['contest_title'] ?? ''))
+            : 'Конкурс',
+        '{diploma_number}' => trim((string) ($data['diploma_number'] ?? '')) !== ''
+            ? trim((string) ($data['diploma_number'] ?? ''))
+            : '—',
+        '{diploma_type_label}' => $diplomaTypeLabel,
+        '{diploma_type_label_lower}' => mb_strtolower($diplomaTypeLabel),
+        '{brand_name}' => trim((string) ($data['brand_name'] ?? siteBrandName())),
+        '{brand_subtitle}' => trim((string) ($data['brand_subtitle'] ?? siteBrandSubtitle())),
+        '{diploma_url}' => trim((string) ($data['diploma_url'] ?? '')),
+        '{site_url}' => trim((string) ($data['site_url'] ?? SITE_URL)),
+        '{attachment_name}' => trim((string) ($data['attachment_name'] ?? 'diploma.pdf')),
+    ];
+}
+
+function renderDiplomaEmailTemplateString(string $template, array $data): string
+{
+    return trim(strtr($template, diplomaEmailTemplateVariables($data)));
+}
+
+function diplomaEmailRichText(string $template, array $data, string $linkColor = '#2563eb'): string
+{
+    $rendered = emailTemplateEscape(renderDiplomaEmailTemplateString($template, $data));
+    $rendered = preg_replace(
+        '~(https?://[^\s<]+)~u',
+        '<a href="$1" style="color:' . emailTemplateEscape($linkColor) . ';text-decoration:none;word-break:break-word;">$1</a>',
+        $rendered
+    );
+
+    return nl2br((string) $rendered);
+}
+
+function buildDiplomaEmailSubject(array $data): string
+{
+    $settings = normalizeDiplomaEmailTemplateSettings((array) ($data['email_template'] ?? []));
+    $subject = renderDiplomaEmailTemplateString((string) ($settings['subject'] ?? ''), $data);
+    return $subject !== '' ? $subject : 'Ваш диплом готов';
+}
+
 /**
  * @param array<string,mixed> $data
  */
 function buildDiplomaEmailTemplate(array $data): string {
     $diplomaType = (string)($data['diploma_type'] ?? 'contest_participant');
-    $isEncouragement = $diplomaType === 'encouragement';
-
+    $settings = normalizeDiplomaEmailTemplateSettings((array) ($data['email_template'] ?? []));
     $brandName = trim((string)($data['brand_name'] ?? siteBrandName()));
     $brandSubtitle = trim((string)($data['brand_subtitle'] ?? siteBrandSubtitle()));
-    $userName = trim((string)($data['user_name'] ?? ''));
     $participantName = trim((string)($data['participant_name'] ?? ''));
     $contestTitle = trim((string)($data['contest_title'] ?? ''));
     $diplomaNumber = trim((string)($data['diploma_number'] ?? ''));
     $diplomaUrl = trim((string)($data['diploma_url'] ?? ''));
-    $siteUrl = trim((string)($data['site_url'] ?? SITE_URL));
-    $logoCid = trim((string)($data['logo_cid'] ?? ''));
-    $heroCid = trim((string)($data['hero_cid'] ?? ''));
-    $footerCid = trim((string)($data['footer_cid'] ?? ''));
-    $attachmentName = trim((string)($data['attachment_name'] ?? 'diploma.pdf'));
-
-    $headline = $isEncouragement
-        ? 'Спасибо за участие — ваш диплом уже готов'
-        : 'Ваш диплом готов';
-    $ctaLabel = 'Открыть диплом';
     $typeLabel = getDiplomaEmailTypeLabel($diplomaType);
-    $greetingName = $userName !== '' ? $userName : $participantName;
-    $greeting = $greetingName !== '' ? 'Здравствуйте, ' . $greetingName . '!' : 'Здравствуйте!';
-    $accentColor = $isEncouragement ? '#0ea5a4' : '#7c3aed';
-    $heroAlt = $isEncouragement ? 'Баннер благодарственного диплома' : 'Баннер письма с дипломом';
-    $logoAlt = $brandName;
+    $accentColor = $diplomaType === 'encouragement' ? '#0f766e' : '#2563eb';
+    $accentSoft = $diplomaType === 'encouragement' ? '#ccfbf1' : '#dbeafe';
+    $surfaceTone = $diplomaType === 'encouragement' ? '#f0fdfa' : '#f8fafc';
+    $textTone = $diplomaType === 'encouragement' ? '#115e59' : '#1d4ed8';
 
+    $subject = buildDiplomaEmailSubject($data);
+    $safeSubject = emailTemplateEscape($subject);
     $safeBrandName = emailTemplateEscape($brandName);
     $safeBrandSubtitle = emailTemplateEscape($brandSubtitle);
-    $safeHeadline = emailTemplateEscape($headline);
-    $safeGreeting = emailTemplateEscape($greeting);
-    $safeContestTitle = emailTemplateEscape($contestTitle !== '' ? $contestTitle : 'Конкурс');
     $safeParticipantName = emailTemplateEscape($participantName !== '' ? $participantName : 'Участник');
+    $safeContestTitle = emailTemplateEscape($contestTitle !== '' ? $contestTitle : 'Конкурс');
     $safeDiplomaNumber = emailTemplateEscape($diplomaNumber !== '' ? $diplomaNumber : '—');
     $safeTypeLabel = emailTemplateEscape($typeLabel);
-    $safeCta = emailTemplateEscape($ctaLabel);
     $safeDiplomaUrl = emailTemplateEscape($diplomaUrl);
-    $safeSiteUrl = emailTemplateEscape($siteUrl);
-    $safeAttachmentName = emailTemplateEscape($attachmentName);
-    $safeAccentColor = emailTemplateEscape($accentColor);
-    $safeHeroAlt = emailTemplateEscape($heroAlt);
-    $safeLogoAlt = emailTemplateEscape($logoAlt);
 
-    $logoBlock = $logoCid !== ''
-        ? '<img src="cid:' . emailTemplateEscape($logoCid) . '" alt="' . $safeLogoAlt . '" width="132" style="display:block;border:0;width:132px;max-width:132px;height:auto;">'
-        : '<div style="font-size:24px;line-height:1.25;font-weight:700;color:#111827;">' . $safeBrandName . '</div>';
+    $renderBlock = static function (string $key) use ($settings, $data, $accentColor): string {
+        return diplomaEmailRichText((string) ($settings['blocks'][$key]['text'] ?? ''), $data, $accentColor);
+    };
+    $blockEnabled = static function (string $key) use ($settings): bool {
+        return (int) ($settings['blocks'][$key]['enabled'] ?? 0) === 1;
+    };
 
-    $heroBlock = $heroCid !== ''
-        ? '<img src="cid:' . emailTemplateEscape($heroCid) . '" alt="' . $safeHeroAlt . '" width="600" style="display:block;border:0;width:100%;max-width:600px;height:auto;">'
-        : '<div style="padding:28px 24px;background-color:' . $safeAccentColor . ';color:#ffffff;font-family:Arial,Helvetica,sans-serif;">'
-            . '<div style="font-size:14px;line-height:1.5;opacity:.9;">' . $safeBrandSubtitle . '</div>'
-            . '<div style="margin-top:8px;font-size:28px;line-height:1.2;font-weight:700;">' . $safeHeadline . '</div>'
+    $headerBadge = $blockEnabled('eyebrow')
+        ? '<span style="display:inline-flex;align-items:center;padding:7px 12px;border-radius:999px;background:' . emailTemplateEscape($accentSoft) . ';font-size:12px;line-height:1.2;font-weight:700;color:' . emailTemplateEscape($textTone) . ';">' . $renderBlock('eyebrow') . '</span>'
+        : '';
+
+    $headlineBlock = $blockEnabled('headline')
+        ? '<div style="margin-top:16px;font-size:32px;line-height:1.15;font-weight:800;letter-spacing:-0.02em;color:#0f172a;">' . $renderBlock('headline') . '</div>'
+        : '';
+
+    $greetingBlock = $blockEnabled('greeting')
+        ? '<p style="margin:0;font-size:16px;line-height:1.7;color:#0f172a;">' . $renderBlock('greeting') . '</p>'
+        : '';
+
+    $introBlock = $blockEnabled('intro')
+        ? '<p style="margin:14px 0 0 0;font-size:15px;line-height:1.75;color:#334155;">' . $renderBlock('intro') . '</p>'
+        : '';
+
+    $detailsBlock = '';
+    if ($blockEnabled('details')) {
+        $detailsBlock = '<div style="margin-top:24px;border:1px solid #dbe7f5;border-radius:22px;background:' . emailTemplateEscape($surfaceTone) . ';">'
+            . '<div style="padding:18px 20px;border-bottom:1px solid #dbe7f5;font-size:16px;line-height:1.4;font-weight:700;color:#0f172a;">' . $renderBlock('details') . '</div>'
+            . '<div style="padding:4px 20px 20px 20px;">'
+            . '<div style="padding-top:14px;font-size:12px;line-height:1.5;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">ФИО участника</div>'
+            . '<div style="padding-top:4px;font-size:15px;line-height:1.65;font-weight:700;color:#0f172a;">' . $safeParticipantName . '</div>'
+            . '<div style="padding-top:14px;font-size:12px;line-height:1.5;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Конкурс</div>'
+            . '<div style="padding-top:4px;font-size:15px;line-height:1.65;font-weight:700;color:#0f172a;">' . $safeContestTitle . '</div>'
+            . '<div style="padding-top:14px;font-size:12px;line-height:1.5;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Номер диплома</div>'
+            . '<div style="padding-top:4px;font-size:15px;line-height:1.65;font-weight:700;color:#0f172a;">' . $safeDiplomaNumber . '</div>'
+            . '<div style="padding-top:14px;font-size:12px;line-height:1.5;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Тип диплома</div>'
+            . '<div style="padding-top:4px;font-size:15px;line-height:1.65;font-weight:700;color:#0f172a;">' . $safeTypeLabel . '</div>'
+            . '</div>'
             . '</div>';
+    }
 
-    $footerDecorBlock = $footerCid !== ''
-        ? '<img src="cid:' . emailTemplateEscape($footerCid) . '" alt="" width="600" style="display:block;border:0;width:100%;max-width:600px;height:auto;">'
-        : '<div style="height:8px;font-size:0;line-height:0;background-color:' . $safeAccentColor . ';">&nbsp;</div>';
+    $ctaBlock = '';
+    if ($blockEnabled('cta') && $diplomaUrl !== '') {
+        $ctaBlock = '<div style="margin-top:24px;text-align:center;">'
+            . '<a href="' . $safeDiplomaUrl . '" style="display:inline-block;min-width:220px;padding:15px 28px;border-radius:16px;background:' . emailTemplateEscape($accentColor) . ';color:#ffffff;text-decoration:none;font-size:16px;line-height:1.2;font-weight:700;box-shadow:0 14px 30px rgba(37,99,235,.18);">'
+            . $renderBlock('cta')
+            . '</a>'
+            . '</div>';
+    }
 
-    $typeBadgeColor = $isEncouragement ? '#ccfbf1' : '#ede9fe';
-    $typeBadgeTextColor = $isEncouragement ? '#115e59' : '#5b21b6';
+    $linkNoteBlock = $blockEnabled('link_note')
+        ? '<div style="margin-top:18px;font-size:14px;line-height:1.75;color:#475569;">' . $renderBlock('link_note') . '</div>'
+        : '';
+
+    $attachmentBlock = $blockEnabled('attachment')
+        ? '<div style="margin-top:18px;padding:15px 16px;border-radius:18px;background:#fff7ed;border:1px solid #fed7aa;font-size:14px;line-height:1.75;color:#9a3412;">' . $renderBlock('attachment') . '</div>'
+        : '';
+
+    $footerBlock = $blockEnabled('footer')
+        ? '<div style="margin-top:26px;padding-top:18px;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.8;color:#64748b;">' . $renderBlock('footer') . '</div>'
+        : '';
 
     return '<!doctype html>'
         . '<html lang="ru"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
         . '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
-        . '<title>' . $safeHeadline . '</title></head>'
-        . '<body style="margin:0;padding:0;background-color:#f4f6fb;">'
-        . '<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">' . $safeHeadline . '. PDF диплома приложен к письму, а также доступен по ссылке.</div>'
-        . '<div style="margin:0;padding:24px 12px;background-color:#f4f6fb;">'
-        . '<div style="width:100%;max-width:600px;margin:0 auto;background-color:#ffffff;border:1px solid #e5eaf3;border-radius:24px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">'
-        . '<div style="padding:28px 28px 16px 28px;background-color:#ffffff;">'
-        . $logoBlock
-        . '<div style="font-size:13px;line-height:1.5;color:#6b7280;margin-top:8px;">' . $safeBrandSubtitle . '</div>'
+        . '<title>' . $safeSubject . '</title></head>'
+        . '<body style="margin:0;padding:0;background:#eef2f7;">'
+        . '<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">' . $safeSubject . '</div>'
+        . '<div style="margin:0;padding:28px 12px;background:#eef2f7;">'
+        . '<div style="width:100%;max-width:640px;margin:0 auto;">'
+        . '<div style="padding:1px;border-radius:28px;background:linear-gradient(135deg,' . emailTemplateEscape($accentSoft) . ' 0%, #ffffff 48%, #ffffff 100%);box-shadow:0 24px 60px rgba(15,23,42,.1);">'
+        . '<div style="border-radius:27px;background:#ffffff;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">'
+        . '<div style="padding:28px 28px 20px 28px;background:linear-gradient(180deg,#ffffff 0%,' . emailTemplateEscape($surfaceTone) . ' 100%);">'
+        . '<div style="font-size:24px;line-height:1.15;font-weight:800;color:#0f172a;">' . $safeBrandName . '</div>'
+        . '<div style="margin-top:8px;font-size:13px;line-height:1.7;color:#64748b;">' . $safeBrandSubtitle . '</div>'
+        . $headerBadge
+        . $headlineBlock
         . '</div>'
-        . '<div style="padding:0;font-size:0;line-height:0;">'
-        . $heroBlock
-        . '</div>'
-        . '<div style="padding:28px 28px 10px 28px;">'
-        . '<div style="display:inline-block;padding:7px 12px;border-radius:999px;background-color:' . emailTemplateEscape($typeBadgeColor) . ';font-size:12px;line-height:1.2;font-weight:700;color:' . emailTemplateEscape($typeBadgeTextColor) . ';">' . $safeTypeLabel . '</div>'
-        . '</div>'
-        . '<div style="padding:0 28px 8px 28px;">'
-        . '<div style="font-size:30px;line-height:1.2;font-weight:700;color:#111827;">' . $safeHeadline . '</div>'
-        . '</div>'
-        . '<div style="padding:0 28px;">'
-        . '<p style="margin:0;font-size:16px;line-height:1.6;color:#111827;">' . $safeGreeting . '</p>'
-        . '<p style="margin:12px 0 0 0;font-size:15px;line-height:1.7;color:#374151;">Для заявки по конкурсу <strong>' . $safeContestTitle . '</strong> сформирован диплом на имя <strong>' . $safeParticipantName . '</strong>. PDF-файл диплома прикреплён к письму, а онлайн-версия доступна по кнопке ниже.</p>'
-        . '</div>'
-        . '<div style="padding:22px 28px 0 28px;">'
-        . '<div style="border:1px solid #dbe3f1;border-radius:18px;background:linear-gradient(180deg,#fbfdff 0%,#f7fbff 100%);">'
-        . '<div style="padding:18px 20px 12px 20px;font-size:16px;line-height:1.4;font-weight:700;color:#111827;border-bottom:1px solid #e8eef7;">Данные диплома</div>'
-        . '<div style="padding:2px 20px 20px 20px;">'
-        . '<div style="padding:10px 0 6px 0;font-size:13px;line-height:1.6;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;">ФИО участника</div>'
-        . '<div style="font-size:14px;line-height:1.6;color:#111827;font-weight:700;">' . $safeParticipantName . '</div>'
-        . '<div style="padding:14px 0 6px 0;font-size:13px;line-height:1.6;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;">Название конкурса</div>'
-        . '<div style="font-size:14px;line-height:1.6;color:#111827;font-weight:700;">' . $safeContestTitle . '</div>'
-        . '<div style="padding:14px 0 6px 0;font-size:13px;line-height:1.6;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;">Номер диплома</div>'
-        . '<div style="font-size:14px;line-height:1.6;color:#111827;font-weight:700;">' . $safeDiplomaNumber . '</div>'
-        . '<div style="padding:14px 0 6px 0;font-size:13px;line-height:1.6;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;">Тип диплома</div>'
-        . '<div style="font-size:14px;line-height:1.6;color:#111827;font-weight:700;">' . $safeTypeLabel . '</div>'
+        . '<div style="padding:28px;">'
+        . $greetingBlock
+        . $introBlock
+        . $detailsBlock
+        . $ctaBlock
+        . $linkNoteBlock
+        . $attachmentBlock
+        . $footerBlock
         . '</div>'
         . '</div>'
-        . '</div>'
-        . '<div style="padding:28px 28px 0 28px;text-align:center;">'
-        . '<a href="' . $safeDiplomaUrl . '" style="display:inline-block;min-width:220px;padding:15px 30px;background-color:' . $safeAccentColor . ';border-radius:14px;font-size:16px;font-weight:700;line-height:1.2;color:#ffffff;text-decoration:none;box-shadow:0 10px 24px rgba(15,23,42,.12);">' . $safeCta . '</a>'
-        . '</div>'
-        . '<div style="padding:18px 28px 0 28px;">'
-        . '<p style="margin:0;font-size:14px;line-height:1.7;color:#4b5563;">Если кнопка не работает, откройте ссылку напрямую: <a href="' . $safeDiplomaUrl . '" style="color:' . $safeAccentColor . ';text-decoration:none;word-break:break-all;">' . $safeDiplomaUrl . '</a></p>'
-        . '</div>'
-        . '<div style="padding:18px 28px 0 28px;">'
-        . '<div style="background-color:#fff7ed;border:1px solid #fed7aa;border-radius:16px;padding:14px 16px;font-size:14px;line-height:1.7;color:#7c2d12;">PDF диплома приложен к письму отдельным вложением: <strong>' . $safeAttachmentName . '</strong>.</div>'
-        . '</div>'
-        . '<div style="padding:20px 0 0 0;font-size:0;line-height:0;">'
-        . $footerDecorBlock
-        . '</div>'
-        . '<div style="padding:20px 28px 28px 28px;background-color:#fcfdff;">'
-        . '<div style="height:1px;background-color:#e8edf5;margin-bottom:16px;"></div>'
-        . '<p style="margin:0;font-size:12px;line-height:1.7;color:#6b7280;">Вы получили это письмо, потому что на сайте ' . $safeBrandName . ' для вашей заявки был сформирован диплом.</p>'
-        . '<p style="margin:8px 0 0 0;font-size:12px;line-height:1.7;color:#6b7280;">С уважением, оргкомитет конкурса.<br><a href="' . $safeSiteUrl . '" style="color:' . $safeAccentColor . ';text-decoration:none;">' . $safeSiteUrl . '</a><br>Это автоматическое письмо, пожалуйста, не отвечайте на него напрямую.</p>'
         . '</div>'
         . '</div>'
         . '</div>'
@@ -146,42 +295,62 @@ function buildDiplomaEmailTemplate(array $data): string {
  * @param array<string,mixed> $data
  */
 function buildDiplomaEmailText(array $data): string {
-    $diplomaType = (string)($data['diploma_type'] ?? 'contest_participant');
-    $isEncouragement = $diplomaType === 'encouragement';
-
-    $brandName = trim((string)($data['brand_name'] ?? siteBrandName()));
-    $userName = trim((string)($data['user_name'] ?? ''));
+    $settings = normalizeDiplomaEmailTemplateSettings((array) ($data['email_template'] ?? []));
     $participantName = trim((string)($data['participant_name'] ?? ''));
     $contestTitle = trim((string)($data['contest_title'] ?? ''));
     $diplomaNumber = trim((string)($data['diploma_number'] ?? ''));
     $diplomaUrl = trim((string)($data['diploma_url'] ?? ''));
-    $siteUrl = trim((string)($data['site_url'] ?? SITE_URL));
-    $attachmentName = trim((string)($data['attachment_name'] ?? 'diploma.pdf'));
+    $typeLabel = getDiplomaEmailTypeLabel((string)($data['diploma_type'] ?? 'contest_participant'));
 
-    $greeting = $userName !== '' ? 'Здравствуйте, ' . $userName . '!' : 'Здравствуйте!';
-    $title = $isEncouragement ? 'Ваш благодарственный диплом готов.' : 'Ваш диплом готов.';
-    $ctaLabel = 'Открыть диплом';
-    $typeLabel = getDiplomaEmailTypeLabel($diplomaType);
+    $lines = [];
 
-    return implode("\n", [
-        $greeting,
-        '',
-        $title,
-        'Диплом сформирован автоматически и прикреплён к письму в формате PDF.',
-        'Конкурс: ' . ($contestTitle !== '' ? $contestTitle : 'Конкурс'),
-        'Кому выдан: ' . ($participantName !== '' ? $participantName : 'Участник'),
-        'Номер диплома: ' . ($diplomaNumber !== '' ? $diplomaNumber : '—'),
-        'Тип диплома: ' . $typeLabel,
-        'PDF во вложении: ' . $attachmentName,
-        '',
-        $ctaLabel . ': ' . $diplomaUrl,
-        'Сохраните это письмо, чтобы не потерять диплом. При необходимости его можно скачать позже по ссылке.',
-        '',
-        'Вы получили это письмо, потому что на сайте ' . $brandName . ' для вашей заявки был сформирован диплом.',
-        'С уважением, оргкомитет конкурса.',
-        $siteUrl,
-        'Это автоматическое письмо, пожалуйста, не отвечайте на него напрямую.',
-    ]);
+    foreach (['eyebrow', 'headline', 'greeting', 'intro'] as $key) {
+        if ((int) ($settings['blocks'][$key]['enabled'] ?? 0) !== 1) {
+            continue;
+        }
+        $text = renderDiplomaEmailTemplateString((string) ($settings['blocks'][$key]['text'] ?? ''), $data);
+        if ($text === '') {
+            continue;
+        }
+        $lines[] = $text;
+        $lines[] = '';
+    }
+
+    if ((int) ($settings['blocks']['details']['enabled'] ?? 0) === 1) {
+        $detailsTitle = renderDiplomaEmailTemplateString((string) ($settings['blocks']['details']['text'] ?? ''), $data);
+        if ($detailsTitle !== '') {
+            $lines[] = $detailsTitle;
+        }
+        $lines[] = 'ФИО участника: ' . ($participantName !== '' ? $participantName : 'Участник');
+        $lines[] = 'Конкурс: ' . ($contestTitle !== '' ? $contestTitle : 'Конкурс');
+        $lines[] = 'Номер диплома: ' . ($diplomaNumber !== '' ? $diplomaNumber : '—');
+        $lines[] = 'Тип диплома: ' . $typeLabel;
+        $lines[] = '';
+    }
+
+    if ((int) ($settings['blocks']['cta']['enabled'] ?? 0) === 1 && $diplomaUrl !== '') {
+        $cta = renderDiplomaEmailTemplateString((string) ($settings['blocks']['cta']['text'] ?? ''), $data);
+        $lines[] = ($cta !== '' ? $cta : 'Открыть диплом') . ': ' . $diplomaUrl;
+        $lines[] = '';
+    }
+
+    foreach (['link_note', 'attachment', 'footer'] as $key) {
+        if ((int) ($settings['blocks'][$key]['enabled'] ?? 0) !== 1) {
+            continue;
+        }
+        $text = renderDiplomaEmailTemplateString((string) ($settings['blocks'][$key]['text'] ?? ''), $data);
+        if ($text === '') {
+            continue;
+        }
+        $lines[] = $text;
+        $lines[] = '';
+    }
+
+    while (!empty($lines) && end($lines) === '') {
+        array_pop($lines);
+    }
+
+    return implode("\n", $lines);
 }
 
 /**
