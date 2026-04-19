@@ -1,126 +1,51 @@
 # Модуль публикации работ в VK (админ-панель)
 
-## Назначение
+## Базовый сценарий
 
-Модуль позволяет администратору сформировать задание на публикацию работ участников и публиковать элементы по одному или всем пакетом в сообщество VK.
+Публикация работ выполняется только через OAuth VK Business / VK ID в режиме `admin_user_token`.
 
-## Публикация работ в VK: только ручной publication token
+Используемые настройки:
 
-Сценарий публикации **не использует OAuth callback**. Администратор вручную сохраняет token в `/admin/settings`, после чего система проверяет готовность публикации через `POST /auth/vk/publication/test`.
+- `vk_publication_admin_access_token_encrypted`
+- `vk_publication_admin_refresh_token_encrypted`
+- `vk_publication_admin_token_expires_at`
+- `vk_publication_admin_user_id`
+- `vk_publication_group_id`
+- `vk_publication_api_version`
+- `vk_publication_from_group`
+- `vk_publication_post_template`
 
-### Какие настройки используются
+Токены публикации хранятся только на сервере в зашифрованном виде.
 
-В системных настройках (`storage/settings.json`) сохраняются:
+## OAuth для публикации
 
-- `vk_publication_manual_token` — вручную сохранённый publication token (маскируется в UI);
-- `vk_publication_group_id` — ID сообщества VK;
-- `vk_publication_api_version` — версия VK API (по умолчанию `5.131`);
-- `vk_publication_from_group` — публиковать ли от имени сообщества;
-- `vk_publication_post_template` — шаблон текста публикации.
-- `vk_publication_vk_user_id`, `vk_publication_vk_user_name` — данные владельца token по результатам проверки `users.get`;
-- `vk_publication_last_checked_at`, `vk_publication_last_check_status`, `vk_publication_last_check_message` — результат последней проверки.
+Отдельный поток авторизации:
 
-### Требуемые права токена
+- `POST /auth/vk/publication/start`
+- `GET /auth/vk/publication/callback`
 
-Минимальный набор: `wall`, `photos`, `groups`.
+Запрашиваемый scope: `wall,photos,offline`.
 
-## Цепочка публикации изображения + текста
+После callback выполняется серверная валидация прав. Если проверка не пройдена, токен не считается рабочим.
 
-Перед публикацией выполняется проверка готовности:
+## Проверка подключения
 
-1. подключен ли VK;
-2. не пустой ли токен;
-3. не истек ли токен (если VK вернул expiry);
-4. указан ли `group_id`;
-5. проходят ли базовые вызовы `users.get` и `groups.getById`.
+Проверка (`POST /auth/vk/publication/test`) выполняет:
 
-Если проверка не проходит, публикация не запускается и администратор получает читаемую ошибку (`VK не подключён`, `Токен VK истёк, требуется переподключение`, `Не указан ID сообщества`, `Недостаточно прав для публикации изображений`).
+1. наличие user access token;
+2. наличие `group_id`;
+3. `groups.getById` (пользователь — владелец/админ);
+4. `photos.getWallUploadServer` (доступность загрузки изображений).
 
-Для каждого элемента задания вызывается последовательность:
+## Публикация
 
-1. `users.get` — проверка, что токен пользовательский и валиден;
-2. `photos.getWallUploadServer`;
-3. загрузка файла на `upload_url`;
-4. `photos.saveWallPhoto`;
-5. `wall.post` с `attachments=photo{owner_id}_{photo_id}`.
+Поддерживается только обязательный сценарий: **изображение + текст**.
 
-Результат успешной публикации:
+Цепочка VK API:
 
-- `vk_post_id`;
-- `vk_post_url`;
-- `published_at`.
+1. `photos.getWallUploadServer`
+2. upload файла
+3. `photos.saveWallPhoto`
+4. `wall.post` с `owner_id=-GROUP_ID`, `from_group=1`, `attachments=photo...`
 
-## Таблицы и данные
-
-### `vk_publication_tasks`
-
-Хранит задания публикации:
-
-- заголовок, режим, фильтры;
-- агрегированные счетчики (`total_items`, `published_items`, `failed_items` и т.д.);
-- статус задания.
-
-### `vk_publication_task_items`
-
-Хранит элементы задания:
-
-- ссылка на работу и участника;
-- `post_text`, путь к изображению;
-- `item_status`;
-- `vk_post_id`, `vk_post_url`;
-- `error_message` (читаемая ошибка для UI);
-- `technical_error` (технические детали для диагностики).
-
-### `works`
-
-Синхронизируются поля публикации:
-
-- `vk_published_at`;
-- `vk_post_id`;
-- `vk_post_url`;
-- `vk_publish_error`.
-
-## Статусы
-
-### Статусы задания (`vk_publication_tasks.task_status`)
-
-- `draft`
-- `ready`
-- `publishing`
-- `published`
-- `partially_failed`
-- `failed`
-- `archived`
-
-### Статусы элемента (`vk_publication_task_items.item_status`)
-
-- `pending`
-- `ready`
-- `published`
-- `failed`
-- `skipped`
-
-## Обработка ошибок
-
-Ошибки VK нормализуются до понятных сообщений для администратора:
-
-- неверный/неподходящий токен;
-- недостаточно прав;
-- запрет публикации на стене;
-- некорректные параметры запроса.
-
-Если VK возвращает `method is unavailable with group auth`, показывается объяснение, что вставлен токен сообщества и нужен пользовательский токен администратора.
-
-Технические детали ошибки сохраняются в `technical_error`, а в интерфейсе выводится читаемая причина с возможностью открыть детали.
-
-## Бизнес-логика заданий
-
-Существующий цикл работы сохранен:
-
-- создание задания;
-- предпросмотр;
-- публикация одного элемента;
-- публикация всего задания;
-- повтор `failed`;
-- исключение элементов из задания;
-- поддержка статусов `published / failed / skipped`.
+Без изображения публикация не выполняется.

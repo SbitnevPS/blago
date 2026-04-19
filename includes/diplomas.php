@@ -9,6 +9,25 @@ function ensureDiplomaStorage(): void {
     }
 }
 
+function ensureDiplomaDirectory(string $path): void {
+    if (!is_dir($path)) {
+        mkdir($path, 0775, true);
+    }
+}
+
+function getDiplomaOwnerDirectoryName(?string $userEmail): string {
+    $safeEmail = normalizeDrawingOwner((string)$userEmail);
+    return $safeEmail !== '' ? $safeEmail : '_unknown';
+}
+
+function getDiplomaOwnerFsDirectory(?string $userEmail): string {
+    return DIPLOMAS_PATH . '/' . getDiplomaOwnerDirectoryName($userEmail);
+}
+
+function getDiplomaOwnerRelativeDirectory(?string $userEmail): string {
+    return trim(DIPLOMAS_WEB_PATH . '/' . getDiplomaOwnerDirectoryName($userEmail), '/');
+}
+
 function splitDiplomaFio(string $fio): array {
     $parts = preg_split('/\s+/u', trim($fio)) ?: [];
     return [
@@ -18,9 +37,31 @@ function splitDiplomaFio(string $fio): array {
     ];
 }
 
+function normalizeDiplomaNamePart($value): string {
+    return trim(preg_replace('/\s+/u', ' ', (string)$value));
+}
+
+function buildParticipantCertificateName(array $row): string {
+    $firstName = normalizeDiplomaNamePart($row['first_name'] ?? $row['name'] ?? '');
+    $middleName = normalizeDiplomaNamePart($row['middle_name'] ?? $row['patronymic'] ?? '');
+    $lastName = normalizeDiplomaNamePart($row['last_name'] ?? $row['surname'] ?? '');
+
+    if ($firstName !== '' || $middleName !== '' || $lastName !== '') {
+        return implode(' ', array_values(array_filter([$firstName, $middleName, $lastName], static fn($value) => $value !== '')));
+    }
+
+    $legacy = splitDiplomaFio((string)($row['fio'] ?? ''));
+    return implode(' ', array_values(array_filter([
+        normalizeDiplomaNamePart($legacy['name'] ?? ''),
+        normalizeDiplomaNamePart($legacy['patronymic'] ?? ''),
+        normalizeDiplomaNamePart($legacy['surname'] ?? ''),
+    ], static fn($value) => $value !== '')));
+}
+
 function diplomaTemplateTypes(): array {
     return [
         'contest_participant' => 'Диплом участника конкурса',
+        'participant_certificate' => 'Сертификат участника',
         'encouragement' => 'Благодарственный диплом',
         'winner' => 'Диплом победителя',
         'laureate' => 'Диплом лауреата',
@@ -28,12 +69,65 @@ function diplomaTemplateTypes(): array {
     ];
 }
 
-function defaultDiplomaLayout(): array {
+function getParticipantAgeCategoryLabel(?int $age): string
+{
+    $age = (int)($age ?? 0);
+    if ($age <= 0) {
+        return '';
+    }
+    if ($age <= 4) {
+        return 'до 4 лет';
+    }
+    if ($age <= 7) {
+        return '5-7 лет';
+    }
+    if ($age <= 10) {
+        return '8-10 лет';
+    }
+    if ($age <= 13) {
+        return '11-13 лет';
+    }
+    if ($age <= 17) {
+        return '14-17 лет';
+    }
+
+    return '18+ лет';
+}
+
+function matchesParticipantAgeCategory(?int $age, string $category): bool
+{
+    $age = (int)($age ?? 0);
+    return match ($category) {
+        '5-7' => $age >= 5 && $age <= 7,
+        '8-10' => $age >= 8 && $age <= 10,
+        '11-13' => $age >= 11 && $age <= 13,
+        '14-17' => $age >= 14 && $age <= 17,
+        default => false,
+    };
+}
+
+function defaultDiplomaLayout(string $type = 'contest_participant'): array {
+    if ($type === 'participant_certificate') {
+        return [
+            'title' => ['x' => 10, 'y' => 13, 'w' => 80, 'h' => 10, 'font_family' => 'dejavusans', 'font_size' => 24, 'color' => '#7A4B16', 'align' => 'center', 'line_height' => 1.15, 'visible' => 1],
+            'subtitle' => ['x' => 20, 'y' => 31, 'w' => 60, 'h' => 5, 'font_family' => 'dejavusans', 'font_size' => 12, 'color' => '#5B4630', 'align' => 'center', 'line_height' => 1.2, 'visible' => 1],
+            'name_line' => ['x' => 19, 'y' => 43.2, 'w' => 62, 'h' => 0.4, 'type' => 'line', 'color' => '#8B6B45', 'visible' => 1],
+            'participant_name' => ['x' => 18, 'y' => 36.2, 'w' => 64, 'h' => 7, 'font_family' => 'dejavuserif', 'font_size' => 22, 'color' => '#6D4317', 'align' => 'center', 'line_height' => 1.1, 'visible' => 1, 'min_font_size' => 11, 'single_line' => 1],
+            'body_text' => ['x' => 14, 'y' => 49, 'w' => 72, 'h' => 10, 'font_family' => 'dejavusans', 'font_size' => 10, 'color' => '#5E5E5E', 'align' => 'center', 'line_height' => 1.45, 'visible' => 1],
+            'contest_title' => ['x' => 15, 'y' => 61, 'w' => 70, 'h' => 8, 'font_family' => 'dejavusans', 'font_size' => 14, 'color' => '#7A4B16', 'align' => 'center', 'line_height' => 1.2, 'visible' => 1],
+            'award_text' => ['x' => 16, 'y' => 70, 'w' => 68, 'h' => 6, 'font_family' => 'dejavusans', 'font_size' => 10, 'color' => '#5E5E5E', 'align' => 'center', 'line_height' => 1.35, 'visible' => 1],
+            'footer' => ['x' => 18, 'y' => 82, 'w' => 64, 'h' => 5, 'font_family' => 'dejavusans', 'font_size' => 10, 'color' => '#8C6239', 'align' => 'center', 'line_height' => 1.2, 'visible' => 1],
+            'date' => ['x' => 10, 'y' => 92, 'w' => 26, 'h' => 4, 'font_family' => 'dejavusans', 'font_size' => 9, 'color' => '#6B7280', 'align' => 'left', 'line_height' => 1.1, 'visible' => 1],
+            'city' => ['x' => 37, 'y' => 92, 'w' => 26, 'h' => 4, 'font_family' => 'dejavusans', 'font_size' => 9, 'color' => '#6B7280', 'align' => 'center', 'line_height' => 1.1, 'visible' => 1],
+            'diploma_number' => ['x' => 64, 'y' => 92, 'w' => 26, 'h' => 4, 'font_family' => 'dejavusans', 'font_size' => 9, 'color' => '#6B7280', 'align' => 'right', 'line_height' => 1.1, 'visible' => 1],
+        ];
+    }
+
     return [
         'title' => ['x' => 7, 'y' => 7, 'w' => 86, 'h' => 10, 'font_family' => 'dejavusans', 'font_size' => 22, 'color' => '#B45309', 'align' => 'center', 'line_height' => 1.2, 'visible' => 1],
         'subtitle' => ['x' => 12, 'y' => 18, 'w' => 76, 'h' => 6, 'font_family' => 'dejavusans', 'font_size' => 12, 'color' => '#92400E', 'align' => 'center', 'line_height' => 1.2, 'visible' => 1],
         'award_text' => ['x' => 10, 'y' => 28, 'w' => 80, 'h' => 8, 'font_family' => 'dejavusans', 'font_size' => 11, 'color' => '#334155', 'align' => 'center', 'line_height' => 1.3, 'visible' => 1],
-        'participant_name' => ['x' => 10, 'y' => 38, 'w' => 80, 'h' => 10, 'font_family' => 'dejavusans', 'font_size' => 18, 'color' => '#1D4ED8', 'align' => 'center', 'line_height' => 1.25, 'visible' => 1],
+        'participant_name' => ['x' => 10, 'y' => 38, 'w' => 80, 'h' => 10, 'font_family' => 'dejavuserif', 'font_size' => 18, 'color' => '#1D4ED8', 'align' => 'center', 'line_height' => 1.25, 'visible' => 1],
         'body_text' => ['x' => 9, 'y' => 50, 'w' => 82, 'h' => 13, 'font_family' => 'dejavusans', 'font_size' => 10, 'color' => '#334155', 'align' => 'center', 'line_height' => 1.45, 'visible' => 1],
         'contest_title' => ['x' => 10, 'y' => 64, 'w' => 80, 'h' => 8, 'font_family' => 'dejavusans', 'font_size' => 14, 'color' => '#7C3AED', 'align' => 'center', 'line_height' => 1.2, 'visible' => 1],
         'diploma_number' => ['x' => 64, 'y' => 92, 'w' => 30, 'h' => 4, 'font_family' => 'dejavusans', 'font_size' => 9, 'color' => '#64748B', 'align' => 'right', 'line_height' => 1.1, 'visible' => 1],
@@ -46,20 +140,29 @@ function defaultDiplomaLayout(): array {
 
 function diplomaTemplateDefaults(string $type = 'contest_participant'): array {
     $isEncouragement = $type === 'encouragement';
+    $isParticipantCertificate = $type === 'participant_certificate';
 
     return [
-        'title' => $isEncouragement ? 'Благодарственный диплом' : 'Диплом',
-        'subtitle' => 'Награждается',
-        'body_text' => $isEncouragement
+        'title' => $isParticipantCertificate
+            ? 'СЕРТИФИКАТ УЧАСТНИКА'
+            : ($isEncouragement ? 'Благодарственный диплом' : 'Диплом'),
+        'subtitle' => $isParticipantCertificate ? 'награждается' : 'Награждается',
+        'body_text' => $isParticipantCertificate
+            ? 'за участие в конкурсе детского творчества и проявленный интерес к искусству.'
+            : ($isEncouragement
             ? 'за творческое старание, фантазию и яркое участие. Спасибо за ваш талант и вдохновение!'
-            : 'за яркое творчество, доброе воображение и вдохновляющую работу в конкурсе детского рисунка.',
-        'award_text' => $isEncouragement
+            : 'за яркое творчество, доброе воображение и вдохновляющую работу в конкурсе детского рисунка.'),
+        'award_text' => $isParticipantCertificate
+            ? '{participant_name}'
+            : ($isEncouragement
             ? 'Памятный диплом юного художника вручается {participant_full_name}'
-            : 'Награждается {participant_full_name}',
+            : 'Награждается {participant_full_name}'),
         'contest_name_text' => '{contest_title}',
-        'easter_text' => $isEncouragement
-            ? 'Работа рассмотрена. Спасибо за участие! Для вас доступен благодарственный диплом.'
-            : 'Пусть каждая новая идея превращается в маленькое чудо!',
+        'easter_text' => $isParticipantCertificate
+            ? 'Благодарим за участие и желаем новых творческих успехов!'
+            : ($isEncouragement
+                ? 'Работа рассмотрена. Спасибо за участие! Для вас доступен благодарственный диплом.'
+                : 'Пусть каждая новая идея превращается в маленькое чудо!'),
         'signature_1' => 'Председатель оргкомитета',
         'signature_2' => 'Куратор проекта',
         'position_1' => 'Оргкомитет конкурса',
@@ -69,14 +172,14 @@ function diplomaTemplateDefaults(string $type = 'contest_participant'): array {
             : 'Спасибо за участие! Продолжайте творить и вдохновлять.',
         'city' => 'Москва',
         'issue_date' => date('Y-m-d'),
-        'diploma_prefix' => $isEncouragement ? 'THANK' : 'PART',
+        'diploma_prefix' => $isParticipantCertificate ? 'CERT' : ($isEncouragement ? 'THANK' : 'PART'),
         'show_date' => 1,
         'show_number' => 1,
-        'show_signatures' => 1,
+        'show_signatures' => $isParticipantCertificate ? 0 : 1,
         'show_background' => 1,
-        'show_frame' => 1,
-        'layout_json' => json_encode(defaultDiplomaLayout(), JSON_UNESCAPED_UNICODE),
-        'styles_json' => json_encode(['background' => 'soft', 'frame' => 'gold', 'accent_color' => '#7C3AED'], JSON_UNESCAPED_UNICODE),
+        'show_frame' => $isParticipantCertificate ? 0 : 1,
+        'layout_json' => json_encode(defaultDiplomaLayout($type), JSON_UNESCAPED_UNICODE),
+        'styles_json' => json_encode(['background' => 'soft', 'frame' => 'gold', 'accent_color' => $isParticipantCertificate ? '#7A4B16' : '#7C3AED'], JSON_UNESCAPED_UNICODE),
         'assets_json' => json_encode(['background_image' => null, 'frame_image' => null, 'decor' => []], JSON_UNESCAPED_UNICODE),
         'template_type' => $type,
     ];
@@ -93,7 +196,7 @@ function ensureDiplomaSchema(): void {
             participant_id INT NOT NULL,
             title VARCHAR(255) DEFAULT NULL,
             image_path VARCHAR(255) DEFAULT NULL,
-            status ENUM('pending','accepted','reviewed') NOT NULL DEFAULT 'pending',
+            status ENUM('pending','accepted','reviewed','reviewed_non_competitive') NOT NULL DEFAULT 'pending',
             reviewed_at DATETIME DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -104,6 +207,30 @@ function ensureDiplomaSchema(): void {
             CONSTRAINT fk_works_application FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
             CONSTRAINT fk_works_participant FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $statusColumn = $pdo->query("SHOW COLUMNS FROM works LIKE 'status'")->fetch(PDO::FETCH_ASSOC);
+        $statusType = strtolower((string) ($statusColumn['Type'] ?? ''));
+        if ($statusType !== '' && strpos($statusType, 'reviewed_non_competitive') === false) {
+            $pdo->exec("
+                ALTER TABLE works
+                MODIFY COLUMN status ENUM('pending','accepted','reviewed','reviewed_non_competitive')
+                NOT NULL DEFAULT 'pending'
+            ");
+        }
+    } catch (Throwable $e) {
+    }
+
+    try {
+        $workColumns = $pdo->query("SHOW COLUMNS FROM works")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('attach_diploma', $workColumns, true)) {
+            $pdo->exec("ALTER TABLE works ADD COLUMN attach_diploma TINYINT(1) NOT NULL DEFAULT 0 AFTER status");
+        }
+        if (!in_array('attached_diploma_type', $workColumns, true)) {
+            $pdo->exec("ALTER TABLE works ADD COLUMN attached_diploma_type VARCHAR(64) NULL AFTER attach_diploma");
+        }
     } catch (Throwable $e) {
     }
 
@@ -233,6 +360,7 @@ function getApplicationWorks(int $applicationId): array {
     $stmt = $pdo->prepare("SELECT
             w.*,
             p.fio,
+            p.public_number AS participant_public_number,
             p.age,
             p.region,
             p.organization_name,
@@ -255,9 +383,9 @@ function getApplicationWorks(int $applicationId): array {
 function getWorkStatusLabel(string $status): string {
     $map = [
         'pending' => 'На рассмотрении',
-        'accepted' => 'Принята к участию',
-        'reviewed' => 'Работа рассмотрена',
-        'reviewed_non_competitive' => 'Работа рассмотрена',
+        'accepted' => 'Рисунок принят',
+        'reviewed' => 'Требует корректировки',
+        'reviewed_non_competitive' => 'Рисунок отклонён',
     ];
     return $map[$status] ?? ucfirst($status);
 }
@@ -265,9 +393,9 @@ function getWorkStatusLabel(string $status): string {
 function getWorkStatusHint(string $status): string {
     $map = [
         'pending' => 'Работа ожидает проверки жюри. Диплом станет доступен после рассмотрения.',
-        'accepted' => 'Работа принята к участию. Диплом уже доступен.',
-        'reviewed' => 'Работа рассмотрена. Для вас доступен благодарственный диплом.',
-        'reviewed_non_competitive' => 'Работа рассмотрена. Для вас доступен благодарственный диплом.',
+        'accepted' => 'По рисунку принято положительное решение. Его можно публиковать и выдавать по нему диплом.',
+        'reviewed' => 'По работе нужны исправления. Укажите, что нужно изменить, и отправьте заявку на корректировку.',
+        'reviewed_non_competitive' => 'По рисунку принято решение не допускать его к участию.',
     ];
     return $map[$status] ?? 'Статус работы обновляется после проверки.';
 }
@@ -277,7 +405,7 @@ function getWorkStatusBadgeClass(string $status): string {
         'pending' => 'badge--warning',
         'accepted' => 'badge--success',
         'reviewed' => 'badge--reviewed',
-        'reviewed_non_competitive' => 'badge--reviewed',
+        'reviewed_non_competitive' => 'badge--error',
     ];
     return $map[$status] ?? 'badge--secondary';
 }
@@ -305,7 +433,9 @@ function buildApplicationWorkSummary(array $works): array {
         $status = (string)($work['status'] ?? 'pending');
         if ($status === 'accepted') {
             $summary['accepted']++;
-        } elseif (in_array($status, ['reviewed', 'reviewed_non_competitive'], true)) {
+        } elseif ($status === 'reviewed') {
+            $summary['reviewed']++;
+        } elseif ($status === 'reviewed_non_competitive') {
             $summary['reviewed']++;
         } else {
             $summary['pending']++;
@@ -364,10 +494,99 @@ function mapWorkStatusToDiplomaType(string $status): ?string {
     if ($status === 'accepted') {
         return 'contest_participant';
     }
-    if (in_array($status, ['reviewed', 'reviewed_non_competitive'], true)) {
+    if ($status === 'reviewed') {
+        return 'encouragement';
+    }
+    if ($status === 'reviewed_non_competitive') {
         return 'encouragement';
     }
     return null;
+}
+
+function getAllowedDiplomaTypesForWorkStatus(string $status): array {
+    if ($status === 'accepted') {
+        return ['contest_participant', 'participant_certificate'];
+    }
+    if ($status === 'reviewed') {
+        return ['encouragement'];
+    }
+    if ($status === 'reviewed_non_competitive') {
+        return ['encouragement'];
+    }
+    return [];
+}
+
+function isDiplomaTypeAllowedForWorkStatus(string $status, string $type): bool {
+    return in_array($type, getAllowedDiplomaTypesForWorkStatus($status), true);
+}
+
+function normalizeRequestedDiplomaType(string $status, ?string $requestedType): ?string {
+    $allowed = getAllowedDiplomaTypesForWorkStatus($status);
+    if ($requestedType !== null && in_array($requestedType, $allowed, true)) {
+        return $requestedType;
+    }
+
+    return mapWorkStatusToDiplomaType($status);
+}
+
+function getAttachedDiplomaTypeForWork(array $work): ?string {
+    if ((int)($work['attach_diploma'] ?? 0) !== 1) {
+        return null;
+    }
+
+    $status = (string)($work['status'] ?? 'pending');
+    $type = trim((string)($work['attached_diploma_type'] ?? ''));
+    if ($type === '' || !isDiplomaTypeAllowedForWorkStatus($status, $type)) {
+        return null;
+    }
+
+    return $type;
+}
+
+function getFrontendDiplomaTypeForWork(array $work): ?string {
+    $attachedType = getAttachedDiplomaTypeForWork($work);
+    if ($attachedType !== null) {
+        return $attachedType;
+    }
+
+    return normalizeRequestedDiplomaType((string)($work['status'] ?? 'pending'), null);
+}
+
+function isFrontendDiplomaAvailableForWork(array $work): bool {
+    return getFrontendDiplomaTypeForWork($work) !== null;
+}
+
+function updateWorkDiplomaAttachment(int $workId, bool $attachDiploma, ?string $diplomaType): array {
+    global $pdo;
+
+    $stmt = $pdo->prepare('SELECT * FROM works WHERE id = ? LIMIT 1');
+    $stmt->execute([$workId]);
+    $work = $stmt->fetch();
+    if (!$work) {
+        throw new RuntimeException('Работа не найдена');
+    }
+
+    $status = (string)($work['status'] ?? 'pending');
+    $normalizedType = trim((string)$diplomaType);
+    if ($attachDiploma) {
+        if ($normalizedType === '') {
+            throw new RuntimeException('Выберите шаблон диплома.');
+        }
+        if (!isDiplomaTypeAllowedForWorkStatus($status, $normalizedType)) {
+            throw new RuntimeException('Выбранный шаблон недоступен для текущего статуса работы.');
+        }
+    } else {
+        $normalizedType = $normalizedType !== '' && isDiplomaTypeAllowedForWorkStatus($status, $normalizedType)
+            ? $normalizedType
+            : null;
+    }
+
+    $pdo->prepare('UPDATE works SET attach_diploma = ?, attached_diploma_type = ?, updated_at = NOW() WHERE id = ?')
+        ->execute([$attachDiploma ? 1 : 0, $normalizedType, $workId]);
+
+    $stmt = $pdo->prepare('SELECT * FROM works WHERE id = ? LIMIT 1');
+    $stmt->execute([$workId]);
+    return (array)$stmt->fetch();
 }
 
 function canShowIndividualDiplomaActions(array $work): bool {
@@ -401,7 +620,22 @@ function updateWorkStatus(int $workId, string $status): bool {
         return false;
     }
     $stmt = $pdo->prepare("UPDATE works SET status = ?, reviewed_at = CASE WHEN ? = 'pending' THEN NULL ELSE NOW() END, updated_at = NOW() WHERE id = ?");
-    return $stmt->execute([$status, $status, $workId]);
+    $updated = $stmt->execute([$status, $status, $workId]);
+    if (!$updated) {
+        return false;
+    }
+
+    if ($status === 'accepted') {
+        $workStmt = $pdo->prepare('SELECT attach_diploma, attached_diploma_type FROM works WHERE id = ? LIMIT 1');
+        $workStmt->execute([$workId]);
+        $work = (array)$workStmt->fetch();
+        $requestedType = ((int)($work['attach_diploma'] ?? 0) === 1)
+            ? trim((string)($work['attached_diploma_type'] ?? ''))
+            : '';
+        generateWorkDiploma($workId, true, $requestedType !== '' ? $requestedType : null);
+    }
+
+    return true;
 }
 
 function aggregateApplicationStatusByWorks(int $applicationId): string {
@@ -413,7 +647,9 @@ function aggregateApplicationStatusByWorks(int $applicationId): string {
     $counts = ['pending' => 0, 'accepted' => 0, 'reviewed' => 0];
     foreach ($works as $w) {
         $st = (string)($w['status'] ?? 'pending');
-        if (isset($counts[$st])) {
+        if ($st === 'reviewed_non_competitive') {
+            $counts['reviewed']++;
+        } elseif (isset($counts[$st])) {
             $counts[$st]++;
         }
     }
@@ -512,6 +748,14 @@ function getDiplomaTemplateForContest(int $contestId, string $type): array {
     return getOrCreateDiplomaTemplate($contestId, $type);
 }
 
+function getDiplomaTemplateById(int $templateId): ?array {
+    global $pdo;
+    $stmt = $pdo->prepare('SELECT * FROM diploma_templates WHERE id = ? LIMIT 1');
+    $stmt->execute([$templateId]);
+    $row = $stmt->fetch();
+    return $row ? (array)$row : null;
+}
+
 function listContestDiplomaTemplates(int $contestId): array {
     global $pdo;
     ensureDiplomaSchema();
@@ -521,7 +765,7 @@ function listContestDiplomaTemplates(int $contestId): array {
     $rows = $stmt->fetchAll() ?: [];
 
     // гарантируем наличие минимум двух типов
-    foreach (['contest_participant', 'encouragement'] as $type) {
+    foreach (['contest_participant', 'participant_certificate', 'encouragement'] as $type) {
         $exists = false;
         foreach ($rows as $r) {
             if (($r['template_type'] ?? '') === $type) {
@@ -614,6 +858,9 @@ function saveDiplomaTemplate(int $templateId, array $data): void {
         $assetsJson,
         $templateId,
     ]);
+
+    $pdo->prepare('UPDATE participant_diplomas SET file_path = NULL, generated_at = NULL, updated_at = NOW() WHERE template_id = ?')
+        ->execute([$templateId]);
 }
 
 function duplicateDiplomaTemplate(int $templateId): int {
@@ -670,9 +917,12 @@ function getWorkDiplomaContext(int $workId): ?array {
         w.status AS work_status,
         w.title AS work_title,
         w.image_path,
-        p.id AS participant_id,
-        p.fio,
-        p.age,
+            p.id AS participant_id,
+            p.public_number AS participant_public_number,
+            p.fio,
+            p.age,
+            p.region,
+            p.organization_name,
         a.id AS application_id,
         a.user_id,
         a.contest_id,
@@ -696,6 +946,7 @@ function getWorkDiplomaContext(int $workId): ?array {
     $parts = splitDiplomaFio((string)($row['fio'] ?? ''));
     $row['participant_name'] = trim($parts['name']);
     $row['participant_full_name'] = trim((string)($row['fio'] ?? ''));
+    $row['participant_certificate_name'] = buildParticipantCertificateName($row);
     return $row;
 }
 
@@ -714,6 +965,13 @@ function getOrCreateWorkDiploma(array $ctx, array $template, string $diplomaType
     $stmt->execute([(int)$ctx['work_id']]);
     $row = $stmt->fetch();
     if ($row) {
+        if (($row['diploma_type'] ?? '') !== $diplomaType || (int)($row['template_id'] ?? 0) !== (int)($template['id'] ?? 0)) {
+            $pdo->prepare('UPDATE participant_diplomas SET diploma_type = ?, template_id = ?, file_path = NULL, generated_at = NULL, updated_at = NOW() WHERE id = ?')
+                ->execute([$diplomaType, (int)$template['id'], (int)$row['id']]);
+            $stmt = $pdo->prepare('SELECT * FROM participant_diplomas WHERE id = ?');
+            $stmt->execute([(int)$row['id']]);
+            return (array)$stmt->fetch();
+        }
         return $row;
     }
 
@@ -763,10 +1021,24 @@ function renderDiplomaVars(string $text, array $vars): string {
         '{nomination}' => (string)($vars['nomination'] ?? 'Творческая номинация'),
         '{age_category}' => (string)($vars['age_category'] ?? ''),
         '{city}' => (string)($vars['city'] ?? ''),
+        '{issue_date}' => (string)($vars['date'] ?? ''),
+        '{certificate_number}' => (string)($vars['diploma_number'] ?? ''),
     ]);
 }
 
+function getDiplomaPageSizeMm(array $template): array {
+    if (getDiplomaSheetRotation($template) === 90) {
+        return ['width' => 297.0, 'height' => 210.0];
+    }
+
+    return ['width' => 210.0, 'height' => 297.0];
+}
+
 function diplomaItemCss(array $cfg): string {
+    return diplomaItemCssForTemplate($cfg, null);
+}
+
+function diplomaItemCssForTemplate(array $cfg, ?array $template = null): string {
     $x = max(0, (float)($cfg['x'] ?? 0));
     $y = max(0, (float)($cfg['y'] ?? 0));
     $w = max(1, (float)($cfg['w'] ?? 30));
@@ -779,6 +1051,27 @@ function diplomaItemCss(array $cfg): string {
     $lineHeight = max(1, (float)($cfg['line_height'] ?? 1.25));
     $color = preg_match('/^#[0-9a-fA-F]{6}$/', (string)($cfg['color'] ?? '')) ? $cfg['color'] : '#334155';
     $align = in_array(($cfg['align'] ?? 'left'), ['left', 'center', 'right'], true) ? $cfg['align'] : 'left';
+
+    if ($template !== null) {
+        $pageSize = getDiplomaPageSizeMm($template);
+        $leftMm = ($x / 100) * $pageSize['width'];
+        $topMm = ($y / 100) * $pageSize['height'];
+        $widthMm = ($w / 100) * $pageSize['width'];
+        $heightMm = ($h / 100) * $pageSize['height'];
+
+        return sprintf(
+            'position:absolute;left:%smm;top:%smm;width:%smm;height:%smm;font-family:%s;font-size:%spx;line-height:%s;color:%s;text-align:%s;overflow:hidden;',
+            round($leftMm, 3),
+            round($topMm, 3),
+            round($widthMm, 3),
+            round($heightMm, 3),
+            $font,
+            $fontSize,
+            $lineHeight,
+            $color,
+            $align
+        );
+    }
 
     return sprintf(
         'position:absolute;left:%s%%;top:%s%%;width:%s%%;height:%s%%;font-family:%s;font-size:%spx;line-height:%s;color:%s;text-align:%s;overflow:hidden;',
@@ -794,9 +1087,115 @@ function diplomaItemCss(array $cfg): string {
     );
 }
 
-function buildDiplomaHtml(array $ctx, array $template, array $diplomaRow): string {
+function diplomaLineCss(array $cfg): string {
+    return diplomaLineCssForTemplate($cfg, null);
+}
+
+function diplomaLineCssForTemplate(array $cfg, ?array $template = null): string {
+    $x = max(0, (float)($cfg['x'] ?? 0));
+    $y = max(0, (float)($cfg['y'] ?? 0));
+    $w = max(1, (float)($cfg['w'] ?? 30));
+    $color = preg_match('/^#[0-9a-fA-F]{6}$/', (string)($cfg['color'] ?? '')) ? $cfg['color'] : '#8B6B45';
+    $height = max(0.1, (float)($cfg['h'] ?? 0.3));
+
+    if ($template !== null) {
+        $pageSize = getDiplomaPageSizeMm($template);
+        $leftMm = ($x / 100) * $pageSize['width'];
+        $topMm = ($y / 100) * $pageSize['height'];
+        $widthMm = ($w / 100) * $pageSize['width'];
+
+        return sprintf(
+            'position:absolute;left:%smm;top:%smm;width:%smm;height:0;border-top:%smm solid %s;',
+            round($leftMm, 3),
+            round($topMm, 3),
+            round($widthMm, 3),
+            $height,
+            $color
+        );
+    }
+
+    return sprintf(
+        'position:absolute;left:%s%%;top:%s%%;width:%s%%;height:0;border-top:%smm solid %s;',
+        $x,
+        $y,
+        $w,
+        $height,
+        $color
+    );
+}
+
+function fitDiplomaTextConfig(string $key, array $cfg, string $text): array {
+    if ($key !== 'participant_name') {
+        return $cfg;
+    }
+
+    $width = max(1.0, (float)($cfg['w'] ?? 30));
+    $fontSize = max(6, (int)($cfg['font_size'] ?? 12));
+    $minFontSize = max(6, (int)($cfg['min_font_size'] ?? 9));
+    $normalizedText = trim(preg_replace('/\s+/u', ' ', $text));
+    if ($normalizedText === '') {
+        return $cfg;
+    }
+
+    $estimatedChars = max(1, mb_strlen($normalizedText));
+    $estimatedCapacity = max(8.0, $width * 1.45);
+
+    while ($fontSize > $minFontSize && $estimatedChars > $estimatedCapacity) {
+        $fontSize--;
+        $estimatedCapacity += 1.35;
+    }
+
+    $cfg['font_size'] = $fontSize;
+    return $cfg;
+}
+
+function getDiplomaAssetWebPath(string $filename): string {
+    return '/uploads/diplomas/' . rawurlencode(basename($filename));
+}
+
+function getDiplomaAssetFilePath(string $filename): string {
+    return DIPLOMAS_PATH . '/' . basename($filename);
+}
+
+function diplomaCssUrl(string $path): string {
+    return "url('" . str_replace(["\\", "'"], ["\\\\", "\\'"], $path) . "')";
+}
+
+function resolveDiplomaBackgroundStyle(array $template): string {
+    $assets = json_decode((string)($template['assets_json'] ?? ''), true);
+    $backgroundImage = trim((string)($assets['background_image'] ?? ''));
+    if ($backgroundImage !== '') {
+        $backgroundPath = getDiplomaAssetFilePath($backgroundImage);
+        if (is_file($backgroundPath)) {
+            return 'background-image:' . diplomaCssUrl($backgroundPath) . ';background-size:100% 100%;background-position:center center;background-repeat:no-repeat;';
+        }
+
+        return 'background-image:' . diplomaCssUrl(getDiplomaAssetWebPath($backgroundImage)) . ';background-size:100% 100%;background-position:center center;background-repeat:no-repeat;';
+    }
+
+    return (string)($template['template_type'] ?? '') === 'participant_certificate'
+        ? 'background:linear-gradient(180deg,#FCF5E8 0%, #FFFDF8 50%, #F7EEDC 100%);'
+        : 'background: linear-gradient(180deg,#FFF9E6 0%, #F7FBFF 50%, #FFF1F2 100%);';
+}
+
+function getDiplomaTemplateStyles(array $template): array {
+    $styles = json_decode((string)($template['styles_json'] ?? ''), true);
+    return is_array($styles) ? $styles : [];
+}
+
+function getDiplomaSheetRotation(array $template): int {
+    $styles = getDiplomaTemplateStyles($template);
+    $rotation = (int)($styles['sheet_rotation'] ?? 0);
+    return $rotation === 90 ? 90 : 0;
+}
+
+function getDiplomaPageFormat(array $template): string {
+    return getDiplomaSheetRotation($template) === 90 ? 'A4-L' : 'A4';
+}
+
+function prepareDiplomaRenderState(array $ctx, array $template, array $diplomaRow): array {
     $vars = [
-        'participant_name' => $ctx['participant_name'],
+        'participant_name' => $ctx['participant_certificate_name'] ?? $ctx['participant_name'],
         'participant_full_name' => $ctx['participant_full_name'],
         'contest_title' => $ctx['contest_title'],
         'award_title' => $ctx['award_title'] ?? 'Лауреат',
@@ -804,26 +1203,36 @@ function buildDiplomaHtml(array $ctx, array $template, array $diplomaRow): strin
         'date' => !empty($template['issue_date']) ? date('d.m.Y', strtotime((string)$template['issue_date'])) : date('d.m.Y'),
         'diploma_number' => $diplomaRow['diploma_number'],
         'nomination' => $ctx['nomination'] ?? 'Творческая номинация',
-        'age_category' => !empty($ctx['age']) ? ('Возрастная категория: ' . (int)$ctx['age'] . '+') : '',
+        'age_category' => (($ageCategory = getParticipantAgeCategoryLabel((int)($ctx['age'] ?? 0))) !== '' ? ('Возрастная категория: ' . $ageCategory) : ''),
         'city' => (string)($template['city'] ?? 'Москва'),
     ];
 
     $layout = json_decode((string)($template['layout_json'] ?? ''), true);
     if (!is_array($layout) || !$layout) {
-        $layout = defaultDiplomaLayout();
+        $layout = defaultDiplomaLayout((string)($template['template_type'] ?? 'contest_participant'));
+    }
+    if ((string)($template['template_type'] ?? '') === 'participant_certificate') {
+        foreach ($layout as $key => $cfg) {
+            if (!is_array($cfg)) {
+                continue;
+            }
+            $layout[$key]['visible'] = $key === 'participant_name' ? 1 : 0;
+        }
+        unset($layout['name_line']);
     }
 
     $bg = (int)$template['show_background'] === 1
-        ? 'background: linear-gradient(180deg,#FFF9E6 0%, #F7FBFF 50%, #FFF1F2 100%);'
+        ? resolveDiplomaBackgroundStyle($template)
         : 'background:#FFFFFF;';
     $frame = (int)$template['show_frame'] === 1
         ? 'border:10px solid #EAB308; box-shadow: inset 0 0 0 4px #FDE68A;'
-        : 'border:1px solid #E5E7EB;';
+        : 'border:0;';
+    $pageSize = getDiplomaPageSizeMm($template);
 
     $mapText = [
         'title' => (string)($template['title'] ?? ''),
         'subtitle' => (string)($template['subtitle'] ?? ''),
-        'participant_name' => (string)($ctx['participant_full_name'] ?? ''),
+        'participant_name' => (string)($vars['participant_name'] ?? ''),
         'body_text' => (string)($template['body_text'] ?? ''),
         'award_text' => (string)($template['award_text'] ?? ''),
         'contest_title' => (string)($template['contest_name_text'] ?? '{contest_title}'),
@@ -834,7 +1243,33 @@ function buildDiplomaHtml(array $ctx, array $template, array $diplomaRow): strin
         'footer' => (string)($template['footer_text'] ?? ''),
     ];
 
-    $html = '<div style="width:100%;height:100%;' . $bg . $frame . 'padding:0;box-sizing:border-box;font-family:dejavusans;position:relative;">';
+    return [
+        'vars' => $vars,
+        'layout' => $layout,
+        'bg' => $bg,
+        'frame' => $frame,
+        'page_size' => $pageSize,
+        'map_text' => $mapText,
+    ];
+}
+
+function buildDiplomaBackgroundHtml(array $template, array $state): string {
+    $pageSize = $state['page_size'];
+    $bg = $state['bg'];
+    $frame = $state['frame'];
+
+    return '<div style="width:' . $pageSize['width'] . 'mm;height:' . $pageSize['height'] . 'mm;' . $bg . $frame . 'padding:0;margin:0;box-sizing:border-box;font-family:dejavusans;position:relative;overflow:hidden;"></div>';
+}
+
+function buildDiplomaHtml(array $ctx, array $template, array $diplomaRow): string {
+    $state = prepareDiplomaRenderState($ctx, $template, $diplomaRow);
+    $vars = $state['vars'];
+    $layout = $state['layout'];
+    $mapText = $state['map_text'];
+    $pageSize = $state['page_size'];
+    $bg = $state['bg'];
+    $frame = $state['frame'];
+    $html = '<div style="width:' . $pageSize['width'] . 'mm;height:' . $pageSize['height'] . 'mm;' . $bg . $frame . 'padding:0;margin:0;box-sizing:border-box;font-family:dejavusans;position:relative;overflow:hidden;">';
     foreach ($layout as $key => $cfg) {
         if (!is_array($cfg) || (int)($cfg['visible'] ?? 1) !== 1) {
             continue;
@@ -849,16 +1284,94 @@ function buildDiplomaHtml(array $ctx, array $template, array $diplomaRow): strin
             continue;
         }
 
+        if (($cfg['type'] ?? '') === 'line') {
+            $html .= '<div style="' . diplomaLineCssForTemplate($cfg, $template) . '"></div>';
+            continue;
+        }
+
         $raw = $mapText[$key] ?? '';
+        $cfg = fitDiplomaTextConfig((string)$key, $cfg, renderDiplomaVars($raw, $vars));
         $text = nl2br(e(renderDiplomaVars($raw, $vars)));
-        $html .= '<div style="' . diplomaItemCss($cfg) . '">' . $text . '</div>';
+        $html .= '<div style="' . diplomaItemCssForTemplate($cfg, $template) . '">' . $text . '</div>';
     }
 
     $html .= '</div>';
     return $html;
 }
 
-function generateWorkDiploma(int $workId, bool $forceRegenerate = false): array {
+function getDiplomaBoxMm(array $cfg, array $template): array {
+    $pageSize = getDiplomaPageSizeMm($template);
+    $x = max(0, (float)($cfg['x'] ?? 0));
+    $y = max(0, (float)($cfg['y'] ?? 0));
+    $w = max(1, (float)($cfg['w'] ?? 30));
+    $h = max(1, (float)($cfg['h'] ?? 6));
+
+    return [
+        'x' => round(($x / 100) * $pageSize['width'], 3),
+        'y' => round(($y / 100) * $pageSize['height'], 3),
+        'w' => round(($w / 100) * $pageSize['width'], 3),
+        'h' => round(($h / 100) * $pageSize['height'], 3),
+    ];
+}
+
+function buildDiplomaItemInnerHtml(array $cfg, string $text): string {
+    $font = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)($cfg['font_family'] ?? 'dejavusans'));
+    if ($font === '') {
+        $font = 'dejavusans';
+    }
+    $fontSize = max(6, (int)($cfg['font_size'] ?? 12));
+    $lineHeight = max(1, (float)($cfg['line_height'] ?? 1.25));
+    $color = preg_match('/^#[0-9a-fA-F]{6}$/', (string)($cfg['color'] ?? '')) ? $cfg['color'] : '#334155';
+    $align = in_array(($cfg['align'] ?? 'left'), ['left', 'center', 'right'], true) ? $cfg['align'] : 'left';
+
+    return '<div style="margin:0;padding:0;font-family:' . $font . ';font-size:' . $fontSize . 'px;line-height:' . $lineHeight . ';color:' . $color . ';text-align:' . $align . ';overflow:hidden;">'
+        . nl2br(e($text))
+        . '</div>';
+}
+
+function buildDiplomaLineInnerHtml(array $cfg): string {
+    $color = preg_match('/^#[0-9a-fA-F]{6}$/', (string)($cfg['color'] ?? '')) ? $cfg['color'] : '#8B6B45';
+    $height = max(0.1, (float)($cfg['h'] ?? 0.3));
+
+    return '<div style="width:100%;height:0;border-top:' . $height . 'mm solid ' . $color . ';"></div>';
+}
+
+function renderDiplomaPdf(\Mpdf\Mpdf $mpdf, array $ctx, array $template, array $diplomaRow): void {
+    $state = prepareDiplomaRenderState($ctx, $template, $diplomaRow);
+    $vars = $state['vars'];
+    $layout = $state['layout'];
+    $mapText = $state['map_text'];
+
+    $mpdf->WriteHTML(buildDiplomaBackgroundHtml($template, $state));
+
+    foreach ($layout as $key => $cfg) {
+        if (!is_array($cfg) || (int)($cfg['visible'] ?? 1) !== 1) {
+            continue;
+        }
+        if ($key === 'signatures' && (int)$template['show_signatures'] !== 1) {
+            continue;
+        }
+        if ($key === 'date' && (int)$template['show_date'] !== 1) {
+            continue;
+        }
+        if ($key === 'diploma_number' && (int)$template['show_number'] !== 1) {
+            continue;
+        }
+
+        $box = getDiplomaBoxMm($cfg, $template);
+        if (($cfg['type'] ?? '') === 'line') {
+            $mpdf->WriteFixedPosHTML(buildDiplomaLineInnerHtml($cfg), $box['x'], $box['y'], $box['w'], max(0.1, $box['h']), 'visible');
+            continue;
+        }
+
+        $raw = $mapText[$key] ?? '';
+        $text = renderDiplomaVars($raw, $vars);
+        $cfg = fitDiplomaTextConfig((string)$key, $cfg, $text);
+        $mpdf->WriteFixedPosHTML(buildDiplomaItemInnerHtml($cfg, $text), $box['x'], $box['y'], $box['w'], $box['h'], 'hidden');
+    }
+}
+
+function generateWorkDiploma(int $workId, bool $forceRegenerate = false, ?string $requestedType = null): array {
     ensureDiplomaStorage();
     ensureDiplomaSchema();
 
@@ -867,37 +1380,56 @@ function generateWorkDiploma(int $workId, bool $forceRegenerate = false): array 
         throw new RuntimeException('Работа не найдена');
     }
 
-    $diplomaType = mapWorkStatusToDiplomaType((string)$ctx['work_status']);
+    $diplomaType = normalizeRequestedDiplomaType((string)$ctx['work_status'], $requestedType);
     if ($diplomaType === null) {
         throw new RuntimeException('Для работы в статусе "На рассмотрении" диплом недоступен');
     }
 
     $template = getDiplomaTemplateForContest((int)$ctx['contest_id'], $diplomaType);
     $diploma = getOrCreateWorkDiploma($ctx, $template, $diplomaType);
-
-    if (!$forceRegenerate && !empty($diploma['file_path']) && is_file(ROOT_PATH . '/' . $diploma['file_path'])) {
-        return $diploma;
+    if (($diploma['diploma_type'] ?? '') !== $diplomaType || (int)($diploma['template_id'] ?? 0) !== (int)($template['id'] ?? 0)) {
+        $forceRegenerate = true;
     }
 
     if (!class_exists('Mpdf\\Mpdf')) {
         throw new RuntimeException('mPDF не установлен. Выполните: composer require mpdf/mpdf');
     }
 
-    $fileName = 'diploma_' . (int)$ctx['contest_id'] . '_' . (int)$ctx['application_id'] . '_' . (int)$ctx['participant_id'] . '_' . (int)$ctx['work_id'] . '.pdf';
-    $relativePath = trim(DIPLOMAS_WEB_PATH . '/' . $fileName, '/');
+    $ownerFsDirectory = getDiplomaOwnerFsDirectory((string)($ctx['user_email'] ?? ''));
+    $ownerRelativeDirectory = getDiplomaOwnerRelativeDirectory((string)($ctx['user_email'] ?? ''));
+    ensureDiplomaDirectory($ownerFsDirectory);
+
+    $fileName = 'diploma_' . $diplomaType . '_' . (int)$ctx['contest_id'] . '_' . (int)$ctx['application_id'] . '_' . (int)$ctx['participant_id'] . '_' . (int)$ctx['work_id'] . '.pdf';
+    $relativePath = trim($ownerRelativeDirectory . '/' . $fileName, '/');
     $absolutePath = ROOT_PATH . '/' . $relativePath;
+    $previousRelativePath = trim((string)($diploma['file_path'] ?? ''), '/');
+
+    if (!$forceRegenerate && $previousRelativePath !== '' && $previousRelativePath !== $relativePath) {
+        $forceRegenerate = true;
+    }
+
+    if (!$forceRegenerate && $previousRelativePath !== '' && is_file(ROOT_PATH . '/' . $previousRelativePath)) {
+        return $diploma;
+    }
 
     $mpdf = new \Mpdf\Mpdf([
         'mode' => 'utf-8',
-        'format' => 'A4',
-        'margin_left' => 8,
-        'margin_right' => 8,
-        'margin_top' => 8,
-        'margin_bottom' => 8,
+        'format' => getDiplomaPageFormat($template),
+        'margin_left' => 0,
+        'margin_right' => 0,
+        'margin_top' => 0,
+        'margin_bottom' => 0,
         'tempDir' => ROOT_PATH . '/storage/mpdf',
     ]);
-    $mpdf->WriteHTML(buildDiplomaHtml($ctx, $template, $diploma));
+    renderDiplomaPdf($mpdf, $ctx, $template, $diploma);
     $mpdf->Output($absolutePath, \Mpdf\Output\Destination::FILE);
+
+    if ($previousRelativePath !== '' && $previousRelativePath !== $relativePath) {
+        $previousAbsolutePath = ROOT_PATH . '/' . $previousRelativePath;
+        if (is_file($previousAbsolutePath)) {
+            @unlink($previousAbsolutePath);
+        }
+    }
 
     global $pdo;
     $pdo->prepare('UPDATE participant_diplomas SET file_path = ?, generated_at = NOW(), updated_at = NOW(), template_id = ?, diploma_type = ? WHERE id = ?')
@@ -908,8 +1440,93 @@ function generateWorkDiploma(int $workId, bool $forceRegenerate = false): array 
     return (array)$stmt->fetch();
 }
 
+function generateWorkDiplomaPreviewPdf(int $workId, array $template): string {
+    ensureDiplomaStorage();
+    ensureDiplomaSchema();
+
+    $ctx = getWorkDiplomaContext($workId);
+    if (!$ctx) {
+        throw new RuntimeException('Работа не найдена');
+    }
+
+    if (!class_exists('Mpdf\\Mpdf')) {
+        throw new RuntimeException('mPDF не установлен. Выполните: composer require mpdf/mpdf');
+    }
+
+    $diplomaRow = [
+        'diploma_number' => 'PREVIEW-' . (int)($template['id'] ?? 0),
+    ];
+
+    $mpdf = new \Mpdf\Mpdf([
+        'mode' => 'utf-8',
+        'format' => getDiplomaPageFormat($template),
+        'margin_left' => 0,
+        'margin_right' => 0,
+        'margin_top' => 0,
+        'margin_bottom' => 0,
+        'tempDir' => ROOT_PATH . '/storage/mpdf',
+    ]);
+    renderDiplomaPdf($mpdf, $ctx, $template, $diplomaRow);
+    return $mpdf->Output('', \Mpdf\Output\Destination::STRING_RETURN);
+}
+
 function getPublicDiplomaUrl(string $token): string {
     return SITE_URL . '/diploma/' . urlencode($token);
+}
+
+function getDiplomaEmailEmbeddedImages(string $diplomaType): array
+{
+    $heroImage = match ($diplomaType) {
+        'encouragement' => [
+            'path' => ROOT_PATH . '/assets/email/diploma-hero-thanks.jpg',
+            'cid' => 'diploma_hero_thanks',
+            'name' => 'diploma-hero-thanks.jpg',
+        ],
+        default => [
+            'path' => ROOT_PATH . '/assets/email/diploma-hero-main.jpg',
+            'cid' => 'diploma_hero_main',
+            'name' => 'diploma-hero-main.jpg',
+        ],
+    };
+
+    return [
+        [
+            'path' => ROOT_PATH . '/assets/email/email-logo.png',
+            'cid' => 'email_logo',
+            'name' => 'email-logo.png',
+        ],
+        $heroImage,
+        [
+            'path' => ROOT_PATH . '/assets/email/diploma-footer-stars.png',
+            'cid' => 'diploma_footer_stars',
+            'name' => 'diploma-footer-stars.png',
+        ],
+    ];
+}
+
+function getAvailableDiplomaEmailImageCidMap(array $embeddedImages): array
+{
+    $available = [];
+
+    foreach ($embeddedImages as $embeddedImage) {
+        if (!is_array($embeddedImage)) {
+            continue;
+        }
+
+        $path = trim((string)($embeddedImage['path'] ?? ''));
+        $cid = trim((string)($embeddedImage['cid'] ?? ''));
+        if ($path === '' || $cid === '' || !is_file($path) || !is_readable($path)) {
+            continue;
+        }
+
+        if (strpos(detectMailFileMimeType($path), 'image/') !== 0) {
+            continue;
+        }
+
+        $available[$cid] = true;
+    }
+
+    return $available;
 }
 
 function sendDiplomaByEmail(array $ctx, array $diploma): bool {
@@ -921,11 +1538,18 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
     }
 
     $diplomaType = (string)($diploma['diploma_type'] ?? 'contest_participant');
-    $subject = $diplomaType === 'encouragement'
-        ? 'Ваш благодарственный диплом готов'
-        : 'Ваш диплом участника готов';
+    $subject = match ($diplomaType) {
+        'encouragement' => 'Ваш благодарственный диплом готов',
+        'winner' => 'Ваш диплом победителя готов',
+        'laureate' => 'Ваш диплом лауреата готов',
+        'nomination' => 'Ваш диплом в номинации готов',
+        default => 'Ваш диплом участника готов',
+    };
 
     $publicUrl = getPublicDiplomaUrl((string)($diploma['public_token'] ?? ''));
+    $attachmentName = 'diploma.pdf';
+    $embeddedImages = getDiplomaEmailEmbeddedImages($diplomaType);
+    $availableImageCidMap = getAvailableDiplomaEmailImageCidMap($embeddedImages);
     $emailData = [
         'diploma_type' => $diplomaType,
         'user_name' => trim((string)($ctx['user_name'] ?? '')),
@@ -943,9 +1567,10 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
         'attachments' => [
             [
                 'path' => $file,
-                'name' => 'diploma.pdf',
+                'name' => $attachmentName,
             ],
         ],
+        'embedded_images' => $embeddedImages,
     ]);
     if ($ok) {
         $pdo->prepare('UPDATE participant_diplomas SET email_sent_at = NOW(), updated_at = NOW() WHERE id = ?')->execute([(int)$diploma['id']]);
@@ -954,17 +1579,53 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
     return $ok;
 }
 
-function collectApplicationDiplomaLinks(int $applicationId): array {
+function findExistingWorkDiploma(int $workId, ?string $requestedType = null): ?array {
+    global $pdo;
+
+    $stmt = $pdo->prepare('SELECT * FROM participant_diplomas WHERE work_id = ? LIMIT 1');
+    $stmt->execute([$workId]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        return null;
+    }
+
+    if ($requestedType !== null && $requestedType !== '' && (string)($row['diploma_type'] ?? '') !== $requestedType) {
+        return null;
+    }
+
+    $filePath = trim((string)($row['file_path'] ?? ''));
+    if ($filePath === '') {
+        return null;
+    }
+
+    $absolutePath = ROOT_PATH . '/' . ltrim($filePath, '/');
+    if (!is_file($absolutePath)) {
+        return null;
+    }
+
+    return (array)$row;
+}
+
+function collectApplicationDiplomaLinks(int $applicationId, ?array $workIds = null): array {
     global $pdo;
     ensureApplicationWorks($applicationId);
 
-    $stmt = $pdo->prepare("SELECT pd.*, p.fio, w.id AS work_id
+    $sql = "SELECT pd.*, p.fio, w.id AS work_id
         FROM participant_diplomas pd
         INNER JOIN participants p ON p.id = pd.participant_id
         LEFT JOIN works w ON w.id = pd.work_id
-        WHERE pd.application_id = ?
-        ORDER BY pd.id ASC");
-    $stmt->execute([$applicationId]);
+        WHERE pd.application_id = ?";
+    $params = [$applicationId];
+    if (is_array($workIds) && $workIds) {
+        $placeholders = implode(',', array_fill(0, count($workIds), '?'));
+        $sql .= " AND pd.work_id IN ($placeholders)";
+        foreach ($workIds as $workId) {
+            $params[] = (int)$workId;
+        }
+    }
+    $sql .= " ORDER BY pd.id ASC";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     $rows = $stmt->fetchAll();
     $result = [];
     foreach ($rows as $row) {
@@ -977,14 +1638,23 @@ function collectApplicationDiplomaLinks(int $applicationId): array {
     return $result;
 }
 
-function buildApplicationDiplomaZip(int $applicationId): string {
+function buildApplicationDiplomaZip(int $applicationId, ?array $workIds = null): string {
     ensureDiplomaStorage();
     global $pdo;
-    $stmt = $pdo->prepare("SELECT pd.file_path, pd.participant_id, pd.diploma_number, pd.diploma_type, p.fio
+    $sql = "SELECT pd.file_path, pd.participant_id, pd.diploma_number, pd.diploma_type, p.fio
         FROM participant_diplomas pd
         INNER JOIN participants p ON p.id = pd.participant_id
-        WHERE pd.application_id = ?");
-    $stmt->execute([$applicationId]);
+        WHERE pd.application_id = ?";
+    $params = [$applicationId];
+    if (is_array($workIds) && $workIds) {
+        $placeholders = implode(',', array_fill(0, count($workIds), '?'));
+        $sql .= " AND pd.work_id IN ($placeholders)";
+        foreach ($workIds as $workId) {
+            $params[] = (int)$workId;
+        }
+    }
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
     $zipName = 'application_' . $applicationId . '_diplomas_' . date('Ymd_His') . '.zip';

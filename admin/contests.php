@@ -18,7 +18,7 @@ $pageStyles = ['admin-contests.css'];
 function contestsRedirectWithQuery(): void
 {
     $query = $_SERVER['QUERY_STRING'] ?? '';
-    redirect('contests.php' . ($query !== '' ? ('?' . $query) : ''));
+    redirect('/admin/contests' . ($query !== '' ? ('?' . $query) : ''));
 }
 
 if (isPostRequest() && isset($_POST['action'])) {
@@ -53,6 +53,7 @@ if (isPostRequest() && isset($_POST['action'])) {
 }
 
 $search = trim((string) ($_GET['search'] ?? ''));
+$searchContestId = max(0, (int) ($_GET['search_contest_id'] ?? 0));
 $statusFilter = (string) ($_GET['status'] ?? 'all');
 $sort = (string) ($_GET['sort'] ?? 'newest');
 
@@ -110,7 +111,11 @@ $formatPeriod = static function (?string $dateFrom, ?string $dateTo): string {
     return 'Даты не заданы';
 };
 
-$filteredContests = array_values(array_filter($contests, static function (array $contest) use ($search, $statusFilter, $today): bool {
+$filteredContests = array_values(array_filter($contests, static function (array $contest) use ($search, $searchContestId, $statusFilter, $today): bool {
+    if ($searchContestId > 0 && (int) ($contest['id'] ?? 0) !== $searchContestId) {
+        return false;
+    }
+
     if ($search !== '' && mb_stripos((string) ($contest['title'] ?? ''), $search) === false) {
         return false;
     }
@@ -200,22 +205,38 @@ require_once __DIR__ . '/includes/header.php';
     <div class="contests-stats" aria-label="Сводные показатели">
         <div class="contests-stats__item"><span>Всего конкурсов</span><strong><?= $totalCount ?></strong></div>
         <div class="contests-stats__item"><span>Опубликовано</span><strong><?= $publishedCount ?></strong></div>
-        <div class="contests-stats__item"><span>Черновики</span><strong><?= $draftCount ?></strong></div>
+        <div class="contests-stats__item"><span>Не опубликованы</span><strong><?= $draftCount ?></strong></div>
         <div class="contests-stats__item"><span>Всего заявок</span><strong><?= $totalApplications ?></strong></div>
     </div>
 
     <form class="contests-controls" method="get" action="/admin/contests" aria-label="Поиск, фильтры и сортировка">
-        <label class="contests-controls__field contests-controls__field--search" for="contestSearch">
-            <span>Поиск по названию</span>
-            <input id="contestSearch" type="search" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Введите название конкурса">
-        </label>
+        <div
+            class="contests-controls__field contests-controls__field--search"
+            style="position:relative;"
+            <?= admin_live_search_attrs([
+                'endpoint' => '/admin/search-contests',
+                'primary_template' => '{{title||Без названия}}',
+                'secondary_template' => '{{meta||}}',
+                'value_template' => '{{title||Без названия}}',
+                'limit' => 8,
+                'min_length' => 2,
+                'min_length_numeric' => 1,
+                'debounce' => 220,
+            ]) ?>>
+            <label for="contestSearch">
+                <span>Поиск по названию</span>
+            </label>
+            <input id="contestSearch" type="search" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Введите название конкурса" data-live-search-input>
+            <input type="hidden" name="search_contest_id" id="contestSearchId" data-live-search-hidden value="<?= (int) $searchContestId ?>">
+            <div id="contestSearchResults" class="user-results" data-live-search-results></div>
+        </div>
 
         <label class="contests-controls__field" for="contestStatus">
             <span>Статус</span>
             <select id="contestStatus" name="status">
                 <option value="all" <?= $statusFilter === 'all' ? 'selected' : '' ?>>Все</option>
                 <option value="published" <?= $statusFilter === 'published' ? 'selected' : '' ?>>Опубликованные</option>
-                <option value="draft" <?= $statusFilter === 'draft' ? 'selected' : '' ?>>Черновики</option>
+                <option value="draft" <?= $statusFilter === 'draft' ? 'selected' : '' ?>>Не опубликованные</option>
                 <option value="finished" <?= $statusFilter === 'finished' ? 'selected' : '' ?>>Завершённые</option>
             </select>
         </label>
@@ -258,7 +279,7 @@ require_once __DIR__ . '/includes/header.php';
                 $contestId = (int) $contest['id'];
                 $applicationsCount = (int) $contest['applications_count'];
                 $isPublished = (int) $contest['is_published'] === 1;
-                $timeStatus = $getContestTimeStatus($contest);
+                $timeStatus = $isPublished ? $getContestTimeStatus($contest) : null;
                 $descriptionPlain = trim(strip_tags((string) ($contest['description'] ?? '')));
             ?>
             <article class="contest-card" role="listitem">
@@ -269,14 +290,16 @@ require_once __DIR__ . '/includes/header.php';
                 ?>
                 <div class="contest-card__cover-wrap">
                     <img src="<?= htmlspecialchars($coverUrl) ?>" alt="Обложка конкурса <?= htmlspecialchars((string) $contest['title']) ?>" class="contest-card__cover">
-                    <div class="contest-card__badges">
-                        <span class="contest-badge <?= $isPublished ? 'contest-badge--published' : 'contest-badge--draft' ?>">
-                            <?= $isPublished ? 'Опубликован' : 'Черновик' ?>
-                        </span>
+                </div>
+                <div class="contest-card__badges">
+                    <span class="contest-badge <?= $isPublished ? 'contest-badge--published' : 'contest-badge--draft' ?>">
+                        <?= $isPublished ? 'Опубликован' : 'Не опубликован' ?>
+                    </span>
+                    <?php if ($timeStatus !== null): ?>
                         <span class="contest-badge contest-badge--time contest-badge--<?= htmlspecialchars($timeStatus['class']) ?>">
                             <?= htmlspecialchars($timeStatus['label']) ?>
                         </span>
-                    </div>
+                    <?php endif; ?>
                 </div>
 
                 <header class="contest-card__header">

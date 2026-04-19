@@ -24,6 +24,7 @@ if ($authErrorCode !== '' && isset($authErrorMessages[$authErrorCode])) {
 $rawRedirect = (string) ($_GET['redirect'] ?? ($_POST['redirect'] ?? ($_SESSION['user_auth_redirect'] ?? '/contests')));
 $redirectAfterAuth = sanitize_internal_redirect($rawRedirect, '/contests');
 $_SESSION['user_auth_redirect'] = $redirectAfterAuth;
+$vkidSdkFlow = vkid_sdk_flow_prepare('user');
 
 check_csrf();
 
@@ -34,18 +35,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($email === '' || $password === '') {
         $error = 'Заполните все поля';
     } else {
-        $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
-        $stmt->execute([$email]);
-        $user = $stmt->fetch();
-
-        if ($user && !empty($user['password']) && password_verify($password, $user['password'])) {
+        $authResult = authenticateUserByPassword($email, $password);
+        $user = $authResult['user'] ?? null;
+        if (!empty($authResult['success']) && is_array($user)) {
             $_SESSION['user_id'] = (int) $user['id'];
-            $target = sanitize_internal_redirect($_SESSION['user_auth_redirect'] ?? '/contests', '/contests');
+            $target = !empty($authResult['used_temporary_password'])
+                ? '/profile?force_password_change=1'
+                : sanitize_internal_redirect($_SESSION['user_auth_redirect'] ?? '/contests', '/contests');
             unset($_SESSION['user_auth_redirect']);
             redirect($target);
         }
 
-        $error = 'Неверный email или пароль';
+        $error = (string) ($authResult['message'] ?? 'Неверный email или пароль');
     }
 }
 ?>
@@ -92,6 +93,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <div class="form-group">
 <label class="form-label">Пароль</label>
 <input type="password" name="password" class="form-input" required placeholder="••••••••">
+</div>
+
+<div class="form-group" style="margin-top:-4px; text-align:right;">
+    <a href="/forgot-password" style="font-size:14px; color:var(--color-primary);">Забыли пароль?</a>
 </div>
 
 <button type="submit" class="btn-primary">
@@ -204,7 +209,9 @@ function initVkIdWidget() {
         redirectUrl: <?= json_encode(VK_USER_REDIRECT_URI, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
-        scope: '',
+        scope: <?= json_encode(VKID_USER_SCOPE, JSON_UNESCAPED_UNICODE) ?>,
+        state: <?= json_encode((string) ($vkidSdkFlow['state'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
+        codeVerifier: <?= json_encode((string) ($vkidSdkFlow['code_verifier'] ?? ''), JSON_UNESCAPED_UNICODE) ?>,
     });
 
     const oneTap = new VKID.OneTap();
@@ -217,14 +224,7 @@ function initVkIdWidget() {
             setAuthError('Не удалось загрузить VK ID. Попробуйте обновить страницу или войдите по email.');
         })
         .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
-            const code = payload?.code || '';
-            const deviceId = payload?.device_id || '';
-
-            VKID.Auth.exchangeCode(code, deviceId)
-                .then(finishVkLoginViaSdk)
-                .catch(function () {
-                    setAuthError('Не удалось завершить вход через VK ID. Попробуйте снова.');
-                });
+            finishVkLoginViaSdk(payload || {});
         });
 }
 </script>

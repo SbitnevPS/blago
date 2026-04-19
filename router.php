@@ -1,5 +1,5 @@
 <?php
-// router.php - Простой роутер для ЧПУ
+// router.php - Простой роутер для ЧПУ в PHP без использования фреймворков
 // Этот файл должен быть включен в начале каждой страницы
 
 // Отдаем существующие статические файлы напрямую (в т.ч. с urlencoded именами)
@@ -75,6 +75,8 @@ $routes = [
  '/login' => ['file' => 'app/views/public/login.php', 'name' => 'login'],
  '/register' => ['file' => 'app/views/public/register.php', 'name' => 'register'],
  '/logout' => ['file' => 'app/views/public/logout.php', 'name' => 'logout'],
+ '/forgot-password' => ['file' => 'app/views/public/forgot-password.php', 'name' => 'forgot-password'],
+ '/reset-password' => ['file' => 'app/views/public/reset-password.php', 'name' => 'reset-password'],
  '/auth/vk/user/start' => ['file' => 'app/auth/vk/user/start.php', 'name' => 'vk-user-start'],
  '/auth/vk/user/sdk-login' => ['file' => 'app/auth/vk/user/sdk-login.php', 'name' => 'vk-user-sdk-login'],
  '/auth/vk/user/callback' => ['file' => 'app/auth/vk/user/callback.php', 'name' => 'vk-user-callback'],
@@ -82,6 +84,8 @@ $routes = [
  '/auth/vk/admin/sdk-login' => ['file' => 'app/auth/vk/admin/sdk-login.php', 'name' => 'vk-admin-sdk-login'],
  '/auth/vk/admin/callback' => ['file' => 'app/auth/vk/admin/callback.php', 'name' => 'vk-admin-callback'],
  '/auth/vk/publication/test' => ['file' => 'app/auth/vk/publication/test.php', 'name' => 'vk-publication-test'],
+ '/auth/vk/publication/start' => ['file' => 'app/auth/vk/publication/start.php', 'name' => 'vk-publication-start'],
+ '/auth/vk/publication/callback' => ['file' => 'app/auth/vk/publication/callback.php', 'name' => 'vk-publication-callback'],
  
  // Конкурсы
  '/contests' => ['file' => 'app/views/public/contests.php', 'name' => 'contests'],
@@ -113,8 +117,9 @@ $routes = [
  // Админка
  '/admin' => ['file' => 'admin/index.php', 'name' => 'admin'],
  '/admin/contests' => ['file' => 'admin/contests.php', 'name' => 'admin-contests'],
- '/admin/contest-edit' => ['file' => 'admin/contest-edit.php', 'name' => 'admin-contest-create'],
- '/admin/contest/{id}' => ['file' => 'admin/contest-edit.php', 'name' => 'admin-contest-edit'],
+    '/admin/contest-edit' => ['file' => 'admin/contest-edit.php', 'name' => 'admin-contest-create'],
+    '/admin/contest/{id}' => ['file' => 'admin/contest-edit.php', 'name' => 'admin-contest-edit'],
+    '/admin/ckeditor-image-upload' => ['file' => 'admin/ckeditor-image-upload.php', 'name' => 'admin-ckeditor-image-upload'],
  '/admin/applications' => ['file' => 'admin/applications.php', 'name' => 'admin-applications'],
  '/admin/application/{id}' => ['file' => 'admin/application-view.php', 'name' => 'admin-application-view'],
  '/admin/participants' => ['file' => 'admin/participants.php', 'name' => 'admin-participants'],
@@ -124,12 +129,21 @@ $routes = [
  '/admin/messages' => ['file' => 'admin/messages.php', 'name' => 'admin-messages'],
  '/admin/settings' => ['file' => 'admin/settings.php', 'name' => 'admin-settings'],
  '/admin/diplomas' => ['file' => 'admin/diplomas.php', 'name' => 'admin-diplomas'],
+ '/admin/mailings' => ['file' => 'admin/mailings.php', 'name' => 'admin-mailings'],
+ '/admin/mailings/create' => ['file' => 'admin/mailing-edit.php', 'name' => 'admin-mailing-create'],
+ '/admin/mailing/{id}' => ['file' => 'admin/mailing-edit.php', 'name' => 'admin-mailing-edit'],
+ '/admin/mailings-api' => ['file' => 'admin/mailings-api.php', 'name' => 'admin-mailings-api'],
  '/admin/vk-publications' => ['file' => 'admin/vk-publications.php', 'name' => 'admin-vk-publications'],
  '/admin/vk-publication-create' => ['file' => 'admin/vk-publication-create.php', 'name' => 'admin-vk-publication-create'],
  '/admin/vk-publication/{id}' => ['file' => 'admin/vk-publication-view.php', 'name' => 'admin-vk-publication-view'],
  '/admin/diploma-template/{id}' => ['file' => 'admin/diploma-template.php', 'name' => 'admin-diploma-template'],
  '/admin/search-users' => ['file' => 'admin/search-users.php', 'name' => 'admin-search-users'],
+ '/admin/search-applications' => ['file' => 'admin/search-applications.php', 'name' => 'admin-search-applications'],
+ '/admin/search-message-users' => ['file' => 'admin/search-message-users.php', 'name' => 'admin-search-message-users'],
+ '/admin/search-participants' => ['file' => 'admin/search-participants.php', 'name' => 'admin-search-participants'],
+ '/admin/search-contests' => ['file' => 'admin/search-contests.php', 'name' => 'admin-search-contests'],
  '/admin/login' => ['file' => 'admin/login.php', 'name' => 'admin-login'],
+ '/admin/logout' => ['file' => 'admin/logout.php', 'name' => 'admin-logout'],
 ];
 
 // Проверяем маршрут

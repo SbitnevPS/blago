@@ -29,33 +29,34 @@ if (isset($tokenPayload['tokens']) && is_array($tokenPayload['tokens'])) {
     $tokenPayload = array_merge($tokenPayload, $tokenPayload['tokens']);
 }
 
-$accessToken = trim((string) ($tokenPayload['access_token'] ?? $tokenPayload['accessToken'] ?? $tokenPayload['token'] ?? ''));
-$idToken = trim((string) ($tokenPayload['id_token'] ?? $tokenPayload['idToken'] ?? ''));
-$refreshToken = trim((string) ($tokenPayload['refresh_token'] ?? $tokenPayload['refreshToken'] ?? ''));
-$vkUserId = trim((string) ($tokenPayload['user_id'] ?? $tokenPayload['userId'] ?? $tokenPayload['sub'] ?? ''));
-$vkEmail = trim((string) ($tokenPayload['email'] ?? ''));
-$claims = [];
-foreach ($tokenPayload as $key => $value) {
-    if (is_scalar($value) || $value === null) {
-        $claims[$key] = $value;
-    }
+$code = trim((string) ($tokenPayload['code'] ?? ''));
+$deviceId = trim((string) ($tokenPayload['device_id'] ?? $tokenPayload['deviceId'] ?? ''));
+$state = trim((string) ($tokenPayload['state'] ?? ''));
+
+$flowData = vkid_sdk_flow_consume('user', $state);
+$codeVerifier = (string) ($flowData['code_verifier'] ?? '');
+if ($code === '' || $deviceId === '' || $state === '' || $codeVerifier === '') {
+    jsonResponse(['success' => false, 'error' => 'Не удалось завершить вход через VK ID. Повторите попытку.'], 400);
 }
 
-if (isset($tokenPayload['user']) && is_array($tokenPayload['user'])) {
-    foreach ($tokenPayload['user'] as $key => $value) {
-        if (is_scalar($value) || $value === null) {
-            $claims[$key] = $value;
-        }
-    }
+$exchange = vkid_exchange_sdk_code_for_tokens($code, $deviceId, $codeVerifier, VK_USER_REDIRECT_URI, $state);
+if (empty($exchange['ok'])) {
+    jsonResponse([
+        'success' => false,
+        'error' => vk_error_message((string) ($exchange['error'] ?? 'exchange_failed')),
+    ], 400);
 }
 
-if (isset($tokenPayload['claims']) && is_array($tokenPayload['claims'])) {
-    foreach ($tokenPayload['claims'] as $key => $value) {
-        if (is_scalar($value) || $value === null) {
-            $claims[$key] = $value;
-        }
-    }
-}
+$tokenJson = is_array($exchange['payload'] ?? null) ? $exchange['payload'] : [];
+$accessToken = trim((string) ($tokenJson['access_token'] ?? ''));
+$idToken = trim((string) ($tokenJson['id_token'] ?? ''));
+$refreshToken = trim((string) ($tokenJson['refresh_token'] ?? ''));
+$vkUserId = trim((string) ($tokenJson['user_id'] ?? $tokenJson['sub'] ?? ''));
+$vkEmail = trim((string) ($tokenJson['email'] ?? ''));
+
+$claims = $tokenJson;
+$claims['device_id'] = $deviceId;
+$claims['state'] = $state;
 
 vk_auth_log('sdk_login_request_payload', [
     'has_access_token' => $accessToken !== '',
@@ -63,11 +64,9 @@ vk_auth_log('sdk_login_request_payload', [
     'has_refresh_token' => $refreshToken !== '',
     'has_user_id' => $vkUserId !== '',
     'has_email' => $vkEmail !== '',
-    'scope' => $tokenPayload['scope'] ?? null,
-    'state' => $tokenPayload['state'] ?? null,
-    'payload_keys' => array_keys($vkPayload),
-    'token_payload_keys' => array_keys($tokenPayload),
-    'claims_keys' => array_keys($claims),
+    'scope' => $claims['scope'] ?? null,
+    'state' => $state !== '' ? vk_mask_state($state) : null,
+    'exchange_endpoint' => 'https://id.vk.ru/oauth2/auth',
 ]);
 
 $result = vk_user_login_by_access_token($pdo, $accessToken, $redirect, $vkUserId, $vkEmail, $idToken, $refreshToken, $claims);

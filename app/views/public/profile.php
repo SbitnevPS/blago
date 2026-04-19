@@ -11,10 +11,14 @@ if (!isAuthenticated()) {
 $user = getCurrentUser();
 $avatar = getUserAvatarData($user ?? []);
 $emailVerified = isUserEmailVerified($user);
+$isPostRegisterFlow = (string) ($_GET['registered'] ?? '') === '1';
+$postRegisterRedirect = sanitize_internal_redirect((string) ($_GET['redirect'] ?? ''), '/contests');
+$postRegisterEmailStatus = trim((string) ($_GET['email_verification'] ?? ''));
 $error = '';
 $success = '';
 $missingRequiredFields = [];
 $missingRequiredLabels = [];
+$forcePasswordChange = isForcedPasswordChangeRequiredForCurrentSession() || (string) ($_GET['force_password_change'] ?? '') === '1';
 
 $requiredFieldMeta = [
     'name' => 'Имя',
@@ -22,11 +26,12 @@ $requiredFieldMeta = [
     'surname' => 'Фамилия',
     'email' => 'Адрес электронной почты',
     'organization_region' => 'Регион',
-    'organization_address' => 'Адрес учебного заведения',
-    'organization_name' => 'Название учебного заведения',
+    'organization_address' => 'Контактная информация организации',
+    'organization_name' => 'Название и адрес образовательного учреждения',
 ];
 
 $isSiteRegisteredAccount = empty($user['vk_id']);
+$userTypeOptions = getUserTypeOptions();
 
 check_csrf();
 
@@ -42,6 +47,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
  $organization_region = trim((string) ($_POST['organization_region'] ?? ''));
  $organization_name = trim((string) ($_POST['organization_name'] ?? ''));
  $organization_address = trim((string) ($_POST['organization_address'] ?? ''));
+ $requestedUserType = trim((string) ($_POST['user_type'] ?? 'parent'));
+ $user_type = array_key_exists($requestedUserType, $userTypeOptions) ? $requestedUserType : 'parent';
  $newPassword = (string) ($_POST['new_password'] ?? '');
  $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
 
@@ -55,10 +62,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
  'organization_name' => $organization_name,
  ];
 
+ if (!$forcePasswordChange) {
  foreach ($requiredValues as $fieldKey => $fieldValue) {
  if ($fieldValue === '') {
  $missingRequiredFields[] = $fieldKey;
  $missingRequiredLabels[] = $requiredFieldMeta[$fieldKey];
+ }
  }
  }
 
@@ -79,8 +88,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
  if ($stmt->fetch()) {
  $error = 'Этот email уже используется другим пользователем';
  } else {
+ // При входе по временному паролю требуем задать новый постоянный пароль.
+ if (empty($error) && $forcePasswordChange && $newPassword === '') {
+ $error = 'После входа по временному паролю необходимо сразу задать новый постоянный пароль.';
+ }
+
  // Проверяем пароль при смене email
- if ($email !== (string) ($user['email'] ?? '')) {
+ if (empty($error) && !$forcePasswordChange && $email !== (string) ($user['email'] ?? '')) {
  if (empty($user['password']) && $newPassword === '') {
  $error = 'Для смены email необходимо сначала установить пароль';
  } elseif (!empty($user['password']) && empty($_POST['current_password'])) {
@@ -101,23 +115,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
  if (empty($error)) {
  // Обновляем данные
- $emailChanged = $email !== (string) ($user['email'] ?? '');
+ $emailChanged = !$forcePasswordChange && $email !== (string) ($user['email'] ?? '');
  $verificationUpdateSql = $emailChanged
  ? ', email_verified = 0, email_verified_at = NULL, email_verification_token = NULL, email_verification_sent_at = NULL'
  : '';
 
  if ($newPassword !== '') {
  $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
- $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, password = ?, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
- $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $passwordHash, $user['id']]);
+ $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, user_type = ?, password = ?, recovery_old_password_hash = NULL, recovery_expires_at = NULL, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
+ $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $user_type, $passwordHash, $user['id']]);
+ clearPasswordRecoverySessionFlags((int) $user['id']);
  } else {
- $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
- $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $user['id']]);
+ $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, user_type = ?, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
+ $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $user_type, $user['id']]);
  }
 
  // Обновляем сессию
  $user = getCurrentUser();
  $emailVerified = isUserEmailVerified($user);
+ if ($newPassword !== '') {
+ redirect('/profile?password_changed=1');
+ }
+ $forcePasswordChange = isForcedPasswordChangeRequiredForCurrentSession() || (string) ($_GET['force_password_change'] ?? '') === '1';
  $success = 'Данные успешно сохранены';
  }
  }
@@ -138,6 +157,10 @@ if ($hasVkCompletionHint) {
     if (!empty($missingRequiredLabels) && $error === '') {
         $error = 'Заполните обязательные поля: ' . implode(', ', array_values(array_unique($missingRequiredLabels))) . '.';
     }
+}
+
+if ((string) ($_GET['password_changed'] ?? '') === '1' && $success === '') {
+    $success = 'Пароль успешно изменён';
 }
 
 $missingRequiredFields = array_values(array_unique($missingRequiredFields));
@@ -163,6 +186,43 @@ generateCSRFToken();
     <i class="fas fa-exclamation-triangle alert__icon"></i>
     <div class="alert__content">
         <div class="alert__message">Ваш адрес электронной почты не подтверждён. Пока адрес не будет подтверждён, отправка заявок на участие в конкурсах недоступна.</div>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($isPostRegisterFlow && !$emailVerified): ?>
+    <?php
+        $postRegisterMessage = '';
+        $postRegisterIsError = false;
+        if ($postRegisterEmailStatus === 'sent') {
+            $postRegisterMessage = 'Мы отправили письмо со ссылкой для подтверждения email. Если письма нет, проверьте «Спам» или нажмите кнопку «Подтвердить адрес электронной почты» ниже.';
+        } elseif ($postRegisterEmailStatus === 'failed') {
+            $postRegisterMessage = 'Не удалось отправить письмо для подтверждения email автоматически. Нажмите кнопку «Подтвердить адрес электронной почты» ниже, чтобы отправить письмо ещё раз.';
+            $postRegisterIsError = true;
+        } elseif ($postRegisterEmailStatus === 'already') {
+            $postRegisterMessage = 'Адрес электронной почты уже подтверждён.';
+        }
+    ?>
+    <?php if ($postRegisterMessage !== ''): ?>
+    <div class="alert mb-lg" style="max-width:600px; margin:0 auto var(--space-lg); background:<?= $postRegisterIsError ? '#fef2f2' : '#eff6ff' ?>; border:1px solid <?= $postRegisterIsError ? '#fca5a5' : '#93c5fd' ?>; color:<?= $postRegisterIsError ? '#991b1b' : '#1d4ed8' ?>;">
+        <i class="fas <?= $postRegisterIsError ? 'fa-exclamation-circle' : 'fa-info-circle' ?> alert__icon"></i>
+        <div class="alert__content">
+            <div class="alert__message"><?= htmlspecialchars($postRegisterMessage) ?></div>
+            <?php if ($postRegisterRedirect !== '' && $postRegisterRedirect !== '/profile'): ?>
+                <div style="margin-top:12px;">
+                    <a class="btn btn--ghost" href="<?= htmlspecialchars($postRegisterRedirect) ?>">Продолжить</a>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+<?php endif; ?>
+
+<?php if ($forcePasswordChange): ?>
+<div class="alert mb-lg" style="max-width:600px; margin:0 auto var(--space-lg); background:#eff6ff; border:1px solid #93c5fd; color:#1d4ed8;">
+    <i class="fas fa-shield-alt alert__icon"></i>
+    <div class="alert__content">
+        <div class="alert__message">Вы вошли по временному паролю. Обязательно задайте новый постоянный пароль, чтобы продолжить пользоваться сайтом.</div>
     </div>
 </div>
 <?php endif; ?>
@@ -205,6 +265,18 @@ generateCSRFToken();
  <!-- Основные данные -->
 <div class="profile-section">
 <div class="profile-section__title">Основные данные</div>
+
+<div class="register-role-switch profile-role-switch" role="radiogroup" aria-label="Кто вы?">
+<div class="register-role-switch__title">Кто вы?</div>
+<div class="register-role-switch__options">
+<?php foreach ($userTypeOptions as $value => $label): ?>
+<label class="register-role-switch__option <?= (($user['user_type'] ?? 'parent') === $value) ? 'is-active' : '' ?>">
+<input type="radio" name="user_type" value="<?= e($value) ?>" <?= (($user['user_type'] ?? 'parent') === $value) ? 'checked' : '' ?>>
+<span><?= e($label) ?></span>
+</label>
+<?php endforeach; ?>
+</div>
+</div>
 
 <div class="form-group">
 <label class="form-label form-label--required">Имя</label>
@@ -261,19 +333,20 @@ generateCSRFToken();
 <select id="profile-organization-region" name="organization_region" class="form-select" data-required-key="organization_region" required>
 <option value="">Выберите регион</option>
 <?php foreach ($regions as $r): ?>
-<option value="<?= e($r) ?>" <?= ($user['organization_region'] ?? '') === $r ? 'selected' : '' ?>><?= e($r) ?></option>
+<?php $regionValue = normalizeRegionName((string) $r); ?>
+<option value="<?= e($regionValue) ?>" <?= ($user['organization_region'] ?? '') === $regionValue ? 'selected' : '' ?>><?= e(getRegionSelectLabel((string) $r)) ?></option>
 <?php endforeach; ?>
 </select>
 </div>
 
 <div class="form-group">
-<label class="form-label form-label--required">Название образовательного учреждения</label>
+<label class="form-label form-label--required">Название и адрес образовательного учреждения</label>
 <input type="text" id="profile-organization-name" name="organization_name" class="form-input" data-required-key="organization_name" value="<?= htmlspecialchars($user['organization_name'] ?? '') ?>" placeholder="Детская художественная школа №1" required>
 <div class="form-hint">Название может отображаться в дипломах и карточках работ.</div>
 </div>
 
 <div class="form-group">
-<label class="form-label form-label--required">Фактический адрес организации</label>
+<label class="form-label form-label--required">Контактная информация организации</label>
 <textarea id="profile-organization-address" name="organization_address" class="form-textarea" data-required-key="organization_address" rows="2" placeholder="г. Москва, ул. Примерная, д.1" required><?= htmlspecialchars($user['organization_address'] ?? '') ?></textarea>
 </div>
 </div>
@@ -282,7 +355,7 @@ generateCSRFToken();
 <div class="profile-section">
 <div class="profile-section__title">Смена пароля</div>
 
- <?php if (!empty($user['password'])): ?>
+ <?php if (!empty($user['password']) && !$forcePasswordChange): ?>
 <div class="form-group">
 <label class="form-label">Текущий пароль</label>
 <input type="password" name="current_password" class="form-input" placeholder="Введите текущий пароль">
@@ -298,6 +371,9 @@ generateCSRFToken();
 <label class="form-label">Подтверждение пароля</label>
 <input type="password" name="confirm_password" class="form-input" placeholder="Повторите новый пароль">
 </div>
+<?php if ($forcePasswordChange): ?>
+<div class="form-hint" style="color:#1d4ed8;">После сохранения временный пароль станет недействительным, а вход будет работать только по новому паролю.</div>
+<?php endif; ?>
 </div>
 
 <button type="submit" class="btn btn--primary btn--lg" style="width:100%;">
@@ -390,6 +466,14 @@ generateCSRFToken();
         window.addEventListener('focus', checkVerificationStatus);
     }
 })();
+</script>
+<script>
+document.querySelectorAll('.register-role-switch__option input').forEach((input) => {
+    input.addEventListener('change', () => {
+        document.querySelectorAll('.register-role-switch__option').forEach((el) => el.classList.remove('is-active'));
+        input.closest('.register-role-switch__option')?.classList.add('is-active');
+    });
+});
 </script>
 </body>
 </html>

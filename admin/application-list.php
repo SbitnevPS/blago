@@ -21,9 +21,10 @@ if (!$contest) {
 
 // Получаем заявки
 $stmt = $pdo->prepare("
- SELECT a.*, u.name, u.surname, u.email, u.avatar_url,
+ SELECT a.*, c.requires_payment_receipt AS contest_requires_payment_receipt, u.name, u.surname, u.email, u.avatar_url,
  (SELECT COUNT(*) FROM participants WHERE application_id = a.id) as participants_count
  FROM applications a
+ LEFT JOIN contests c ON c.id = a.contest_id
  LEFT JOIN users u ON a.user_id = u.id
  WHERE a.contest_id = ?
  ORDER BY a.created_at DESC
@@ -78,6 +79,10 @@ require_once __DIR__ . '/includes/header.php';
 </thead>
 <tbody>
  <?php foreach ($applications as $app): ?>
+<?php
+    $statusMeta = getApplicationDisplayMeta($app);
+    $receiptMeta = getApplicationPaymentReceiptMeta($app);
+?>
 <tr>
 <td data-label="ID">#<?= $app['id'] ?></td>
 <td data-label="Пользователь">
@@ -100,12 +105,22 @@ require_once __DIR__ . '/includes/header.php';
 </td>
 <td data-label="Участников"><?= $app['participants_count'] ?></td>
 <td data-label="Статус">
-<span class="badge <?= $app['status'] === 'submitted' ? 'badge--success' : 'badge--warning' ?>">
- <?= $app['status'] === 'submitted' ? 'Не обработанная заявка' : 'Черновик' ?>
+<div class="flex gap-sm" style="flex-wrap:wrap;">
+<span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
+ <?= e((string) ($statusMeta['label'] ?? '—')) ?>
 </span>
+<span class="badge <?= e((string) ($receiptMeta['badge_class'] ?? 'badge--secondary')) ?>">
+ <?= e((string) ($receiptMeta['label'] ?? '—')) ?>
+</span>
+</div>
 </td>
 <td data-label="Дата подачи"><?= date('d.m.Y H:i', strtotime($app['created_at'])) ?></td>
 <td data-label="Действия">
+<?php if (!empty($receiptMeta['file_url'])): ?>
+<a href="<?= e((string) $receiptMeta['file_url']) ?>" target="_blank" class="btn btn--ghost btn--sm">
+<i class="fas fa-receipt"></i>
+</a>
+<?php endif; ?>
 <a href="/admin/application/<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
 <i class="fas fa-eye"></i>
 </a>

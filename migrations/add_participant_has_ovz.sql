@@ -1,0 +1,2 @@
+ALTER TABLE participants
+    ADD COLUMN has_ovz TINYINT(1) NOT NULL DEFAULT 0 AFTER age;
