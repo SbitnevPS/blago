@@ -211,6 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload['site_brand_short_name'] = trim((string) ($_POST['site_brand_short_name'] ?? ''));
             $payload['site_brand_subtitle'] = trim((string) ($_POST['site_brand_subtitle'] ?? ''));
             $payload['site_projects_label'] = trim((string) ($_POST['site_projects_label'] ?? ''));
+            $payload['site_legal_rights_holder'] = trim((string) ($_POST['site_legal_rights_holder'] ?? ''));
 
             if ($payload['site_brand_name'] === '') {
                 $error = 'Укажите полное название бренда.';
@@ -218,6 +219,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Укажите короткое название бренда.';
             } elseif ($payload['site_projects_label'] === '') {
                 $error = 'Укажите подпись для блока «Конкурсы/Проекты».';
+            } elseif ($payload['site_legal_rights_holder'] === '') {
+                $error = 'Укажите правообладателя для юридических документов.';
             }
         } elseif ($section === 'vk-integration') {
             $payload['vk_publication_group_id'] = trim($_POST['vk_publication_group_id'] ?? '');
@@ -281,42 +284,44 @@ $vkStatusBadgeClass = $vkIntegrationStatus === 'READY_FOR_PUBLICATION'
     : (($vkIntegrationStatus === 'TOKEN_SAVED' || $vkIntegrationStatus === 'TOKEN_EXPIRED' || $vkIntegrationStatus === 'CHECK_FAILED') ? 'badge--warning' : 'badge--secondary');
 $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== '' ? $vkPublicationSettings['confirmed_permissions'] : 'нет подтверждённых прав';
 $vkLastError = $vkPublicationSettings['last_error'] !== '' ? $vkPublicationSettings['last_error'] : '—';
-$vkTokenTypeRaw = trim((string) ($vkPublicationSettings['token_type'] ?? ''));
-$vkTokenTypeLabel = $vkTokenTypeRaw !== '' ? $vkTokenTypeRaw : '—';
-
-$vkStepShortStatus = static function (array $steps, string $key): string {
-    if (!array_key_exists($key, $steps) || !is_array($steps[$key])) {
-        return '—';
-    }
-    $step = $steps[$key];
-    $ok = $step['ok'] ?? null;
-    $skipped = !empty($step['skipped']);
-    $msg = mb_strtolower(trim((string) ($step['message'] ?? '')));
-
-    if ($ok === true) {
-        return 'OK';
-    }
-    if ($ok === false) {
-        if ($skipped && (str_contains($msg, 'unsupported') || str_contains($msg, 'n/a'))) {
-            return 'UNSUPPORTED';
-        }
-        return $skipped ? 'SKIPPED' : 'ERROR';
-    }
-    // ok === null
-    if ($skipped && str_contains($msg, 'unsupported')) {
-        return 'UNSUPPORTED';
-    }
-    if ($skipped) {
-        return 'SKIPPED';
-    }
-    if (str_contains($msg, 'not tested')) {
-        return 'NOT TESTED';
-    }
-    if (str_contains($msg, 'n/a')) {
-        return 'N/A';
-    }
-    return '—';
-};
+$vkTokenTypeLabel = $vkPublicationSettings['token_type'] === 'user' ? 'User token' : $vkPublicationSettings['token_type'];
+$brandingFields = [
+    [
+        'name' => 'site_brand_name',
+        'label' => 'Полное название бренда',
+        'placeholder' => 'ДетскиеКонкурсы.рф',
+        'required' => true,
+        'value' => (string) ($settings['site_brand_name'] ?? siteBrandName()),
+    ],
+    [
+        'name' => 'site_brand_short_name',
+        'label' => 'Короткое название бренда',
+        'placeholder' => 'ДетскиеКонкурсы',
+        'required' => true,
+        'value' => (string) ($settings['site_brand_short_name'] ?? siteBrandShortName()),
+    ],
+    [
+        'name' => 'site_brand_subtitle',
+        'label' => 'Подзаголовок бренда',
+        'placeholder' => 'Всероссийские конкурсы детского творчества',
+        'required' => false,
+        'value' => (string) ($settings['site_brand_subtitle'] ?? siteBrandSubtitle()),
+    ],
+    [
+        'name' => 'site_projects_label',
+        'label' => 'Подпись «Конкурсы/Проекты»',
+        'placeholder' => 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО',
+        'required' => true,
+        'value' => (string) ($settings['site_projects_label'] ?? siteProjectsLabel()),
+    ],
+    [
+        'name' => 'site_legal_rights_holder',
+        'label' => 'Правообладатель (юридические документы)',
+        'placeholder' => 'Информационному агентству «Только доброе инфо»',
+        'required' => true,
+        'value' => (string) ($settings['site_legal_rights_holder'] ?? siteLegalRightsHolder()),
+    ],
+];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -559,52 +564,19 @@ unset($_SESSION['success_message']);
                 </div>
 
                 <div class="settings-email-card">
-                    <div class="form-group">
-                        <label class="form-label">Полное название бренда</label>
-                        <input
-                            type="text"
-                            name="site_brand_name"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_brand_name'] ?? siteBrandName())) ?>"
-                            placeholder="ДетскиеКонкурсы.рф"
-                            required
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Короткое название бренда</label>
-                        <input
-                            type="text"
-                            name="site_brand_short_name"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_brand_short_name'] ?? siteBrandShortName())) ?>"
-                            placeholder="ДетскиеКонкурсы"
-                            required
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Подзаголовок бренда</label>
-                        <input
-                            type="text"
-                            name="site_brand_subtitle"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_brand_subtitle'] ?? siteBrandSubtitle())) ?>"
-                            placeholder="Всероссийские конкурсы детского творчества"
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Подпись «Конкурсы/Проекты»</label>
-                        <input
-                            type="text"
-                            name="site_projects_label"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_projects_label'] ?? siteProjectsLabel())) ?>"
-                            placeholder="КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО"
-                            required
-                        >
-                    </div>
+                    <?php foreach ($brandingFields as $field): ?>
+                        <div class="form-group">
+                            <label class="form-label"><?= htmlspecialchars((string) ($field['label'] ?? '')) ?></label>
+                            <input
+                                type="text"
+                                name="<?= htmlspecialchars((string) ($field['name'] ?? '')) ?>"
+                                class="form-input"
+                                value="<?= htmlspecialchars((string) ($field['value'] ?? '')) ?>"
+                                placeholder="<?= htmlspecialchars((string) ($field['placeholder'] ?? '')) ?>"
+                                <?= !empty($field['required']) ? 'required' : '' ?>
+                            >
+                        </div>
+                    <?php endforeach; ?>
                 </div>
 
                 <div class="settings-actions">
@@ -832,7 +804,9 @@ unset($_SESSION['success_message']);
             tab.classList.toggle('is-active', tab.dataset.settingsTab === tabName);
         });
         panels.forEach((panel) => {
-            panel.classList.toggle('is-active', panel.dataset.settingsPanel === tabName);
+            const isActive = panel.dataset.settingsPanel === tabName;
+            panel.classList.toggle('is-active', isActive);
+            panel.hidden = !isActive;
         });
     };
 
