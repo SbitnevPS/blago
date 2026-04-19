@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-PROJECT_DIR="/home/users/p/pavel-sbitnev/domains/test.tolkodobroe.info"
-BRANCH="develop"
+PROJECT_DIR="/home/users/p/pavel-sbitnev/domains/konkurs.tolkodobroe.info"
+BRANCH="main"
 
 echo "[deploy] Starting deploy in ${PROJECT_DIR}"
 
