@@ -82,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Ошибка безопасности';
     } else {
         $section = (string) ($_POST['settings_section'] ?? 'notifications');
-        $allowedSections = ['notifications', 'message-templates', 'email-delivery', 'vk-integration', 'homepage-banner'];
+        $allowedSections = ['notifications', 'email-delivery', 'site-branding', 'vk-integration', 'vk-publication', 'vk-donates', 'homepage-banner'];
         if (!in_array($section, $allowedSections, true)) {
             $section = 'notifications';
         }
@@ -118,8 +118,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'email_smtp_password' => (string) ($settings['email_smtp_password'] ?? ''),
             'email_smtp_timeout' => (int) ($settings['email_smtp_timeout'] ?? 15),
             'homepage_hero_image' => (string) ($settings['homepage_hero_image'] ?? ''),
-            'message_welcome_template' => $resolvedWelcomeMessageTemplate,
-            'drawing_comment_presets' => $resolvedDrawingCommentPresets,
+            'site_brand_name' => (string) ($settings['site_brand_name'] ?? siteBrandName()),
+            'site_brand_short_name' => (string) ($settings['site_brand_short_name'] ?? siteBrandShortName()),
+            'site_brand_subtitle' => (string) ($settings['site_brand_subtitle'] ?? siteBrandSubtitle()),
+            'site_projects_label' => (string) ($settings['site_projects_label'] ?? siteProjectsLabel()),
         ];
 
         if ($section === 'notifications') {
@@ -203,6 +205,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     redirect('/admin/settings#email-delivery');
                 }
             }
+        } elseif ($section === 'site-branding') {
+            $payload['site_brand_name'] = trim((string) ($_POST['site_brand_name'] ?? ''));
+            $payload['site_brand_short_name'] = trim((string) ($_POST['site_brand_short_name'] ?? ''));
+            $payload['site_brand_subtitle'] = trim((string) ($_POST['site_brand_subtitle'] ?? ''));
+            $payload['site_projects_label'] = trim((string) ($_POST['site_projects_label'] ?? ''));
+
+            if ($payload['site_brand_name'] === '') {
+                $error = 'Укажите полное название бренда.';
+            } elseif ($payload['site_brand_short_name'] === '') {
+                $error = 'Укажите короткое название бренда.';
+            } elseif ($payload['site_projects_label'] === '') {
+                $error = 'Укажите подпись для блока «Конкурсы/Проекты».';
+            }
         } elseif ($section === 'vk-integration') {
             $payload['vk_publication_group_id'] = trim($_POST['vk_publication_group_id'] ?? '');
             $payload['vk_publication_api_version'] = trim($_POST['vk_publication_api_version'] ?? '5.131');
@@ -238,7 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $activeSettingsTab = (string) ($_SESSION['settings_active_tab'] ?? 'notifications');
-if (!in_array($activeSettingsTab, ['notifications', 'message-templates', 'email-delivery', 'vk-integration', 'homepage-banner'], true)) {
+if (!in_array($activeSettingsTab, ['notifications', 'email-delivery', 'site-branding', 'vk-integration', 'vk-publication', 'vk-donates', 'homepage-banner'], true)) {
     $activeSettingsTab = 'notifications';
 }
 unset($_SESSION['settings_active_tab']);
@@ -336,8 +351,8 @@ unset($_SESSION['success_message']);
         <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'email-delivery' ? ' is-active' : '' ?>" data-settings-tab="email-delivery" role="tab">
             <i class="fas fa-envelope"></i> Email-отправка
         </button>
-        <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'message-templates' ? ' is-active' : '' ?>" data-settings-tab="message-templates" role="tab">
-            <i class="fas fa-comment-dots"></i> Шаблоны сообщений
+        <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'site-branding' ? ' is-active' : '' ?>" data-settings-tab="site-branding" role="tab">
+            <i class="fas fa-palette"></i> Брендирование
         </button>
         <button type="button" class="settings-tabs__tab<?= $activeSettingsTab === 'vk-integration' ? ' is-active' : '' ?>" data-settings-tab="vk-integration" role="tab">
             <i class="fab fa-vk"></i> Интеграция VK
@@ -421,8 +436,8 @@ unset($_SESSION['success_message']);
                                     type="text"
                                     name="email_from_name"
                                     class="form-input"
-                                    value="<?= htmlspecialchars($settings['email_from_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО') ?>"
-                                    placeholder="КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО"
+                                    value="<?= htmlspecialchars($settings['email_from_name'] ?? siteBrandName()) ?>"
+                                    placeholder="<?= htmlspecialchars(siteBrandName()) ?>"
                                 >
                             </div>
                             <div class="form-group">
@@ -532,27 +547,62 @@ unset($_SESSION['success_message']);
             </form>
         </section>
 
-        <section id="message-templates" class="settings-tab-panel<?= $activeSettingsTab === 'message-templates' ? ' is-active' : '' ?>" data-settings-panel="message-templates">
+        <section id="site-branding" class="settings-tab-panel<?= $activeSettingsTab === 'site-branding' ? ' is-active' : '' ?>" data-settings-panel="site-branding">
             <form method="POST" class="settings-form">
                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="settings_section" value="message-templates">
+                <input type="hidden" name="settings_section" value="site-branding">
                 <div class="settings-section__header">
-                    <h4><i class="fas fa-comment-dots"></i> Шаблоны сообщений</h4>
-                    <p>Здесь можно настроить приветствие для ручных сообщений администратора и список типовых замечаний по рисункам.</p>
+                    <h4><i class="fas fa-palette"></i> Брендирование сайта</h4>
+                    <p>Изменения применяются во фронте, админке, письмах и дипломах из одного места.</p>
                 </div>
 
-                <div class="settings-vk-card">
+                <div class="settings-email-card">
                     <div class="form-group">
-                        <label class="form-label">Приветственное сообщение</label>
-                        <textarea name="message_welcome_template" class="form-input" rows="5"><?= htmlspecialchars($resolvedWelcomeMessageTemplate) ?></textarea>
-                        <div class="form-hint">Доступные подстановки: <code>{name}</code>, <code>{full_name}</code>, <code>{email}</code>.</div>
+                        <label class="form-label">Полное название бренда</label>
+                        <input
+                            type="text"
+                            name="site_brand_name"
+                            class="form-input"
+                            value="<?= htmlspecialchars((string) ($settings['site_brand_name'] ?? siteBrandName())) ?>"
+                            placeholder="ДетскиеКонкурсы.рф"
+                            required
+                        >
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label">Варианты сообщений для рисунка, не соответствующего условиям конкурса</label>
-                        <textarea name="drawing_comment_presets" class="form-input" rows="8"><?= htmlspecialchars($resolvedDrawingCommentPresets) ?></textarea>
-                        <div class="form-hint">Каждый вариант указывайте с новой строки. На странице проверки рисунка они появятся в выпадающем списке.</div>
+                        <label class="form-label">Короткое название бренда</label>
+                        <input
+                            type="text"
+                            name="site_brand_short_name"
+                            class="form-input"
+                            value="<?= htmlspecialchars((string) ($settings['site_brand_short_name'] ?? siteBrandShortName())) ?>"
+                            placeholder="ДетскиеКонкурсы"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Подзаголовок бренда</label>
+                        <input
+                            type="text"
+                            name="site_brand_subtitle"
+                            class="form-input"
+                            value="<?= htmlspecialchars((string) ($settings['site_brand_subtitle'] ?? siteBrandSubtitle())) ?>"
+                            placeholder="Всероссийские конкурсы детского творчества"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Подпись «Конкурсы/Проекты»</label>
+                        <input
+                            type="text"
+                            name="site_projects_label"
+                            class="form-input"
+                            value="<?= htmlspecialchars((string) ($settings['site_projects_label'] ?? siteProjectsLabel())) ?>"
+                            placeholder="КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО"
+                            required
+                        >
                     </div>
                 </div>
 

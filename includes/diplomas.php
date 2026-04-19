@@ -162,14 +162,12 @@ function diplomaTemplateDefaults(string $type = 'contest_participant'): array {
             ? 'Благодарим за участие и желаем новых творческих успехов!'
             : ($isEncouragement
             ? 'Работа рассмотрена. Спасибо за участие! Для вас доступен благодарственный диплом.'
-            : 'Пусть каждая новая идея превращается в маленькое чудо!'),
-        'signature_1' => $isParticipantCertificate ? '' : 'Председатель оргкомитета',
-        'signature_2' => $isParticipantCertificate ? '' : 'Куратор проекта',
-        'position_1' => $isParticipantCertificate ? '' : 'Оргкомитет конкурса',
-        'position_2' => $isParticipantCertificate ? '' : 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО',
-        'footer_text' => $isParticipantCertificate
-            ? 'С благодарностью за участие'
-            : ($isEncouragement
+            : 'Пусть каждая новая идея превращается в маленькое чудо!',
+        'signature_1' => 'Председатель оргкомитета',
+        'signature_2' => 'Куратор проекта',
+        'position_1' => 'Оргкомитет конкурса',
+        'position_2' => siteBrandName(),
+        'footer_text' => $isEncouragement
             ? 'Спасибо за участие! Продолжайте рисовать и радовать мир своими работами.'
             : 'Спасибо за участие! Продолжайте творить и вдохновлять.'),
         'city' => 'Москва',
@@ -1560,12 +1558,8 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
         'diploma_number' => trim((string)($diploma['diploma_number'] ?? '')),
         'diploma_url' => $publicUrl,
         'site_url' => SITE_URL,
-        'brand_name' => 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО',
-        'brand_subtitle' => 'Всероссийские конкурсы детского творчества',
-        'attachment_name' => $attachmentName,
-        'logo_cid' => isset($availableImageCidMap['email_logo']) ? 'email_logo' : '',
-        'hero_cid' => isset($availableImageCidMap['diploma_hero_thanks']) ? 'diploma_hero_thanks' : (isset($availableImageCidMap['diploma_hero_main']) ? 'diploma_hero_main' : ''),
-        'footer_cid' => isset($availableImageCidMap['diploma_footer_stars']) ? 'diploma_footer_stars' : '',
+        'brand_name' => siteBrandName(),
+        'brand_subtitle' => siteBrandSubtitle(),
     ];
 
     $ok = sendEmail($to, $subject, buildDiplomaEmailTemplate($emailData), [

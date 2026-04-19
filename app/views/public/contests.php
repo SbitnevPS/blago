@@ -17,7 +17,7 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Конкурсы - КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО</title>
+<title><?= htmlspecialchars(sitePageTitle('Конкурсы'), ENT_QUOTES, 'UTF-8') ?></title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 </head>
 <body>
@@ -28,7 +28,10 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
     <div class="container contests-hero__inner">
         <div class="contests-hero__content">
             <h1 class="contests-hero__title">Конкурсы рисунков</h1>
-            <p class="contests-hero__subtitle">Открывайте новые творческие вызовы, вдохновляйтесь и отправляйте работы на любимые конкурсы.</p>
+            <p class="contests-hero__subtitle">
+                <?= htmlspecialchars(siteProjectsLabel(), ENT_QUOTES, 'UTF-8') ?><br>
+                Открывайте новые творческие вызовы, вдохновляйтесь и отправляйте работы на любимые конкурсы.
+            </p>
         </div>
         <div class="contests-hero__image-wrap">
             <img src="<?= htmlspecialchars($homepageHeroSrc) ?>" alt="Обложка главной страницы" class="contests-hero__image">

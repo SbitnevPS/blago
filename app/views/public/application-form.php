@@ -664,7 +664,7 @@ generateCSRFToken();
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Заявка на конкурс - КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО</title>
+<title><?= htmlspecialchars(sitePageTitle('Заявка на конкурс'), ENT_QUOTES, 'UTF-8') ?></title>
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 </head>
 <body>
