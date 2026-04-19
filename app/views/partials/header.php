@@ -11,7 +11,7 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
         <div class="navbar__inner">
             <a href="/" class="navbar__logo">
                 <i class="fas fa-paint-brush navbar__logo-icon"></i>
-                ДетскиеКонкурсы.рф
+                <?= htmlspecialchars(siteBrandName(), ENT_QUOTES, 'UTF-8') ?>
             </a>
 
             <div class="navbar__menu">

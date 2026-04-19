@@ -63,7 +63,7 @@ function diplomaTemplateDefaults(string $type = 'contest_participant'): array {
         'signature_1' => 'Председатель оргкомитета',
         'signature_2' => 'Куратор проекта',
         'position_1' => 'Оргкомитет конкурса',
-        'position_2' => 'ДетскиеКонкурсы.рф',
+        'position_2' => siteBrandName(),
         'footer_text' => $isEncouragement
             ? 'Спасибо за участие! Продолжайте рисовать и радовать мир своими работами.'
             : 'Спасибо за участие! Продолжайте творить и вдохновлять.',
@@ -934,8 +934,8 @@ function sendDiplomaByEmail(array $ctx, array $diploma): bool {
         'diploma_number' => trim((string)($diploma['diploma_number'] ?? '')),
         'diploma_url' => $publicUrl,
         'site_url' => SITE_URL,
-        'brand_name' => 'ДетскиеКонкурсы.рф',
-        'brand_subtitle' => 'Всероссийские конкурсы детского творчества',
+        'brand_name' => siteBrandName(),
+        'brand_subtitle' => siteBrandSubtitle(),
     ];
 
     $ok = sendEmail($to, $subject, buildDiplomaEmailTemplate($emailData), [

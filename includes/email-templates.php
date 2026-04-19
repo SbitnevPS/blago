@@ -11,8 +11,8 @@ function buildDiplomaEmailTemplate(array $data): string {
     $diplomaType = (string)($data['diploma_type'] ?? 'contest_participant');
     $isEncouragement = $diplomaType === 'encouragement';
 
-    $brandName = trim((string)($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
-    $brandSubtitle = trim((string)($data['brand_subtitle'] ?? 'Всероссийские конкурсы детского творчества'));
+    $brandName = trim((string)($data['brand_name'] ?? siteBrandName()));
+    $brandSubtitle = trim((string)($data['brand_subtitle'] ?? siteBrandSubtitle()));
     $userName = trim((string)($data['user_name'] ?? ''));
     $participantName = trim((string)($data['participant_name'] ?? ''));
     $contestTitle = trim((string)($data['contest_title'] ?? ''));
@@ -104,7 +104,7 @@ function buildDiplomaEmailText(array $data): string {
     $diplomaType = (string)($data['diploma_type'] ?? 'contest_participant');
     $isEncouragement = $diplomaType === 'encouragement';
 
-    $brandName = trim((string)($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $brandName = trim((string)($data['brand_name'] ?? siteBrandName()));
     $userName = trim((string)($data['user_name'] ?? ''));
     $participantName = trim((string)($data['participant_name'] ?? ''));
     $contestTitle = trim((string)($data['contest_title'] ?? ''));
@@ -141,7 +141,7 @@ function buildDiplomaEmailText(array $data): string {
  * @param array<string,mixed> $data
  */
 function buildEmailVerificationTemplate(array $data): string {
-    $brandName = trim((string)($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $brandName = trim((string)($data['brand_name'] ?? siteBrandName()));
     $siteUrl = trim((string)($data['site_url'] ?? SITE_URL));
     $userName = trim((string)($data['user_name'] ?? ''));
     $verificationUrl = trim((string)($data['verification_url'] ?? ''));
@@ -172,7 +172,7 @@ function buildEmailVerificationTemplate(array $data): string {
  * @param array<string,mixed> $data
  */
 function buildEmailVerificationText(array $data): string {
-    $brandName = trim((string)($data['brand_name'] ?? 'ДетскиеКонкурсы.рф'));
+    $brandName = trim((string)($data['brand_name'] ?? siteBrandName()));
     $siteUrl = trim((string)($data['site_url'] ?? SITE_URL));
     $userName = trim((string)($data['user_name'] ?? ''));
     $verificationUrl = trim((string)($data['verification_url'] ?? ''));

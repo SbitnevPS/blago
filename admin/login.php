@@ -67,7 +67,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Вход в админ-панель - ДетскиеКонкурсы.рф</title>
+<title><?= htmlspecialchars(sitePageTitle('Вход в админ-панель'), ENT_QUOTES, 'UTF-8') ?></title>
 <?php include __DIR__ . '/includes/admin-head.php'; ?>
 </head>
 <body>
@@ -76,7 +76,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <div class="admin-login-logo">
 <i class="fas fa-paint-brush"></i>
 <h1>Админ-панель</h1>
-<p>ДетскиеКонкурсы.рф</p>
+<p><?= htmlspecialchars(siteBrandName(), ENT_QUOTES, 'UTF-8') ?></p>
 </div>
 
 <div class="login-card__tabs" style="margin-bottom:16px;">

@@ -565,6 +565,10 @@ function getSystemSettings() {
     }
 
     $defaults = [
+        'site_brand_name' => 'ДетскиеКонкурсы.рф',
+        'site_brand_short_name' => 'ДетскиеКонкурсы',
+        'site_brand_subtitle' => 'Всероссийские конкурсы детского творчества',
+        'site_projects_label' => 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО',
         'application_approved_subject' => 'Ваша заявка принята',
         'application_approved_message' => 'Ваша заявка принята, ожидайте результаты конкурса.',
         'application_cancelled_subject' => 'Ваша заявка отменена',
@@ -598,6 +602,62 @@ function getSystemSettings() {
 function getSystemSetting($key, $default = '') {
     $settings = getSystemSettings();
     return $settings[$key] ?? $default;
+}
+
+function getSiteBranding(): array {
+    $settings = getSystemSettings();
+
+    $brandName = trim((string) ($settings['site_brand_name'] ?? ''));
+    if ($brandName === '') {
+        $brandName = 'ДетскиеКонкурсы.рф';
+    }
+
+    $brandShortName = trim((string) ($settings['site_brand_short_name'] ?? ''));
+    if ($brandShortName === '') {
+        $brandShortName = $brandName;
+    }
+
+    $brandSubtitle = trim((string) ($settings['site_brand_subtitle'] ?? ''));
+    if ($brandSubtitle === '') {
+        $brandSubtitle = 'Всероссийские конкурсы детского творчества';
+    }
+
+    $projectsLabel = trim((string) ($settings['site_projects_label'] ?? ''));
+    if ($projectsLabel === '') {
+        $projectsLabel = 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО';
+    }
+
+    return [
+        'name' => $brandName,
+        'short_name' => $brandShortName,
+        'subtitle' => $brandSubtitle,
+        'projects_label' => $projectsLabel,
+    ];
+}
+
+function siteBrandName(): string {
+    $branding = getSiteBranding();
+    return (string) ($branding['name'] ?? 'ДетскиеКонкурсы.рф');
+}
+
+function siteBrandShortName(): string {
+    $branding = getSiteBranding();
+    return (string) ($branding['short_name'] ?? siteBrandName());
+}
+
+function siteBrandSubtitle(): string {
+    $branding = getSiteBranding();
+    return (string) ($branding['subtitle'] ?? 'Всероссийские конкурсы детского творчества');
+}
+
+function siteProjectsLabel(): string {
+    $branding = getSiteBranding();
+    return (string) ($branding['projects_label'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО');
+}
+
+function sitePageTitle(string $pageTitle): string {
+    $pageTitle = trim($pageTitle);
+    return $pageTitle !== '' ? $pageTitle . ' - ' . siteBrandName() : siteBrandName();
 }
 
 function getApplicationStoredStatuses(): array {
