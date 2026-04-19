@@ -125,6 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'site_brand_short_name' => (string) ($settings['site_brand_short_name'] ?? siteBrandShortName()),
             'site_brand_subtitle' => (string) ($settings['site_brand_subtitle'] ?? siteBrandSubtitle()),
             'site_projects_label' => (string) ($settings['site_projects_label'] ?? siteProjectsLabel()),
+            'site_legal_rights_holder' => (string) ($settings['site_legal_rights_holder'] ?? siteLegalRightsHolder()),
         ];
 
         if ($section === 'notifications') {
