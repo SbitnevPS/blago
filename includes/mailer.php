@@ -72,7 +72,11 @@ function buildEmailSettings(array $overrides = []): array {
 
     return [
         'notifications_enabled' => (int)($settings['email_notifications_enabled'] ?? 1) === 1,
+<<<<<<< HEAD
         'from_name' => trim((string)($settings['email_from_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО')),
+=======
+        'from_name' => trim((string)($settings['email_from_name'] ?? siteBrandName())),
+>>>>>>> origin/codex/extract-branding-settings-for-site-mj97vm
         'from_address' => $fromAddress,
         'reply_to' => $replyTo,
         'use_smtp' => (int)($settings['email_use_smtp'] ?? 0) === 1,

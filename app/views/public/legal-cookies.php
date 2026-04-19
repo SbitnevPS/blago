@@ -7,7 +7,11 @@ $currentPage = 'legal-cookies';
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<<<<<<< HEAD
 <title>Политика Cookie - КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО</title>
+=======
+<title><?= htmlspecialchars(sitePageTitle('Политика Cookie'), ENT_QUOTES, 'UTF-8') ?></title>
+>>>>>>> origin/codex/extract-branding-settings-for-site-mj97vm
 <?php include dirname(__DIR__, 3) . '/includes/site-head.php'; ?>
 </head>
 <body>

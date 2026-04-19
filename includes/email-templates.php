@@ -22,8 +22,13 @@ function buildDiplomaEmailTemplate(array $data): string {
     $diplomaType = (string)($data['diploma_type'] ?? 'contest_participant');
     $isEncouragement = $diplomaType === 'encouragement';
 
+<<<<<<< HEAD
     $brandName = trim((string)($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
     $brandSubtitle = trim((string)($data['brand_subtitle'] ?? 'Всероссийские конкурсы детского творчества'));
+=======
+    $brandName = trim((string)($data['brand_name'] ?? siteBrandName()));
+    $brandSubtitle = trim((string)($data['brand_subtitle'] ?? siteBrandSubtitle()));
+>>>>>>> origin/codex/extract-branding-settings-for-site-mj97vm
     $userName = trim((string)($data['user_name'] ?? ''));
     $participantName = trim((string)($data['participant_name'] ?? ''));
     $contestTitle = trim((string)($data['contest_title'] ?? ''));
@@ -149,7 +154,11 @@ function buildDiplomaEmailText(array $data): string {
     $diplomaType = (string)($data['diploma_type'] ?? 'contest_participant');
     $isEncouragement = $diplomaType === 'encouragement';
 
+<<<<<<< HEAD
     $brandName = trim((string)($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
+=======
+    $brandName = trim((string)($data['brand_name'] ?? siteBrandName()));
+>>>>>>> origin/codex/extract-branding-settings-for-site-mj97vm
     $userName = trim((string)($data['user_name'] ?? ''));
     $participantName = trim((string)($data['participant_name'] ?? ''));
     $contestTitle = trim((string)($data['contest_title'] ?? ''));
@@ -188,7 +197,11 @@ function buildDiplomaEmailText(array $data): string {
  * @param array<string,mixed> $data
  */
 function buildEmailVerificationTemplate(array $data): string {
+<<<<<<< HEAD
     $brandName = trim((string)($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
+=======
+    $brandName = trim((string)($data['brand_name'] ?? siteBrandName()));
+>>>>>>> origin/codex/extract-branding-settings-for-site-mj97vm
     $siteUrl = trim((string)($data['site_url'] ?? SITE_URL));
     $userName = trim((string)($data['user_name'] ?? ''));
     $verificationUrl = trim((string)($data['verification_url'] ?? ''));
@@ -219,7 +232,11 @@ function buildEmailVerificationTemplate(array $data): string {
  * @param array<string,mixed> $data
  */
 function buildEmailVerificationText(array $data): string {
+<<<<<<< HEAD
     $brandName = trim((string)($data['brand_name'] ?? 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО'));
+=======
+    $brandName = trim((string)($data['brand_name'] ?? siteBrandName()));
+>>>>>>> origin/codex/extract-branding-settings-for-site-mj97vm
     $siteUrl = trim((string)($data['site_url'] ?? SITE_URL));
     $userName = trim((string)($data['user_name'] ?? ''));
     $verificationUrl = trim((string)($data['verification_url'] ?? ''));

@@ -11,7 +11,11 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
         <div class="navbar__inner">
             <a href="/" class="navbar__logo">
                 <i class="fas fa-paint-brush navbar__logo-icon"></i>
+<<<<<<< HEAD
                 КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО
+=======
+                <?= htmlspecialchars(siteBrandName(), ENT_QUOTES, 'UTF-8') ?>
+>>>>>>> origin/codex/extract-branding-settings-for-site-mj97vm
             </a>
 
             <div class="navbar__menu">
