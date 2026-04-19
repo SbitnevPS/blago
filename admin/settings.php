@@ -311,6 +311,43 @@ $vkScopeDisplay = $vkPublicationSettings['token_scope'] !== '' ? $vkPublicationS
 $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== '' ? $vkPublicationSettings['confirmed_permissions'] : 'нет подтверждённых прав';
 $vkLastError = $vkPublicationSettings['last_error'] !== '' ? $vkPublicationSettings['last_error'] : '—';
 $vkTokenTypeLabel = $vkPublicationSettings['token_type'] === 'user' ? 'User token' : $vkPublicationSettings['token_type'];
+$brandingFields = [
+    [
+        'name' => 'site_brand_name',
+        'label' => 'Полное название бренда',
+        'placeholder' => 'ДетскиеКонкурсы.рф',
+        'required' => true,
+        'value' => (string) ($settings['site_brand_name'] ?? siteBrandName()),
+    ],
+    [
+        'name' => 'site_brand_short_name',
+        'label' => 'Короткое название бренда',
+        'placeholder' => 'ДетскиеКонкурсы',
+        'required' => true,
+        'value' => (string) ($settings['site_brand_short_name'] ?? siteBrandShortName()),
+    ],
+    [
+        'name' => 'site_brand_subtitle',
+        'label' => 'Подзаголовок бренда',
+        'placeholder' => 'Всероссийские конкурсы детского творчества',
+        'required' => false,
+        'value' => (string) ($settings['site_brand_subtitle'] ?? siteBrandSubtitle()),
+    ],
+    [
+        'name' => 'site_projects_label',
+        'label' => 'Подпись «Конкурсы/Проекты»',
+        'placeholder' => 'КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО',
+        'required' => true,
+        'value' => (string) ($settings['site_projects_label'] ?? siteProjectsLabel()),
+    ],
+    [
+        'name' => 'site_legal_rights_holder',
+        'label' => 'Правообладатель (юридические документы)',
+        'placeholder' => 'Информационному агентству «Только доброе инфо»',
+        'required' => true,
+        'value' => (string) ($settings['site_legal_rights_holder'] ?? siteLegalRightsHolder()),
+    ],
+];
 
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -559,64 +596,19 @@ unset($_SESSION['success_message']);
                 </div>
 
                 <div class="settings-email-card">
-                    <div class="form-group">
-                        <label class="form-label">Полное название бренда</label>
-                        <input
-                            type="text"
-                            name="site_brand_name"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_brand_name'] ?? siteBrandName())) ?>"
-                            placeholder="ДетскиеКонкурсы.рф"
-                            required
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Короткое название бренда</label>
-                        <input
-                            type="text"
-                            name="site_brand_short_name"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_brand_short_name'] ?? siteBrandShortName())) ?>"
-                            placeholder="ДетскиеКонкурсы"
-                            required
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Подзаголовок бренда</label>
-                        <input
-                            type="text"
-                            name="site_brand_subtitle"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_brand_subtitle'] ?? siteBrandSubtitle())) ?>"
-                            placeholder="Всероссийские конкурсы детского творчества"
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Подпись «Конкурсы/Проекты»</label>
-                        <input
-                            type="text"
-                            name="site_projects_label"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_projects_label'] ?? siteProjectsLabel())) ?>"
-                            placeholder="КОНКУРСЫ/ПРОЕКТЫ - ИА ДОБРОЕ ИНФО"
-                            required
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Правообладатель (юридические документы)</label>
-                        <input
-                            type="text"
-                            name="site_legal_rights_holder"
-                            class="form-input"
-                            value="<?= htmlspecialchars((string) ($settings['site_legal_rights_holder'] ?? siteLegalRightsHolder())) ?>"
-                            placeholder="Информационному агентству «Только доброе инфо»"
-                            required
-                        >
-                    </div>
+                    <?php foreach ($brandingFields as $field): ?>
+                        <div class="form-group">
+                            <label class="form-label"><?= htmlspecialchars((string) ($field['label'] ?? '')) ?></label>
+                            <input
+                                type="text"
+                                name="<?= htmlspecialchars((string) ($field['name'] ?? '')) ?>"
+                                class="form-input"
+                                value="<?= htmlspecialchars((string) ($field['value'] ?? '')) ?>"
+                                placeholder="<?= htmlspecialchars((string) ($field['placeholder'] ?? '')) ?>"
+                                <?= !empty($field['required']) ? 'required' : '' ?>
+                            >
+                        </div>
+                    <?php endforeach; ?>
                 </div>
 
                 <div class="settings-actions">
@@ -894,19 +886,6 @@ unset($_SESSION['success_message']);
     const successMessage = <?= json_encode($successMessage, JSON_UNESCAPED_UNICODE) ?>;
     const tabs = Array.from(document.querySelectorAll('[data-settings-tab]'));
     const panels = Array.from(document.querySelectorAll('[data-settings-panel]'));
-    const seenPanels = new Set();
-    panels.forEach((panel) => {
-        const panelName = panel.dataset.settingsPanel || '';
-        if (panelName === '') {
-            return;
-        }
-        if (seenPanels.has(panelName)) {
-            panel.remove();
-            return;
-        }
-        seenPanels.add(panelName);
-    });
-    const uniquePanels = Array.from(document.querySelectorAll('[data-settings-panel]'));
     const uploadArea = document.getElementById('homepageHeroUploadArea');
     const input = document.getElementById('homepageHeroInput');
     const hiddenInput = document.getElementById('homepage_hero_image');
@@ -927,7 +906,7 @@ unset($_SESSION['success_message']);
         tabs.forEach((tab) => {
             tab.classList.toggle('is-active', tab.dataset.settingsTab === tabName);
         });
-        uniquePanels.forEach((panel) => {
+        panels.forEach((panel) => {
             const isActive = panel.dataset.settingsPanel === tabName;
             panel.classList.toggle('is-active', isActive);
             panel.hidden = !isActive;
