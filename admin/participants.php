@@ -345,7 +345,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <div class="admin-list-card__subtitle">
                                     #<?= e(getParticipantDisplayNumber($participant)) ?>
                                     ·
-                                    <a href="/admin/application/<?= (int) ($participant['application_id'] ?? 0) ?>?return_url=<?= urlencode($participantsReturnUrl) ?>" style="color:#7C3AED;text-decoration:none;">
+                                    <a href="/admin/application/<?= (int) ($participant['application_id'] ?? 0) ?>" style="color:#7C3AED;text-decoration:none;">
                                         Заявка #<?= (int) ($participant['application_id'] ?? 0) ?>
                                     </a>
                                     · <?= htmlspecialchars($participant['contest_title'] ?: 'Конкурс не указан') ?>
@@ -373,9 +373,9 @@ require_once __DIR__ . '/includes/header.php';
                         <span><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?: '—') ?></span>
                     </div>
                     <div class="admin-list-card__actions">
-                        <a href="/admin/participant/<?= (int) $participant['id'] ?>?return_url=<?= urlencode($participantsReturnUrl) ?>" class="btn btn--ghost btn--sm"><i class="fas fa-eye"></i> Открыть</a>
+                        <a href="/admin/participant/<?= (int) $participant['id'] ?>" class="btn btn--ghost btn--sm"><i class="fas fa-eye"></i> Открыть</a>
                         <?php if ($isDiplomaEnabled): ?>
-                            <a href="/admin/participant/<?= (int) $participant['id'] ?>?return_url=<?= urlencode($participantsReturnUrl) ?>#diploma-actions" class="btn btn--primary btn--sm"><i class="fas fa-award"></i> Диплом</a>
+                            <a href="/admin/participant/<?= (int) $participant['id'] ?>#diploma-actions" class="btn btn--primary btn--sm"><i class="fas fa-award"></i> Диплом</a>
                         <?php endif; ?>
                     </div>
                 </article>

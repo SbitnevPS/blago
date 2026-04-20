@@ -507,8 +507,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
  redirect(
   '/admin/messages/user/' . (int) $application['user_id']
-  . '?return_url=' . urlencode($applicationCurrentPageUrl)
-  . '&chat_application_id=' . (int) $application_id
+  . '?chat_application_id=' . (int) $application_id
   . '&chat_title=' . urlencode($targetChatTitle)
  );
  } elseif ($_POST['action'] === 'toggle_drawing_compliance') {
@@ -847,8 +846,8 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
             <span class="application-meta-chip"><i class="fas fa-receipt"></i><?= e((string) ($receiptMeta['label'] ?? '—')) ?></span>
         </div>
         <div class="application-hero__actions">
-            <a href="/admin/user/<?= (int) $application['user_id'] ?>?return_url=<?= urlencode((string) ($_SERVER['REQUEST_URI'] ?? ('/admin/application/' . $application_id))) ?>" class="btn btn--secondary"><i class="fas fa-user-circle"></i> Профиль заявителя</a>
-            <a href="/admin/messages/user/<?= (int) $application['user_id'] ?>?return_url=<?= urlencode((string) ($_SERVER['REQUEST_URI'] ?? ('/admin/application/' . $application_id))) ?>" class="btn btn--secondary"><i class="fas fa-envelope"></i> Центр сообщений</a>
+            <a href="/admin/user/<?= (int) $application['user_id'] ?>" class="btn btn--secondary"><i class="fas fa-user-circle"></i> Профиль заявителя</a>
+            <a href="/admin/messages/user/<?= (int) $application['user_id'] ?>" class="btn btn--secondary"><i class="fas fa-envelope"></i> Центр сообщений</a>
             <form method="POST">
                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -1004,7 +1003,7 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                         <div><h3>Работа #<?= $i + 1 ?></h3><p class="text-secondary"><?= e($p['fio'] ?: 'Участник не указан') ?></p></div>
                         <div class="work-card__header-actions">
                             <span class="badge <?= getWorkStatusBadgeClass((string)($p['status'] ?? 'pending')) ?>" data-work-status-badge><?= e(getWorkStatusLabel((string)($p['status'] ?? 'pending'))) ?></span>
-                            <?php if (!empty($p['participant_id'])): ?><a href="/admin/participant/<?= (int) $p['participant_id'] ?>?return_url=<?= urlencode((string) ($_SERVER['REQUEST_URI'] ?? ('/admin/application/' . $application_id))) ?>" class="btn btn--ghost btn--sm"><i class="fas fa-user"></i> Профиль</a><?php endif; ?>
+                            <?php if (!empty($p['participant_id'])): ?><a href="/admin/participant/<?= (int) $p['participant_id'] ?>" class="btn btn--ghost btn--sm"><i class="fas fa-user"></i> Профиль</a><?php endif; ?>
                         </div>
                     </div>
                     <div class="card__body">
@@ -1029,7 +1028,7 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                                 <?php endif; ?>
                             </div>
                             <div class="work-card__details">
-                                <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Номер участника</dt><dd><?php if (!empty($p['participant_id'])): ?><a href="/admin/participant/<?= (int) $p['participant_id'] ?>?return_url=<?= urlencode((string) ($_SERVER['REQUEST_URI'] ?? ('/admin/application/' . $application_id))) ?>" style="color:#7C3AED;text-decoration:none;"><?= e(getParticipantDisplayNumber((array) $p)) ?></a><?php else: ?>—<?php endif; ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd></dl></section>
+                                <section class="work-section"><h4>Участник</h4><dl class="application-kv-list"><dt>ФИО</dt><dd><?= e($p['fio'] ?: '—') ?></dd><dt>Номер участника</dt><dd><?php if (!empty($p['participant_id'])): ?><a href="/admin/participant/<?= (int) $p['participant_id'] ?>" style="color:#7C3AED;text-decoration:none;"><?= e(getParticipantDisplayNumber((array) $p)) ?></a><?php else: ?>—<?php endif; ?></dd><dt>Возраст</dt><dd><?= (int) ($p['age'] ?? 0) ?> лет</dd><dt>Регион</dt><dd><?= e($p['region'] ?? '—') ?></dd></dl></section>
                                 <section class="work-section"><h4>Организация</h4><dl class="application-kv-list"><dt>Название и адрес образовательного учреждения</dt><dd><?= e($p['organization_name'] ?? '—') ?></dd><dt>Контактная информация организации</dt><dd><?= e($p['organization_address'] ?? '—') ?></dd></dl></section>
                                 <?php
                                     $workStatus = (string) ($p['status'] ?? 'pending');

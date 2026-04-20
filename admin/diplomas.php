@@ -56,9 +56,9 @@ require_once __DIR__ . '/includes/header.php';
                         <td><?= (int)$contest['participants_count'] ?></td>
                         <td><?= (int)$contest['diplomas_count'] ?></td>
                         <td style="display:flex; gap:8px; flex-wrap:wrap;">
-                            <a class="btn btn--secondary btn--sm" href="/admin/diploma-template/<?= (int)$contest['id'] ?>?return_url=<?= urlencode($diplomasReturnUrl) ?>"><i class="fas fa-sliders-h"></i> Настроить диплом</a>
-                            <a class="btn btn--ghost btn--sm" href="/admin/participants?contest_id=<?= (int)$contest['id'] ?>&return_url=<?= urlencode($diplomasReturnUrl) ?>"><i class="fas fa-users"></i> Открыть участников</a>
-                            <a class="btn btn--ghost btn--sm" href="/admin/diploma-template/<?= (int)$contest['id'] ?>?preview=1&return_url=<?= urlencode($diplomasReturnUrl) ?>" target="_blank" rel="noopener"><i class="fas fa-eye"></i> Предпросмотр</a>
+                            <a class="btn btn--secondary btn--sm" href="/admin/diploma-template/<?= (int)$contest['id'] ?>"><i class="fas fa-sliders-h"></i> Настроить диплом</a>
+                            <a class="btn btn--ghost btn--sm" href="/admin/participants?contest_id=<?= (int)$contest['id'] ?>"><i class="fas fa-users"></i> Открыть участников</a>
+                            <a class="btn btn--ghost btn--sm" href="/admin/diploma-template/<?= (int)$contest['id'] ?>?preview=1" target="_blank" rel="noopener"><i class="fas fa-eye"></i> Предпросмотр</a>
                         </td>
                     </tr>
                 <?php endforeach; ?>

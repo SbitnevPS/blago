@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
  $success = 'Сообщение отправлено';
             
  // Перенаправление для избежания повторной отправки
- header('Location: user-view.php?id=' . $user_id . '&success=1&return_url=' . urlencode($userReturnUrl));
+    header('Location: user-view.php?id=' . $user_id . '&success=1');
  exit;
  }
  }
@@ -289,7 +289,7 @@ require_once __DIR__ . '/includes/header.php';
 </td>
 <td data-label="Дата"><?= date('d.m.Y', strtotime($app['created_at'])) ?></td>
 <td data-label="Действия">
-<a href="/admin/application/<?= $app['id'] ?>?return_url=<?= urlencode($currentUserViewUri) ?>" class="btn btn--ghost btn--sm">
+<a href="/admin/application/<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
 <i class="fas fa-eye"></i>
 </a>
 </td>
