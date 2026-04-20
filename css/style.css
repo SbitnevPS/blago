@@ -754,9 +754,11 @@ h4 {
 
 /* Footer */
 .footer {
-	background: var(--color-surface);
-	border-top: 1px solid var(--color-border);
-	padding: var(--space-xl) 0;
+	background:
+		radial-gradient(circle at top left, rgba(76, 175, 80, 0.08), transparent 34%),
+		linear-gradient(180deg, #ffffff 0%, #f8fbf8 100%);
+	border-top: 1px solid rgba(148, 163, 184, 0.18);
+	padding: 14px 0;
 	margin-top: auto;
 }
 
@@ -765,26 +767,64 @@ h4 {
 	justify-content: space-between;
 	align-items: center;
 	flex-wrap: wrap;
-	gap: var(--space-md);
+	gap: 12px;
+	padding: 4px 0;
+}
+
+.footer__brand {
+	display: grid;
+	gap: 4px;
+	max-width: 460px;
 }
 
 .footer__text {
 	color: var(--color-text-secondary);
 	font-size: var(--font-size-sm);
+	margin: 0;
+}
+
+.footer__text--strong {
+	color: var(--color-text);
+	font-weight: 700;
+	font-size: 0.9rem;
+}
+
+.footer__caption {
+	margin: 0;
+	color: var(--color-text-secondary);
+	font-size: 0.8rem;
+	line-height: 1.35;
 }
 
 .footer__links {
 	display: flex;
-	gap: var(--space-lg);
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 8px;
 }
 
 .footer__link {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 8px 12px;
+	border-radius: 999px;
+	border: 1px solid rgba(148, 163, 184, 0.22);
+	background: rgba(255, 255, 255, 0.92);
 	color: var(--color-text-secondary);
-	font-size: var(--font-size-sm);
+	font-size: 0.78rem;
+	line-height: 1.2;
+	text-align: center;
+	box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+	transition: transform 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .footer__link:hover {
 	color: var(--color-primary);
+	border-color: rgba(76, 175, 80, 0.3);
+	background: #ffffff;
+	transform: translateY(-1px);
+	box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
 }
 
 /* Utilities */
@@ -908,6 +948,38 @@ h4 {
 	.footer__inner {
 		flex-direction: column;
 		text-align: center;
+		align-items: stretch;
+		padding: 2px 0 0;
+	}
+
+	.footer__brand {
+		justify-items: center;
+		max-width: none;
+	}
+
+	.footer__caption {
+		font-size: 0.74rem;
+		max-width: 320px;
+	}
+
+	.footer__links {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		justify-content: stretch;
+		gap: 8px;
+		width: 100%;
+	}
+
+	.footer__link {
+		padding: 7px 9px;
+		min-height: 34px;
+		font-size: 0.66rem;
+		border-radius: 12px;
+		box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+	}
+
+	.footer__link:last-child:nth-child(odd) {
+		grid-column: 1 / -1;
 	}
 
 	.table {

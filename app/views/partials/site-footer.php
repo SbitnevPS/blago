@@ -1,7 +1,10 @@
 <footer class="footer">
     <div class="container">
         <div class="footer__inner">
-            <p class="footer__text">© <?= date('Y') ?> <?= htmlspecialchars(siteBrandName(), ENT_QUOTES, 'UTF-8') ?></p>
+            <div class="footer__brand">
+                <p class="footer__text footer__text--strong">© <?= date('Y') ?> <?= htmlspecialchars(siteBrandName(), ENT_QUOTES, 'UTF-8') ?></p>
+                <p class="footer__caption">Творческая платформа для конкурсов, заявок и дипломов.</p>
+            </div>
             <div class="footer__links" aria-label="Правовые документы">
                 <a href="/legal/privacy" class="footer__link">Политика конфиденциальности</a>
                 <a href="/legal/cookies" class="footer__link">Политика Cookie</a>
