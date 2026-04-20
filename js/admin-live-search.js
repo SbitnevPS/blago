@@ -154,16 +154,33 @@
       input.removeAttribute('aria-activedescendant');
     };
 
+    const navigateToAdminPath = (targetUrl) => {
+      const normalizedTarget = normalizeText(targetUrl);
+      if (normalizedTarget === '') {
+        return;
+      }
+
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(normalizedTarget, window.location.origin);
+      } catch (error) {
+        return;
+      }
+
+      if (!/^https?:$/.test(parsedUrl.protocol)) {
+        return;
+      }
+
+      window.location.assign(parsedUrl.pathname + parsedUrl.search + parsedUrl.hash);
+    };
+
     const selectItem = (item) => {
       setHiddenValues(item);
       input.value = item.value || '';
       hideResults();
 
       if (selectUrlField) {
-        const targetUrl = normalizeText(item?.raw?.[selectUrlField] ?? item?.[selectUrlField]);
-        if (targetUrl !== '') {
-          window.location.assign(targetUrl);
-        }
+        navigateToAdminPath(item?.raw?.[selectUrlField] ?? item?.[selectUrlField]);
       }
     };
 

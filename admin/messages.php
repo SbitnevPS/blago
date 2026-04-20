@@ -2017,15 +2017,32 @@ document.addEventListener('DOMContentLoaded', function() {
   });
  });
 
+ const navigateToAdminPath = (targetUrl) => {
+  const normalizedTarget = String(targetUrl || '').trim();
+  if (!normalizedTarget) {
+   return;
+  }
+
+  let parsedUrl;
+  try {
+   parsedUrl = new URL(normalizedTarget, window.location.origin);
+  } catch (error) {
+   return;
+  }
+
+  if (!/^https?:$/.test(parsedUrl.protocol)) {
+   return;
+  }
+
+  window.location.href = parsedUrl.pathname + parsedUrl.search + parsedUrl.hash;
+ };
+
  document.querySelectorAll('.message-user-row').forEach((row) => {
   row.addEventListener('click', (event) => {
    if (event.target.closest('a, button, input, label')) {
     return;
    }
-   const targetUrl = row.dataset.userUrl || '';
-   if (targetUrl) {
-    window.location.href = targetUrl;
-   }
+   navigateToAdminPath(row.dataset.userUrl || '');
   });
  });
 
