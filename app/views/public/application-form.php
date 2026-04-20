@@ -298,10 +298,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
  $shouldMarkAsCorrected = $action === 'submit'
      && (int) ($existingApplication['allow_edit'] ?? 0) === 1
-     && normalizeApplicationStoredStatus((string) ($existingApplication['status'] ?? 'draft')) !== 'approved';
+     && !in_array(normalizeApplicationStoredStatus((string) ($existingApplication['status'] ?? 'draft')), ['approved', 'draft'], true);
+ $currentStoredStatus = normalizeApplicationStoredStatus((string) ($existingApplication['status'] ?? 'draft'));
  $nextStatus = $action === 'submit'
      ? ($shouldMarkAsCorrected ? 'corrected' : 'submitted')
-     : 'draft';
+     : ($currentStoredStatus === 'draft' ? 'draft' : $currentStoredStatus);
+ $nextAllowEdit = $action === 'submit'
+     ? 0
+     : ($currentStoredStatus === 'draft' ? 1 : (int) ($existingApplication['allow_edit'] ?? 0));
                     
  $stmt = $pdo->prepare("
 	 UPDATE applications SET 
@@ -322,7 +326,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 	 $recommendations_wishes,
          $paymentReceipt,
 	 $nextStatus,
- $action === 'submit' ? 0 : 1,
+ $nextAllowEdit,
  $application_id,
  $user['id']
  ]);
@@ -666,6 +670,16 @@ if ($editingApplication) {
 	    ];
 }
 
+$editingApplicationStatus = $editingApplication
+    ? normalizeApplicationStoredStatus((string) ($editingApplication['status'] ?? 'draft'))
+    : 'draft';
+$canAutoSaveCurrentApplication = !isset($show_success_modal)
+    && (
+        !$editingApplication
+        || $editingApplicationStatus === 'draft'
+        || (int) ($editingApplication['allow_edit'] ?? 0) === 1
+    );
+
 $existingPaymentReceipt = trim((string)($editingApplication['payment_receipt'] ?? ''));
 $hasExistingPaymentReceipt = $existingPaymentReceipt !== '';
 $existingPaymentReceiptUrl = $hasExistingPaymentReceipt ? getPaymentReceiptWebPath($existingPaymentReceipt) : '';
@@ -1008,6 +1022,8 @@ let autoSaveInFlight = false;
 let autoSaveQueued = false;
 let lastAutoSaveSignature = '';
 let isSubmittingApplication = false;
+let pendingSubmitTrigger = null;
+const autoSaveEnabled = <?= $canAutoSaveCurrentApplication ? 'true' : 'false' ?>;
 const isEditingServerDraft = <?= $editingApplication ? 'true' : 'false' ?>;
 const initialPaymentReceipt = <?= json_encode([
     'fileName' => $hasExistingPaymentReceipt ? basename($existingPaymentReceipt) : '',
@@ -1930,6 +1946,10 @@ function getAutoSaveSignature() {
 
 async function autoSaveDraft(options = {}) {
     const {force = false, keepalive = false} = options;
+    if (!autoSaveEnabled) {
+        return;
+    }
+
     if (isSubmittingApplication || autoSaveInFlight) {
         if (!keepalive) {
             autoSaveQueued = true;
@@ -1982,6 +2002,12 @@ async function autoSaveDraft(options = {}) {
     } catch (error) {
     } finally {
         autoSaveInFlight = false;
+        if (pendingSubmitTrigger) {
+            const submitter = pendingSubmitTrigger;
+            pendingSubmitTrigger = null;
+            triggerSubmitAfterAutoSave(submitter);
+            return;
+        }
         if (autoSaveQueued && !keepalive) {
             autoSaveQueued = false;
             autoSaveDraft({force: true});
@@ -1994,9 +2020,30 @@ function startAutoSave() {
         window.clearInterval(autoSaveTimerId);
     }
 
+    if (!autoSaveEnabled) {
+        return;
+    }
+
     autoSaveTimerId = window.setInterval(() => {
         autoSaveDraft();
     }, 10000);
+}
+
+function triggerSubmitAfterAutoSave(submitter = null) {
+    const form = document.getElementById('applicationForm');
+    if (!form) return;
+
+    if (submitter && typeof form.requestSubmit === 'function') {
+        form.requestSubmit(submitter);
+        return;
+    }
+
+    if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+        return;
+    }
+
+    form.submit();
 }
 
 function tryRestoreDraft() {
@@ -2140,6 +2187,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         const action = actionField.value;
         if (action === 'submit') {
+            if (autoSaveInFlight) {
+                e.preventDefault();
+                pendingSubmitTrigger = e.submitter || document.getElementById('submitBtn');
+                return;
+            }
             isSubmittingApplication = true;
             if (currentStep !== steps.length || !isApplicationReadyToSubmit()) {
                 isSubmittingApplication = false;
@@ -2168,7 +2220,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     window.addEventListener('beforeunload', function () {
-        if (!isSubmittingApplication && hasFilledParticipantData()) {
+        if (autoSaveEnabled && !isSubmittingApplication && hasFilledParticipantData()) {
             autoSaveDraft({ force: true, keepalive: true });
         }
     });

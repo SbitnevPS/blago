@@ -650,12 +650,22 @@ $currentPage = 'applications';
 .app-profile__avatar {width:52px; height:52px; border-radius:50%; background:#E2E8F0; display:flex; align-items:center; justify-content:center; color:#64748B; font-size:20px;}
 .app-profile__meta {display:grid; gap:4px;}
 .app-profile__name {font-weight:700;}
+.app-user-card {display:grid; gap:14px;}
+.app-user-card__head {display:flex; gap:14px; align-items:center; padding:14px; border-radius:14px; background:linear-gradient(145deg,#f8fbff,#ffffff); border:1px solid #E2E8F0;}
+.app-user-card__avatar {width:56px; height:56px; border-radius:18px; background:linear-gradient(145deg,#ECFDF3,#DCFCE7); display:flex; align-items:center; justify-content:center; color:#166534; font-size:22px; flex-shrink:0;}
+.app-user-card__meta {display:grid; gap:4px; min-width:0;}
+.app-user-card__name {font-size:18px; font-weight:800; line-height:1.2; color:#0F172A;}
+.app-user-card__subtitle {font-size:13px; color:#64748B;}
+.app-user-card__grid {display:grid; grid-template-columns:1fr; gap:10px;}
+.app-user-card__item {padding:12px 14px; border-radius:12px; border:1px solid #E2E8F0; background:#F8FAFC;}
+.app-user-card__label {display:block; margin-bottom:4px; font-size:12px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; color:#64748B;}
+.app-user-card__value {font-size:14px; line-height:1.45; color:#0F172A; word-break:break-word;}
 .app-sidebar {display:flex; flex-direction:column; gap:16px;}
 .participants-grid {display:grid; grid-template-columns:1fr; gap:16px;}
 .participant-modern-card {overflow:hidden; padding:0; transition:transform .2s ease, box-shadow .2s ease;}
 .participant-modern-card:hover {transform:translateY(-2px); box-shadow:0 12px 32px rgba(15,23,42,.12);}
-.participant-modern-card__image-wrap {background:#F1F5F9;}
-.participant-modern-card__image {display:block; width:100%; height:min(48vw,360px); min-height:220px; object-fit:cover; cursor:zoom-in;}
+.participant-modern-card__image-wrap {display:flex; align-items:center; justify-content:center; padding:16px; background:#F1F5F9;}
+.participant-modern-card__image {display:block; width:100%; max-height:min(72vh,560px); min-height:220px; height:auto; object-fit:contain; cursor:zoom-in;}
 .participant-modern-card__body {padding:16px; display:grid; gap:10px;}
 .participant-modern-card__header {display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;}
 .participant-modern-card__name {margin:0; font-size:20px; line-height:1.2;}
@@ -666,6 +676,9 @@ $currentPage = 'applications';
 .app-empty {text-align:center; padding:30px 16px; color:#64748B;}
 .app-skeleton {display:grid; gap:12px;}
 .app-skeleton__item {height:96px; border-radius:14px; background:linear-gradient(90deg,#EDF2F7 25%,#E2E8F0 37%,#EDF2F7 63%); background-size:400% 100%; animation:appShimmer 1.2s ease infinite;}
+.app-actions {display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start;}
+.app-actions__primary {padding:14px 20px; font-size:15px; font-weight:800; box-shadow:0 14px 28px rgba(76,175,80,.18);}
+.app-actions__primary:hover:not(:disabled) {box-shadow:0 18px 34px rgba(76,175,80,.24);}
 @keyframes appShimmer {0% {background-position:100% 50%;} 100% {background-position:0 50%;}}
 .dispute-chat-modal {max-width:760px; width:calc(100% - 32px);}
 .dispute-chat-modal__body {display:flex; flex-direction:column; gap:16px;}
@@ -684,8 +697,9 @@ $currentPage = 'applications';
 @media (min-width: 980px) {
  .application-content {grid-template-columns:minmax(0,1.55fr) minmax(320px,1fr);}
  .participant-modern-card__facts {grid-template-columns:repeat(2,minmax(0,1fr));}
- .participant-modern-card__image {height:320px;}
+ .participant-modern-card__image {max-height:560px;}
  .participant-edit-drawing-row {grid-template-columns:1fr 1fr; align-items:start;}
+ .app-user-card__grid {grid-template-columns:repeat(2,minmax(0,1fr));}
 }
 </style>
 </head>
@@ -832,14 +846,31 @@ $currentPage = 'applications';
     <aside class="app-sidebar">
         <section class="app-card">
             <h2 class="app-card__title" style="font-size:18px;">Информация о пользователе</h2>
-            <div class="app-profile">
-                <div class="app-profile__avatar"><i class="fas fa-user"></i></div>
-                <div class="app-profile__meta">
-                    <div class="app-profile__name"><?= e($userFullName !== '' ? $userFullName : 'Пользователь') ?></div>
-                    <div><?= !empty($user['email']) ? e((string) $user['email']) : 'Email не указан' ?></div>
-                    <div><?= e(getUserTypeLabel((string) ($user['user_type'] ?? 'parent'))) ?></div>
-                    <div><?= e($userRegion !== '' ? $userRegion : 'Регион не указан') ?></div>
-                    <?php if ($userOrganization !== ''): ?><div><?= e($userOrganization) ?></div><?php endif; ?>
+            <div class="app-user-card">
+                <div class="app-user-card__head">
+                    <div class="app-user-card__avatar"><i class="fas fa-user"></i></div>
+                    <div class="app-user-card__meta">
+                        <div class="app-user-card__name"><?= e($userFullName !== '' ? $userFullName : 'Пользователь') ?></div>
+                        <div class="app-user-card__subtitle">Данные профиля, привязанные к этой заявке</div>
+                    </div>
+                </div>
+                <div class="app-user-card__grid">
+                    <div class="app-user-card__item">
+                        <span class="app-user-card__label">Email</span>
+                        <div class="app-user-card__value"><?= !empty($user['email']) ? e((string) $user['email']) : 'Email не указан' ?></div>
+                    </div>
+                    <div class="app-user-card__item">
+                        <span class="app-user-card__label">Тип участника</span>
+                        <div class="app-user-card__value"><?= e(getUserTypeLabel((string) ($user['user_type'] ?? 'parent'))) ?></div>
+                    </div>
+                    <div class="app-user-card__item">
+                        <span class="app-user-card__label">Регион</span>
+                        <div class="app-user-card__value"><?= e($userRegion !== '' ? $userRegion : 'Регион не указан') ?></div>
+                    </div>
+                    <div class="app-user-card__item">
+                        <span class="app-user-card__label">Организация</span>
+                        <div class="app-user-card__value"><?= e($userOrganization !== '' ? $userOrganization : 'Организация не указана') ?></div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -862,17 +893,17 @@ $currentPage = 'applications';
 
         <section class="app-card">
             <h2 class="app-card__title" style="font-size:18px;">Действия</h2>
-            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            <div class="app-actions">
                 <?php if ($effectiveApplicationStatus === 'draft'): ?>
                     <?php if ($canEdit): ?>
-                        <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary"><i class="fas fa-pen"></i> Продолжить заполнение</a>
+                        <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary app-actions__primary"><i class="fas fa-pen"></i> Продолжить заполнение</a>
                     <?php endif; ?>
                     <div class="app-highlight" style="width:100%;">
                         <strong>Заявка сохранена как черновик.</strong>
                         <div>Она ещё не отправлена на проверку. Проверьте данные и отправьте её после завершения заполнения.</div>
                     </div>
                 <?php elseif ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
-                    <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary"><i class="fas fa-pen"></i> Исправить заявку</a>
+                    <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary app-actions__primary"><i class="fas fa-pen"></i> Исправить заявку</a>
 	                <?php elseif ($hasDiplomas): ?>
 	                    <div class="app-highlight" style="width:100%;">
 	                        <strong>Дипломы</strong>
@@ -886,10 +917,9 @@ $currentPage = 'applications';
                         <div>Причина доступна в комментариях администратора и чате оспаривания.</div>
                     </div>
                 <?php else: ?>
-                    <div style="color:#64748B;"><?= $effectiveApplicationStatus === 'corrected' ? 'Заявка повторно отправлена на проверку после исправлений.' : 'Заявка находится на рассмотрении. Действия станут доступны после проверки.' ?></div>
+                    <div style="color:#64748B;"><?= $effectiveApplicationStatus === 'corrected' ? 'Заявка повторно отправлена на проверку после исправлений.' : 'Заявка находится на рассмотрении.' ?></div>
                 <?php endif; ?>
-                <a href="/messages" class="btn btn--ghost"><i class="fas fa-envelope"></i> Сообщения</a>
-                <a href="/my-applications" class="btn btn--secondary"><i class="fas fa-arrow-left"></i> К списку</a>
+                <a href="/my-applications" class="btn btn--secondary"><i class="fas fa-arrow-left"></i> К списку заяввок</a>
             </div>
         </section>
     </aside>
