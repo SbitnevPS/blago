@@ -87,6 +87,7 @@ if (!$application) {
 $applicantEmail = trim((string) ($application['email'] ?? ''));
 $blacklistEntry = $applicantEmail !== '' ? mailingGetBlacklistEntry($applicantEmail) : null;
 $isApplicantBlacklisted = $blacklistEntry !== null;
+$applicationCurrentPageUrl = (string) ($_SERVER['REQUEST_URI'] ?? ('/admin/application/' . $application_id));
 
 try {
     $hasOpenedByAdminColumn = (bool) $pdo->query("SHOW COLUMNS FROM applications LIKE 'opened_by_admin'")->fetch();
@@ -469,6 +470,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $stmt->execute([$application['user_id'], $admin['id'], $subject, $message, $priority, $attachmentFile, $attachmentOriginalName, $attachmentMimeType, $attachmentSize]);
  $_SESSION['success_message'] = 'Сообщение отправлено';
  }
+ } elseif ($_POST['action'] === 'open_applicant_chat') {
+ $targetChatTitle = '';
+ $existingChatStmt = $pdo->prepare("
+ SELECT title
+ FROM messages
+ WHERE user_id = ?
+   AND application_id = ?
+ ORDER BY created_at DESC, id DESC
+ LIMIT 1
+ ");
+ $existingChatStmt->execute([(int) $application['user_id'], (int) $application_id]);
+ $targetChatTitle = trim((string) ($existingChatStmt->fetchColumn() ?: ''));
+
+ if ($targetChatTitle === '') {
+  $targetChatTitle = buildCuratorChatTitle((int) $application_id);
+  $introMessage = trim(
+   "Здравствуйте!\n\n"
+   . "Открыт чат с куратором по заявке #{$application_id}."
+   . (!empty($application['contest_title']) ? "\nКонкурс: " . (string) $application['contest_title'] : '')
+   . "\n\nЗдесь можно уточнить детали по заявке и получить помощь по ходу работы."
+  );
+  $insertChatStmt = $pdo->prepare("
+   INSERT INTO messages (user_id, application_id, title, content, created_by, created_at, is_read)
+   VALUES (?, ?, ?, ?, ?, NOW(), 0)
+  ");
+  $insertChatStmt->execute([
+   (int) $application['user_id'],
+   (int) $application_id,
+   $targetChatTitle,
+   $introMessage,
+   (int) ($admin['id'] ?? 0),
+  ]);
+  $_SESSION['success_message'] = 'Чат с заявителем создан';
+ }
+
+ redirect(
+  '/admin/messages/user/' . (int) $application['user_id']
+  . '?return_url=' . urlencode($applicationCurrentPageUrl)
+  . '&chat_application_id=' . (int) $application_id
+  . '&chat_title=' . urlencode($targetChatTitle)
+ );
  } elseif ($_POST['action'] === 'toggle_drawing_compliance') {
  $participantId = intval($_POST['participant_id'] ?? 0);
  $isCompliant = isset($_POST['drawing_compliant']) ? 1 : 0;
@@ -807,6 +849,12 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
         <div class="application-hero__actions">
             <a href="/admin/user/<?= (int) $application['user_id'] ?>?return_url=<?= urlencode((string) ($_SERVER['REQUEST_URI'] ?? ('/admin/application/' . $application_id))) ?>" class="btn btn--secondary"><i class="fas fa-user-circle"></i> Профиль заявителя</a>
             <a href="/admin/messages/user/<?= (int) $application['user_id'] ?>?return_url=<?= urlencode((string) ($_SERVER['REQUEST_URI'] ?? ('/admin/application/' . $application_id))) ?>" class="btn btn--secondary"><i class="fas fa-envelope"></i> Центр сообщений</a>
+            <form method="POST">
+                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                <input type="hidden" name="action" value="open_applicant_chat">
+                <button type="submit" class="btn btn--secondary"><i class="fas fa-comments"></i> Чат с заявителем</button>
+            </form>
             <button type="button" class="btn btn--primary" onclick="openMessageModal()"><i class="fas fa-paper-plane"></i> Связаться с заявителем</button>
             <a href="#application-actions" class="btn btn--ghost"><i class="fas fa-bolt"></i> К действиям</a>
             <form method="POST">
