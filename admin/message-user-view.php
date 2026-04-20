@@ -421,6 +421,23 @@ if (($_GET['action'] ?? '') === 'poll_thread_messages') {
     $pollStmt->execute([$userId, $pollApplicationId, $pollChatTitle, $lastMessageId]);
     $rows = $pollStmt->fetchAll();
 
+    $incomingUserMessageIds = [];
+    foreach ($rows as $row) {
+        if ((int) ($row['author_is_admin'] ?? 0) !== 1) {
+            $incomingUserMessageIds[] = (int) ($row['id'] ?? 0);
+        }
+    }
+    if (!empty($incomingUserMessageIds)) {
+        $placeholders = implode(',', array_fill(0, count($incomingUserMessageIds), '?'));
+        $markPolledReadStmt = $pdo->prepare("
+            UPDATE messages
+            SET is_read = 1
+            WHERE id IN ($placeholders)
+              AND is_read = 0
+        ");
+        $markPolledReadStmt->execute($incomingUserMessageIds);
+    }
+
     $messagesPayload = [];
     foreach ($rows as $row) {
         $authorName = trim((string) (($row['author_surname'] ?? '') . ' ' . ($row['author_name'] ?? '') . ' ' . ($row['author_patronymic'] ?? '')));
@@ -469,6 +486,20 @@ $messagesStmt = $pdo->prepare("
 ");
 $messagesStmt->execute([$userId]);
 $notifications = $messagesStmt->fetchAll();
+
+if ($selectedChatApplicationId > 0 && $selectedChatTitle !== '') {
+    $markSelectedChatReadStmt = $pdo->prepare("
+        UPDATE messages m
+        JOIN users author ON author.id = m.created_by
+        SET m.is_read = 1
+        WHERE m.user_id = ?
+          AND m.application_id = ?
+          AND m.title = ?
+          AND m.is_read = 0
+          AND author.is_admin = 0
+    ");
+    $markSelectedChatReadStmt->execute([$userId, $selectedChatApplicationId, $selectedChatTitle]);
+}
 
 $chatThreadsStmt = $pdo->prepare("
     SELECT
@@ -541,6 +572,14 @@ $headerBackLabel = 'К списку';
 require_once __DIR__ . '/includes/header.php';
 ?>
 
+<style>
+    .message-thread-card--unread {
+        border-color: #f59e0b;
+        background: #fffbeb;
+        box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25);
+    }
+</style>
+
 <?php if (isset($error)): ?>
 <div class="alert alert--error mb-lg">
     <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?>
@@ -600,14 +639,15 @@ require_once __DIR__ . '/includes/header.php';
                             . '?chat_application_id=' . (int) ($thread['application_id'] ?? 0)
                             . '&chat_title=' . urlencode($threadTitle);
                     ?>
-                    <article class="admin-list-card">
+                    <?php $threadUnreadCount = (int) ($thread['unread_count'] ?? 0); ?>
+                    <article class="admin-list-card <?= $threadUnreadCount > 0 ? 'message-thread-card--unread' : '' ?>">
                         <div class="admin-list-card__header">
                             <div class="admin-list-card__title-wrap">
                                 <h4 class="admin-list-card__title"><?= htmlspecialchars($threadTitle !== '' ? $threadTitle : 'Чат') ?></h4>
                                 <div class="admin-list-card__subtitle"><?= htmlspecialchars($threadLabel) ?> • <?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 160)) ?></div>
                             </div>
-                            <?php if ((int) ($thread['unread_count'] ?? 0) > 0): ?>
-                                <span class="badge badge--warning">Новых: <?= (int) $thread['unread_count'] ?></span>
+                            <?php if ($threadUnreadCount > 0): ?>
+                                <span class="badge badge--warning">Новых: <?= $threadUnreadCount ?></span>
                             <?php else: ?>
                                 <span class="badge badge--secondary"><?= htmlspecialchars($threadLabel) ?></span>
                             <?php endif; ?>
