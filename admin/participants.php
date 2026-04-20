@@ -202,14 +202,18 @@ $perPage = 25;
 $offset = ($page - 1) * $perPage;
 $participantsReturnUrl = (string) ($_SERVER['REQUEST_URI'] ?? '/admin/participants');
 
+$queryParams = $sameParticipantsThreshold > 0
+    ? array_merge($duplicateParams, $params)
+    : $params;
+
 $countStmt = $pdo->prepare("\n    SELECT COUNT(*)\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    $duplicateJoin    $whereClause\n");
-$countStmt->execute(array_merge($duplicateParams, $params));
+$countStmt->execute($queryParams);
 $totalParticipants = (int) $countStmt->fetchColumn();
 $totalPages = max(1, (int) ceil($totalParticipants / $perPage));
 
 $ovzSelect = $hasParticipantOvzColumn ? 'COALESCE(p.has_ovz, 0) AS has_ovz,' : '0 AS has_ovz,';
 $listStmt = $pdo->prepare("\n    SELECT p.id, p.public_number, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           $ovzSelect\n           $duplicateSelect\n           a.status AS application_status, a.allow_edit,\n           c.title AS contest_title, COALESCE(c.is_archived, 0) AS contest_is_archived,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $duplicateJoin    $whereClause\n    ORDER BY p.fio ASC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
-$listStmt->execute(array_merge($duplicateParams, $params));
+$listStmt->execute($queryParams);
 $participants = $listStmt->fetchAll();
 
 $contests = $pdo->query('SELECT id, title, COALESCE(is_archived, 0) AS is_archived FROM contests ORDER BY COALESCE(is_archived, 0) ASC, created_at DESC')->fetchAll();
