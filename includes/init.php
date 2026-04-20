@@ -26,4 +26,5 @@ require_once __DIR__ . '/participant-numbers.php';
 ensureMailingsSchema();
 ensureParticipantPublicNumberSchema();
 ensureContestArchiveSchema();
+ensureMessageAttachmentSchema($pdo);
 enforceForcedPasswordChangeRedirect();

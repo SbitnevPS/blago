@@ -627,7 +627,6 @@ h4 {
 	align-items: center;
 	justify-content: center;
 	padding: var(--space-lg);
-	backdrop-filter: blur(4px);
 }
 
 .modal.active {

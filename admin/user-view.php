@@ -3,6 +3,22 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/init.php';
 
+if (!function_exists('messageAttachmentInsertPayload')) {
+    function messageAttachmentInsertPayload(?array $uploadResult): array
+    {
+        if (empty($uploadResult['uploaded'])) {
+            return [null, null, null, 0];
+        }
+
+        return [
+            (string) ($uploadResult['file_name'] ?? ''),
+            (string) ($uploadResult['original_name'] ?? ''),
+            (string) ($uploadResult['mime_type'] ?? ''),
+            (int) ($uploadResult['file_size'] ?? 0),
+        ];
+    }
+}
+
 // Проверка авторизации админа
 if (!isAdmin()) {
  redirect('/admin/login');
@@ -73,15 +89,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
  $subject = trim($_POST['subject'] ?? '');
  $message = trim($_POST['message'] ?? '');
  $priority = $_POST['priority'] ?? 'normal';
+ $attachmentUpload = uploadMessageAttachment($_FILES['attachment'] ?? []);
         
- if (empty($subject) || empty($message)) {
- $error = 'Заполните тему и сообщение';
+ if (empty($attachmentUpload['success'])) {
+ $error = (string) ($attachmentUpload['message'] ?? 'Не удалось загрузить вложение.');
+ } elseif ($subject === '' || ($message === '' && empty($attachmentUpload['uploaded']))) {
+ $error = 'Заполните тему и сообщение или прикрепите файл';
  } else {
+ [$attachmentFile, $attachmentOriginalName, $attachmentMimeType, $attachmentSize] = messageAttachmentInsertPayload($attachmentUpload);
  $stmt = $pdo->prepare("
- INSERT INTO admin_messages (user_id, admin_id, subject, message, priority)
- VALUES (?, ?, ?, ?, ?)
+ INSERT INTO admin_messages (user_id, admin_id, subject, message, priority, attachment_file, attachment_original_name, attachment_mime_type, attachment_size)
+ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
  ");
- $stmt->execute([$user_id, $admin['id'], $subject, $message, $priority]);
+ $stmt->execute([$user_id, $admin['id'], $subject, $message, $priority, $attachmentFile, $attachmentOriginalName, $attachmentMimeType, $attachmentSize]);
  $success = 'Сообщение отправлено';
             
  // Перенаправление для избежания повторной отправки
@@ -93,6 +113,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 require_once __DIR__ . '/includes/header.php';
 ?>
+
+<style>
+    .message-attachment-preview {
+        display: block;
+    }
+
+    .message-attachment-preview__image-button {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        width: min(100%, 280px);
+        padding: 12px;
+        border: 1px solid #dbe3f0;
+        border-radius: 14px;
+        background: #f8fbff;
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .message-attachment-preview__thumb {
+        display: block;
+        width: 100%;
+        max-height: 180px;
+        object-fit: contain;
+        border-radius: 12px;
+        background: #fff;
+    }
+
+    .message-attachment-preview__caption {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #2563eb;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .message-attachment-preview__file {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid #dbe3f0;
+        background: #fff;
+        color: #0f172a;
+        text-decoration: none;
+        font-weight: 600;
+    }
+</style>
 
 <div class="user-view-actions mb-lg">
     <a href="<?= htmlspecialchars($userReturnUrl) ?>" class="btn btn--ghost">
@@ -279,19 +350,27 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- Модальное окно отправки сообщения -->
 <div class="modal" id="messageModal">
-<div class="modal__content user-view-modal">
+<div class="modal__content user-view-modal message-compose-modal">
 <div class="modal__header">
 <h3>Отправить сообщение</h3>
 <button type="button" class="modal__close" onclick="closeMessageModal()">&times;</button>
 </div>
-<form method="POST" action="user-view.php?id=<?= e($user_id) ?>">
+<form method="POST" action="user-view.php?id=<?= e($user_id) ?>" enctype="multipart/form-data">
 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
 <input type="hidden" name="action" value="send_message">
 <div class="modal__body">
-<div class="form-group">
+<div class="message-compose">
+<div class="message-compose__intro">
+<div class="message-compose__intro-icon"><i class="fas fa-paper-plane"></i></div>
+<div>
+<div class="message-compose__intro-title">Личное сообщение пользователю</div>
+<div class="message-compose__intro-text">Это окно теперь выглядит и ощущается так же, как другие формы отправки сообщений в админке.</div>
+</div>
+</div>
+<div class="message-compose__section">
 <label class="form-label">Приоритет сообщения</label>
-<div class="priority-buttons">
+<div class="message-compose__priority-grid">
 <label class="priority-btn priority-btn--normal" onclick="selectPriority('normal')">
 <input type="radio" name="priority" value="normal" checked>
 <span class="priority-icon"><i class="fas fa-circle"></i></span>
@@ -309,34 +388,143 @@ require_once __DIR__ . '/includes/header.php';
 </label>
 </div>
 </div>
-<div class="form-group">
+<div class="message-compose__section">
 <label class="form-label">Тема сообщения</label>
 <input type="text" name="subject" class="form-input" required placeholder="Введите тему">
 </div>
-<div class="form-group">
+<div class="message-compose__section">
 <label class="form-label">Текст сообщения</label>
-<textarea name="message" class="form-textarea" rows="5" required placeholder="Введите текст сообщения"></textarea>
+<textarea name="message" class="form-textarea" rows="5" placeholder="Введите текст сообщения"></textarea>
+</div>
+<div class="message-compose__section">
+<label class="form-label">Вложение</label>
+<input type="file" name="attachment" class="form-input js-message-attachment-input" accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.txt,.doc,.docx,.rtf,.xls,.xlsx,.csv,.zip,image/*,application/pdf,text/plain,text/csv">
+<div class="form-help">Изображение можно сразу просмотреть, а файл отправится вложением. До 10 МБ.</div>
+<div class="message-attachment-preview js-message-attachment-preview" hidden></div>
 </div>
 </div>
 <div class="modal__footer flex gap-md">
+<div class="message-compose__footer">
+<div class="message-compose__footer-note">Поясняющий текст сделан компактнее, чтобы форма выглядела чище.</div>
+<div class="flex gap-md">
 <button type="button" class="btn btn--ghost" onclick="closeMessageModal()">Отмена</button>
 <button type="submit" class="btn btn--primary">
 <i class="fas fa-paper-plane"></i> Отправить
 </button>
 </div>
+</div>
+</div>
 </form>
+</div>
+</div>
+
+<div class="modal" id="messageImagePreviewModal">
+<div class="modal__content" style="max-width:min(1100px,96vw); width:96vw;">
+<div class="modal__header">
+<h3 id="messageImagePreviewTitle">Предпросмотр изображения</h3>
+<button type="button" class="modal__close" onclick="closeMessageImagePreview()">&times;</button>
+</div>
+<div class="modal__body" style="display:flex; justify-content:center; align-items:center; max-height:80vh;">
+<img id="messageImagePreviewImage" src="" alt="" style="display:block; max-width:100%; max-height:70vh; border-radius:16px; object-fit:contain;">
+</div>
 </div>
 </div>
 
 <script>
 function openMessageModal() {
- document.getElementById('messageModal').classList.add('active');
+ const modal = document.getElementById('messageModal');
+ if (!modal) return;
+ modal.classList.add('active');
  document.body.style.overflow = 'hidden';
+ const subjectInput = modal.querySelector('input[name="subject"]');
+ const attachmentInput = modal.querySelector('input[name="attachment"]');
+ const attachmentPreview = modal.querySelector('.js-message-attachment-preview');
+ if (subjectInput) {
+  subjectInput.focus();
+ }
+ if (attachmentInput) {
+  attachmentInput.value = '';
+ }
+ if (attachmentPreview) {
+  attachmentPreview.innerHTML = '';
+  attachmentPreview.hidden = true;
+ }
 }
 
 function closeMessageModal() {
  document.getElementById('messageModal').classList.remove('active');
  document.body.style.overflow = '';
+}
+
+function openMessageImagePreview(encodedUrl, encodedTitle) {
+ const imageUrl = decodeURIComponent(encodedUrl || '');
+ const imageTitle = decodeURIComponent(encodedTitle || '');
+ const modal = document.getElementById('messageImagePreviewModal');
+ const image = document.getElementById('messageImagePreviewImage');
+ const title = document.getElementById('messageImagePreviewTitle');
+ if (!modal || !image || !title || !imageUrl) return;
+ image.src = imageUrl;
+ image.alt = imageTitle;
+ title.textContent = imageTitle || 'Предпросмотр изображения';
+ modal.classList.add('active');
+ document.body.style.overflow = 'hidden';
+}
+
+function closeMessageImagePreview() {
+ const modal = document.getElementById('messageImagePreviewModal');
+ const image = document.getElementById('messageImagePreviewImage');
+ if (!modal || !image) return;
+ modal.classList.remove('active');
+ image.src = '';
+ image.alt = '';
+ const otherModal = document.querySelector('.modal.active:not(#messageImagePreviewModal)');
+ document.body.style.overflow = otherModal ? 'hidden' : '';
+}
+
+function escapeAttachmentHtml(value) {
+ return String(value || '')
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#039;');
+}
+
+function buildMessageAttachmentPreviewMarkup(file) {
+ if (!file) return '';
+ const fileName = file.name || 'Файл';
+ const safeFileName = escapeAttachmentHtml(fileName);
+ if (String(file.type || '').startsWith('image/')) {
+  const objectUrl = URL.createObjectURL(file);
+  return `
+   <button type="button" class="message-attachment-preview__image-button js-local-image-preview" data-image-src="${objectUrl}" data-image-title="${safeFileName}">
+    <img src="${objectUrl}" alt="${safeFileName}" class="message-attachment-preview__thumb">
+    <span class="message-attachment-preview__caption"><i class="fas fa-search-plus"></i> Предпросмотр</span>
+   </button>
+  `;
+ }
+ return `<div class="message-attachment-preview__file"><i class="fas fa-paperclip"></i><span>${safeFileName}</span></div>`;
+}
+
+function initMessageAttachmentInput(input) {
+ if (!input) return;
+ const preview = input.parentElement?.querySelector('.js-message-attachment-preview');
+ if (!preview) return;
+ input.addEventListener('change', () => {
+  const file = input.files && input.files[0] ? input.files[0] : null;
+  preview.innerHTML = '';
+  preview.hidden = !file;
+  if (!file) return;
+  preview.innerHTML = buildMessageAttachmentPreviewMarkup(file);
+  preview.querySelectorAll('.js-local-image-preview').forEach((button) => {
+   button.addEventListener('click', () => {
+    openMessageImagePreview(
+     encodeURIComponent(button.dataset.imageSrc || ''),
+     encodeURIComponent(button.dataset.imageTitle || 'Предпросмотр изображения')
+    );
+   });
+  });
+ });
 }
 
 function selectPriority(value) {
@@ -348,16 +536,23 @@ function selectPriority(value) {
 // Инициализация при загрузке
 document.addEventListener('DOMContentLoaded', function() {
  selectPriority('normal');
+ document.querySelectorAll('.js-message-attachment-input').forEach(initMessageAttachmentInput);
 });
 
 // Закрытие по Escape
 document.addEventListener('keydown', function(e) {
  if (e.key === 'Escape') {
- closeMessageModal();
+  closeMessageModal();
+  closeMessageImagePreview();
  }
 });
 
 // Закрытие по клику вне модального окна
+document.getElementById('messageImagePreviewModal')?.addEventListener('click', function(e) {
+ if (e.target === this) {
+  closeMessageImagePreview();
+ }
+});
 document.getElementById('messageModal').addEventListener('click', function(e) {
  if (e.target === this) {
  closeMessageModal();

@@ -128,6 +128,7 @@ $routes = [
  '/admin/users' => ['file' => 'admin/users.php', 'name' => 'admin-users'],
  '/admin/user/{id}' => ['file' => 'admin/user-view.php', 'name' => 'admin-user-view'],
  '/admin/messages' => ['file' => 'admin/messages.php', 'name' => 'admin-messages'],
+ '/admin/messages/user/{id}' => ['file' => 'admin/message-user-view.php', 'name' => 'admin-message-user-view'],
  '/admin/settings' => ['file' => 'admin/settings.php', 'name' => 'admin-settings'],
  '/admin/diplomas' => ['file' => 'admin/diplomas.php', 'name' => 'admin-diplomas'],
  '/admin/mailings' => ['file' => 'admin/mailings.php', 'name' => 'admin-mailings'],

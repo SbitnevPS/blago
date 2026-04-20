@@ -7,6 +7,7 @@ define('DRAWINGS_PATH', UPLOAD_PATH . '/drawings');
 define('DOCUMENTS_PATH', UPLOAD_PATH . '/documents');
 define('CONTEST_COVERS_PATH', UPLOAD_PATH . '/contest-covers');
 define('EDITOR_UPLOADS_PATH', UPLOAD_PATH . '/editor');
+define('MESSAGE_ATTACHMENTS_PATH', UPLOAD_PATH . '/message-attachments');
 define('SITE_BANNERS_PATH', UPLOAD_PATH . '/site-banners');
 define('SETTINGS_FILE', ROOT_PATH . '/storage/settings.json');
 
@@ -1967,6 +1968,231 @@ function uploadFile($file, $directory, $allowedTypes = []) {
     }
 
     return ['success' => false, 'message' => 'Не удалось сохранить файл'];
+}
+
+function ensureMessageAttachmentSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    $tables = ['admin_messages', 'messages'];
+    $requiredColumns = [
+        'attachment_file' => "ADD COLUMN attachment_file VARCHAR(255) NULL AFTER is_read",
+        'attachment_original_name' => "ADD COLUMN attachment_original_name VARCHAR(255) NULL AFTER attachment_file",
+        'attachment_mime_type' => "ADD COLUMN attachment_mime_type VARCHAR(100) NULL AFTER attachment_original_name",
+        'attachment_size' => "ADD COLUMN attachment_size INT NOT NULL DEFAULT 0 AFTER attachment_mime_type",
+    ];
+
+    try {
+        foreach ($tables as $tableName) {
+            $stmt = $pdo->prepare("
+                SELECT COLUMN_NAME
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = ?
+                  AND COLUMN_NAME IN ('attachment_file', 'attachment_original_name', 'attachment_mime_type', 'attachment_size')
+            ");
+            $stmt->execute([$tableName]);
+            $existingColumns = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+            foreach ($requiredColumns as $columnName => $definition) {
+                if (!in_array($columnName, $existingColumns, true)) {
+                    $pdo->exec("ALTER TABLE {$tableName} {$definition}");
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('[SCHEMA] Message attachment schema check failed: ' . $e->getMessage());
+    }
+}
+
+function messageAttachmentAllowedExtensions(): array
+{
+    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'txt', 'doc', 'docx', 'rtf', 'xls', 'xlsx', 'csv', 'zip'];
+}
+
+function messageAttachmentAllowedMimeTypes(): array
+{
+    return [
+        'image/jpeg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+        'application/pdf',
+        'text/plain',
+        'text/csv',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/rtf',
+        'text/rtf',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/zip',
+        'application/x-zip-compressed',
+        'multipart/x-zip',
+    ];
+}
+
+function isImageMessageAttachment(?string $mimeType, ?string $fileName = null): bool
+{
+    $mimeType = strtolower(trim((string) $mimeType));
+    if (str_starts_with($mimeType, 'image/')) {
+        return true;
+    }
+
+    $extension = strtolower(pathinfo((string) $fileName, PATHINFO_EXTENSION));
+    return in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true);
+}
+
+function buildMessageAttachmentFilename(string $extension): string
+{
+    $safeExtension = strtolower(trim($extension, '.'));
+    return sprintf('message_%s_%s.%s', date('Ymd_His'), bin2hex(random_bytes(4)), $safeExtension);
+}
+
+function buildMessageAttachmentPublicUrl(string $fileName): string
+{
+    return '/uploads/message-attachments/' . rawurlencode(basename($fileName));
+}
+
+function buildDisputeChatTitle(int $applicationId): string
+{
+    return 'Оспаривание решения по заявке #' . max(0, $applicationId);
+}
+
+function buildLegacyDisputeChatTitle(int $applicationId): string
+{
+    return 'Оспаривание заявки #' . max(0, $applicationId);
+}
+
+function getDisputeChatTitleVariants(int $applicationId): array
+{
+    $variants = [
+        buildDisputeChatTitle($applicationId),
+        buildLegacyDisputeChatTitle($applicationId),
+    ];
+
+    return array_values(array_unique(array_filter($variants, static fn($value) => trim((string) $value) !== '')));
+}
+
+function buildCuratorChatTitle(int $applicationId): string
+{
+    return 'Чат с куратором по заявке #' . max(0, $applicationId);
+}
+
+function isDisputeChatTitle(?string $title): bool
+{
+    $normalizedTitle = trim((string) $title);
+    return str_starts_with($normalizedTitle, 'Оспаривание решения по заявке #')
+        || str_starts_with($normalizedTitle, 'Оспаривание заявки #');
+}
+
+function isCuratorChatTitle(?string $title): bool
+{
+    return str_starts_with(trim((string) $title), 'Чат с куратором по заявке #');
+}
+
+function detectMessageThreadType(?string $title): string
+{
+    if (isDisputeChatTitle($title)) {
+        return 'dispute';
+    }
+
+    if (isCuratorChatTitle($title)) {
+        return 'curator';
+    }
+
+    return 'thread';
+}
+
+function getMessageThreadLabel(?string $title): string
+{
+    $type = detectMessageThreadType($title);
+
+    if ($type === 'dispute') {
+        return 'Чат оспаривания';
+    }
+
+    if ($type === 'curator') {
+        return 'Чат с куратором';
+    }
+
+    return 'Чат';
+}
+
+function uploadMessageAttachment(array $file, int $maxBytes = 10485760): array
+{
+    if (!isset($file['error']) || is_array($file['error'])) {
+        return ['success' => false, 'message' => 'Ошибка загрузки вложения.'];
+    }
+
+    if ((int) $file['error'] === UPLOAD_ERR_NO_FILE) {
+        return ['success' => true, 'uploaded' => false];
+    }
+
+    if ((int) $file['error'] !== UPLOAD_ERR_OK) {
+        return ['success' => false, 'message' => 'Не удалось загрузить вложение.'];
+    }
+
+    $originalName = trim((string) ($file['name'] ?? ''));
+    $tmpName = (string) ($file['tmp_name'] ?? '');
+    $fileSize = (int) ($file['size'] ?? 0);
+    $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    $allowedExtensions = messageAttachmentAllowedExtensions();
+    $allowedMimeTypes = messageAttachmentAllowedMimeTypes();
+
+    if ($originalName === '' || $extension === '' || !in_array($extension, $allowedExtensions, true)) {
+        return ['success' => false, 'message' => 'Допустимы JPG, PNG, GIF, WEBP, PDF, TXT, DOC, DOCX, RTF, XLS, XLSX, CSV и ZIP.'];
+    }
+
+    if ($fileSize <= 0 || $fileSize > $maxBytes) {
+        return ['success' => false, 'message' => 'Размер вложения должен быть не больше 10 МБ.'];
+    }
+
+    $mimeType = '';
+    if (function_exists('finfo_open')) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo !== false) {
+            $mimeType = (string) finfo_file($finfo, $tmpName);
+            finfo_close($finfo);
+        }
+    }
+    if ($mimeType === '') {
+        $mimeType = (string) @mime_content_type($tmpName);
+    }
+
+    if ($mimeType !== '' && !in_array($mimeType, $allowedMimeTypes, true) && !isImageMessageAttachment($mimeType, $originalName)) {
+        return ['success' => false, 'message' => 'Недопустимый тип вложения.'];
+    }
+
+    if (isImageMessageAttachment($mimeType, $originalName) && @getimagesize($tmpName) === false) {
+        return ['success' => false, 'message' => 'Изображение повреждено или имеет недопустимый формат.'];
+    }
+
+    if (!is_dir(MESSAGE_ATTACHMENTS_PATH) && !mkdir(MESSAGE_ATTACHMENTS_PATH, 0775, true) && !is_dir(MESSAGE_ATTACHMENTS_PATH)) {
+        return ['success' => false, 'message' => 'Не удалось подготовить каталог вложений.'];
+    }
+
+    $storedFileName = buildMessageAttachmentFilename($extension);
+    $targetPath = MESSAGE_ATTACHMENTS_PATH . '/' . $storedFileName;
+
+    if (!move_uploaded_file($tmpName, $targetPath)) {
+        return ['success' => false, 'message' => 'Не удалось сохранить вложение.'];
+    }
+
+    return [
+        'success' => true,
+        'uploaded' => true,
+        'file_name' => $storedFileName,
+        'original_name' => basename($originalName),
+        'mime_type' => $mimeType,
+        'file_size' => $fileSize,
+        'is_image' => isImageMessageAttachment($mimeType, $originalName),
+        'url' => buildMessageAttachmentPublicUrl($storedFileName),
+    ];
 }
 
 function uploadContestCoverImage($file, $directory, $size = 500) {

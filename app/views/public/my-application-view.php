@@ -12,6 +12,22 @@ $applicationId = intval($_GET['id'] ??0);
 $userId = getCurrentUserId();
 $user = getCurrentUser();
 
+if (!function_exists('messageAttachmentInsertPayload')) {
+    function messageAttachmentInsertPayload(?array $uploadResult): array
+    {
+        if (empty($uploadResult['uploaded'])) {
+            return [null, null, null, 0];
+        }
+
+        return [
+            (string) ($uploadResult['file_name'] ?? ''),
+            (string) ($uploadResult['original_name'] ?? ''),
+            (string) ($uploadResult['mime_type'] ?? ''),
+            (int) ($uploadResult['file_size'] ?? 0),
+        ];
+    }
+}
+
 // Получаем заявку
 $stmt = $pdo->prepare("
  SELECT a.*, c.title as contest_title, c.id as contest_id
@@ -28,14 +44,30 @@ if (!$application) {
 
 $isApplicationAccepted = getApplicationCanonicalStatus($application) === 'approved';
 
-$disputeChatSubject = 'Оспаривание решения по заявке #' . $applicationId;
+$disputeChatSubject = buildDisputeChatTitle($applicationId);
+$curatorChatTitle = buildCuratorChatTitle($applicationId);
 $isDisputeChatClosed = false;
+$hasCuratorChat = false;
 try {
     $closedStmt = $pdo->prepare("SELECT dispute_chat_closed FROM applications WHERE id = ? LIMIT 1");
     $closedStmt->execute([$applicationId]);
     $isDisputeChatClosed = (int) $closedStmt->fetchColumn() === 1;
 } catch (Exception $e) {
     $isDisputeChatClosed = false;
+}
+
+try {
+    $curatorChatStmt = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM messages
+        WHERE user_id = ?
+          AND application_id = ?
+          AND title = ?
+    ");
+    $curatorChatStmt->execute([$userId, $applicationId, $curatorChatTitle]);
+    $hasCuratorChat = (int) $curatorChatStmt->fetchColumn() > 0;
+} catch (Exception $e) {
+    $hasCuratorChat = false;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispute_reply') {
@@ -47,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
         }
     } else {
         $reason = trim($_POST['dispute_reason'] ?? '');
+        $attachmentUpload = uploadMessageAttachment($_FILES['attachment'] ?? []);
         if (getApplicationCanonicalStatus($application) !== 'rejected') {
             $_SESSION['error_message'] = 'Оспорить можно только отклонённую заявку.';
             if ($isAjaxRequest) {
@@ -57,16 +90,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
             if ($isAjaxRequest) {
                 jsonResponse(['success' => false, 'error' => $_SESSION['error_message']], 423);
             }
-        } elseif ($reason === '') {
-            $_SESSION['error_message'] = 'Укажите причину оспаривания.';
+        } elseif (empty($attachmentUpload['success'])) {
+            $_SESSION['error_message'] = (string) ($attachmentUpload['message'] ?? 'Не удалось загрузить вложение.');
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => $_SESSION['error_message']], 422);
+            }
+        } elseif ($reason === '' && empty($attachmentUpload['uploaded'])) {
+            $_SESSION['error_message'] = 'Укажите причину оспаривания или прикрепите файл.';
             if ($isAjaxRequest) {
                 jsonResponse(['success' => false, 'error' => $_SESSION['error_message']], 422);
             }
         } else {
             try {
+                [$attachmentFile, $attachmentOriginalName, $attachmentMimeType, $attachmentSize] = messageAttachmentInsertPayload($attachmentUpload);
                 $stmt = $pdo->prepare("
-                INSERT INTO messages (user_id, application_id, title, content, created_by, created_at)
-                VALUES (?, ?, ?, ?, ?, NOW())
+                INSERT INTO messages (
+                    user_id,
+                    application_id,
+                    title,
+                    content,
+                    created_by,
+                    created_at,
+                    attachment_file,
+                    attachment_original_name,
+                    attachment_mime_type,
+                    attachment_size
+                )
+                VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $user['id'],
@@ -74,6 +124,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
                     $disputeChatSubject,
                     $reason,
                     $user['id'],
+                    $attachmentFile,
+                    $attachmentOriginalName,
+                    $attachmentMimeType,
+                    $attachmentSize,
                 ]);
                 try {
                     $unarchiveStmt = $pdo->prepare("UPDATE applications SET dispute_chat_archived = 0 WHERE id = ?");
@@ -96,6 +150,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dispu
                             'from_admin' => false,
                             'author_name' => $userLabel,
                             'author_email' => (string) ($user['email'] ?? ''),
+                            'attachment' => !empty($attachmentUpload['uploaded']) ? [
+                                'url' => (string) ($attachmentUpload['url'] ?? ''),
+                                'name' => (string) ($attachmentUpload['original_name'] ?? ''),
+                                'mime_type' => (string) ($attachmentUpload['mime_type'] ?? ''),
+                                'is_image' => !empty($attachmentUpload['is_image']),
+                            ] : null,
                         ],
                     ]);
                 }
@@ -122,6 +182,9 @@ if (($_GET['action'] ?? '') === 'poll_dispute_messages') {
             m.id,
             m.content,
             m.created_at,
+            m.attachment_file,
+            m.attachment_original_name,
+            m.attachment_mime_type,
             u.name,
             u.surname,
             u.patronymic,
@@ -142,6 +205,8 @@ if (($_GET['action'] ?? '') === 'poll_dispute_messages') {
     foreach ($rows as $row) {
         $authorName = trim(($row['surname'] ?? '') . ' ' . ($row['name'] ?? '') . ' ' . ($row['patronymic'] ?? ''));
         $fromAdmin = (int) ($row['is_admin'] ?? 0) === 1;
+        $attachmentFile = (string) ($row['attachment_file'] ?? '');
+        $attachmentName = (string) ($row['attachment_original_name'] ?? basename($attachmentFile));
         $messages[] = [
             'id' => (int) $row['id'],
             'content' => (string) ($row['content'] ?? ''),
@@ -150,6 +215,12 @@ if (($_GET['action'] ?? '') === 'poll_dispute_messages') {
             'from_admin' => $fromAdmin,
             'author_name' => $authorName,
             'author_email' => (string) ($row['email'] ?? ''),
+            'attachment' => $attachmentFile !== '' ? [
+                'url' => buildMessageAttachmentPublicUrl($attachmentFile),
+                'name' => $attachmentName,
+                'mime_type' => (string) ($row['attachment_mime_type'] ?? ''),
+                'is_image' => isImageMessageAttachment((string) ($row['attachment_mime_type'] ?? ''), $attachmentName),
+            ] : null,
         ];
     }
 
@@ -654,8 +725,8 @@ $userOrganization = (string) ($user['organization_name'] ?? $application['organi
 $applicationDateLabel = date('d.m.Y H:i', strtotime((string) $application['created_at']));
 
 $disputeChatMessages = [];
-if (getApplicationCanonicalStatus($application) === 'rejected') {
-    try {
+try {
+    foreach (getDisputeChatTitleVariants($applicationId) as $candidateTitle) {
         $stmt = $pdo->prepare("
         SELECT m.*, u.name, u.surname, u.patronymic, u.is_admin
         FROM messages m
@@ -663,10 +734,16 @@ if (getApplicationCanonicalStatus($application) === 'rejected') {
         WHERE m.user_id = ? AND m.application_id = ? AND m.title = ?
         ORDER BY m.created_at ASC
         ");
-        $stmt->execute([$user['id'], $applicationId, $disputeChatSubject]);
+        $stmt->execute([$user['id'], $applicationId, $candidateTitle]);
         $disputeChatMessages = $stmt->fetchAll();
+        if (!empty($disputeChatMessages)) {
+            $disputeChatSubject = $candidateTitle;
+            break;
+        }
+    }
 
-        // Помечаем ответы администратора прочитанными
+    if (!empty($disputeChatMessages)) {
+        // Помечаем ответы администратора прочитанными, если чат уже существует.
         $stmt = $pdo->prepare("
         UPDATE messages m
         JOIN users u ON u.id = m.created_by
@@ -678,10 +755,13 @@ if (getApplicationCanonicalStatus($application) === 'rejected') {
           AND u.is_admin = 1
         ");
         $stmt->execute([$user['id'], $applicationId, $disputeChatSubject]);
-    } catch (Exception $e) {
-        $disputeChatMessages = [];
     }
+} catch (Exception $e) {
+    $disputeChatMessages = [];
 }
+
+$hasDisputeChat = !empty($disputeChatMessages);
+$canStartDisputeChat = getApplicationCanonicalStatus($application) === 'rejected';
 
 $currentPage = 'applications';
 ?>
@@ -1004,6 +1084,11 @@ $currentPage = 'applications';
                 <?php else: ?>
                     <div style="color:#64748B;"><?= $effectiveApplicationStatus === 'corrected' ? 'Заявка повторно отправлена на проверку после исправлений.' : 'Заявка находится на рассмотрении.' ?></div>
                 <?php endif; ?>
+                <?php if ($hasCuratorChat): ?>
+                    <a href="/messages?chat_application_id=<?= (int) $applicationId ?>&chat_title=<?= urlencode($curatorChatTitle) ?>" class="btn btn--primary">
+                        <i class="fas fa-comments"></i> Открыть чат с куратором
+                    </a>
+                <?php endif; ?>
                 <a href="/my-applications" class="btn btn--secondary"><i class="fas fa-arrow-left"></i> К списку заяввок</a>
             </div>
         </section>
@@ -1022,7 +1107,7 @@ $currentPage = 'applications';
     </aside>
 </div>
 
-<?php if (getApplicationCanonicalStatus($application) === 'rejected'): ?>
+<?php if ($canStartDisputeChat || $hasDisputeChat): ?>
 <div class="card mb-lg" id="dispute-chat">
     <div class="card__header flex justify-between items-center">
         <h3>Оспаривание решения по заявке</h3>
@@ -1032,11 +1117,20 @@ $currentPage = 'applications';
     </div>
     <div class="card__body">
         <p class="text-secondary" style="margin:0;">
-            Просматривайте переписку с администратором и отправляйте ответы во всплывающем окне чата.
+            <?= $canStartDisputeChat ? 'Просматривайте переписку с администратором и отправляйте ответы во всплывающем окне чата.' : 'Чат сохранён для просмотра истории переписки по заявке.' ?>
         </p>
+        <div style="margin-top:12px;">
+            <span class="badge <?= $isDisputeChatClosed ? 'badge--secondary' : 'badge--success' ?>">
+                <?= $isDisputeChatClosed ? 'Чат закрыт' : 'Чат открыт' ?>
+            </span>
+        </div>
         <?php if ($isDisputeChatClosed): ?>
             <div class="alert alert--warning" style="margin-top:12px;">
                 <i class="fas fa-lock"></i> Чат завершён администратором. Доступен только просмотр сообщений.
+            </div>
+        <?php elseif (!$canStartDisputeChat): ?>
+            <div class="alert alert--secondary" style="margin-top:12px;">
+                <i class="fas fa-info-circle"></i> Статус заявки изменился. История чата сохранена, но отправка новых сообщений недоступна.
             </div>
         <?php endif; ?>
     </div>
@@ -1052,14 +1146,18 @@ $currentPage = 'applications';
             <div class="dispute-chat-modal__messages" id="disputeChatMessages">
                 <?php if (!empty($disputeChatMessages)): ?>
                     <?php foreach ($disputeChatMessages as $chatMessage): ?>
-                        <?php $isAdminMessage = (int) ($chatMessage['is_admin'] ?? 0) === 1; ?>
+                        <?php
+                            $isAdminMessage = (int) ($chatMessage['is_admin'] ?? 0) === 1;
+                            $attachmentFile = (string) ($chatMessage['attachment_file'] ?? '');
+                            $attachmentUrl = $attachmentFile !== '' ? buildMessageAttachmentPublicUrl($attachmentFile) : '';
+                            $attachmentName = (string) ($chatMessage['attachment_original_name'] ?? basename($attachmentFile));
+                            $attachmentIsImage = $attachmentUrl !== '' && isImageMessageAttachment((string) ($chatMessage['attachment_mime_type'] ?? ''), $attachmentName);
+                        ?>
                         <div class="dispute-chat-message <?= $isAdminMessage ? 'dispute-chat-message--user' : 'dispute-chat-message--admin' ?>" data-message-id="<?= (int) $chatMessage['id'] ?>">
                             <div class="dispute-chat-message__bubble">
                                 <div class="dispute-chat-message__meta">
                                     <?php if ($isAdminMessage): ?>
-                                        <?php
-                                            $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? '') . ' ' . ($chatMessage['patronymic'] ?? ''));
-                                        ?>
+                                        <?php $chatAuthorName = trim(($chatMessage['surname'] ?? '') . ' ' . ($chatMessage['name'] ?? '') . ' ' . ($chatMessage['patronymic'] ?? '')); ?>
                                         <?= htmlspecialchars('Руководитель проекта — ' . trim($chatAuthorName)) ?>
                                     <?php else: ?>
                                         <?= htmlspecialchars(trim(($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? ''))) ?>
@@ -1067,6 +1165,21 @@ $currentPage = 'applications';
                                     <span>• <?= date('d.m.Y H:i', strtotime($chatMessage['created_at'])) ?></span>
                                 </div>
                                 <div class="dispute-chat-message__text"><?= htmlspecialchars($chatMessage['content']) ?></div>
+                                <?php if ($attachmentUrl !== ''): ?>
+                                    <div class="message-attachment" style="margin-top:10px;">
+                                        <?php if ($attachmentIsImage): ?>
+                                            <button type="button" class="message-attachment__image-button" onclick="openMessageImageModal('<?= rawurlencode($attachmentUrl) ?>','<?= rawurlencode($attachmentName) ?>')">
+                                                <img src="<?= htmlspecialchars($attachmentUrl) ?>" alt="<?= htmlspecialchars($attachmentName) ?>" class="message-attachment__thumb">
+                                                <span class="message-attachment__caption"><i class="fas fa-search-plus"></i> Посмотреть изображение</span>
+                                            </button>
+                                        <?php else: ?>
+                                            <a href="<?= htmlspecialchars($attachmentUrl) ?>" class="message-attachment__file" target="_blank" rel="noopener" download="<?= htmlspecialchars($attachmentName) ?>">
+                                                <i class="fas fa-download"></i>
+                                                <span><?= htmlspecialchars($attachmentName) ?></span>
+                                            </a>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         </div>
                     <?php endforeach; ?>
@@ -1075,19 +1188,36 @@ $currentPage = 'applications';
                 <?php endif; ?>
             </div>
 
-            <?php if (!$isDisputeChatClosed): ?>
-                <form method="POST" class="dispute-chat-modal__composer">
+            <?php if (!$isDisputeChatClosed && $canStartDisputeChat): ?>
+                <form method="POST" class="dispute-chat-modal__composer" enctype="multipart/form-data">
                     <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                     <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                     <input type="hidden" name="action" value="dispute_reply">
+                    <input type="file" id="applicationDisputeChatAttachment" name="attachment" class="chat-composer__attachment-input js-message-attachment-input" accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.txt,.doc,.docx,.rtf,.xls,.xlsx,.csv,.zip,image/*,application/pdf,text/plain,text/csv">
+                    <div class="message-attachment-preview chat-composer__attachment-preview js-message-attachment-preview" hidden></div>
                     <div class="form-group">
                         <label class="form-label">Ваш ответ в чате</label>
-                        <textarea name="dispute_reason" class="form-textarea js-chat-hotkey" rows="4" required placeholder="Напишите сообщение администратору..."></textarea>
+                        <textarea name="dispute_reason" class="form-textarea js-chat-hotkey" rows="4" placeholder="Напишите сообщение администратору..."></textarea>
                     </div>
-                    <button type="submit" class="btn btn--primary">
-                        <i class="fas fa-paper-plane"></i> Отправить
-                    </button>
+                    <div class="chat-composer__actions">
+                        <label class="chat-composer__attachment-trigger" for="applicationDisputeChatAttachment" title="Прикрепить файл">
+                            <i class="fas fa-paperclip"></i>
+                            <span>Файл</span>
+                        </label>
+                        <div class="chat-composer__attachment-help">Изображение покажем миниатюрой, для остальных файлов сохраним название. До 10 МБ.</div>
+                        <button type="submit" class="btn btn--primary">
+                            <i class="fas fa-paper-plane"></i> Отправить
+                        </button>
+                    </div>
                 </form>
+            <?php elseif ($isDisputeChatClosed): ?>
+                <div class="alert alert--warning" style="margin-top:12px;">
+                    <i class="fas fa-lock"></i> Чат завершён администратором. Можно только просматривать сообщения.
+                </div>
+            <?php else: ?>
+                <div class="alert alert--secondary" style="margin-top:12px;">
+                    <i class="fas fa-info-circle"></i> Отправка новых сообщений недоступна, но история чата сохранена.
+                </div>
             <?php endif; ?>
         </div>
     </div>
@@ -1096,7 +1226,20 @@ $currentPage = 'applications';
 </div>
 </main>
 
+<div class="modal" id="messageImageModal">
+<div class="modal__content" style="max-width:min(1100px,96vw); width:96vw;">
+<div class="modal__header">
+<h3 id="messageImageModalTitle">Просмотр изображения</h3>
+<button type="button" class="modal__close" onclick="closeMessageImageModal()">&times;</button>
+</div>
+<div class="modal__body" style="display:flex; justify-content:center; align-items:center; max-height:80vh;">
+<img id="messageImageModalImage" src="" alt="" style="display:block; max-width:100%; max-height:70vh; border-radius:16px; object-fit:contain;">
+</div>
+</div>
+</div>
+
 <?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>
+<?php include dirname(__DIR__) . '/partials/frontend-chat-helpers.php'; ?>
 <?php
 $galleryImages = [];
 foreach ($participants as $participant) {
@@ -1674,37 +1817,6 @@ function closeDisputeChatModal() {
  scheduleUserDisputePolling();
 }
 
-function appendDisputeMessage(container, messageData) {
- if (!container || !messageData) return;
- const numericId = Number(messageData.id || 0);
- if (numericId > 0 && container.querySelector(`.dispute-chat-message[data-message-id="${numericId}"]`)) {
-  return;
- }
- const messageWrap = document.createElement('div');
- messageWrap.className = 'dispute-chat-message ' + (messageData.from_admin ? 'dispute-chat-message--user' : 'dispute-chat-message--admin');
- messageWrap.dataset.messageId = String(numericId || 0);
-
- const bubble = document.createElement('div');
- bubble.className = 'dispute-chat-message__bubble';
-
- const meta = document.createElement('div');
- meta.className = 'dispute-chat-message__meta';
- meta.textContent = (messageData.author_label || 'Пользователь') + ' • ' + (messageData.created_at || '');
-
- const text = document.createElement('div');
- text.className = 'dispute-chat-message__text';
- text.textContent = messageData.content || '';
-
- bubble.appendChild(meta);
- bubble.appendChild(text);
- messageWrap.appendChild(bubble);
- container.appendChild(messageWrap);
- container.scrollTop = container.scrollHeight;
- if (numericId > latestUserDisputeMessageId) {
-  latestUserDisputeMessageId = numericId;
- }
-}
-
 function showUserNewMessageAlert(messageData) {
  if (!messageData || !messageData.content) return;
  const toast = document.createElement('div');
@@ -1746,6 +1858,56 @@ async function pollUserDisputeMessages() {
   });
  } catch (error) {
   console.error('Ошибка polling пользовательского чата:', error);
+ }
+}
+
+function appendDisputeMessage(container, messageData) {
+ if (!container || !messageData) return;
+ const numericId = Number(messageData.id || 0);
+ if (numericId > 0 && container.querySelector(`.dispute-chat-message[data-message-id="${numericId}"]`)) {
+  return;
+ }
+ const messageWrap = document.createElement('div');
+ messageWrap.className = 'dispute-chat-message ' + (messageData.from_admin ? 'dispute-chat-message--user' : 'dispute-chat-message--admin');
+ messageWrap.dataset.messageId = String(numericId || 0);
+
+ const bubble = document.createElement('div');
+ bubble.className = 'dispute-chat-message__bubble';
+
+ const meta = document.createElement('div');
+ meta.className = 'dispute-chat-message__meta';
+ meta.textContent = (messageData.author_label || 'Пользователь') + ' • ' + (messageData.created_at || '');
+
+ const text = document.createElement('div');
+ text.className = 'dispute-chat-message__text';
+ text.textContent = messageData.content || '';
+
+ bubble.appendChild(meta);
+ bubble.appendChild(text);
+
+ if (messageData.attachment && messageData.attachment.url) {
+  const attachmentWrap = document.createElement('div');
+  attachmentWrap.className = 'message-attachment';
+  attachmentWrap.style.marginTop = '10px';
+  if (messageData.attachment.is_image) {
+   attachmentWrap.innerHTML =
+    `<button type="button" class="message-attachment__image-button" onclick="openMessageImageModal('${encodeURIComponent(messageData.attachment.url || '')}','${encodeURIComponent(messageData.attachment.name || 'Изображение')}')">` +
+    `<img src="${escapeHtml(messageData.attachment.url || '')}" alt="${escapeHtml(messageData.attachment.name || 'Изображение')}" class="message-attachment__thumb">` +
+    '<span class="message-attachment__caption"><i class="fas fa-search-plus"></i> Посмотреть изображение</span>' +
+    '</button>';
+  } else {
+   attachmentWrap.innerHTML =
+    `<a href="${escapeHtml(messageData.attachment.url || '#')}" class="message-attachment__file" target="_blank" rel="noopener" download="${escapeHtml(messageData.attachment.name || 'attachment')}">` +
+    '<i class="fas fa-download"></i><span>' + escapeHtml(messageData.attachment.name || 'Файл') + '</span></a>';
+  }
+  bubble.appendChild(attachmentWrap);
+ }
+
+ messageWrap.appendChild(bubble);
+ container.appendChild(messageWrap);
+ container.scrollTop = container.scrollHeight;
+ if (numericId > latestUserDisputeMessageId) {
+  latestUserDisputeMessageId = numericId;
  }
 }
 
@@ -1805,6 +1967,9 @@ if (disputeReplyForm) {
 
    appendDisputeMessage(document.getElementById('disputeChatMessages'), data.message);
    textarea.value = '';
+   if (typeof window.resetFrontendAttachmentPreview === 'function') {
+    window.resetFrontendAttachmentPreview(disputeReplyForm);
+   }
    showToast('Сообщение отправлено', 'success');
   } catch (error) {
    showToast(error.message || 'Ошибка отправки сообщения', 'error');
@@ -1816,16 +1981,6 @@ if (disputeReplyForm) {
   }
  });
 }
-
-document.querySelectorAll('.js-chat-hotkey').forEach((textarea) => {
- textarea.addEventListener('keydown', (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-   event.preventDefault();
-   const form = textarea.closest('form');
-   if (form && form.reportValidity()) form.requestSubmit();
-  }
- });
-});
 
 function showToast(message, type = 'success') {
  const toast = document.createElement('div');

@@ -39,8 +39,7 @@ try {
  $stmt = $pdo->prepare("
  SELECT id, name, surname, email 
  FROM users 
- WHERE is_admin = 0
- AND (
+ WHERE (
      {$searchSql}
      OR (? > 0 AND id = ?)
  )
