@@ -38,10 +38,6 @@ $buildEditorUrl = static function (int $contestId, int $templateId = 0, string $
     if ($tab !== '') {
         $params['tab'] = $tab;
     }
-    if ($diplomaReturnUrl !== '') {
-        $params['return_url'] = $diplomaReturnUrl;
-    }
-
     $query = http_build_query($params);
     return '/admin/diploma-template/' . $contestId . ($query !== '' ? '?' . $query : '');
 };

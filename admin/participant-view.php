@@ -35,7 +35,7 @@ if (!$participant) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $_SESSION['error_message'] = 'Ошибка безопасности';
-        redirect('/admin/participant/' . $participantId . '?return_url=' . urlencode($participantReturnUrl));
+        redirect('/admin/participant/' . $participantId);
     }
 
 	    try {
@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
 
 	            $_SESSION['success_message'] = 'Данные участника обновлены';
-	            redirect('/admin/participant/' . $participantId . '?return_url=' . urlencode($participantReturnUrl));
+	            redirect('/admin/participant/' . $participantId);
 	        }
 
 	        if ($_POST['action'] === 'generate_diploma') {
@@ -86,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 	            $template = getDiplomaTemplateById((int) ($diploma['template_id'] ?? 0));
 	            $templateTitle = trim((string) ($template['title'] ?? ''));
 	            $_SESSION['success_message'] = 'Диплом сформирован' . ($templateTitle !== '' ? ': ' . $templateTitle : '');
-	            redirect('/admin/participant/' . $participantId . '?return_url=' . urlencode($participantReturnUrl) . '#diploma-actions');
+	            redirect('/admin/participant/' . $participantId . '#diploma-actions');
 	        }
 
 	        if ($_POST['action'] === 'download_diploma') {
@@ -117,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 	            $ctx = getWorkDiplomaContext((int) ($participant['work_id'] ?? 0));
 	            $ok = $ctx && sendDiplomaByEmail($ctx, $diploma);
 	            $_SESSION['success_message'] = $ok ? 'Диплом отправлен по почте' : 'Не удалось отправить диплом';
-            redirect('/admin/participant/' . $participantId . '?return_url=' . urlencode($participantReturnUrl));
+            redirect('/admin/participant/' . $participantId);
         }
 
 	        if ($_POST['action'] === 'get_diploma_link') {
@@ -130,14 +130,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 	                throw new RuntimeException('Выбранный вариант диплома ещё не сформирован. Сначала нажмите «Сформировать диплом».');
 	            }
 	            $_SESSION['success_message'] = 'Публичная ссылка: ' . getPublicDiplomaUrl($diploma['public_token']);
-	            redirect('/admin/participant/' . $participantId . '?return_url=' . urlencode($participantReturnUrl));
+	            redirect('/admin/participant/' . $participantId);
 	        }
     } catch (Throwable $e) {
         if (strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1') {
             jsonResponse(['success' => false, 'error' => $e->getMessage()], 422);
         }
         $_SESSION['error_message'] = $e->getMessage();
-        redirect('/admin/participant/' . $participantId . '?return_url=' . urlencode($participantReturnUrl));
+        redirect('/admin/participant/' . $participantId);
     }
 }
 
@@ -215,7 +215,7 @@ $detailsMap = [
     ],
     'Конкурс и заявка' => [
         ['label' => 'Конкурс', 'value' => trim((string) ($participant['contest_title'] ?? '')) ?: '—'],
-        ['label' => 'Заявка', 'value' => '<a class="participant-card-link" href="/admin/application/' . (int) $participant['application_id'] . '?return_url=' . urlencode($currentRequestUri) . '">Перейти к заявке #' . (int) $participant['application_id'] . '</a>', 'is_html' => true],
+        ['label' => 'Заявка', 'value' => '<a class="participant-card-link" href="/admin/application/' . (int) $participant['application_id'] . '">Перейти к заявке #' . (int) $participant['application_id'] . '</a>', 'is_html' => true],
         ['label' => 'Статус заявки', 'value' => '<span class="badge ' . e($statusMeta['badge_class']) . '">' . e($statusMeta['label']) . '</span>', 'is_html' => true],
     ],
 ];
@@ -254,7 +254,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div class="participant-hero__actions">
-            <a href="/admin/application/<?= (int) $participant['application_id'] ?>?return_url=<?= urlencode($currentRequestUri) ?>" class="btn btn--secondary">
+            <a href="/admin/application/<?= (int) $participant['application_id'] ?>" class="btn btn--secondary">
                 <i class="fas fa-file-alt"></i> Перейти к заявке
             </a>
         </div>

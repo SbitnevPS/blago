@@ -329,7 +329,6 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
 <?php endif; ?>
 
 <form method="POST" enctype="multipart/form-data" class="contest-editor-form">
-    <input type="hidden" name="return_url" value="<?= htmlspecialchars($contestReturnUrl) ?>">
     <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
     <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
     <input type="hidden" name="cover_image_uploaded" id="cover_image_uploaded" value="">

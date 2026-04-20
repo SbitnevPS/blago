@@ -162,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send_
             }
 
             $_SESSION['success_message'] = 'Сообщение отправлено';
-            redirect('/admin/messages/user/' . $userId . '?return_url=' . urlencode($messagesReturnUrl));
+            redirect('/admin/messages/user/' . $userId);
         }
     }
 }
@@ -222,8 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
 
             redirect(
                 $currentPageUrl
-                . '?return_url=' . urlencode($messagesReturnUrl)
-                . '&chat_application_id=' . $targetApplicationId
+                . '?chat_application_id=' . $targetApplicationId
                 . '&chat_title=' . urlencode($curatorChatTitle)
             );
         }
@@ -263,8 +262,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggl
 
                 redirect(
                     $currentPageUrl
-                    . '?return_url=' . urlencode($messagesReturnUrl)
-                    . '&chat_application_id=' . $targetApplicationId
+                    . '?chat_application_id=' . $targetApplicationId
                     . '&chat_title=' . urlencode($targetChatTitle)
                 );
             }
@@ -369,8 +367,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
                 $_SESSION['success_message'] = 'Сообщение отправлено в чат';
                 redirect(
                     $currentPageUrl
-                    . '?return_url=' . urlencode($messagesReturnUrl)
-                    . '&chat_application_id=' . $selectedChatApplicationId
+                    . '?chat_application_id=' . $selectedChatApplicationId
                     . '&chat_title=' . urlencode($selectedChatTitle)
                 );
             }
@@ -577,7 +574,7 @@ require_once __DIR__ . '/includes/header.php';
                 </button>
                 <?php endif; ?>
                 <?php if ($latestChat): ?>
-                <a class="btn btn--secondary" href="<?= htmlspecialchars($currentPageUrl) ?>?return_url=<?= urlencode($messagesReturnUrl) ?>&chat_application_id=<?= (int) ($latestChat['application_id'] ?? 0) ?>&chat_title=<?= urlencode((string) ($latestChat['title'] ?? '')) ?>">
+                <a class="btn btn--secondary" href="<?= htmlspecialchars($currentPageUrl) ?>?chat_application_id=<?= (int) ($latestChat['application_id'] ?? 0) ?>&chat_title=<?= urlencode((string) ($latestChat['title'] ?? '')) ?>">
                     <i class="fas fa-comments"></i> Открыть чат
                 </a>
                 <?php endif; ?>
@@ -600,8 +597,7 @@ require_once __DIR__ . '/includes/header.php';
                         $threadTitle = (string) ($thread['title'] ?? '');
                         $threadLabel = getMessageThreadLabel($threadTitle);
                         $threadUrl = $currentPageUrl
-                            . '?return_url=' . urlencode($messagesReturnUrl)
-                            . '&chat_application_id=' . (int) ($thread['application_id'] ?? 0)
+                            . '?chat_application_id=' . (int) ($thread['application_id'] ?? 0)
                             . '&chat_title=' . urlencode($threadTitle);
                     ?>
                     <article class="admin-list-card">
@@ -846,7 +842,7 @@ $adminChatModalId = 'threadChatModal';
 $adminChatModalActive = true;
 $adminChatModalTitle = $selectedChatTitle;
 $adminChatCloseHandler = 'closeThreadChatModal()';
-$adminChatApplicationUrl = '/admin/application/' . (int) $selectedChatApplicationId . '?return_url=' . urlencode($currentPageUrl . '?return_url=' . urlencode($messagesReturnUrl));
+$adminChatApplicationUrl = '/admin/application/' . (int) $selectedChatApplicationId;
 $adminChatMessagesContainerId = 'threadChatMessages';
 $adminChatMessages = $selectedChatMessages;
 $adminChatCurrentUserLabel = $userDisplayName;
@@ -959,7 +955,7 @@ function viewMessage(row) {
     const applicationButton = document.getElementById('viewMessageApplicationBtn');
     if (applicationButton) {
         if (applicationId > 0) {
-            applicationButton.href = '/admin/application/' + applicationId + '?return_url=' + encodeURIComponent(window.location.pathname + window.location.search);
+            applicationButton.href = '/admin/application/' + applicationId;
             applicationButton.style.display = '';
         } else {
             applicationButton.style.display = 'none';

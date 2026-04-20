@@ -875,7 +875,7 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
                     </div>
                     <div class="admin-list-card__meta">
-                        <span><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $thread['application_id'] ?>?return_url=<?= urlencode($messagesReturnUrl) ?>">#<?= (int) $thread['application_id'] ?></a></span>
+                        <span><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a></span>
                         <span><strong>Обновлён:</strong> <?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></span>
                     </div>
                     <div class="admin-list-card__actions">
@@ -915,7 +915,7 @@ require_once __DIR__ . '/includes/header.php';
                         <span class="badge badge--secondary">Архив</span>
                     </div>
                     <div class="admin-list-card__meta">
-                        <span><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $thread['application_id'] ?>?return_url=<?= urlencode($messagesReturnUrl) ?>">#<?= (int) $thread['application_id'] ?></a></span>
+                        <span><strong>Заявка:</strong> <a href="/admin/application/<?= (int) $thread['application_id'] ?>">#<?= (int) $thread['application_id'] ?></a></span>
                         <span><strong>Дата:</strong> <?= date('d.m.Y H:i', strtotime($thread['last_message_at'])) ?></span>
                     </div>
                     <div class="admin-list-card__actions">
@@ -976,7 +976,7 @@ $adminChatModalId = 'disputeChatModal';
 $adminChatModalActive = true;
 $adminChatModalTitle = 'Чат по заявке #' . (int) $selectedDisputeApplicationId;
 $adminChatCloseHandler = 'closeDisputeChatModal()';
-$adminChatApplicationUrl = '/admin/application/' . (int) $selectedDisputeApplicationId . '?return_url=' . urlencode($messagesReturnUrl);
+$adminChatApplicationUrl = '/admin/application/' . (int) $selectedDisputeApplicationId;
 $adminChatMessagesContainerId = 'disputeChatMessages';
 $adminChatMessages = $selectedDisputeMessages;
 $adminChatCurrentUserLabel = $disputeRecipientName !== '' ? $disputeRecipientName : 'Пользователь';
@@ -1128,7 +1128,7 @@ require __DIR__ . '/includes/chat-thread-modal.php';
     if ($userLabel === '') {
         $userLabel = 'Пользователь';
     }
-    $userMessagesUrl = '/admin/messages/user/' . (int) ($msg['user_id'] ?? 0) . '?return_url=' . urlencode((string) ($_SERVER['REQUEST_URI'] ?? '/admin/messages'));
+    $userMessagesUrl = '/admin/messages/user/' . (int) ($msg['user_id'] ?? 0);
 ?>
 <article class="admin-list-card message-user-row" data-user-id="<?= (int) ($msg['user_id'] ?? 0) ?>" data-user-url="<?= e($userMessagesUrl) ?>">
     <div class="admin-list-card__header">

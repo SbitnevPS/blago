@@ -14,7 +14,6 @@ $currentPage = 'contests';
 $pageTitle = 'Конкурсы';
 $breadcrumb = 'Управление конкурсами';
 $pageStyles = ['admin-contests.css'];
-$contestsReturnUrl = (string) ($_SERVER['REQUEST_URI'] ?? '/admin/contests');
 
 function contestsRedirectWithQuery(): void
 {
@@ -251,7 +250,7 @@ require_once __DIR__ . '/includes/header.php';
             <h1 class="contests-toolbar__title">Конкурсы</h1>
             <p class="contests-toolbar__subtitle">Всего: <?= $totalCount ?></p>
         </div>
-        <a href="/admin/contest-edit?return_url=<?= urlencode($contestsReturnUrl) ?>" class="btn btn--primary contests-toolbar__cta">
+        <a href="/admin/contest-edit" class="btn btn--primary contests-toolbar__cta">
             <i class="fas fa-plus" aria-hidden="true"></i>
             <span>Новый конкурс</span>
         </a>
@@ -325,7 +324,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <h3>Пока нет конкурсов</h3>
             <p class="text-secondary mt-sm">Здесь будут отображаться все созданные конкурсы</p>
-            <a href="/admin/contest-edit?return_url=<?= urlencode($contestsReturnUrl) ?>" class="btn btn--primary mt-lg">
+            <a href="/admin/contest-edit" class="btn btn--primary mt-lg">
                 <i class="fas fa-plus" aria-hidden="true"></i>
                 <span>Создать первый конкурс</span>
             </a>
@@ -393,7 +392,7 @@ require_once __DIR__ . '/includes/header.php';
 
                 <footer class="contest-card__footer">
                     <div class="contest-card__primary-actions">
-                        <a href="/admin/contest/<?= $contestId ?>?return_url=<?= urlencode($contestsReturnUrl) ?>" class="btn btn--secondary contest-btn-main" aria-label="Редактировать конкурс <?= htmlspecialchars((string) $contest['title']) ?>">
+                        <a href="/admin/contest/<?= $contestId ?>" class="btn btn--secondary contest-btn-main" aria-label="Редактировать конкурс <?= htmlspecialchars((string) $contest['title']) ?>">
                             <i class="fas fa-pen-to-square" aria-hidden="true"></i>
                             <span>Редактировать</span>
                         </a>
