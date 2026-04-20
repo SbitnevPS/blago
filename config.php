@@ -3093,9 +3093,31 @@ function getUserMessages($userId, $limit = 20) {
 function getUnreadMessageCount($userId) {
     global $pdo;
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM admin_messages WHERE user_id = ? AND is_read = 0");
-    $stmt->execute([$userId]);
-    return (int) $stmt->fetchColumn();
+    try {
+        $adminMessagesStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM admin_messages
+            WHERE user_id = ?
+              AND is_read = 0
+        ");
+        $adminMessagesStmt->execute([$userId]);
+        $adminMessagesUnread = (int) $adminMessagesStmt->fetchColumn();
+
+        $chatMessagesStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM messages m
+            INNER JOIN users u ON u.id = m.created_by
+            WHERE m.user_id = ?
+              AND m.is_read = 0
+              AND u.is_admin = 1
+        ");
+        $chatMessagesStmt->execute([$userId]);
+        $chatMessagesUnread = (int) $chatMessagesStmt->fetchColumn();
+
+        return $adminMessagesUnread + $chatMessagesUnread;
+    } catch (Throwable $e) {
+        return 0;
+    }
 }
 
 function getUserUnreadCountsByApplication(int $userId): array {
@@ -3170,7 +3192,6 @@ function getAdminUnreadDisputeCount() {
             JOIN users u ON u.id = m.created_by
             WHERE m.is_read = 0
               AND u.is_admin = 0
-              AND m.title LIKE 'Оспаривание решения по заявке%'
         ");
         return (int) $stmt->fetchColumn();
     } catch (Exception $e) {
