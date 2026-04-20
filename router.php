@@ -107,6 +107,7 @@ $routes = [
  // Сообщения
  '/messages' => ['file' => 'app/views/public/messages.php', 'name' => 'messages'],
  '/mark-message-read' => ['file' => 'mark-message-read.php', 'name' => 'mark-message-read'],
+ '/delete-user-message' => ['file' => 'delete-user-message.php', 'name' => 'delete-user-message'],
 
  // Правовые документы
  '/legal/privacy' => ['file' => 'app/views/public/legal-privacy.php', 'name' => 'legal-privacy'],

@@ -449,6 +449,7 @@ $currentPage = 'messages';
 ?>
 <div class="message-card <?= $msg['is_read'] ? '' : 'message-card--unread' ?>" 
  data-message-id="<?= (int) $msg['id'] ?>"
+ data-message-subject="<?= htmlspecialchars((string) ($msg['subject'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
  onclick='showMessage(
  <?= (int) $msg['id'] ?>,
  <?= json_encode($msg['subject'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
@@ -477,6 +478,11 @@ $currentPage = 'messages';
 <?php if (!empty($msg['attachment_file'])): ?>
 <div class="message-card__attachment"><i class="fas fa-paperclip"></i> Есть вложение</div>
 <?php endif; ?>
+<div class="message-card__actions" style="margin-top:10px;">
+    <button type="button" class="btn btn--ghost btn--sm js-delete-user-message" data-message-id="<?= (int) $msg['id'] ?>" data-message-subject="<?= htmlspecialchars((string) ($msg['subject'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+        <i class="fas fa-trash"></i> Удалить
+    </button>
+</div>
 </div>
  <?php endforeach; ?>
 </div>
@@ -496,6 +502,11 @@ $currentPage = 'messages';
     <a class="btn btn--secondary" id="detailActionLink" href="#">
         <i class="fas fa-file-alt"></i> Перейти к заявке
     </a>
+</div>
+<div class="mt-lg">
+    <button type="button" class="btn btn--ghost btn--sm" id="detailDeleteMessageBtn" style="color:#ef4444;">
+        <i class="fas fa-trash"></i> Удалить это сообщение
+    </button>
 </div>
 </div>
 </div>
@@ -615,8 +626,10 @@ $currentPage = 'messages';
 
 <script>
 let currentUnreadCount = <?= (int) $unreadCount ?>;
+let currentMessageId = 0;
 
 function showMessage(id, title, content, date, priority, applicationId, isDeclinedNotice, isRevisionNotice, attachmentUrl, attachmentName, attachmentIsImage) {
+    currentMessageId = Number(id || 0);
     document.getElementById('messagesList').style.display = 'none';
     document.getElementById('messageDetail').classList.add('active');
     document.getElementById('detailTitle').textContent = title;
@@ -747,9 +760,90 @@ if (markAllMessagesReadBtn) {
 }
         
 function hideMessage() {
+    currentMessageId = 0;
     document.getElementById('messageDetail').classList.remove('active');
     document.getElementById('messagesList').style.display = 'block';
 }
+
+function removeMessageCardById(messageId) {
+    const card = document.querySelector('.message-card[data-message-id="' + messageId + '"]');
+    if (!card) return false;
+    const wasUnread = card.classList.contains('message-card--unread');
+    card.remove();
+    if (wasUnread && currentUnreadCount > 0) {
+        currentUnreadCount--;
+        updateUnreadBadge();
+    }
+    return true;
+}
+
+function ensureMessagesEmptyState() {
+    const cardsLeft = document.querySelectorAll('.message-card').length;
+    if (cardsLeft > 0 || document.querySelector('.empty-state')) {
+        return;
+    }
+    const list = document.getElementById('messagesList');
+    if (!list || !list.parentNode) return;
+    const emptyState = document.createElement('div');
+    emptyState.className = 'empty-state';
+    emptyState.innerHTML =
+        '<div class="empty-state__icon"><i class="fas fa-envelope-open"></i></div>' +
+        '<h3 class="empty-state__title">Нет сообщений</h3>' +
+        '<p class="empty-state__text">Когда появятся ответы по заявкам, они будут отображаться здесь.</p>';
+    list.parentNode.insertBefore(emptyState, list);
+    list.style.display = 'none';
+}
+
+function deleteUserMessage(messageId, messageSubject, options = {}) {
+    const numericId = Number(messageId || 0);
+    if (!numericId) return;
+
+    const title = String(messageSubject || '').trim();
+    const confirmationText = title !== '' ? `Удалить сообщение «${title}»?` : 'Удалить сообщение?';
+    if (!window.confirm(confirmationText)) return;
+
+    const formData = new URLSearchParams();
+    formData.append('id', String(numericId));
+    formData.append('csrf_token', '<?= generateCSRFToken() ?>');
+
+    fetch('/delete-user-message', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString(),
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (!data.success) {
+                alert(data.error || 'Не удалось удалить сообщение');
+                return;
+            }
+            removeMessageCardById(numericId);
+            ensureMessagesEmptyState();
+            if (options.fromDetail === true) {
+                hideMessage();
+            }
+        })
+        .catch(() => {
+            alert('Не удалось удалить сообщение');
+        });
+}
+
+document.querySelectorAll('.js-delete-user-message').forEach((button) => {
+    button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteUserMessage(button.dataset.messageId, button.dataset.messageSubject);
+    });
+});
+
+document.getElementById('detailDeleteMessageBtn')?.addEventListener('click', () => {
+    if (!currentMessageId) return;
+    const card = document.querySelector('.message-card[data-message-id="' + currentMessageId + '"]');
+    const subject = card?.dataset.messageSubject || document.getElementById('detailTitle')?.textContent || '';
+    deleteUserMessage(currentMessageId, subject, { fromDetail: true });
+});
 
 function closeDisputeChatModal() {
     const url = new URL(window.location.href);

@@ -584,6 +584,77 @@ LIMIT $perPage OFFSET $offset
 ");
 $stmt->execute($params);
 $messages = $stmt->fetchAll();
+
+$chatUnreadByUser = [];
+try {
+    $chatUnreadStmt = $pdo->query("
+        SELECT
+            m.user_id,
+            COUNT(*) AS unread_count,
+            MAX(m.created_at) AS last_unread_at
+        FROM messages m
+        JOIN users author ON author.id = m.created_by
+        WHERE m.is_read = 0
+          AND author.is_admin = 0
+        GROUP BY m.user_id
+    ");
+    foreach ($chatUnreadStmt->fetchAll() as $chatUnreadRow) {
+        $chatUnreadByUser[(int) ($chatUnreadRow['user_id'] ?? 0)] = [
+            'unread_count' => (int) ($chatUnreadRow['unread_count'] ?? 0),
+            'last_unread_at' => (string) ($chatUnreadRow['last_unread_at'] ?? ''),
+        ];
+    }
+} catch (Throwable $e) {
+    $chatUnreadByUser = [];
+}
+
+if (!empty($chatUnreadByUser)) {
+    $knownUserIds = [];
+    foreach ($messages as $messageRow) {
+        $knownUserIds[(int) ($messageRow['user_id'] ?? 0)] = true;
+    }
+
+    $missingUserIds = array_values(array_filter(array_keys($chatUnreadByUser), static function ($userId) use ($knownUserIds) {
+        return $userId > 0 && !isset($knownUserIds[(int) $userId]);
+    }));
+
+    if (!empty($missingUserIds)) {
+        $placeholders = implode(',', array_fill(0, count($missingUserIds), '?'));
+        $missingUsersStmt = $pdo->prepare("
+            SELECT id, name, surname, patronymic, email
+            FROM users
+            WHERE id IN ($placeholders)
+            ORDER BY surname ASC, name ASC, id ASC
+        ");
+        $missingUsersStmt->execute($missingUserIds);
+        foreach ($missingUsersStmt->fetchAll() as $userRow) {
+            $userId = (int) ($userRow['id'] ?? 0);
+            if ($userId <= 0 || !isset($chatUnreadByUser[$userId])) {
+                continue;
+            }
+            $messages[] = [
+                'user_id' => $userId,
+                'user_name' => (string) ($userRow['name'] ?? ''),
+                'user_surname' => (string) ($userRow['surname'] ?? ''),
+                'user_patronymic' => (string) ($userRow['patronymic'] ?? ''),
+                'user_email' => (string) ($userRow['email'] ?? ''),
+                'messages_count' => 0,
+                'last_message_at' => (string) ($chatUnreadByUser[$userId]['last_unread_at'] ?? date('Y-m-d H:i:s')),
+                'last_subject' => 'Новый ответ пользователя в чате',
+                'last_priority' => 'important',
+            ];
+        }
+
+        usort($messages, static function (array $left, array $right): int {
+            $leftTime = strtotime((string) ($left['last_message_at'] ?? '')) ?: 0;
+            $rightTime = strtotime((string) ($right['last_message_at'] ?? '')) ?: 0;
+            if ($leftTime === $rightTime) {
+                return ((int) ($right['user_id'] ?? 0)) <=> ((int) ($left['user_id'] ?? 0));
+            }
+            return $rightTime <=> $leftTime;
+        });
+    }
+}
 // --- СТАТИСТИКА ---
 $priorityStats = $pdo->query("
 SELECT priority, COUNT(*) as count 
@@ -817,6 +888,12 @@ require_once __DIR__ . '/includes/header.php';
     .message-view-attachment {
         margin-top: 16px;
     }
+
+    .message-user-row--unread {
+        border-color: #f59e0b;
+        background: #fffbeb;
+        box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.2);
+    }
 </style>
 
 <?php if (isset($error)): ?>
@@ -859,7 +936,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php else: ?>
         <div class="admin-list-cards">
             <?php foreach ($disputeThreads as $thread): ?>
-                <article class="admin-list-card">
+                <article class="admin-list-card <?= (int) ($thread['unread_count'] ?? 0) > 0 ? 'message-user-row--unread' : '' ?>">
                     <div class="admin-list-card__header">
                         <div class="admin-list-card__title-wrap">
                             <h4 class="admin-list-card__title"><?= htmlspecialchars($thread['title']) ?></h4>
@@ -1121,6 +1198,8 @@ require __DIR__ . '/includes/chat-thread-modal.php';
 <div class="admin-list-cards">
 <?php foreach ($messages as $msg): ?>
 <?php
+    $userId = (int) ($msg['user_id'] ?? 0);
+    $chatUnreadCount = (int) ($chatUnreadByUser[$userId]['unread_count'] ?? 0);
     $userLabel = trim((string) (($msg['user_name'] ?? '') . ' ' . ($msg['user_patronymic'] ?? '') . ' ' . ($msg['user_surname'] ?? '')));
     if ($userLabel === '') {
         $userLabel = trim((string) (($msg['user_surname'] ?? '') . ' ' . ($msg['user_name'] ?? '')));
@@ -1128,9 +1207,9 @@ require __DIR__ . '/includes/chat-thread-modal.php';
     if ($userLabel === '') {
         $userLabel = 'Пользователь';
     }
-    $userMessagesUrl = '/admin/messages/user/' . (int) ($msg['user_id'] ?? 0);
+    $userMessagesUrl = '/admin/messages/user/' . $userId;
 ?>
-<article class="admin-list-card message-user-row" data-user-id="<?= (int) ($msg['user_id'] ?? 0) ?>" data-user-url="<?= e($userMessagesUrl) ?>">
+<article class="admin-list-card message-user-row <?= $chatUnreadCount > 0 ? 'message-user-row--unread' : '' ?>" data-user-id="<?= $userId ?>" data-user-url="<?= e($userMessagesUrl) ?>">
     <div class="admin-list-card__header">
         <div class="admin-list-card__title-wrap">
             <h4 class="admin-list-card__title"><?= htmlspecialchars($userLabel) ?></h4>
@@ -1138,9 +1217,13 @@ require __DIR__ . '/includes/chat-thread-modal.php';
                 <?= htmlspecialchars((string) ($msg['user_email'] ?? 'Email не указан')) ?>
             </div>
         </div>
-        <span class="badge <?= ($msg['last_priority'] ?? 'normal') === 'critical' ? 'badge--error' : (($msg['last_priority'] ?? 'normal') === 'important' ? 'badge--warning' : 'badge--secondary') ?>">
-            <?= ($msg['last_priority'] ?? 'normal') === 'critical' ? 'Критическое' : (($msg['last_priority'] ?? 'normal') === 'important' ? 'Важное' : 'Обычное') ?>
-        </span>
+        <?php if ($chatUnreadCount > 0): ?>
+            <span class="badge badge--warning">Новый ответ: <?= $chatUnreadCount ?></span>
+        <?php else: ?>
+            <span class="badge <?= ($msg['last_priority'] ?? 'normal') === 'critical' ? 'badge--error' : (($msg['last_priority'] ?? 'normal') === 'important' ? 'badge--warning' : 'badge--secondary') ?>">
+                <?= ($msg['last_priority'] ?? 'normal') === 'critical' ? 'Критическое' : (($msg['last_priority'] ?? 'normal') === 'important' ? 'Важное' : 'Обычное') ?>
+            </span>
+        <?php endif; ?>
     </div>
     <div class="admin-list-card__meta">
         <span><strong>Последнее сообщение:</strong> <?= date('d.m.Y H:i', strtotime((string) $msg['last_message_at'])) ?></span>
