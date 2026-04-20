@@ -1115,6 +1115,12 @@ h4 {
 	color: #FFFFFF;
 }
 
+.badge--primary {
+	background: #DBEAFE;
+	color: #1D4ED8;
+	border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
 .badge--warning {
 	background: var(--color-warning-light);
 	color: #92400E;

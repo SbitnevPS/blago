@@ -635,7 +635,7 @@ $currentPage = 'applications';
 .status-pill {display:inline-flex; align-items:center; border-radius:999px; padding:6px 12px; font-size:13px; font-weight:700;}
 .status-pill--pending {background:#FEF3C7; color:#92400E;}
 .status-pill--draft {background:#F3F4F6; color:#374151;}
-.status-pill--submitted {background:#D1FAE5; color:#065F46;}
+.status-pill--submitted {background:#DBEAFE; color:#1D4ED8; border:1px solid rgba(59,130,246,.2);}
 .status-pill--revision {background:#DBEAFE; color:#1E40AF;}
 .status-pill--corrected {background:#E0F2FE; color:#0C4A6E;}
 .status-pill--accepted {background:#16A34A; color:#FFFFFF;}
