@@ -423,7 +423,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
     }
 
     $pdo->beginTransaction();
-    $resubmittedForReview = false;
     try {
         $pdo->prepare("
             UPDATE participants
@@ -445,16 +444,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
         ");
         $remainingCorrectionsStmt->execute([$applicationId]);
         $remainingCorrections = (int) $remainingCorrectionsStmt->fetchColumn();
-        if ($remainingCorrections === 0 && (int)($application['allow_edit'] ?? 0) === 1 && (string)($application['status'] ?? '') !== 'approved') {
-            $pdo->prepare("
-                UPDATE applications
-                SET status = 'corrected', allow_edit = 0, updated_at = NOW()
-                WHERE id = ? AND user_id = ?
-            ")->execute([$applicationId, $userId]);
-            $application['status'] = 'corrected';
-            $application['allow_edit'] = 0;
-            $resubmittedForReview = true;
-        }
 
         $pdo->commit();
     } catch (Throwable $e) {
@@ -489,26 +478,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
         $updatedDrawingPreviewUrl .= '?v=' . time();
     }
 
-    $successMessage = $resubmittedForReview
-        ? 'Заявка исправлена и повторно отправлена на проверку.'
-        : 'Изменения сохранены.';
+    $successMessage = 'Изменения сохранены.';
 
     if ($isAjaxRequest) {
         jsonResponse([
             'success' => true,
             'message' => $successMessage,
             'participant' => [
+                'participant_id' => $participantId,
                 'work_id' => $workId,
                 'fio' => $fio,
                 'age' => $age > 0 ? $age : '—',
                 'drawing_url' => $updatedDrawingUrl,
                 'drawing_preview_url' => $updatedDrawingPreviewUrl,
             ],
-            'resubmitted_for_review' => $resubmittedForReview,
+            'remaining_corrections' => $remainingCorrections,
         ]);
     }
 
     $_SESSION['success_message'] = $successMessage;
+    redirect('/application/' . $applicationId);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') === 'resubmit_corrected_application') {
+    $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
+
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $message = 'Ошибка безопасности. Обновите страницу.';
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => $message], 403);
+        }
+        $_SESSION['error_message'] = $message;
+        redirect('/application/' . $applicationId);
+    }
+
+    $remainingCorrectionsStmt = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM application_corrections
+        WHERE application_id = ? AND is_resolved = 0
+    ");
+    $remainingCorrectionsStmt->execute([$applicationId]);
+    $remainingCorrections = (int) $remainingCorrectionsStmt->fetchColumn();
+
+    if ($remainingCorrections > 0) {
+        $message = 'Сначала исправьте всех участников из списка корректировок.';
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => $message], 422);
+        }
+        $_SESSION['error_message'] = $message;
+        redirect('/application/' . $applicationId);
+    }
+
+    if ((int) ($application['allow_edit'] ?? 0) !== 1 || in_array((string) ($application['status'] ?? ''), ['approved', 'rejected', 'cancelled'], true)) {
+        $message = 'Повторная отправка сейчас недоступна.';
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => $message], 422);
+        }
+        $_SESSION['error_message'] = $message;
+        redirect('/application/' . $applicationId);
+    }
+
+    $pdo->prepare("
+        UPDATE applications
+        SET status = 'corrected', allow_edit = 0, updated_at = NOW()
+        WHERE id = ? AND user_id = ?
+    ")->execute([$applicationId, $userId]);
+
+    $message = 'Заявка исправлена и отправлена на повторную проверку.';
+    if ($isAjaxRequest) {
+        jsonResponse([
+            'success' => true,
+            'message' => $message,
+            'application_status' => 'corrected',
+        ]);
+    }
+
+    $_SESSION['success_message'] = $message;
     redirect('/application/' . $applicationId);
 }
 
@@ -530,6 +575,29 @@ foreach ($unresolvedCorrections as $correction) {
         $participantCorrections[$participantId][] = $correction;
     }
 }
+$participantCorrectionCards = [];
+foreach ($participants as $participantRow) {
+    $participantId = (int) ($participantRow['participant_id'] ?? 0);
+    if ($participantId <= 0 || empty($participantCorrections[$participantId])) {
+        continue;
+    }
+
+    $participantCorrectionCards[] = [
+        'participant_id' => $participantId,
+        'work_id' => (int) ($participantRow['id'] ?? 0),
+        'fio' => trim((string) ($participantRow['fio'] ?? '')) ?: 'Участник без имени',
+        'comments' => array_values(array_map(
+            static function (array $correction): string {
+                $field = trim((string) ($correction['field_name'] ?? ''));
+                $comment = trim((string) ($correction['comment'] ?? ''));
+                return trim($field . ($comment !== '' ? ': ' . $comment : ''));
+            },
+            $participantCorrections[$participantId]
+        )),
+    ];
+}
+$hasPendingParticipantCorrections = !empty($participantCorrectionCards);
+$canResubmitCorrectedApplication = $effectiveApplicationStatus === 'revision' && $canEdit && !$hasPendingParticipantCorrections;
 
 	$allPending = $workSummary['total'] > 0 && $workSummary['pending'] === $workSummary['total'];
 	$participantsTotalCount = count($participants);
@@ -661,6 +729,7 @@ $currentPage = 'applications';
 .app-user-card__label {display:block; margin-bottom:4px; font-size:12px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; color:#64748B;}
 .app-user-card__value {font-size:14px; line-height:1.45; color:#0F172A; word-break:break-word;}
 .app-sidebar {display:flex; flex-direction:column; gap:16px;}
+.app-sidebar__panel {display:flex; flex-direction:column; gap:16px;}
 .participants-grid {display:grid; grid-template-columns:1fr; gap:16px;}
 .participant-modern-card {overflow:hidden; padding:0; transition:transform .2s ease, box-shadow .2s ease;}
 .participant-modern-card:hover {transform:translateY(-2px); box-shadow:0 12px 32px rgba(15,23,42,.12);}
@@ -679,6 +748,27 @@ $currentPage = 'applications';
 .app-actions {display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start;}
 .app-actions__primary {padding:14px 20px; font-size:15px; font-weight:800; box-shadow:0 14px 28px rgba(76,175,80,.18);}
 .app-actions__primary:hover:not(:disabled) {box-shadow:0 18px 34px rgba(76,175,80,.24);}
+.app-review-card {display:grid; gap:14px;}
+.app-review-card__lead {margin:0; color:#475569; font-size:14px; line-height:1.45;}
+.app-review-list {display:grid; gap:10px;}
+.app-review-item {display:grid; gap:8px; width:100%; padding:14px 16px; border:1px solid #DBEAFE; border-radius:14px; background:linear-gradient(145deg,#f8fbff,#ffffff); text-align:left; cursor:pointer; transition:transform .2s ease, border-color .2s ease, box-shadow .2s ease;}
+.app-review-item:hover {transform:translateY(-1px); border-color:#93C5FD; box-shadow:0 14px 28px rgba(37,99,235,.08);}
+.app-review-item__head {display:flex; align-items:center; justify-content:space-between; gap:12px;}
+.app-review-item__name {font-size:15px; font-weight:800; color:#0F172A;}
+.app-review-item__hint {font-size:12px; font-weight:700; color:#2563EB;}
+.app-review-item__state {display:inline-flex; align-items:center; justify-content:center; padding:5px 10px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:.02em; text-transform:uppercase; background:#FEF3C7; color:#92400E;}
+.app-review-item--fixed {border-color:#BBF7D0; background:linear-gradient(145deg,#f0fdf4,#ffffff);}
+.app-review-item--fixed .app-review-item__state {background:#DCFCE7; color:#166534;}
+.app-review-item__comments {display:grid; gap:6px;}
+.app-review-item__comment {font-size:13px; line-height:1.45; color:#475569;}
+.app-review-empty {padding:14px 16px; border-radius:14px; border:1px dashed #BFDBFE; background:#EFF6FF; color:#1E3A8A; font-size:14px; line-height:1.5;}
+.app-review-empty[hidden] {display:none;}
+.app-actions-card {display:grid; gap:12px;}
+.app-actions-card__note {color:#64748B; font-size:14px; line-height:1.45;}
+.app-actions-card__cta {width:100%;}
+.app-responsibility-card {padding:14px 16px; border-radius:14px; border:1px solid #FDE68A; background:linear-gradient(145deg,#fffdf5,#ffffff); color:#92400E; display:grid; gap:8px;}
+.app-responsibility-card__title {display:flex; align-items:center; gap:8px; font-size:14px; font-weight:800; color:#92400E;}
+.app-responsibility-card__text {margin:0; font-size:13px; line-height:1.5; color:#7C5A10;}
 @keyframes appShimmer {0% {background-position:100% 50%;} 100% {background-position:0 50%;}}
 .dispute-chat-modal {max-width:760px; width:calc(100% - 32px);}
 .dispute-chat-modal__body {display:flex; flex-direction:column; gap:16px;}
@@ -778,7 +868,7 @@ $currentPage = 'applications';
                                 $participantGalleryIndex = $galleryDisplayIndex++;
                             }
                         ?>
-                        <article class="app-card participant-modern-card<?= $hasParticipantCorrection ? ' participant-card--needs-fix' : '' ?>" data-work-id="<?= (int)($participant['id'] ?? 0) ?>">
+                        <article class="app-card participant-modern-card<?= $hasParticipantCorrection ? ' participant-card--needs-fix' : '' ?>" id="participant-card-<?= (int) ($participant['participant_id'] ?? 0) ?>" data-work-id="<?= (int)($participant['id'] ?? 0) ?>" data-participant-id="<?= (int) ($participant['participant_id'] ?? 0) ?>">
                             <div class="participant-modern-card__image-wrap">
                                 <?php if ($drawingSrc !== ''): ?>
                                     <img src="<?= e($drawingPreviewSrc) ?>" alt="Рисунок участника <?= e((string)($participant['fio'] ?? '')) ?>" class="participant-modern-card__image js-gallery-image" data-gallery-index="<?= (int) $participantGalleryIndex ?>">
@@ -844,56 +934,39 @@ $currentPage = 'applications';
     </section>
 
     <aside class="app-sidebar">
-        <section class="app-card">
-            <h2 class="app-card__title" style="font-size:18px;">Информация о пользователе</h2>
-            <div class="app-user-card">
-                <div class="app-user-card__head">
-                    <div class="app-user-card__avatar"><i class="fas fa-user"></i></div>
-                    <div class="app-user-card__meta">
-                        <div class="app-user-card__name"><?= e($userFullName !== '' ? $userFullName : 'Пользователь') ?></div>
-                        <div class="app-user-card__subtitle">Данные профиля, привязанные к этой заявке</div>
-                    </div>
-                </div>
-                <div class="app-user-card__grid">
-                    <div class="app-user-card__item">
-                        <span class="app-user-card__label">Email</span>
-                        <div class="app-user-card__value"><?= !empty($user['email']) ? e((string) $user['email']) : 'Email не указан' ?></div>
-                    </div>
-                    <div class="app-user-card__item">
-                        <span class="app-user-card__label">Тип участника</span>
-                        <div class="app-user-card__value"><?= e(getUserTypeLabel((string) ($user['user_type'] ?? 'parent'))) ?></div>
-                    </div>
-                    <div class="app-user-card__item">
-                        <span class="app-user-card__label">Регион</span>
-                        <div class="app-user-card__value"><?= e($userRegion !== '' ? $userRegion : 'Регион не указан') ?></div>
-                    </div>
-                    <div class="app-user-card__item">
-                        <span class="app-user-card__label">Организация</span>
-                        <div class="app-user-card__value"><?= e($userOrganization !== '' ? $userOrganization : 'Организация не указана') ?></div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
+        <div class="app-sidebar__panel">
         <?php if (!empty($unresolvedCorrections) || $application['status'] === 'revision'): ?>
-        <section class="app-card">
-            <h2 class="app-card__title" style="font-size:18px;">Статус и комментарии</h2>
-            <div class="app-highlight">
-                <div><strong>Требуются корректировки</strong></div>
-                <?php if (!empty($unresolvedCorrections)): ?>
-                    <?php foreach ($unresolvedCorrections as $corr): ?>
-                        <div>• <?= htmlspecialchars($corr['field_name']) ?><?= !empty($corr['comment']) ? ': ' . htmlspecialchars($corr['comment']) : '' ?></div>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <div>Администратор запросил внесение правок в заявку.</div>
-                <?php endif; ?>
+        <section class="app-card app-review-card" id="applicationCorrectionCard">
+            <h2 class="app-card__title" style="font-size:18px;" id="applicationCorrectionTitle">Статус и комментарии</h2>
+            <p class="app-review-card__lead" id="applicationCorrectionLead">
+                <?= $hasPendingParticipantCorrections
+                    ? 'Выберите участника из списка, чтобы сразу перейти к нужной карточке и внести исправления.'
+                    : 'Все отмеченные участники уже исправлены. Можно отправить заявку на повторную проверку.' ?>
+            </p>
+            <div class="app-review-list" id="applicationCorrectionList"<?= $hasPendingParticipantCorrections ? '' : ' hidden' ?>>
+                <?php foreach ($participantCorrectionCards as $correctionCard): ?>
+                    <button type="button" class="app-review-item" data-correction-participant-id="<?= (int) $correctionCard['participant_id'] ?>" data-correction-status="pending">
+                        <span class="app-review-item__head">
+                            <span class="app-review-item__name"><?= e($correctionCard['fio']) ?></span>
+                            <span class="app-review-item__hint">Перейти к участнику</span>
+                        </span>
+                        <span class="app-review-item__comments">
+                            <?php foreach ($correctionCard['comments'] as $commentText): ?>
+                                <span class="app-review-item__comment">• <?= e($commentText) ?></span>
+                            <?php endforeach; ?>
+                        </span>
+                        <span class="app-review-item__state">Нужно исправить</span>
+                    </button>
+                <?php endforeach; ?>
+            </div>
+            <div class="app-review-empty" id="applicationCorrectionEmpty"<?= $hasPendingParticipantCorrections ? ' hidden' : '' ?>>
+                Список корректировок пуст. Всё готово для повторной отправки заявки на проверку.
             </div>
         </section>
         <?php endif; ?>
 
-        <section class="app-card">
-            <h2 class="app-card__title" style="font-size:18px;">Действия</h2>
-            <div class="app-actions">
+        <section class="app-card app-actions-card" id="applicationActionsCard">
+            <div class="app-actions" id="applicationActionsContent">
                 <?php if ($effectiveApplicationStatus === 'draft'): ?>
                     <?php if ($canEdit): ?>
                         <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary app-actions__primary"><i class="fas fa-pen"></i> Продолжить заполнение</a>
@@ -903,7 +976,19 @@ $currentPage = 'applications';
                         <div>Она ещё не отправлена на проверку. Проверьте данные и отправьте её после завершения заполнения.</div>
                     </div>
                 <?php elseif ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
-                    <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary app-actions__primary"><i class="fas fa-pen"></i> Исправить заявку</a>
+                    <?php if ($canResubmitCorrectedApplication): ?>
+                        <form id="resubmitApplicationForm" method="POST" style="width:100%;">
+                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                            <input type="hidden" name="action" value="resubmit_corrected_application">
+                            <input type="hidden" name="ajax" value="1">
+                            <button type="submit" class="btn btn--primary app-actions__primary app-actions-card__cta" id="resubmitApplicationButton">
+                                <i class="fas fa-paper-plane"></i> Отправить заявку на повторную проверку
+                            </button>
+                        </form>
+                    <?php else: ?>
+                        <div class="app-actions-card__note" id="resubmitApplicationHint">Сначала исправьте всех участников из списка корректировок. После этого здесь появится кнопка повторной отправки.</div>
+                    <?php endif; ?>
 	                <?php elseif ($hasDiplomas): ?>
 	                    <div class="app-highlight" style="width:100%;">
 	                        <strong>Дипломы</strong>
@@ -922,6 +1007,18 @@ $currentPage = 'applications';
                 <a href="/my-applications" class="btn btn--secondary"><i class="fas fa-arrow-left"></i> К списку заяввок</a>
             </div>
         </section>
+        <?php if ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
+        <section class="app-responsibility-card" id="applicationResponsibilityCard" aria-label="Ответственность за исправления">
+            <div class="app-responsibility-card__title">
+                <i class="fas fa-circle-exclamation"></i>
+                <span>Ответственность за исправления</span>
+            </div>
+            <p class="app-responsibility-card__text">
+                Пользователь самостоятельно несёт ответственность за все внесённые изменения перед повторной отправкой заявки на проверку.
+            </p>
+        </section>
+        <?php endif; ?>
+        </div>
     </aside>
 </div>
 
@@ -1251,6 +1348,76 @@ function clearParticipantDrawingObjectUrl() {
  }
 }
 
+function scrollToParticipantCard(participantId) {
+ const numericParticipantId = Number(participantId || 0);
+ if (!numericParticipantId) return;
+ const card = document.getElementById(`participant-card-${numericParticipantId}`);
+ if (!card) return;
+ card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+ window.setTimeout(() => {
+  card.classList.add('participant-card--needs-fix');
+  window.setTimeout(() => card.classList.remove('participant-card--needs-fix'), 1600);
+ }, 120);
+}
+
+function updateCorrectionProgressUi() {
+ const correctionList = document.getElementById('applicationCorrectionList');
+ const correctionEmpty = document.getElementById('applicationCorrectionEmpty');
+ const correctionLead = document.getElementById('applicationCorrectionLead');
+ const resubmitHint = document.getElementById('resubmitApplicationHint');
+ const items = [...(correctionList?.querySelectorAll('[data-correction-participant-id]') || [])];
+ const allFixed = items.length > 0 && items.every((item) => item.dataset.correctionStatus === 'fixed');
+
+ if (items.length === 0) {
+  correctionList?.setAttribute('hidden', 'hidden');
+  correctionEmpty?.removeAttribute('hidden');
+  if (correctionLead) {
+   correctionLead.textContent = 'Список корректировок пуст. Всё готово для повторной отправки заявки на проверку.';
+  }
+  return;
+ }
+
+ correctionList?.removeAttribute('hidden');
+ correctionEmpty?.setAttribute('hidden', 'hidden');
+ if (correctionLead) {
+  correctionLead.textContent = allFixed
+   ? 'Все участники отмечены как исправленные. Теперь можно отправить заявку на повторную проверку.'
+   : 'Выберите участника из списка, чтобы сразу перейти к нужной карточке и внести исправления.';
+ }
+
+ if (allFixed && resubmitHint) {
+  resubmitHint.outerHTML = `
+   <form id="resubmitApplicationForm" method="POST" style="width:100%;">
+     <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+     <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+     <input type="hidden" name="action" value="resubmit_corrected_application">
+     <input type="hidden" name="ajax" value="1">
+     <button type="submit" class="btn btn--primary app-actions__primary app-actions-card__cta" id="resubmitApplicationButton">
+       <i class="fas fa-paper-plane"></i> Отправить заявку на повторную проверку
+     </button>
+   </form>
+  `;
+  bindResubmitApplicationForm();
+ }
+}
+
+function markParticipantCorrectionAsFixed(participantId) {
+ const numericParticipantId = Number(participantId || 0);
+ if (!numericParticipantId) return;
+
+ const correctionButton = document.querySelector(`[data-correction-participant-id="${numericParticipantId}"]`);
+ if (!correctionButton) return;
+
+ correctionButton.dataset.correctionStatus = 'fixed';
+ correctionButton.classList.add('app-review-item--fixed');
+ const state = correctionButton.querySelector('.app-review-item__state');
+ if (state) {
+  state.textContent = 'Исправлено';
+ }
+
+ updateCorrectionProgressUi();
+}
+
 function updateParticipantCardAfterSave(participant) {
  if (!participant || !participant.work_id) return;
  const card = document.querySelector(`.participant-modern-card[data-work-id="${participant.work_id}"]`);
@@ -1285,8 +1452,14 @@ function updateParticipantCardAfterSave(participant) {
   const imageNode = card.querySelector('.participant-modern-card__image');
   if (imageNode) {
    imageNode.src = participant.drawing_preview_url || participant.drawing_url;
+   if (participant.drawing_url) {
+    imageNode.dataset.fullSrc = participant.drawing_url;
+   }
   }
  }
+
+ card.classList.remove('participant-card--needs-fix');
+ card.querySelectorAll('.app-highlight').forEach((node) => node.remove());
 }
 
 function applyApplicationResubmittedState() {
@@ -1302,10 +1475,32 @@ function applyApplicationResubmittedState() {
   statusPill.className = 'status-pill status-pill--corrected';
   statusPill.textContent = 'Исправлена, и отправлена на проверку';
  }
+
+ const correctionLead = document.getElementById('applicationCorrectionLead');
+ if (correctionLead) {
+  correctionLead.textContent = 'Заявка повторно отправлена на проверку. Ожидайте решение организатора.';
+ }
+
+ const correctionEmpty = document.getElementById('applicationCorrectionEmpty');
+ if (correctionEmpty) {
+  correctionEmpty.textContent = 'Все исправления отправлены. Заявка ожидает повторную проверку.';
+  correctionEmpty.removeAttribute('hidden');
+ }
+
+ document.getElementById('applicationCorrectionList')?.setAttribute('hidden', 'hidden');
+ document.getElementById('resubmitApplicationForm')?.remove();
+ document.getElementById('resubmitApplicationHint')?.remove();
+ document.getElementById('applicationResponsibilityCard')?.remove();
 }
 
 document.querySelectorAll('.js-open-participant-edit').forEach((button) => {
  button.addEventListener('click', () => openParticipantEditModal(button));
+});
+
+document.querySelectorAll('[data-correction-participant-id]').forEach((button) => {
+ button.addEventListener('click', () => {
+  scrollToParticipantCard(button.dataset.correctionParticipantId);
+ });
 });
 
 document.getElementById('participantEditModal')?.addEventListener('click', (event) => {
@@ -1388,9 +1583,7 @@ if (participantEditForm) {
    }
 
    updateParticipantCardAfterSave(data.participant || null);
-   if (data.resubmitted_for_review) {
-    applyApplicationResubmittedState();
-   }
+   markParticipantCorrectionAsFixed(data.participant?.participant_id || 0);
    showToast(data.message || 'Изменения сохранены', 'success');
    clearParticipantDrawingObjectUrl();
    closeParticipantEditModal();
@@ -1404,6 +1597,46 @@ if (participantEditForm) {
   }
  });
 }
+
+function bindResubmitApplicationForm() {
+ const form = document.getElementById('resubmitApplicationForm');
+ if (!form || form.dataset.bound === '1') return;
+ form.dataset.bound = '1';
+
+ form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = document.getElementById('resubmitApplicationButton');
+  const defaultHtml = button ? button.innerHTML : '';
+  if (button) {
+   button.disabled = true;
+   button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправляем...';
+  }
+
+  try {
+   const response = await fetch(window.location.href, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    body: new FormData(form),
+   });
+   const data = await response.json();
+   if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Не удалось отправить заявку на повторную проверку.');
+   }
+
+   applyApplicationResubmittedState();
+   showToast(data.message || 'Заявка отправлена на повторную проверку', 'success');
+  } catch (error) {
+   showToast(error.message || 'Ошибка повторной отправки заявки', 'error');
+   if (button) {
+    button.disabled = false;
+    button.innerHTML = defaultHtml;
+   }
+  }
+ });
+}
+
+bindResubmitApplicationForm();
+updateCorrectionProgressUi();
 
 const currentApplicationId = Number(<?= (int) $applicationId ?>);
 const currentApplicationStatus = <?= json_encode((string) ($application['status'] ?? '')) ?>;

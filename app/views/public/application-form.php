@@ -1017,7 +1017,6 @@ const steps = needsPaymentReceipt
 const draftKey = `applicationDraft:${contestId}:<?= intval($user['id'] ?? 0) ?>`;
 let currentStep = 1;
 let participantCount = 0;
-let autoSaveTimerId = null;
 let autoSaveInFlight = false;
 let autoSaveQueued = false;
 let lastAutoSaveSignature = '';
@@ -1240,6 +1239,7 @@ function isApplicationReadyToSubmit() {
 
 function validateStep(step) {
     let valid = true;
+    let firstMissingDrawingIndex = null;
     const stepNode = document.querySelector(`.wizard-step[data-step="${step}"]`);
     if (!stepNode) return true;
     stepNode.querySelectorAll('[required]').forEach((input) => {
@@ -1261,9 +1261,16 @@ function validateStep(step) {
             if (!field.value && !(existing && existing.value)) {
                 const box = document.getElementById(`drawingUpload_${idx}`);
                 if (box) box.classList.add('is-invalid');
+                if (firstMissingDrawingIndex === null) {
+                    firstMissingDrawingIndex = Number(idx);
+                }
                 valid = false;
             }
         });
+
+        if (firstMissingDrawingIndex !== null) {
+            focusParticipantWithMissingDrawing(firstMissingDrawingIndex);
+        }
     }
 
     if (needsPaymentReceipt && step === paymentStepNumber && !hasPaymentReceipt()) {
@@ -1357,6 +1364,23 @@ function focusDuplicateParticipantByIndex(index) {
     card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     window.setTimeout(() => {
         card?.querySelector('input, textarea, select')?.focus();
+    }, 160);
+}
+
+function focusParticipantWithMissingDrawing(index) {
+    const targetIndex = Number(index);
+    if (Number.isNaN(targetIndex)) return;
+
+    const card = document.querySelector(`.participant-form[data-index="${targetIndex}"]`);
+    const body = card?.querySelector('.participant-form__body');
+    if (body) {
+        body.hidden = false;
+    }
+
+    card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => {
+        const uploadArea = document.getElementById(`drawingUpload_${targetIndex}`);
+        uploadArea?.focus?.();
     }, 160);
 }
 
@@ -1649,6 +1673,9 @@ function addParticipant(data = null, options = {}) {
     participantCount++;
     syncParticipantRemoveButtons();
     updateParticipantsState();
+    if (options.autoSave === true) {
+        autoSaveDraft({ force: true });
+    }
     if (options.scrollIntoView) {
         scrollToParticipantForm(card);
     }
@@ -1750,6 +1777,7 @@ function handleFileSelect(file, index) {
             });
             saveLocalDraft();
             updateSidebar();
+            autoSaveDraft({ force: true });
         })
         .catch((error) => {
             if (previousPreviewUrl) {
@@ -2015,20 +2043,6 @@ async function autoSaveDraft(options = {}) {
     }
 }
 
-function startAutoSave() {
-    if (autoSaveTimerId) {
-        window.clearInterval(autoSaveTimerId);
-    }
-
-    if (!autoSaveEnabled) {
-        return;
-    }
-
-    autoSaveTimerId = window.setInterval(() => {
-        autoSaveDraft();
-    }, 10000);
-}
-
 function triggerSubmitAfterAutoSave(submitter = null) {
     const form = document.getElementById('applicationForm');
     if (!form) return;
@@ -2156,10 +2170,9 @@ document.addEventListener('DOMContentLoaded', function () {
     updateProgress();
     updateSidebar();
     lastAutoSaveSignature = getAutoSaveSignature();
-    startAutoSave();
 
     document.getElementById('addParticipantBtn').addEventListener('click', () => {
-        addParticipant(null, { scrollIntoView: true });
+        addParticipant(null, { scrollIntoView: true, autoSave: true });
     });
     document.getElementById('nextStepBtn').addEventListener('click', () => goStep(Math.min(currentStep + 1, steps.length)));
     document.getElementById('prevStepBtn').addEventListener('click', () => goStep(Math.max(currentStep - 1, 1)));

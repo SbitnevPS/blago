@@ -331,7 +331,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 	        }
 	        $_SESSION['success_message'] = 'Статус работы обновлён';
 	        redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
-	    } elseif ($_POST['action'] === 'approve_application') {
+    } elseif ($_POST['action'] === 'approve_application') {
         if ($hasDrawingCompliantColumn) {
             $unresolvedStmt = $pdo->prepare("
                 SELECT COUNT(*)
@@ -368,15 +368,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             ->execute([$application_id]);
         disallowApplicationEdit($application_id);
 
+        $acceptedWorksStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM works
+            WHERE application_id = ?
+              AND status = 'accepted'
+        ");
+        $acceptedWorksStmt->execute([$application_id]);
+        $hasAcceptedWorksForVkPublish = (int) $acceptedWorksStmt->fetchColumn() > 0;
+
         if ($isAjaxRequest) {
             jsonResponse([
                 'success' => true,
                 'message' => 'Заявка принята',
+                'open_vk_publish_prompt' => $hasAcceptedWorksForVkPublish,
             ]);
         }
 
         $_SESSION['success_message'] = 'Заявка принята';
-        $_SESSION['vk_publish_prompt_application_id'] = (int) $application_id;
+        if ($hasAcceptedWorksForVkPublish) {
+            $_SESSION['vk_publish_prompt_application_id'] = (int) $application_id;
+        }
         redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
     } elseif ($_POST['action'] === 'cancel_application') {
         $stmt = $pdo->prepare("UPDATE applications SET status = 'cancelled', updated_at = NOW() WHERE id = ?");
@@ -987,7 +999,7 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                     </div>
                 </div>
                 <div class="application-sidebar-actions">
-                    <form method="POST" class="js-application-secondary-action" id="sendToRevisionForm" onsubmit="return confirm('Отправить заявку на корректировку?');"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning <?= $isRevisionApplicationState ? 'is-current' : '' ?>" id="sendToRevisionButton" <?= $revisionButtonDisabled ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>><i class="fas fa-edit"></i> На корректировку</button></form>
+                    <form method="POST" class="js-application-secondary-action" id="sendToRevisionForm"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning <?= $isRevisionApplicationState ? 'is-current' : '' ?>" id="sendToRevisionButton" <?= $revisionButtonDisabled ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>><i class="fas fa-edit"></i> На корректировку</button></form>
                     <form method="POST" class="js-application-secondary-action"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger <?= $isRejectedApplicationState ? 'is-current' : '' ?>" id="declineApplicationButton" <?= $declineButtonDisabled ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>><i class="fas fa-times-circle"></i> Отклонить</button></form>
                     <form method="POST" id="approveApplicationForm">
                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
@@ -1938,6 +1950,11 @@ ensureComplianceFieldsAvailable();
                 syncApproveApplicationButtonState();
                 syncRevisionApplicationButtonState();
                 syncDeclineApplicationButtonState();
+                if (!data.open_vk_publish_prompt) {
+                    showToast(data.message || 'Заявка принята', 'success');
+                    window.location.assign('/admin/applications');
+                    return;
+                }
             } catch (error) {
                 approveButton.disabled = false;
                 approveButton.setAttribute('aria-disabled', 'false');

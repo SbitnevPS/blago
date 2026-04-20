@@ -709,16 +709,6 @@ function updateWorkStatus(int $workId, string $status): bool {
         return false;
     }
 
-    if ($status === 'accepted') {
-        $workStmt = $pdo->prepare('SELECT attach_diploma, attached_diploma_type FROM works WHERE id = ? LIMIT 1');
-        $workStmt->execute([$workId]);
-        $work = (array)$workStmt->fetch();
-        $requestedType = ((int)($work['attach_diploma'] ?? 0) === 1)
-            ? trim((string)($work['attached_diploma_type'] ?? ''))
-            : '';
-        generateWorkDiploma($workId, true, $requestedType !== '' ? $requestedType : null);
-    }
-
     return true;
 }
 

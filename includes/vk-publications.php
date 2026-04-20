@@ -234,7 +234,7 @@ function getApplicationVkPublicationStatus(int $applicationId): array
     $totalWorks = (int) ($workCounts['total_works'] ?? 0);
     $acceptedWorks = (int) ($workCounts['accepted_works'] ?? 0);
     $publishedWorks = (int) ($workCounts['published_works'] ?? 0);
-    $readyTotal = $acceptedWorks > 0 ? $acceptedWorks : $totalWorks;
+    $readyTotal = $acceptedWorks;
 
     $taskStmt = $pdo->prepare("
         SELECT
