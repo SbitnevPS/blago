@@ -356,16 +356,57 @@ foreach ($applications as $appRow) {
 $contests = $pdo->query("SELECT id, title, COALESCE(is_archived, 0) AS is_archived FROM contests ORDER BY COALESCE(is_archived, 0) ASC, created_at DESC")->fetchAll();
 
 require_once __DIR__ . '/includes/header.php';
-?>
 
-<?php if (!empty($_SESSION['success_message'])): ?>
-    <div class="alert alert--success mb-lg"><i class="fas fa-check-circle"></i> <?= e($_SESSION['success_message']) ?></div>
-    <?php unset($_SESSION['success_message']); ?>
-<?php endif; ?>
-<?php if (!empty($_SESSION['error_message'])): ?>
-    <div class="alert alert--error mb-lg"><i class="fas fa-exclamation-circle"></i> <?= e($_SESSION['error_message']) ?></div>
-    <?php unset($_SESSION['error_message']); ?>
-<?php endif; ?>
+$successFlashMessage = '';
+if (!empty($_SESSION['success_message'])) {
+    $successFlashMessage = (string) $_SESSION['success_message'];
+    unset($_SESSION['success_message']);
+}
+
+$errorFlashMessage = '';
+if (!empty($_SESSION['error_message'])) {
+    $errorFlashMessage = (string) $_SESSION['error_message'];
+    unset($_SESSION['error_message']);
+}
+?>
+<style>
+    .applications-toast-stack {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 2200;
+        display: grid;
+        gap: 8px;
+        width: min(420px, calc(100vw - 24px));
+        pointer-events: none;
+    }
+
+    .applications-toast {
+        margin: 0;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22);
+        animation: applicationsToastIn .2s ease-out;
+        pointer-events: auto;
+    }
+
+    .applications-toast.is-hiding {
+        opacity: 0;
+        transform: translateY(-8px);
+        transition: opacity .2s ease, transform .2s ease;
+    }
+
+    @keyframes applicationsToastIn {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+
+<div
+    id="applicationsToastStack"
+    class="applications-toast-stack"
+    data-success-message="<?= e($successFlashMessage) ?>"
+    data-error-message="<?= e($errorFlashMessage) ?>"
+    aria-live="polite"
+    aria-atomic="true"></div>
 
 <!-- Фильтры -->
 <div class="card card--allow-overflow mb-lg">
@@ -640,6 +681,41 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <script>
+(() => {
+    const stack = document.getElementById('applicationsToastStack');
+    if (!stack) {
+        return;
+    }
+
+    const showToast = (message, type = 'success') => {
+        if (!message) {
+            return;
+        }
+
+        const toast = document.createElement('div');
+        toast.className = `alert applications-toast ${type === 'error' ? 'alert--error' : 'alert--success'}`;
+        toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+        toast.innerHTML = `
+            <i class="fas ${type === 'error' ? 'fa-exclamation-circle' : 'fa-check-circle'} alert__icon" aria-hidden="true"></i>
+            <div class="alert__content"><div class="alert__message"></div></div>
+        `;
+        toast.querySelector('.alert__message').textContent = message;
+        stack.appendChild(toast);
+
+        window.setTimeout(() => {
+            toast.classList.add('is-hiding');
+            window.setTimeout(() => {
+                toast.remove();
+            }, 220);
+        }, 2500);
+    };
+
+    const successMessage = stack.dataset.successMessage || '';
+    const errorMessage = stack.dataset.errorMessage || '';
+    showToast(successMessage, 'success');
+    showToast(errorMessage, 'error');
+})();
+
 (() => {
     const csrfTokenValue = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE) ?>;
     let selectionModeEnabled = false;
