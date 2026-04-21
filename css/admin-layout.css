@@ -31,7 +31,9 @@ line-height: 1.5;
  top:0;
  left:0;
  height:100vh;
- overflow-y: auto;
+ display: flex;
+ flex-direction: column;
+ overflow: hidden;
  z-index:100;
  }
         
@@ -55,6 +57,8 @@ line-height: 1.5;
         
  .admin-sidebar__nav {
  padding: 16px0;
+ flex: 1 1 auto;
+ overflow-y: auto;
  }
         
  .admin-sidebar__link {
@@ -175,11 +179,11 @@ overflow-x: hidden;
  }
 
  .admin-sidebar__bottom-links {
- position: absolute;
- bottom:20px;
- left:0;
- right:0;
- padding:0 20px;
+ margin-top: auto;
+ flex-shrink: 0;
+ padding: 8px 0 20px;
+ border-top: 1px solid rgba(255,255,255,0.08);
+ background: rgba(16, 16, 28, 0.35);
  }
 
  .admin-sidebar__link--logout {
