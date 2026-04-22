@@ -13,6 +13,7 @@ if (typeof window.initFrontendLiveChat !== 'function') {
             onToastClick: null,
             onSubmitSuccess: null,
             onSubmitError: null,
+            onDeleteAttachment: null,
             onCloseOverlay: null,
             autoOpenHash: '',
             pollOpenDelay: 5000,
@@ -44,7 +45,7 @@ if (typeof window.initFrontendLiveChat !== 'function') {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
 
-        function appendAttachment(bubble, attachment) {
+        function appendAttachment(bubble, attachment, messageData) {
             if (!bubble || !attachment || !attachment.url) return;
 
             const attachmentWrap = document.createElement('div');
@@ -85,6 +86,17 @@ if (typeof window.initFrontendLiveChat !== 'function') {
                 attachmentWrap.appendChild(link);
             }
 
+            if (messageData && messageData.can_delete_attachment) {
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.className = 'btn btn--ghost btn--sm js-delete-chat-attachment';
+                removeButton.dataset.messageId = String(Number(messageData.id || 0));
+                removeButton.style.marginTop = '8px';
+                removeButton.style.color = '#ef4444';
+                removeButton.innerHTML = '<i class="fas fa-trash"></i> Удалить файл';
+                attachmentWrap.appendChild(removeButton);
+            }
+
             bubble.appendChild(attachmentWrap);
         }
 
@@ -115,7 +127,7 @@ if (typeof window.initFrontendLiveChat !== 'function') {
             bubble.appendChild(text);
 
             if (messageData.attachment) {
-                appendAttachment(bubble, messageData.attachment);
+                appendAttachment(bubble, messageData.attachment, messageData);
             }
 
             messageWrap.appendChild(bubble);
@@ -194,6 +206,25 @@ if (typeof window.initFrontendLiveChat !== 'function') {
         modal.addEventListener('click', (event) => {
             if (event.target === modal && typeof config.onCloseOverlay === 'function') {
                 config.onCloseOverlay();
+            }
+        });
+
+        messagesContainer.addEventListener('click', async (event) => {
+            const target = event.target instanceof Element ? event.target.closest('.js-delete-chat-attachment') : null;
+            if (!target) return;
+            if (!(target instanceof HTMLButtonElement)) return;
+            const messageId = Number(target.dataset.messageId || 0);
+            if (!messageId || typeof config.onDeleteAttachment !== 'function') return;
+            event.preventDefault();
+            const ok = window.confirm('Удалить загруженный файл из этого сообщения?');
+            if (!ok) return;
+            target.disabled = true;
+            try {
+                await config.onDeleteAttachment(messageId, target);
+            } catch (error) {
+                console.error(error);
+            } finally {
+                target.disabled = false;
             }
         });
 

@@ -81,6 +81,11 @@ $adminChatAttachmentInputId = preg_replace('/[^a-zA-Z0-9_-]/', '', $adminChatMod
                                                 <span><?= htmlspecialchars($adminChatAttachmentName) ?></span>
                                             </a>
                                         <?php endif; ?>
+                                        <?php if (!empty($chatMessage['can_delete_attachment'])): ?>
+                                            <button type="button" class="btn btn--ghost btn--sm js-delete-dispute-attachment" data-message-id="<?= (int) ($chatMessage['id'] ?? 0) ?>" style="margin-top:8px; color:#ef4444;">
+                                                <i class="fas fa-trash"></i> Удалить файл
+                                            </button>
+                                        <?php endif; ?>
                                     </div>
                                 <?php endif; ?>
                             </div>
