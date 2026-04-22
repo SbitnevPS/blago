@@ -201,6 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array((string) ($_POST['action']
                             'from_admin' => false,
                             'author_name' => $userLabel,
                             'author_email' => (string) ($user['email'] ?? ''),
+                            'can_delete_attachment' => !empty($attachmentUpload['uploaded']),
                             'attachment' => !empty($attachmentUpload['uploaded']) ? [
                                 'url' => (string) ($attachmentUpload['url'] ?? ''),
                                 'name' => (string) ($attachmentUpload['original_name'] ?? ''),
@@ -220,6 +221,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array((string) ($_POST['action']
     }
 
     redirect('/messages?chat_application_id=' . $selectedChatApplicationId . '&chat_title=' . urlencode($selectedChatTitle));
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['action'] ?? '') === 'delete_chat_attachment') {
+    $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => 'Ошибка безопасности. Обновите страницу.'], 403);
+        }
+    } else {
+        $messageId = max(0, intval($_POST['message_id'] ?? 0));
+        if ($messageId <= 0) {
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => 'Сообщение не найдено.'], 422);
+            }
+        } else {
+            $messageStmt = $pdo->prepare("
+                SELECT m.id, m.attachment_file
+                FROM messages m
+                JOIN users u ON u.id = m.created_by
+                WHERE m.id = ?
+                  AND m.user_id = ?
+                  AND u.is_admin = 0
+                LIMIT 1
+            ");
+            $messageStmt->execute([$messageId, $userId]);
+            $messageRow = $messageStmt->fetch();
+
+            if (!$messageRow || empty($messageRow['attachment_file'])) {
+                if ($isAjaxRequest) {
+                    jsonResponse(['success' => false, 'error' => 'Вложение не найдено или уже удалено.'], 404);
+                }
+            } else {
+                $attachmentPath = MESSAGE_ATTACHMENTS_PATH . '/' . basename((string) $messageRow['attachment_file']);
+                $deleteStmt = $pdo->prepare("
+                    UPDATE messages
+                    SET attachment_file = NULL,
+                        attachment_original_name = NULL,
+                        attachment_mime_type = NULL,
+                        attachment_size = 0
+                    WHERE id = ?
+                    LIMIT 1
+                ");
+                $deleteStmt->execute([$messageId]);
+                if (is_file($attachmentPath)) {
+                    @unlink($attachmentPath);
+                }
+                if ($isAjaxRequest) {
+                    jsonResponse(['success' => true, 'message_id' => $messageId]);
+                }
+            }
+        }
+    }
 }
 
 if (($_GET['action'] ?? '') === 'poll_chat_messages') {
@@ -280,6 +333,7 @@ if (($_GET['action'] ?? '') === 'poll_chat_messages') {
             'from_admin' => $fromAdmin,
             'author_name' => $authorName,
             'author_email' => (string) ($row['email'] ?? ''),
+            'can_delete_attachment' => !$fromAdmin && $attachmentFile !== '',
             'attachment' => $attachmentFile !== '' ? [
                 'url' => buildMessageAttachmentPublicUrl($attachmentFile),
                 'name' => $attachmentName,
@@ -591,6 +645,11 @@ $currentPage = 'messages';
                                                 <i class="fas fa-download"></i>
                                                 <span><?= htmlspecialchars($attachmentName) ?></span>
                                             </a>
+                                        <?php endif; ?>
+                                        <?php if (!$fromAdmin): ?>
+                                            <button type="button" class="btn btn--ghost btn--sm js-delete-chat-attachment" data-message-id="<?= (int) ($chatMessage['id'] ?? 0) ?>" style="margin-top:8px; color:#ef4444;">
+                                                <i class="fas fa-trash"></i> Удалить файл
+                                            </button>
                                         <?php endif; ?>
                                     </div>
                                 <?php endif; ?>
@@ -911,6 +970,28 @@ window.__messagesPageChat = window.initFrontendLiveChat({
     },
     onSubmitError: (error) => {
         console.error(error);
+    },
+    onDeleteAttachment: async (messageId, button) => {
+        const formData = new FormData();
+        formData.append('action', 'delete_chat_attachment');
+        formData.append('message_id', String(messageId));
+        formData.append('csrf_token', <?= json_encode(generateCSRFToken()) ?>);
+        formData.append('ajax', '1');
+
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData,
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось удалить файл');
+        }
+
+        const attachmentWrap = button.closest('.message-attachment');
+        if (attachmentWrap) {
+            attachmentWrap.remove();
+        }
     },
     onCloseOverlay: () => {
         closeDisputeChatModal();

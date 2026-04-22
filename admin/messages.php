@@ -217,6 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
                                 'from_admin' => true,
                                 'author_name' => $adminName,
                                 'author_email' => (string) ($admin['email'] ?? ''),
+                                'can_delete_attachment' => !empty($attachmentUpload['uploaded']),
                                 'attachment' => !empty($attachmentUpload['uploaded']) ? [
                                     'url' => (string) ($attachmentUpload['url'] ?? ''),
                                     'name' => (string) ($attachmentUpload['original_name'] ?? ''),
@@ -233,6 +234,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
                     if ($isAjaxRequest) {
                         jsonResponse(['success' => false, 'error' => $error], 404);
                     }
+                }
+            }
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_dispute_attachment') {
+    $isAjaxRequest = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest' || (string) ($_POST['ajax'] ?? '') === '1';
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        if ($isAjaxRequest) {
+            jsonResponse(['success' => false, 'error' => 'Ошибка безопасности'], 403);
+        }
+    } else {
+        $messageId = max(0, intval($_POST['message_id'] ?? 0));
+        if ($messageId <= 0) {
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => 'Сообщение не найдено'], 422);
+            }
+        } else {
+            $attachmentStmt = $pdo->prepare("
+                SELECT m.id, m.attachment_file
+                FROM messages m
+                WHERE m.id = ?
+                  AND m.created_by = ?
+                LIMIT 1
+            ");
+            $attachmentStmt->execute([$messageId, (int) $admin['id']]);
+            $attachmentRow = $attachmentStmt->fetch();
+            if (!$attachmentRow || empty($attachmentRow['attachment_file'])) {
+                if ($isAjaxRequest) {
+                    jsonResponse(['success' => false, 'error' => 'Вложение не найдено или уже удалено'], 404);
+                }
+            } else {
+                $attachmentPath = MESSAGE_ATTACHMENTS_PATH . '/' . basename((string) $attachmentRow['attachment_file']);
+                $updateStmt = $pdo->prepare("
+                    UPDATE messages
+                    SET attachment_file = NULL,
+                        attachment_original_name = NULL,
+                        attachment_mime_type = NULL,
+                        attachment_size = 0
+                    WHERE id = ?
+                    LIMIT 1
+                ");
+                $updateStmt->execute([$messageId]);
+                if (is_file($attachmentPath)) {
+                    @unlink($attachmentPath);
+                }
+                if ($isAjaxRequest) {
+                    jsonResponse(['success' => true, 'message_id' => $messageId]);
                 }
             }
         }
@@ -295,6 +345,7 @@ if (($_GET['action'] ?? '') === 'poll_dispute_messages') {
             'from_admin' => $fromAdmin,
             'author_name' => $authorName,
             'author_email' => (string) ($messageRow['author_email'] ?? ''),
+            'can_delete_attachment' => $fromAdmin && !empty($messageRow['attachment_file']),
             'attachment' => !empty($messageRow['attachment_file']) ? [
                 'url' => buildMessageAttachmentPublicUrl((string) $messageRow['attachment_file']),
                 'name' => (string) ($messageRow['attachment_original_name'] ?? basename((string) $messageRow['attachment_file'])),
@@ -476,6 +527,13 @@ if ($selectedDisputeApplicationId > 0) {
         ");
             $selectedStmt->execute([$selectedDisputeApplicationId, $threadSubject]);
             $selectedDisputeMessages = $selectedStmt->fetchAll();
+            if (!empty($selectedDisputeMessages)) {
+                foreach ($selectedDisputeMessages as &$selectedDisputeMessage) {
+                    $selectedDisputeMessage['can_delete_attachment'] = (int) ($selectedDisputeMessage['author_is_admin'] ?? 0) === 1
+                        && !empty($selectedDisputeMessage['attachment_file']);
+                }
+                unset($selectedDisputeMessage);
+            }
             if (!empty($selectedDisputeMessages)) {
                 break;
             }
@@ -1882,6 +1940,16 @@ function appendDisputeMessage(container, messageData) {
    link.innerHTML = '<i class="fas fa-download"></i><span>' + escapeHtml(messageData.attachment.name || 'Файл') + '</span>';
    attachmentWrap.appendChild(link);
   }
+  if (messageData.can_delete_attachment) {
+   const removeButton = document.createElement('button');
+   removeButton.type = 'button';
+   removeButton.className = 'btn btn--ghost btn--sm js-delete-dispute-attachment';
+   removeButton.dataset.messageId = String(numericId || 0);
+   removeButton.style.marginTop = '8px';
+   removeButton.style.color = '#ef4444';
+   removeButton.innerHTML = '<i class="fas fa-trash"></i> Удалить файл';
+   attachmentWrap.appendChild(removeButton);
+  }
 
   bubble.appendChild(attachmentWrap);
  }
@@ -1936,7 +2004,47 @@ async function pollDisputeMessages() {
    }
   });
  } catch (error) {
-  console.error('Ошибка polling чата:', error);
+ console.error('Ошибка polling чата:', error);
+ }
+}
+
+async function deleteDisputeAttachment(messageId, button) {
+ const numericId = Number(messageId || 0);
+ if (!numericId) return;
+ if (!confirm('Удалить загруженный файл из этого сообщения?')) {
+  return;
+ }
+
+ const formData = new FormData();
+ formData.append('action', 'delete_dispute_attachment');
+ formData.append('message_id', String(numericId));
+ formData.append('csrf_token', csrfTokenValue);
+ formData.append('ajax', '1');
+
+ if (button instanceof HTMLButtonElement) {
+  button.disabled = true;
+ }
+ try {
+  const response = await fetch(window.location.href, {
+   method: 'POST',
+   headers: { 'X-Requested-With': 'XMLHttpRequest' },
+   body: formData
+  });
+  const data = await response.json();
+  if (!response.ok || !data.success) {
+   throw new Error(data.error || 'Не удалось удалить файл');
+  }
+  const wrap = button?.closest('.message-attachment');
+  if (wrap) {
+   wrap.remove();
+  }
+  showToast('Файл удалён', 'success');
+ } catch (error) {
+  showToast(error.message || 'Не удалось удалить файл', 'error');
+ } finally {
+  if (button instanceof HTMLButtonElement) {
+   button.disabled = false;
+  }
  }
 }
 
@@ -2049,6 +2157,14 @@ document.addEventListener('DOMContentLoaded', function() {
    if (e.target === disputeChatModal) {
     closeDisputeChatModal();
    }
+  });
+  const disputeMessagesContainer = document.getElementById('disputeChatMessages');
+  disputeMessagesContainer?.addEventListener('click', (event) => {
+   const button = event.target instanceof Element ? event.target.closest('.js-delete-dispute-attachment') : null;
+   if (!button) return;
+   event.preventDefault();
+   event.stopPropagation();
+   deleteDisputeAttachment(button.dataset.messageId, button);
   });
   if (isDisputeChatOpen) {
    document.body.style.overflow = 'hidden';
