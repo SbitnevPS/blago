@@ -37,15 +37,25 @@ if (typeof window.closeMessageImageModal !== 'function') {
 }
 
 if (typeof window.buildFrontendAttachmentPreviewMarkup !== 'function') {
+    const formatAttachmentSize = (size) => {
+        const value = Number(size || 0);
+        if (!Number.isFinite(value) || value <= 0) return '';
+        if (value >= 1024 * 1024) return (value / (1024 * 1024)).toFixed(1).replace('.0', '') + ' МБ';
+        if (value >= 1024) return Math.round(value / 1024) + ' КБ';
+        return value + ' Б';
+    };
+
     window.buildFrontendAttachmentPreviewMarkup = function(file) {
         if (!file) return '';
         const fileName = window.escapeHtml(file.name || 'Файл');
+        const fileSize = window.escapeHtml(formatAttachmentSize(file.size));
+        const fileMeta = fileSize !== '' ? `<span class="chat-composer__attachment-preview-size">${fileSize}</span>` : '';
         const isImage = String(file.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(String(file.name || ''));
         if (isImage) {
             const objectUrl = URL.createObjectURL(file);
-            return `<div class="chat-composer__attachment-preview-item chat-composer__attachment-preview-item--image" title="${fileName}"><button type="button" class="chat-composer__attachment-preview-main js-local-image-preview" data-image-src="${window.escapeHtml(objectUrl)}" data-image-title="${fileName}" title="${fileName}"><img src="${window.escapeHtml(objectUrl)}" alt="${fileName}" class="chat-composer__attachment-preview-thumb"><span class="chat-composer__attachment-preview-name">${fileName}</span></button><button type="button" class="chat-composer__attachment-remove js-message-attachment-remove" title="Удалить вложение" aria-label="Удалить вложение"><i class="fas fa-times"></i></button></div>`;
+            return `<div class="chat-composer__attachment-preview-item chat-composer__attachment-preview-item--image" title="${fileName}"><button type="button" class="chat-composer__attachment-preview-main js-local-image-preview" data-image-src="${window.escapeHtml(objectUrl)}" data-image-title="${fileName}" title="${fileName}"><img src="${window.escapeHtml(objectUrl)}" alt="${fileName}" class="chat-composer__attachment-preview-thumb"><span class="chat-composer__attachment-preview-text"><span class="chat-composer__attachment-preview-name">${fileName}</span>${fileMeta}</span></button><button type="button" class="chat-composer__attachment-remove js-message-attachment-remove" title="Удалить вложение" aria-label="Удалить вложение"><i class="fas fa-times"></i></button></div>`;
         }
-        return `<div class="chat-composer__attachment-preview-item" title="${fileName}"><span class="chat-composer__attachment-preview-icon"><i class="fas fa-paperclip"></i></span><span class="chat-composer__attachment-preview-name">${fileName}</span><button type="button" class="chat-composer__attachment-remove js-message-attachment-remove" title="Удалить вложение" aria-label="Удалить вложение"><i class="fas fa-times"></i></button></div>`;
+        return `<div class="chat-composer__attachment-preview-item" title="${fileName}"><span class="chat-composer__attachment-preview-icon"><i class="fas fa-paperclip"></i></span><span class="chat-composer__attachment-preview-text"><span class="chat-composer__attachment-preview-name">${fileName}</span>${fileMeta}</span><button type="button" class="chat-composer__attachment-remove js-message-attachment-remove" title="Удалить вложение" aria-label="Удалить вложение"><i class="fas fa-times"></i></button></div>`;
     };
 }
 
@@ -54,6 +64,14 @@ if (typeof window.resetFrontendAttachmentPreview !== 'function') {
         if (!form) return;
         const input = form.querySelector('.js-message-attachment-input');
         const preview = form.querySelector('.js-message-attachment-preview');
+        if (preview) {
+            preview.querySelectorAll('.js-local-image-preview').forEach((button) => {
+                const src = String(button.dataset.imageSrc || '');
+                if (src.startsWith('blob:')) {
+                    URL.revokeObjectURL(src);
+                }
+            });
+        }
         if (input) {
             input.value = '';
         }
@@ -107,6 +125,12 @@ if (typeof window.bindFrontendChatHelpers !== 'function') {
             const preview = input.closest('form')?.querySelector('.js-message-attachment-preview');
             if (!preview) return;
             input.addEventListener('change', () => {
+                preview.querySelectorAll('.js-local-image-preview').forEach((button) => {
+                    const src = String(button.dataset.imageSrc || '');
+                    if (src.startsWith('blob:')) {
+                        URL.revokeObjectURL(src);
+                    }
+                });
                 const file = input.files && input.files[0] ? input.files[0] : null;
                 preview.innerHTML = '';
                 preview.hidden = !file;
@@ -122,6 +146,12 @@ if (typeof window.bindFrontendChatHelpers !== 'function') {
                 });
                 preview.querySelectorAll('.js-message-attachment-remove').forEach((button) => {
                     button.addEventListener('click', () => {
+                        preview.querySelectorAll('.js-local-image-preview').forEach((previewButton) => {
+                            const src = String(previewButton.dataset.imageSrc || '');
+                            if (src.startsWith('blob:')) {
+                                URL.revokeObjectURL(src);
+                            }
+                        });
                         input.value = '';
                         preview.innerHTML = '';
                         preview.hidden = true;
