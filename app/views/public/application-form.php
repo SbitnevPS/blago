@@ -1656,7 +1656,18 @@ function getBlockedParticipantsInDraft() {
         });
     });
 
+    syncAgreementDeclinedState(blocked.length > 0);
     return blocked;
+}
+
+function syncAgreementDeclinedState(hasBlockedParticipants) {
+    const nextValue = !!hasBlockedParticipants;
+    if (agreementDeclined === nextValue) {
+        return;
+    }
+
+    agreementDeclined = nextValue;
+    syncAgreementButtons();
 }
 
 function highlightBlockedParticipants(blockedEntries) {
@@ -2263,7 +2274,7 @@ function renderReview() {
             <button type="button" class="btn btn--ghost" onclick="goStep(${paymentStepNumber})">Изменить</button>
         </div>` : ''}
         ${blockedParticipants.length > 0 ? `
-        <div class="alert alert--error">
+        <div class="alert alert--error application-review__agreement-alert">
             <strong>Обнаружены участники, которые ранее нарушили пользовательское соглашение в этом конкурсе.</strong>
             <p class="mt-sm">Удалите их из заявки. Пока они остаются в списке участников, отправка заявки невозможна.</p>
             <ul>${blockedParticipantsListHtml}</ul>
