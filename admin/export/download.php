@@ -1,10 +1,18 @@
 <?php
 require_once __DIR__ . '/../../config.php';
 require_once __DIR__ . '/../../includes/init.php';
+require_once __DIR__ . '/../../includes/export-archive.php';
 
 if (!isAdmin()) {
     http_response_code(403);
     exit('Доступ запрещен');
+}
+
+
+$initError = null;
+if (!exportArchiveEnsureTable($pdo, $initError)) {
+    http_response_code(500);
+    exit($initError);
 }
 
 $jobId = max(0, (int) ($_GET['id'] ?? 0));

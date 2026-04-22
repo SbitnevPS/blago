@@ -7,6 +7,13 @@ if (!isAdmin()) {
     redirect('/admin/login');
 }
 
+
+$initError = null;
+if (!exportArchiveEnsureTable($pdo, $initError)) {
+    http_response_code(500);
+    exit($initError);
+}
+
 $jobId = max(0, (int) ($_GET['id'] ?? 0));
 $stmt = $pdo->prepare('SELECT * FROM export_archive_jobs WHERE id = ? LIMIT 1');
 $stmt->execute([$jobId]);

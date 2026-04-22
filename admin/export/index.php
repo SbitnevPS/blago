@@ -12,12 +12,28 @@ $currentPage = 'export-archive';
 $pageTitle = 'Выгрузка рисунков';
 $breadcrumb = 'Задания на выгрузку рисунков';
 
-$jobs = $pdo->query('SELECT * FROM export_archive_jobs ORDER BY id DESC LIMIT 100')->fetchAll() ?: [];
+$jobs = [];
+$initError = null;
+
+if (exportArchiveEnsureTable($pdo, $initError)) {
+    try {
+        $jobs = $pdo->query('SELECT * FROM export_archive_jobs ORDER BY id DESC LIMIT 100')->fetchAll() ?: [];
+    } catch (Throwable $e) {
+        $initError = 'Не удалось получить список заданий: ' . $e->getMessage();
+    }
+}
 
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
 <div class="card">
+    <?php if (!empty($initError)): ?>
+        <div class="card__body">
+            <div class="alert alert--error">
+                <?= htmlspecialchars((string) $initError, ENT_QUOTES, 'UTF-8') ?>
+            </div>
+        </div>
+    <?php endif; ?>
     <div class="card__header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
         <h3>Задания</h3>
         <a href="/admin/export/create" class="btn btn--primary">
