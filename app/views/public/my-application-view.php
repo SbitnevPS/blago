@@ -822,6 +822,7 @@ $currentPage = 'applications';
 .participant-modern-card__facts {display:grid; grid-template-columns:1fr; gap:6px; color:#334155; font-size:14px;}
 .participant-modern-card__actions {display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; align-items: center;}
 .app-highlight {background:#FEF9C3; border:1px solid #FDE68A; color:#92400E; border-radius:12px; padding:12px;}
+.app-highlight--danger-soft {background:#FEEDEE; border-color:#FCA5A5; color:#991B1B;}
 .app-empty {text-align:center; padding:30px 16px; color:#64748B;}
 .app-skeleton {display:grid; gap:12px;}
 .app-skeleton__item {height:96px; border-radius:14px; background:linear-gradient(90deg,#EDF2F7 25%,#E2E8F0 37%,#EDF2F7 63%); background-size:400% 100%; animation:appShimmer 1.2s ease infinite;}
@@ -1069,6 +1070,10 @@ $currentPage = 'applications';
                     <?php else: ?>
                         <div class="app-actions-card__note" id="resubmitApplicationHint">Сначала исправьте всех участников из списка корректировок. После этого здесь появится кнопка повторной отправки.</div>
                     <?php endif; ?>
+                    <div class="app-highlight app-highlight--danger-soft" style="width:100%;">
+                        <strong><i class="fas fa-triangle-exclamation"></i> Пользовательское соглашение не подписано.</strong>
+                        <div>Перейдите в раздел с пользовательским соглашением и дайте согласие, либо внесите изменения, которые не противоречат условиям конкурса, после чего снова нажмите «Подписать».</div>
+                    </div>
 	                <?php elseif ($hasDiplomas): ?>
 	                    <div class="app-highlight" style="width:100%;">
 	                        <strong>Дипломы</strong>
