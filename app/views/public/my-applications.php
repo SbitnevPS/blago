@@ -261,6 +261,7 @@ $archivedApplications = array_values(array_filter(
                             $statusCode = (string) ($statusMeta['status_code'] ?? '');
                             $isRevision = getStatusGroup($app) === 'revision';
                             $isCorrected = $statusCode === 'corrected';
+                            $isAgreementDeclined = (int) ($app['agreement_declined'] ?? 0) === 1;
                             $unreadCount = (int) ($unreadByApplication[(int) ($app['id'] ?? 0)] ?? 0);
                             $isArchivedContest = isApplicationContestArchived($app);
                         ?>
@@ -289,6 +290,9 @@ $archivedApplications = array_values(array_filter(
                                     <div class="my-application-card__note my-application-card__note--revision">Нужны исправления: откройте заявку и следуйте комментариям организатора.</div>
                                 <?php elseif ($isCorrected): ?>
                                     <div class="my-application-card__note my-application-card__note--corrected">Исправления отправлены. Заявка снова на проверке.</div>
+                                <?php endif; ?>
+                                <?php if ($isAgreementDeclined): ?>
+                                    <div class="my-application-card__agreement-note">Пользовательское соглашение не подписано</div>
                                 <?php endif; ?>
 
                                 <div class="my-application-card__meta">
