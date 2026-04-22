@@ -100,13 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'application_revision_subject' => (string) ($settings['application_revision_subject'] ?? ''),
             'application_revision_message' => (string) ($settings['application_revision_message'] ?? ''),
             'vk_publication_group_id' => (string) ($settings['vk_publication_group_id'] ?? ''),
-            'vk_publication_api_version' => (string) ($settings['vk_publication_api_version'] ?? '5.131'),
             'vk_publication_from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1 ? 1 : 0,
             'vk_publication_admin_access_token_encrypted' => (string) ($settings['vk_publication_admin_access_token_encrypted'] ?? ''),
-            'vk_publication_admin_refresh_token_encrypted' => (string) ($settings['vk_publication_admin_refresh_token_encrypted'] ?? ''),
-            'vk_publication_admin_token_expires_at' => (int) ($settings['vk_publication_admin_token_expires_at'] ?? 0),
-            'vk_publication_admin_device_id' => (string) ($settings['vk_publication_admin_device_id'] ?? ''),
-            'vk_publication_admin_user_id' => (string) ($settings['vk_publication_admin_user_id'] ?? ''),
             'vk_publication_post_template' => (string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()),
             'email_notifications_enabled' => (int) ($settings['email_notifications_enabled'] ?? 1) === 1 ? 1 : 0,
             'email_from_name' => (string) ($settings['email_from_name'] ?? ''),
@@ -223,22 +218,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } elseif ($section === 'vk-integration') {
             $payload['vk_publication_group_id'] = trim($_POST['vk_publication_group_id'] ?? '');
-            $payload['vk_publication_api_version'] = trim($_POST['vk_publication_api_version'] ?? '5.131');
-            $payload['vk_publication_from_group'] = isset($_POST['vk_publication_from_group']) ? 1 : 0;
+            $payload['vk_publication_from_group'] = 1;
             $payload['vk_publication_post_template'] = trim($_POST['vk_publication_post_template'] ?? defaultVkPostTemplate());
             $adminAccessToken = trim((string) ($_POST['vk_publication_admin_access_token'] ?? ''));
             if ($adminAccessToken !== '') {
                 $payload['vk_publication_admin_access_token_encrypted'] = vkPublicationEncryptValue($adminAccessToken);
             }
-
-            $adminRefreshToken = trim((string) ($_POST['vk_publication_admin_refresh_token'] ?? ''));
-            if ($adminRefreshToken !== '') {
-                $payload['vk_publication_admin_refresh_token_encrypted'] = vkPublicationEncryptValue($adminRefreshToken);
-            }
-
-            $payload['vk_publication_admin_device_id'] = trim((string) ($_POST['vk_publication_admin_device_id'] ?? ''));
-            $payload['vk_publication_admin_user_id'] = trim((string) ($_POST['vk_publication_admin_user_id'] ?? ''));
-            $payload['vk_publication_admin_token_expires_at'] = max(0, (int) ($_POST['vk_publication_admin_token_expires_at'] ?? 0));
         } elseif ($section === 'homepage-banner') {
             $payload['homepage_hero_image'] = trim($_POST['homepage_hero_image'] ?? '');
         }
@@ -314,6 +299,12 @@ $vkConfirmedPermissions = $vkPublicationSettings['confirmed_permissions'] !== ''
 $vkLastError = $vkPublicationSettings['last_error'] !== '' ? $vkPublicationSettings['last_error'] : '—';
 $vkTokenTypeRaw = trim((string) ($vkPublicationSettings['token_type'] ?? ''));
 $vkTokenTypeLabel = $vkTokenTypeRaw !== '' ? $vkTokenTypeRaw : '—';
+$savedGroupTokenMasked = '—';
+$savedGroupTokenPlain = vkPublicationDecryptValue((string) ($settings['vk_publication_admin_access_token_encrypted'] ?? ''));
+if ($savedGroupTokenPlain !== '') {
+    $savedGroupTokenPrefix = mb_substr($savedGroupTokenPlain, 0, min(6, mb_strlen($savedGroupTokenPlain)));
+    $savedGroupTokenMasked = $savedGroupTokenPrefix . '..........';
+}
 
 $vkStepShortStatus = static function (array $steps, string $key): string {
     if (!array_key_exists($key, $steps) || !is_array($steps[$key])) {
@@ -712,7 +703,7 @@ unset($_SESSION['success_message']);
                                 <div><strong>Статус:</strong> <?= htmlspecialchars($vkStatusLabel) ?></div>
                                 <div><strong>Auth mode:</strong> group_access_token</div>
                                 <div><strong>Источник токена:</strong> <?= htmlspecialchars(($vkPublicationSettings['token_source'] ?? '') === 'oauth_vk_admin_login' ? 'OAuth VK admin login' : 'не задан') ?></div>
-                                <div><strong>Маска ключа:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
+                                <div><strong>Токен сообщества:</strong> <code><?= htmlspecialchars($savedGroupTokenMasked) ?></code></div>
                                 <div><strong>Group token:</strong> <code><?= htmlspecialchars(!empty($settings['vk_publication_admin_access_token_encrypted']) ? 'stored_encrypted' : '—') ?></code></div>
                                 <div><strong>Тип ключа:</strong> <?= htmlspecialchars($vkTokenTypeLabel) ?></div>
                                 <div><strong>Права ключа:</strong> <?= htmlspecialchars($vkConfirmedPermissions) ?></div>
@@ -776,41 +767,9 @@ unset($_SESSION['success_message']);
                                 <input type="text" name="vk_publication_group_id" class="form-input" value="<?= htmlspecialchars($settings['vk_publication_group_id'] ?? '') ?>" placeholder="123456789">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Версия VK API</label>
-                                <input type="text" name="vk_publication_api_version" class="form-input" value="<?= htmlspecialchars($settings['vk_publication_api_version'] ?? '5.131') ?>" placeholder="5.131">
-                            </div>
-                        </div>
-
-	                        <div class="form-group">
-	                            <label class="form-checkbox">
-	                                <input type="checkbox" name="vk_publication_from_group" value="1" <?= (int) ($settings['vk_publication_from_group'] ?? 1) === 1 ? 'checked' : '' ?>>
-	                                <span class="form-checkbox__mark"></span>
-	                                <span>Публиковать от имени сообщества</span>
-	                            </label>
-	                        </div>
-	
-	                        <div class="form-row">
-	                            <div class="form-group">
-	                                <label class="form-label">Group access token (replace-only)</label>
+                                <label class="form-label">Токен группы (replace-only)</label>
                                 <textarea name="vk_publication_admin_access_token" class="form-input" rows="3" placeholder="Оставьте пустым, чтобы не менять"></textarea>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Refresh token (optional, replace-only)</label>
-                                <textarea name="vk_publication_admin_refresh_token" class="form-input" rows="3" placeholder="Оставьте пустым, чтобы не менять"></textarea>
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">Token expires_at (unix ts, optional)</label>
-                                <input type="text" name="vk_publication_admin_token_expires_at" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_token_expires_at'] ?? '')) ?>" placeholder="0">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Device_id (optional)</label>
-                                <input type="text" name="vk_publication_admin_device_id" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_device_id'] ?? '')) ?>" placeholder="device id">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">User_id (optional)</label>
-                                <input type="text" name="vk_publication_admin_user_id" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_user_id'] ?? '')) ?>" placeholder="vk user id">
+                                <div class="form-hint">Сохранённый токен: <code><?= htmlspecialchars($savedGroupTokenMasked) ?></code></div>
                             </div>
                         </div>
 
