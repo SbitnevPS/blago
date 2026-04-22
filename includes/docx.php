@@ -32,7 +32,13 @@ function docxTableRow(array $cellsXml): string
     return '<w:tr>' . implode('', $cellsXml) . '</w:tr>';
 }
 
-function docxBuildDocumentXmlWithTable(string $title, array $headers, array $rows, array $columnWidthsTwips = []): string
+function docxBuildDocumentXmlWithTable(
+    string $title,
+    array $headers,
+    array $rows,
+    array $columnWidthsTwips = [],
+    bool $landscape = false
+): string
 {
     $title = trim($title);
     $titleXml = $title !== ''
@@ -71,6 +77,10 @@ function docxBuildDocumentXmlWithTable(string $title, array $headers, array $row
         . implode('', $bodyRowsXml)
         . '</w:tbl>';
 
+    $pageWidth = $landscape ? 16838 : 11906;
+    $pageHeight = $landscape ? 11906 : 16838;
+    $pageOrientation = $landscape ? 'landscape' : 'portrait';
+
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         . '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
         . 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
@@ -78,7 +88,7 @@ function docxBuildDocumentXmlWithTable(string $title, array $headers, array $row
         . $titleXml
         . $tbl
         . '<w:sectPr>'
-        . '<w:pgSz w:w="11906" w:h="16838" w:orient="portrait"/>'
+        . '<w:pgSz w:w="' . $pageWidth . '" w:h="' . $pageHeight . '" w:orient="' . $pageOrientation . '"/>'
         . '<w:pgMar w:top="720" w:right="540" w:bottom="720" w:left="540" w:header="450" w:footer="450" w:gutter="0"/>'
         . '</w:sectPr>'
         . '</w:body>'
@@ -137,20 +147,24 @@ function docxBuildBytes(string $documentXml): string
  * Expected row keys:
  * - id
  * - public_number (optional)
+ * - participant_fio
+ * - age
+ * - region
  * - applicant_email
  * - applicant_fio
  * - organization_name
- * - age
  * - work_status (code or label)
  */
 function buildParticipantsDocxBytes(array $rows, string $title = 'Список участников'): string
 {
     $headers = [
         'Номер участника',
+        'ФИО участника',
+        'Возраст',
+        'Регион',
         'email-заявителя',
         'ФИО заявителя',
         'Название организации',
-        'Возраст',
         'Статус работы',
     ];
 
@@ -177,17 +191,19 @@ function buildParticipantsDocxBytes(array $rows, string $title = 'Список �
 
         $tableRows[] = [
             $displayNumber,
+            (string) ($row['participant_fio'] ?? ''),
+            (string) ($row['age'] ?? ''),
+            (string) ($row['region'] ?? ''),
             (string) ($row['applicant_email'] ?? ''),
             (string) ($row['applicant_fio'] ?? ''),
             (string) ($row['organization_name'] ?? ''),
-            (string) ($row['age'] ?? ''),
             $status,
         ];
     }
 
-    // Tuned for A4 portrait with tighter margins and compact type.
-    $widths = [1000, 1700, 1900, 2300, 700, 1400];
-    $xml = docxBuildDocumentXmlWithTable($title, $headers, $tableRows, $widths);
+    // Tuned for A4 landscape with tighter margins and compact type.
+    $widths = [900, 1700, 700, 1100, 1500, 1600, 1800, 1000];
+    $xml = docxBuildDocumentXmlWithTable($title, $headers, $tableRows, $widths, true);
     return docxBuildBytes($xml);
 }
 
@@ -225,10 +241,12 @@ function fetchParticipantsRowsForDocxExport(array $filters = []): array
         SELECT
             p.id AS id,
             p.public_number AS public_number,
+            COALESCE(NULLIF(TRIM(p.fio), ''), '') AS participant_fio,
+            p.age AS age,
+            COALESCE(NULLIF(TRIM(p.region), ''), '') AS region,
             u.email AS applicant_email,
             COALESCE(NULLIF(TRIM(a.parent_fio), ''), NULLIF(TRIM(CONCAT_WS(' ', u.surname, u.name, u.patronymic)), ''), u.email) AS applicant_fio,
             COALESCE(NULLIF(TRIM(p.organization_name), ''), NULLIF(TRIM(u.organization_name), ''), '') AS organization_name,
-            p.age AS age,
             COALESCE(w.status, 'pending') AS work_status
         FROM participants p
         INNER JOIN applications a ON a.id = p.application_id
