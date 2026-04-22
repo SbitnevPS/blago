@@ -1653,6 +1653,12 @@
   background: linear-gradient(180deg, #ffffff 0%, #fff5f5 100%);
 }
 
+.participant-form--blocked {
+  border-color: rgba(239, 68, 68, .85);
+  box-shadow: 0 0 0 3px rgba(254, 226, 226, .95);
+  background: linear-gradient(180deg, #ffffff 0%, #fff5f5 100%);
+}
+
 .participant-form__header {
   display: flex;
   justify-content: space-between;
@@ -3175,6 +3181,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.user-agreement__sign-btn {
+  border: 1px solid var(--color-primary);
 }
 
 .user-agreement__sign-btn.is-signed {
