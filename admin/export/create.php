@@ -92,13 +92,18 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
 
             <div class="form-group js-live-search"
-                 data-endpoint="/admin/search-applications"
-                 data-query-param="q"
-                 data-id-field="id"
-                 data-primary-template="{{id}} · {{contest_title||Без конкурса}}"
-                 data-secondary-template="{{surname+name||Без имени}} · {{email||без email}}"
-                 data-value-template="#{{id}} {{surname+name||}}"
-                 data-empty-text="Заявки не найдены">
+                 <?= admin_live_search_attrs([
+                     'endpoint' => '/admin/search-applications',
+                     'query_param' => 'q',
+                     'id_field' => 'id',
+                     'primary_template' => '{{id}} · {{contest_title||Без конкурса}}',
+                     'secondary_template' => '{{surname+name||Без имени}} · {{email||без email}}',
+                     'value_template' => '#{{id}} {{surname+name||}}',
+                     'empty_text' => 'Заявки не найдены',
+                     'min_length' => 2,
+                     'min_length_numeric' => 1,
+                     'debounce' => 220,
+                 ]) ?>>
                 <label class="form-label">Поиск по заявке</label>
                 <input type="text" class="form-input" name="search_application_label" value="<?= htmlspecialchars((string) $filters['search_application_label'], ENT_QUOTES, 'UTF-8') ?>" data-live-search-input placeholder="Введите ID или ФИО пользователя">
                 <input type="hidden" name="search_application_id" value="<?= (int) $filters['search_application_id'] ?>" data-live-search-hidden data-live-search-hidden-field="id">
@@ -106,13 +111,18 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
 
             <div class="form-group js-live-search"
-                 data-endpoint="/admin/search-participants"
-                 data-query-param="q"
-                 data-id-field="id"
-                 data-primary-template="{{fio||Без имени}}"
-                 data-secondary-template="#{{public_number||—}} · {{email||без email}}"
-                 data-value-template="#{{id}} {{fio||}}"
-                 data-empty-text="Участники не найдены">
+                 <?= admin_live_search_attrs([
+                     'endpoint' => '/admin/search-participants',
+                     'query_param' => 'q',
+                     'id_field' => 'id',
+                     'primary_template' => '{{fio||Без имени}}',
+                     'secondary_template' => '#{{public_number||—}} · {{email||без email}}',
+                     'value_template' => '#{{id}} {{fio||}}',
+                     'empty_text' => 'Участники не найдены',
+                     'min_length' => 2,
+                     'min_length_numeric' => 1,
+                     'debounce' => 220,
+                 ]) ?>>
                 <label class="form-label">Поиск по участнику</label>
                 <input type="text" class="form-input" name="participant_label" value="<?= htmlspecialchars((string) $filters['participant_label'], ENT_QUOTES, 'UTF-8') ?>" data-live-search-input placeholder="Введите номер или ФИО участника">
                 <input type="hidden" name="participant_id" value="<?= (int) $filters['participant_id'] ?>" data-live-search-hidden data-live-search-hidden-field="id">
