@@ -776,13 +776,11 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
 
                     <div class="message-compose__section">
-                        <label class="form-label">Вложение</label>
                         <input type="file" id="messageUserViewAttachment" name="attachment" class="chat-composer__attachment-input js-message-attachment-input" accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.txt,.doc,.docx,.rtf,.xls,.xlsx,.csv,.zip,image/*,application/pdf,text/plain,text/csv">
                         <div class="message-attachment-preview chat-composer__attachment-preview js-message-attachment-preview" hidden></div>
-                        <div class="chat-composer__actions">
-                            <label class="chat-composer__attachment-trigger" for="messageUserViewAttachment">
+                        <div class="chat-composer__row">
+                            <label class="chat-composer__attachment-trigger" for="messageUserViewAttachment" title="Прикрепить файл">
                                 <i class="fas fa-paperclip"></i>
-                                <span>Прикрепить файл</span>
                             </label>
                             <div class="chat-composer__attachment-help">Изображение покажем миниатюрой, для остальных файлов сохраним название. До 10 МБ.</div>
                         </div>
