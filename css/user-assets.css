@@ -3196,6 +3196,16 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: stretch;
+}
+
+.user-agreement__actions .btn {
+  flex: 1 1 280px;
+  min-height: 46px;
+  justify-content: center;
+  text-align: center;
+  white-space: normal;
+  line-height: 1.35;
 }
 
 .user-agreement__sign-btn {
@@ -3658,6 +3668,7 @@
   }
 
   .user-agreement__actions .btn {
+    flex: initial;
     width: 100%;
     justify-content: center;
     white-space: normal;
