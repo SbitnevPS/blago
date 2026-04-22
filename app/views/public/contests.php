@@ -68,11 +68,6 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
     $statusMeta = getContestPublicStatus($contest);
     $statusLabel = $statusMeta['label'] ?? 'Идёт приём работ';
     $statusClass = $statusMeta['class'] ?? 'contest-status--active';
-    $descriptionText = trim(strip_tags($contest['description'] ?? ''));
-    $shortDescription = $descriptionText !== '' ? mb_substr($descriptionText, 0, 190) : 'Подробности конкурса доступны на странице с полным описанием.';
-    if (mb_strlen($descriptionText) > 190) {
-        $shortDescription .= '...';
-    }
     $coverImage = trim((string)($contest['cover_image'] ?? ''));
     $coverSrc = $coverImage !== ''
         ? '/uploads/contest-covers/' . rawurlencode($coverImage)
@@ -81,17 +76,14 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
 <article class="contest-card contest-theme--<?= htmlspecialchars($themeStyle) ?> slide-up">
     <div class="contest-card__image-box">
         <img src="<?= htmlspecialchars($coverSrc) ?>" alt="<?= htmlspecialchars($contest['title']) ?>" class="contest-card__image">
+    </div>
+    <div class="contest-card__content">
+        <h3 class="contest-card__title"><?= htmlspecialchars($contest['title']) ?></h3>
         <div class="contest-card__badges">
             <span class="contest-status-badge <?= htmlspecialchars($statusClass) ?>"><?= htmlspecialchars($statusLabel) ?></span>
             <?php if ($isApplied): ?>
                 <span class="badge badge--info">Заявка уже подана</span>
             <?php endif; ?>
-        </div>
-    </div>
-    <div class="contest-card__content">
-        <h3 class="contest-card__title"><?= htmlspecialchars($contest['title']) ?></h3>
-        <div class="contest-card__description">
-            <?= htmlspecialchars($shortDescription) ?>
         </div>
         <?php if ($hasDates): ?>
             <div class="contest-card__dates">
