@@ -1071,6 +1071,7 @@ let isSubmittingApplication = false;
 let pendingSubmitTrigger = null;
 let userAgreementSigned = false;
 let agreementDeclined = <?= (int) ($editingApplication['agreement_declined'] ?? 0) === 1 ? 'true' : 'false' ?>;
+let lastFormSubmitter = null;
 const autoSaveEnabled = <?= $canAutoSaveCurrentApplication ? 'true' : 'false' ?>;
 const isEditingServerDraft = <?= $editingApplication ? 'true' : 'false' ?>;
 const initialPaymentReceipt = <?= json_encode([
@@ -2240,6 +2241,15 @@ document.addEventListener('DOMContentLoaded', function () {
         userAgreementSigned = false;
         syncAgreementButtons();
     });
+    document.querySelectorAll('#applicationForm button[type="submit"][data-form-action]').forEach((button) => {
+        button.addEventListener('click', () => {
+            lastFormSubmitter = button;
+            const actionField = document.getElementById('formAction');
+            if (actionField && button.dataset.formAction) {
+                actionField.value = button.dataset.formAction;
+            }
+        });
+    });
 
     if (needsPaymentReceipt) {
         const {area, input, viewBtn, removeBtn, existingInput, removeInput} = getPaymentReceiptElements();
@@ -2319,7 +2329,8 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     document.getElementById('applicationForm').addEventListener('submit', function (e) {
         const actionField = document.getElementById('formAction');
-        const submitterAction = e.submitter?.dataset?.formAction || '';
+        const submitter = e.submitter || lastFormSubmitter || (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+        const submitterAction = submitter?.dataset?.formAction || '';
         if (submitterAction) {
             actionField.value = submitterAction;
         }
@@ -2333,7 +2344,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (action === 'submit') {
             if (autoSaveInFlight) {
                 e.preventDefault();
-                pendingSubmitTrigger = e.submitter || document.getElementById('submitBtn');
+                pendingSubmitTrigger = submitter || document.getElementById('submitBtn');
                 return;
             }
             isSubmittingApplication = true;
@@ -2358,11 +2369,12 @@ document.addEventListener('DOMContentLoaded', function () {
             btn.innerHTML = '<span class="loading-spinner"></span> Отправляем...';
             localStorage.removeItem(draftKey);
         } else {
-            const btn = e.submitter;
+            const btn = submitter;
             if (btn) {
                 btn.disabled = true;
             }
         }
+        lastFormSubmitter = null;
     });
 
     window.addEventListener('beforeunload', function () {
