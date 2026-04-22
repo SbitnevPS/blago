@@ -26,6 +26,27 @@ if (!function_exists('messageAttachmentInsertPayload')) {
     }
 }
 
+if (!function_exists('markUserThreadMessagesAsRead')) {
+    function markUserThreadMessagesAsRead(PDO $pdo, int $userId, int $applicationId, string $threadTitle): void
+    {
+        if ($userId <= 0 || $applicationId <= 0 || $threadTitle === '') {
+            return;
+        }
+
+        $markReadStmt = $pdo->prepare("
+            UPDATE messages m
+            JOIN users u ON u.id = m.created_by
+            SET m.is_read = 1
+            WHERE m.user_id = ?
+              AND m.application_id = ?
+              AND m.title = ?
+              AND m.is_read = 0
+              AND u.is_admin = 1
+        ");
+        $markReadStmt->execute([$userId, $applicationId, $threadTitle]);
+    }
+}
+
 // Получаем сообщения из admin_messages (сообщения от администрации)
 $stmt = $pdo->prepare("
  SELECT am.id, am.user_id, am.subject, am.message, am.priority, am.is_read, am.created_at, am.admin_id, am.is_broadcast, am.attachment_file, am.attachment_original_name, am.attachment_mime_type
@@ -268,6 +289,11 @@ if (($_GET['action'] ?? '') === 'poll_chat_messages') {
         ];
     }
 
+    try {
+        markUserThreadMessagesAsRead($pdo, $userId, $pollApplicationId, $pollChatTitle);
+    } catch (Throwable $ignored) {
+    }
+
     jsonResponse(['success' => true, 'messages' => $messagesPayload]);
 }
 
@@ -328,6 +354,10 @@ if ($selectedChatApplicationId > 0) {
             $selectedMessagesStmt->execute([$userId, $selectedChatApplicationId, $selectedChatTitle]);
             $selectedChatMessages = $selectedMessagesStmt->fetchAll();
             if (!empty($selectedChatMessages)) {
+                try {
+                    markUserThreadMessagesAsRead($pdo, $userId, $selectedChatApplicationId, $selectedChatTitle);
+                } catch (Throwable $ignored) {
+                }
                 $selectedChatClosed = (int) ($selectedApplication['dispute_chat_closed'] ?? 0) === 1;
                 $selectedChatReplyAllowed = !$selectedChatClosed
                     && ($selectedChatType !== 'dispute' || in_array((string) $selectedApplication['status'], ['declined', 'rejected'], true));
