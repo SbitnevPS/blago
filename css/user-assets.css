@@ -3521,6 +3521,198 @@
   }
 }
 
+@media (max-width: 768px) {
+  .application-wizard-page {
+    padding: 16px 10px 30px;
+  }
+
+  .application-wizard-page__back {
+    margin-bottom: 12px;
+  }
+
+  .application-wizard-page__back .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .application-hero {
+    border-radius: 20px;
+  }
+
+  .application-hero__inner {
+    padding: 18px 14px 20px;
+  }
+
+  .application-hero__title {
+    font-size: clamp(22px, 7vw, 28px);
+    line-height: 1.16;
+    overflow-wrap: anywhere;
+  }
+
+  .application-prep-item {
+    min-height: 0;
+    padding: 10px 12px;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+
+  .payment-receipt-note {
+    border-radius: 14px;
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .payment-receipt-note__icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    font-size: 18px;
+  }
+
+  .wizard-progress.card .card__body,
+  .wizard-step.card .card__header,
+  .wizard-step.card .card__body,
+  .application-sidebar .card__body {
+    padding: 14px;
+  }
+
+  .wizard-step.card .card__header h3 {
+    font-size: 18px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+
+  .wizard-steps {
+    margin-top: 12px;
+    gap: 6px;
+  }
+
+  .wizard-step-pill {
+    flex: 1 1 100%;
+    max-width: 100%;
+    border-radius: 12px;
+    text-align: left;
+    white-space: normal;
+    line-height: 1.3;
+    padding: 8px 10px;
+  }
+
+  .participant-form {
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .participant-form__header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+  }
+
+  .participant-form__title {
+    min-width: 0;
+    font-size: 15px;
+    overflow-wrap: anywhere;
+  }
+
+  .participant-form__header .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .participant-form__footer {
+    margin-top: 12px;
+    padding-top: 8px;
+  }
+
+  .participant-form__remove--full {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 12px;
+  }
+
+  .payment-receipt-card {
+    border-radius: 14px;
+    padding: 14px;
+  }
+
+  .payment-receipt-preview__visual {
+    min-height: 140px;
+  }
+
+  .drawing-preview__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .drawing-preview__action {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .user-agreement__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .user-agreement__actions .btn {
+    width: 100%;
+    justify-content: center;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.35;
+  }
+
+  .review-item {
+    padding: 8px;
+  }
+
+  .review-item__thumb {
+    width: 60px;
+    height: 60px;
+  }
+
+  .review-item__meta strong {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 560px) {
+  .wizard-nav {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    bottom: calc(72px + 8px);
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .wizard-nav .btn {
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.25;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .application-sidebar__title {
+    font-size: 18px;
+  }
+
+  .sidebar-stat {
+    padding: 10px 12px;
+    margin-top: 8px;
+    font-size: 13px;
+  }
+
+  .form-section--boxed {
+    border-radius: 14px;
+    padding: 12px;
+  }
+}
+
 .dispute-chat-modal__composer {
   display: flex;
   flex-direction: column;
