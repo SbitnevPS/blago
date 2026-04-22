@@ -539,26 +539,26 @@ function getApplicationUiStatusMeta(array $summary): array {
         if ($pending > 0 && $pending < $total) {
             return ['label' => 'Работы частично рассмотрены', 'badge_class' => 'badge--warning'];
         }
-        return ['label' => 'Дипломы недоступны', 'badge_class' => 'badge--warning'];
+        return ['label' => 'Работы на рассмотрении', 'badge_class' => 'badge--warning'];
     }
 
     if ($diplomas < $total) {
-        return ['label' => 'Дипломы доступны: ' . $diplomas . ' из ' . $total, 'badge_class' => 'badge--info'];
+        return ['label' => 'Рассмотрено работ: ' . $diplomas . ' из ' . $total, 'badge_class' => 'badge--info'];
     }
 
     if ($accepted === $total) {
-        return ['label' => 'Дипломы участника доступны для всех работ', 'badge_class' => 'badge--success'];
+        return ['label' => 'Все работы одобрены', 'badge_class' => 'badge--success'];
     }
 
     if ($reviewed === $total) {
-        return ['label' => 'Благодарственные дипломы доступны для всех работ', 'badge_class' => 'badge--info'];
+        return ['label' => 'Все работы рассмотрены', 'badge_class' => 'badge--info'];
     }
 
     if ($vkPublished > 0) {
-        return ['label' => 'Дипломы доступны, часть работ опубликована', 'badge_class' => 'badge--primary'];
+        return ['label' => 'Работы рассмотрены, часть опубликована', 'badge_class' => 'badge--primary'];
     }
 
-    return ['label' => 'Дипломы доступны для всех работ', 'badge_class' => 'badge--success'];
+    return ['label' => 'Все работы рассмотрены', 'badge_class' => 'badge--success'];
 }
 
 function mapWorkStatusToDiplomaType(string $status): ?string {
