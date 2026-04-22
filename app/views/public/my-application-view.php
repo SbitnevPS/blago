@@ -868,12 +868,17 @@ $currentPage = 'applications';
 .participant-edit-preview {max-width:100%; max-height:260px; border-radius:12px; border:1px solid #E5E7EB; display:none; object-fit:contain; background:#F8FAFC;}
 @media (min-width: 980px) {
  .application-content {grid-template-columns:minmax(0,1.55fr) minmax(320px,1fr);}
+ .app-sidebar {order:0;}
  #applicationCorrectionCard {order:1;}
  #applicationActionsCard {order:2;}
  .participant-modern-card__facts {grid-template-columns:repeat(2,minmax(0,1fr));}
  .participant-modern-card__image {max-height:560px;}
  .participant-edit-drawing-row {grid-template-columns:1fr 1fr; align-items:start;}
  .app-user-card__grid {grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+
+@media (max-width: 979px) {
+ .app-sidebar {order:-1;}
 }
 </style>
 </head>
