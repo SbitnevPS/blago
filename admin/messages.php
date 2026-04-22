@@ -1863,8 +1863,24 @@ function scrollDisputeChatToBottom() {
 }
 
 function restoreBodyScrollIfNoModals() {
- const activeModal = document.querySelector('.modal.active');
- document.body.style.overflow = activeModal ? 'hidden' : '';
+    const activeModal = document.querySelector('.modal.active');
+    document.body.style.overflow = activeModal ? 'hidden' : '';
+}
+
+function autoResizeChatTextarea(textarea) {
+ if (!textarea) return;
+ textarea.style.height = 'auto';
+ textarea.style.height = textarea.scrollHeight + 'px';
+}
+
+function bindAutoGrowingChatTextareas(scope = document) {
+ if (!scope) return;
+ scope.querySelectorAll('.chat-composer__textarea').forEach((textarea) => {
+  if (textarea.dataset.boundAutoResize === '1') return;
+  textarea.dataset.boundAutoResize = '1';
+  autoResizeChatTextarea(textarea);
+  textarea.addEventListener('input', () => autoResizeChatTextarea(textarea));
+ });
 }
 
 function showToast(message, type = 'success') {
@@ -2123,6 +2139,7 @@ function initMessageAttachmentField(input) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+ bindAutoGrowingChatTextareas();
  updatePriorityStyle(document.querySelector('input[name="priority"]:checked'));
  toggleSelectionMode(false);
 
@@ -2363,6 +2380,7 @@ document.addEventListener('DOMContentLoaded', function() {
      appendDisputeMessage(document.getElementById('disputeChatMessages'), data.message);
     }
     textarea.value = '';
+    autoResizeChatTextarea(textarea);
     const attachmentInput = disputeReplyForm.querySelector('input[name="attachment"]');
     const attachmentPreview = disputeReplyForm.querySelector('.js-message-attachment-preview');
     if (attachmentInput) {

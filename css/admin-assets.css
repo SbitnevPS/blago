@@ -1120,11 +1120,16 @@
 .chat-composer__textarea {
   flex: 1 1 auto;
   min-height: 42px;
-  max-height: 140px;
+  max-height: none;
   margin: 0;
-  resize: vertical;
+  resize: none;
+  overflow-y: hidden;
   border-radius: 14px;
   padding: 10px 14px;
+}
+
+#messageImagePreviewModal {
+  z-index: 1300;
 }
 
 .chat-composer__submit {
