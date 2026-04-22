@@ -723,6 +723,7 @@ foreach ($participants as $participantRow) {
 $userRegion = (string) ($user['organization_region'] ?? $application['organization_region'] ?? $firstParticipantRegion ?? '—');
 $userOrganization = (string) ($user['organization_name'] ?? $application['organization_name'] ?? '');
 $applicationDateLabel = date('d.m.Y H:i', strtotime((string) $application['created_at']));
+$isAgreementDeclined = (int) ($application['agreement_declined'] ?? 0) === 1;
 
 $disputeChatMessages = [];
 try {
@@ -810,8 +811,6 @@ $currentPage = 'applications';
 .app-user-card__value {font-size:14px; line-height:1.45; color:#0F172A; word-break:break-word;}
 .app-sidebar {display:flex; flex-direction:column; gap:16px;}
 .app-sidebar__panel {display:flex; flex-direction:column; gap:16px;}
-#applicationActionsCard {order:1;}
-#applicationCorrectionCard {order:2;}
 .participants-grid {display:grid; grid-template-columns:1fr; gap:16px;}
 .participant-modern-card {overflow:hidden; padding:0; transition:transform .2s ease, box-shadow .2s ease;}
 .participant-modern-card:hover {transform:translateY(-2px); box-shadow:0 12px 32px rgba(15,23,42,.12);}
@@ -1020,6 +1019,65 @@ $currentPage = 'applications';
 
     <aside class="app-sidebar">
         <div class="app-sidebar__panel">
+        <section class="app-card app-actions-card" id="applicationActionsCard">
+            <div class="app-actions" id="applicationActionsContent">
+                <?php if ($effectiveApplicationStatus === 'draft'): ?>
+                    <?php if ($canEdit): ?>
+                        <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary app-actions__primary"><i class="fas fa-pen"></i> Продолжить заполнение</a>
+                    <?php endif; ?>
+                    <div class="app-highlight" style="width:100%;">
+                        <strong>Заявка сохранена как черновик.</strong>
+                        <div>Она ещё не отправлена на проверку. Проверьте данные и отправьте её после завершения заполнения.</div>
+                    </div>
+                <?php elseif ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
+                    <?php if ($canResubmitCorrectedApplication): ?>
+                        <form id="resubmitApplicationForm" method="POST" style="width:100%;">
+                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                            <input type="hidden" name="action" value="resubmit_corrected_application">
+                            <input type="hidden" name="ajax" value="1">
+                            <button type="submit" class="btn btn--primary app-actions__primary app-actions-card__cta" id="resubmitApplicationButton">
+                                <i class="fas fa-paper-plane"></i> Отправить заявку на повторную проверку
+                            </button>
+                        </form>
+                    <?php else: ?>
+                        <div class="app-actions-card__note" id="resubmitApplicationHint">Сначала исправьте всех участников из списка корректировок. После этого здесь появится кнопка повторной отправки.</div>
+                    <?php endif; ?>
+                    <?php if ($isAgreementDeclined): ?>
+                    <div class="app-highlight app-highlight--danger-soft" style="width:100%;">
+                        <strong><i class="fas fa-triangle-exclamation"></i> Пользовательское соглашение не подписано.</strong>
+                        <div>Перейдите в раздел с пользовательским соглашением и дайте согласие, либо внесите изменения, которые не противоречат условиям конкурса, после чего снова нажмите «Подписать».</div>
+                    </div>
+                    <?php endif; ?>
+	                <?php elseif ($hasDiplomas): ?>
+	                    <div class="app-highlight" style="width:100%;">
+	                        <strong>Дипломы</strong>
+	                        <div>Участников: <?= (int) $participantsTotalCount ?>, дипломы сформированы: <?= (int) $participantsDiplomaCount ?></div>
+	                    </div>
+	                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать все дипломы</button></form>
+	                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_email_all"><button class="btn btn--secondary" type="submit"><i class="fas fa-envelope"></i> Отправить дипломы себе на почту</button></form>
+                <?php elseif (getApplicationCanonicalStatus($application) === 'rejected'): ?>
+                    <div class="app-highlight" style="width:100%;">
+                        <strong>Заявка отклонена.</strong>
+                        <div>Причина доступна в комментариях администратора и чате оспаривания.</div>
+                    </div>
+                <?php else: ?>
+                    <div style="color:#64748B;"><?= $effectiveApplicationStatus === 'corrected' ? 'Заявка повторно отправлена на проверку после исправлений.' : 'Заявка находится на рассмотрении.' ?></div>
+                <?php endif; ?>
+                <?php if ($isAgreementDeclined && !($effectiveApplicationStatus === 'revision' && $canEdit)): ?>
+                    <div class="app-highlight app-highlight--danger-soft" style="width:100%;">
+                        <strong><i class="fas fa-triangle-exclamation"></i> Пользовательское соглашение не подписано.</strong>
+                        <div>Перейдите в раздел с пользовательским соглашением и дайте согласие, либо внесите изменения, которые не противоречат условиям конкурса, после чего снова нажмите «Подписать».</div>
+                    </div>
+                <?php endif; ?>
+                <?php if ($hasCuratorChat): ?>
+                    <a href="/messages?chat_application_id=<?= (int) $applicationId ?>&chat_title=<?= urlencode($curatorChatTitle) ?>" class="btn btn--primary">
+                        <i class="fas fa-comments"></i> Открыть чат с куратором
+                    </a>
+                <?php endif; ?>
+                <a href="/my-applications" class="btn btn--secondary"><i class="fas fa-arrow-left"></i> К списку заяввок</a>
+            </div>
+        </section>
         <?php if (!empty($unresolvedCorrections) || $application['status'] === 'revision'): ?>
         <section class="app-card app-review-card" id="applicationCorrectionCard">
             <h2 class="app-card__title" style="font-size:18px;" id="applicationCorrectionTitle">Статус и комментарии</h2>
@@ -1049,58 +1107,6 @@ $currentPage = 'applications';
             </div>
         </section>
         <?php endif; ?>
-
-        <section class="app-card app-actions-card" id="applicationActionsCard">
-            <div class="app-actions" id="applicationActionsContent">
-                <?php if ($effectiveApplicationStatus === 'draft'): ?>
-                    <?php if ($canEdit): ?>
-                        <a href="/application-form?contest_id=<?= $application['contest_id'] ?>&edit=<?= $applicationId ?>" class="btn btn--primary app-actions__primary"><i class="fas fa-pen"></i> Продолжить заполнение</a>
-                    <?php endif; ?>
-                    <div class="app-highlight" style="width:100%;">
-                        <strong>Заявка сохранена как черновик.</strong>
-                        <div>Она ещё не отправлена на проверку. Проверьте данные и отправьте её после завершения заполнения.</div>
-                    </div>
-                <?php elseif ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
-                    <?php if ($canResubmitCorrectedApplication): ?>
-                        <form id="resubmitApplicationForm" method="POST" style="width:100%;">
-                            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                            <input type="hidden" name="action" value="resubmit_corrected_application">
-                            <input type="hidden" name="ajax" value="1">
-                            <button type="submit" class="btn btn--primary app-actions__primary app-actions-card__cta" id="resubmitApplicationButton">
-                                <i class="fas fa-paper-plane"></i> Отправить заявку на повторную проверку
-                            </button>
-                        </form>
-                    <?php else: ?>
-                        <div class="app-actions-card__note" id="resubmitApplicationHint">Сначала исправьте всех участников из списка корректировок. После этого здесь появится кнопка повторной отправки.</div>
-                    <?php endif; ?>
-                    <div class="app-highlight app-highlight--danger-soft" style="width:100%;">
-                        <strong><i class="fas fa-triangle-exclamation"></i> Пользовательское соглашение не подписано.</strong>
-                        <div>Перейдите в раздел с пользовательским соглашением и дайте согласие, либо внесите изменения, которые не противоречат условиям конкурса, после чего снова нажмите «Подписать».</div>
-                    </div>
-	                <?php elseif ($hasDiplomas): ?>
-	                    <div class="app-highlight" style="width:100%;">
-	                        <strong>Дипломы</strong>
-	                        <div>Участников: <?= (int) $participantsTotalCount ?>, дипломы сформированы: <?= (int) $participantsDiplomaCount ?></div>
-	                    </div>
-	                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_download_all"><button class="btn btn--primary" type="submit"><i class="fas fa-award"></i> Скачать все дипломы</button></form>
-	                    <form method="POST"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="diploma_email_all"><button class="btn btn--secondary" type="submit"><i class="fas fa-envelope"></i> Отправить дипломы себе на почту</button></form>
-                <?php elseif (getApplicationCanonicalStatus($application) === 'rejected'): ?>
-                    <div class="app-highlight" style="width:100%;">
-                        <strong>Заявка отклонена.</strong>
-                        <div>Причина доступна в комментариях администратора и чате оспаривания.</div>
-                    </div>
-                <?php else: ?>
-                    <div style="color:#64748B;"><?= $effectiveApplicationStatus === 'corrected' ? 'Заявка повторно отправлена на проверку после исправлений.' : 'Заявка находится на рассмотрении.' ?></div>
-                <?php endif; ?>
-                <?php if ($hasCuratorChat): ?>
-                    <a href="/messages?chat_application_id=<?= (int) $applicationId ?>&chat_title=<?= urlencode($curatorChatTitle) ?>" class="btn btn--primary">
-                        <i class="fas fa-comments"></i> Открыть чат с куратором
-                    </a>
-                <?php endif; ?>
-                <a href="/my-applications" class="btn btn--secondary"><i class="fas fa-arrow-left"></i> К списку заяввок</a>
-            </div>
-        </section>
         <?php if ($effectiveApplicationStatus === 'revision' && $canEdit): ?>
         <section class="app-responsibility-card" id="applicationResponsibilityCard" aria-label="Ответственность за исправления">
             <div class="app-responsibility-card__title">
