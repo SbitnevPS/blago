@@ -222,8 +222,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if ($action === 'save_draft' || $action === 'submit') {
  try {
  $pdo->beginTransaction();
- $receiptFilesToDelete = [];
+                $receiptFilesToDelete = [];
  $uploadedReceiptFiles = [];
+ $existingParticipantsRows = [];
                 
  // Данные родителя - теперь раздельно
  $parent_name = trim($_POST['parent_name'] ?? ''); // Имя
@@ -368,13 +369,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  }
                 
 // Данные организации (общие для всех участников)
-$org_region = normalizeRegionName(trim($_POST['organization_region'] ?? ''));
+$postedOrgRegion = normalizeRegionName(trim($_POST['organization_region'] ?? ''));
+$org_region = $postedOrgRegion;
+if ($org_region === '') {
+    $fallbackRegion = trim((string) ($existingParticipantsRows[0]['region'] ?? ($user['organization_region'] ?? '')));
+    $org_region = normalizeRegionName($fallbackRegion);
+}
 $org_name = trim($_POST['organization_name'] ?? '');
 $requestedUserType = trim((string) ($_POST['user_type'] ?? (string) ($user['user_type'] ?? 'parent')));
 $userTypeOptions = getUserTypeOptions();
 $user_type = array_key_exists($requestedUserType, $userTypeOptions) ? $requestedUserType : 'parent';
 $org_address = $user_type === 'parent' ? '' : trim($_POST['organization_address'] ?? '');
 $org_email = trim($_POST['organization_email'] ?? '');
+
+if ($action === 'submit' && (int) ($_POST['user_agreement_signed'] ?? 0) !== 1) {
+    throw new Exception('Чтобы отправить заявку, подпишите пользовательское соглашение.');
+}
 
 $pdo->prepare("
  UPDATE users
@@ -685,7 +695,8 @@ $hasExistingPaymentReceipt = $existingPaymentReceipt !== '';
 $existingPaymentReceiptUrl = $hasExistingPaymentReceipt ? getPaymentReceiptWebPath($existingPaymentReceipt) : '';
 $existingPaymentReceiptIsImage = $hasExistingPaymentReceipt && preg_match('/\.(jpg|jpeg|png|webp)$/i', $existingPaymentReceipt);
 $paymentStepNumber = $contestRequiresPaymentReceipt ? 3 : null;
-$reviewStepNumber = $contestRequiresPaymentReceipt ? 4 : 3;
+$agreementStepNumber = $contestRequiresPaymentReceipt ? 4 : 3;
+$reviewStepNumber = $contestRequiresPaymentReceipt ? 5 : 4;
 
 generateCSRFToken();
 ?>
@@ -749,6 +760,7 @@ generateCSRFToken();
                 <input type="hidden" name="existing_payment_receipt" id="existingPaymentReceipt" value="<?= e($existingPaymentReceipt) ?>">
                 <input type="hidden" name="remove_payment_receipt" id="removePaymentReceipt" value="0">
                 <input type="hidden" name="user_type" id="applicationUserType" value="<?= e((string) ($initialFormData['user_type'] ?? 'parent')) ?>">
+                <input type="hidden" name="user_agreement_signed" id="userAgreementSigned" value="0">
 
                 <section class="wizard-progress card mb-lg">
                     <div class="card__body">
@@ -911,6 +923,22 @@ generateCSRFToken();
                 </section>
                 <?php endif; ?>
 
+                <section class="wizard-step card mb-lg" data-step="<?= (int) $agreementStepNumber ?>" hidden>
+                    <div class="card__header"><h3>Шаг <?= (int) $agreementStepNumber ?>. Подписание пользовательского соглашения</h3></div>
+                    <div class="card__body">
+                        <div class="user-agreement">
+                            <p>Я подтверждаю, что направленные на участие в Конкурсе рисунки созданы самостоятельно (своеручно) указанными участниками, без помощи третьих лиц (в том числе взрослых), без копирования или срисовки с готовых изображений, а также без использования компьютерных программ и технологий.</p>
+                            <p>Я также подтверждаю, что получено согласие на обработку персональных данных от всех участников либо их законных представителей в соответствии с действующим законодательством Российской Федерации.</p>
+                            <p>Мне известно и понятно, что подача на Конкурс работ, созданных полностью или частично не заявленными участниками, является нарушением условий Конкурса и может быть расценена как введение в заблуждение или мошенничество в соответствии с действующим законодательством Российской Федерации.</p>
+                            <p>В случае несоблюдения указанных требований, а также при выявлении фактов нарушения правил Конкурса, представленная работа подлежит отклонению без уведомления и без права повторного участия.</p>
+                        </div>
+                        <div class="user-agreement__actions">
+                            <button type="button" class="btn btn--ghost user-agreement__sign-btn" id="signAgreementBtn">Подписать пользовательское соглашение!</button>
+                            <button type="submit" class="btn btn--secondary" id="declineAgreementBtn" data-form-action="save_draft">Я не принимаю условия.</button>
+                        </div>
+                    </div>
+                </section>
+
                 <section class="wizard-step card mb-lg" data-step="<?= (int) $reviewStepNumber ?>" hidden>
                     <div class="card__header"><h3>Шаг <?= (int) $reviewStepNumber ?>. Проверка и отправка</h3></div>
                     <div class="card__body" id="reviewContainer"></div>
@@ -1005,6 +1033,7 @@ const csrfToken = '<?= generateCSRFToken() ?>';
 const contestId = <?= e($contest_id) ?>;
 const needsPaymentReceipt = <?= $contestRequiresPaymentReceipt ? 'true' : 'false' ?>;
 const paymentStepNumber = <?= $contestRequiresPaymentReceipt ? (int) $paymentStepNumber : 'null' ?>;
+const agreementStepNumber = <?= (int) $agreementStepNumber ?>;
 const finalReviewStep = <?= (int) $reviewStepNumber ?>;
 const minParticipantAge = 5;
 const maxParticipantAge = 17;
@@ -1012,8 +1041,8 @@ const duplicateParticipantsModal = document.getElementById('duplicateParticipant
 const duplicateParticipantsList = document.getElementById('duplicateParticipantsList');
 const applicationIdInput = document.querySelector('input[name="application_id"]');
 const steps = needsPaymentReceipt
-    ? ['Заявитель', 'Участники и рисунки', 'Квитанция об оплате', 'Проверка и отправка']
-    : ['Заявитель', 'Участники и рисунки', 'Проверка и отправка'];
+    ? ['Заявитель', 'Участники и рисунки', 'Квитанция об оплате', 'Пользовательское соглашение', 'Проверка и отправка']
+    : ['Заявитель', 'Участники и рисунки', 'Пользовательское соглашение', 'Проверка и отправка'];
 const draftKey = `applicationDraft:${contestId}:<?= intval($user['id'] ?? 0) ?>`;
 let currentStep = 1;
 let participantCount = 0;
@@ -1022,6 +1051,7 @@ let autoSaveQueued = false;
 let lastAutoSaveSignature = '';
 let isSubmittingApplication = false;
 let pendingSubmitTrigger = null;
+let userAgreementSigned = false;
 const autoSaveEnabled = <?= $canAutoSaveCurrentApplication ? 'true' : 'false' ?>;
 const isEditingServerDraft = <?= $editingApplication ? 'true' : 'false' ?>;
 const initialPaymentReceipt = <?= json_encode([
@@ -1234,7 +1264,7 @@ function isApplicationReadyToSubmit() {
         return !!(field.value || (existing && existing.value));
     });
 
-    return requiredFieldsFilled && agesValid && participantsReady && (!needsPaymentReceipt || hasPaymentReceipt());
+    return requiredFieldsFilled && agesValid && participantsReady && (!needsPaymentReceipt || hasPaymentReceipt()) && userAgreementSigned;
 }
 
 function validateStep(step) {
@@ -1278,6 +1308,10 @@ function validateStep(step) {
         if (area) {
             area.classList.add('is-invalid');
         }
+        valid = false;
+    }
+
+    if (step === agreementStepNumber && !userAgreementSigned) {
         valid = false;
     }
     return valid;
@@ -1454,11 +1488,29 @@ function syncNavigationButtons(isReadyToSubmit = false) {
     }
 
     if (nextBtn) {
-        nextBtn.disabled = isLastStep;
+        const waitingAgreementSign = currentStep === agreementStepNumber && !userAgreementSigned;
+        nextBtn.disabled = isLastStep || waitingAgreementSign;
     }
 
     if (submitBtn) {
         submitBtn.disabled = !isLastStep || !isReadyToSubmit;
+    }
+}
+
+function syncAgreementButtons() {
+    const signBtn = document.getElementById('signAgreementBtn');
+    const declineBtn = document.getElementById('declineAgreementBtn');
+    const agreementField = document.getElementById('userAgreementSigned');
+    if (agreementField) {
+        agreementField.value = userAgreementSigned ? '1' : '0';
+    }
+    if (signBtn) {
+        signBtn.classList.toggle('btn--primary', userAgreementSigned);
+        signBtn.classList.toggle('btn--ghost', !userAgreementSigned);
+        signBtn.classList.toggle('is-signed', userAgreementSigned);
+    }
+    if (declineBtn) {
+        declineBtn.hidden = currentStep !== agreementStepNumber;
     }
 }
 
@@ -1480,6 +1532,7 @@ function updateProgress() {
     }).join('');
 
     if (currentStep === finalReviewStep) renderReview();
+    syncAgreementButtons();
     syncNavigationButtons(currentStep === finalReviewStep && isApplicationReadyToSubmit());
     updateSidebar();
 }
@@ -1883,6 +1936,11 @@ function renderReview() {
             <h4>Участники</h4>
             <ul class="review-list">${participants.join('')}</ul>
         </div>
+        <div class="review-block">
+            <h4>Пользовательское соглашение</h4>
+            <p>${userAgreementSigned ? 'Подписано.' : 'Не подписано.'}</p>
+            <button type="button" class="btn btn--ghost" onclick="goStep(${agreementStepNumber})">Перейти к шагу подписания</button>
+        </div>
         ${needsPaymentReceipt ? `
         <div class="review-block">
             <h4>Квитанция об оплате</h4>
@@ -2118,6 +2176,15 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    const agreementField = document.getElementById('userAgreementSigned');
+    userAgreementSigned = agreementField?.value === '1';
+    document.getElementById('signAgreementBtn')?.addEventListener('click', () => {
+        userAgreementSigned = true;
+        syncAgreementButtons();
+        syncNavigationButtons(currentStep === finalReviewStep && isApplicationReadyToSubmit());
+        saveLocalDraft();
+    });
+
     if (needsPaymentReceipt) {
         const {area, input, viewBtn, removeBtn, existingInput, removeInput} = getPaymentReceiptElements();
         if (area && input) {
@@ -2167,6 +2234,8 @@ document.addEventListener('DOMContentLoaded', function () {
     syncParticipantRemoveButtons();
 
     tryRestoreDraft();
+    userAgreementSigned = document.getElementById('userAgreementSigned')?.value === '1';
+    syncAgreementButtons();
     updateProgress();
     updateSidebar();
     lastAutoSaveSignature = getAutoSaveSignature();
@@ -2215,6 +2284,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     goStep(2);
                 } else if (needsPaymentReceipt && !validateStep(paymentStepNumber)) {
                     goStep(paymentStepNumber);
+                } else if (!validateStep(agreementStepNumber)) {
+                    goStep(agreementStepNumber);
                 } else {
                     renderReview();
                 }
