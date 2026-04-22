@@ -147,6 +147,7 @@ $routes = [
  '/admin/export/job/{id}' => ['file' => 'admin/export/job.php', 'name' => 'admin-export-archive-job'],
  '/admin/export/download' => ['file' => 'admin/export/download.php', 'name' => 'admin-export-archive-download-query'],
  '/admin/export/download/{id}' => ['file' => 'admin/export/download.php', 'name' => 'admin-export-archive-download'],
+ '/admin/export/delete' => ['file' => 'admin/export/delete.php', 'name' => 'admin-export-archive-delete'],
  '/admin/export-api' => ['file' => 'admin/export-api.php', 'name' => 'admin-export-archive-api'],
  '/admin/search-users' => ['file' => 'admin/search-users.php', 'name' => 'admin-search-users'],
  '/admin/search-applications' => ['file' => 'admin/search-applications.php', 'name' => 'admin-search-applications'],
