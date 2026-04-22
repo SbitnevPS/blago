@@ -49,6 +49,22 @@ if ($editingApplicationId > 0) {
     }
 }
 
+$blockedContestParticipantsStmt = $pdo->prepare("
+    SELECT DISTINCT
+        p.id AS participant_id,
+        p.fio,
+        a.id AS application_id
+    FROM participants p
+    INNER JOIN applications a ON a.id = p.application_id
+    INNER JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id
+    WHERE a.user_id = ?
+      AND a.contest_id = ?
+      AND w.status = 'reviewed_non_competitive'
+    ORDER BY p.id DESC
+");
+$blockedContestParticipantsStmt->execute([(int) ($user['id'] ?? 0), (int) $contest_id]);
+$blockedContestParticipants = $blockedContestParticipantsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
 function shouldAutoApproveApplicationAfterCorrection(int $applicationId): bool
 {
     global $pdo;
@@ -78,6 +94,117 @@ function shouldAutoApproveApplicationAfterCorrection(int $applicationId): bool
     }
 
     return $hasAccepted;
+}
+
+function normalizeParticipantFioForCompliance(string $value): string
+{
+    $value = mb_strtolower(trim($value), 'UTF-8');
+    $value = str_replace('ё', 'е', $value);
+    $value = preg_replace('/[^[:alpha:]\s]+/u', ' ', $value) ?? '';
+    $value = preg_replace('/\s+/u', ' ', $value) ?? '';
+    return trim($value);
+}
+
+function participantFioTokensForCompliance(string $fio): array
+{
+    $normalized = normalizeParticipantFioForCompliance($fio);
+    if ($normalized === '') {
+        return [];
+    }
+
+    $tokens = preg_split('/\s+/u', $normalized) ?: [];
+    $tokens = array_values(array_filter(array_map(static fn($part) => trim((string) $part), $tokens), static fn($part) => $part !== ''));
+    sort($tokens, SORT_STRING);
+
+    return $tokens;
+}
+
+function normalizeFioTokenForDistance(string $token): string
+{
+    $token = trim($token);
+    if ($token === '') {
+        return '';
+    }
+
+    $transliterated = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $token);
+    if (is_string($transliterated) && $transliterated !== '') {
+        $token = $transliterated;
+    }
+
+    $token = strtolower($token);
+    $token = preg_replace('/[^a-z0-9]+/', '', $token) ?? '';
+
+    return $token;
+}
+
+function isLikelySameParticipantByFio(string $fioA, string $fioB): bool
+{
+    $tokensA = participantFioTokensForCompliance($fioA);
+    $tokensB = participantFioTokensForCompliance($fioB);
+
+    if (empty($tokensA) || empty($tokensB)) {
+        return false;
+    }
+
+    if (implode(' ', $tokensA) === implode(' ', $tokensB)) {
+        return true;
+    }
+
+    if (count($tokensA) !== count($tokensB)) {
+        return false;
+    }
+
+    foreach ($tokensA as $index => $tokenA) {
+        $tokenB = $tokensB[$index] ?? '';
+        $distanceLeft = normalizeFioTokenForDistance($tokenA);
+        $distanceRight = normalizeFioTokenForDistance($tokenB);
+        if ($distanceLeft === '' || $distanceRight === '') {
+            return false;
+        }
+
+        $distance = levenshtein($distanceLeft, $distanceRight);
+        $maxLength = max(strlen($distanceLeft), strlen($distanceRight));
+        $allowedDistance = $maxLength >= 10 ? 3 : 2;
+        if ($distance > $allowedDistance) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function findBlockedParticipantsInDraft(array $submittedParticipants, array $blockedParticipants): array
+{
+    $matches = [];
+
+    foreach ($submittedParticipants as $candidate) {
+        $candidateFio = trim((string) ($candidate['fio'] ?? ''));
+        if ($candidateFio === '') {
+            continue;
+        }
+
+        foreach ($blockedParticipants as $blocked) {
+            $blockedFio = trim((string) ($blocked['fio'] ?? ''));
+            if ($blockedFio === '') {
+                continue;
+            }
+
+            if (!isLikelySameParticipantByFio($candidateFio, $blockedFio)) {
+                continue;
+            }
+
+            $matches[] = [
+                'fio' => $candidateFio,
+                'index' => (int) ($candidate['index'] ?? 0),
+                'blocked_fio' => $blockedFio,
+                'blocked_participant_id' => (int) ($blocked['participant_id'] ?? 0),
+                'blocked_application_id' => (int) ($blocked['application_id'] ?? 0),
+            ];
+            break;
+        }
+    }
+
+    return $matches;
 }
 
 // Директория пользователя для рисунков
@@ -419,6 +546,7 @@ $user['user_type'] = $user_type;
  $keptParticipantIds = [];
  $drawingFilesToDelete = [];
  $autosaveParticipantSync = [];
+ $submittedParticipantsForCompliance = [];
                 
  foreach ($participants as $pIndex => $participant) {
  $surname = trim($participant['surname'] ?? '');
@@ -434,6 +562,10 @@ $user['user_type'] = $user_type;
  $patronymic = $parts[2] ?? '';
  }
  if (empty($fio)) continue;
+ $submittedParticipantsForCompliance[] = [
+     'index' => (int) $pIndex,
+     'fio' => $fio,
+ ];
                     
  $age = intval($participant['age'] ??0);
  if ($age < 5 || $age > 17) {
@@ -591,6 +723,19 @@ $user['user_type'] = $user_type;
 
  if ($action === 'submit' && $participant_count === 0) {
  throw new Exception('Добавьте хотя бы одного участника с рисунком, чтобы отправить заявку.');
+ }
+
+ if ($action === 'submit') {
+ $blockedInDraft = findBlockedParticipantsInDraft($submittedParticipantsForCompliance, $blockedContestParticipants);
+ if (!empty($blockedInDraft)) {
+     $blockedNames = array_values(array_unique(array_map(static fn($row) => trim((string) ($row['fio'] ?? '')), $blockedInDraft)));
+     $blockedLabel = implode(', ', array_filter($blockedNames, static fn($name) => $name !== ''));
+     throw new Exception(
+         'Обнаружены участники, ранее нарушившие пользовательское соглашение в этом конкурсе: '
+         . $blockedLabel
+         . '. Удалите этих участников из заявки, после этого отправка станет доступна.'
+     );
+ }
  }
 
  if (!empty($application_id)) {
@@ -1046,6 +1191,13 @@ const initialParticipants = <?= json_encode(array_map(function($p) use ($user) {
         'full_preview' => !empty($p['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $p['drawing_file']) : null,
     ];
 }, $editingParticipants), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+const blockedContestParticipants = <?= json_encode(array_map(static function ($row) {
+    return [
+        'participant_id' => (int) ($row['participant_id'] ?? 0),
+        'application_id' => (int) ($row['application_id'] ?? 0),
+        'fio' => trim((string) ($row['fio'] ?? '')),
+    ];
+}, $blockedContestParticipants), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
 const csrfToken = '<?= generateCSRFToken() ?>';
 const contestId = <?= e($contest_id) ?>;
@@ -1284,7 +1436,13 @@ function isApplicationReadyToSubmit() {
         return !!(field.value || (existing && existing.value));
     });
 
-    return requiredFieldsFilled && agesValid && participantsReady && (!needsPaymentReceipt || hasPaymentReceipt()) && userAgreementSigned;
+    const blockedParticipants = getBlockedParticipantsInDraft();
+    return requiredFieldsFilled
+        && agesValid
+        && participantsReady
+        && (!needsPaymentReceipt || hasPaymentReceipt())
+        && userAgreementSigned
+        && blockedParticipants.length === 0;
 }
 
 function validateStep(step) {
@@ -1341,7 +1499,72 @@ function normalizeParticipantFioPart(value) {
     return String(value || '')
         .trim()
         .replace(/\s+/g, ' ')
-        .toLowerCase();
+        .toLowerCase()
+        .replace(/ё/g, 'е');
+}
+
+function normalizeFioComparable(value) {
+    return normalizeParticipantFioPart(value).replace(/[^a-zа-я0-9\s-]/gi, '');
+}
+
+function tokenizeFioComparable(value) {
+    const normalized = normalizeFioComparable(value);
+    if (!normalized) return [];
+    return normalized.split(/\s+/).map((part) => part.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ru'));
+}
+
+function levenshteinDistance(left, right) {
+    const a = Array.from(String(left || ''));
+    const b = Array.from(String(right || ''));
+    const n = a.length;
+    const m = b.length;
+    if (n === 0) return m;
+    if (m === 0) return n;
+
+    const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+    for (let i = 0; i <= n; i += 1) dp[i][0] = i;
+    for (let j = 0; j <= m; j += 1) dp[0][j] = j;
+
+    for (let i = 1; i <= n; i += 1) {
+        for (let j = 1; j <= m; j += 1) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            dp[i][j] = Math.min(
+                dp[i - 1][j] + 1,
+                dp[i][j - 1] + 1,
+                dp[i - 1][j - 1] + cost
+            );
+        }
+    }
+
+    return dp[n][m];
+}
+
+function isLikelySameParticipantFio(left, right) {
+    const tokensLeft = tokenizeFioComparable(left);
+    const tokensRight = tokenizeFioComparable(right);
+    if (!tokensLeft.length || !tokensRight.length) {
+        return false;
+    }
+
+    if (tokensLeft.join(' ') === tokensRight.join(' ')) {
+        return true;
+    }
+
+    if (tokensLeft.length !== tokensRight.length) {
+        return false;
+    }
+
+    for (let i = 0; i < tokensLeft.length; i += 1) {
+        const tokenLeft = tokensLeft[i];
+        const tokenRight = tokensRight[i];
+        const maxLength = Math.max(tokenLeft.length, tokenRight.length);
+        const allowedDistance = maxLength >= 10 ? 3 : 2;
+        if (levenshteinDistance(tokenLeft, tokenRight) > allowedDistance) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 function getParticipantDuplicateGroups() {
@@ -1388,6 +1611,12 @@ function clearDuplicateParticipantHighlights() {
     });
 }
 
+function clearBlockedParticipantHighlights() {
+    document.querySelectorAll('#participantsContainer .participant-form').forEach((card) => {
+        card.classList.remove('participant-form--blocked');
+    });
+}
+
 function highlightDuplicateParticipantGroups(groups) {
     clearDuplicateParticipantHighlights();
     groups.forEach((group) => {
@@ -1396,6 +1625,52 @@ function highlightDuplicateParticipantGroups(groups) {
             card?.classList.add('participant-form--duplicate');
         });
     });
+}
+
+function getBlockedParticipantsInDraft() {
+    const cards = [...document.querySelectorAll('#participantsContainer .participant-form')];
+    const blocked = [];
+
+    cards.forEach((card) => {
+        const index = Number(card.dataset.index);
+        const surname = card.querySelector(`[name="participants[${index}][surname]"]`)?.value || '';
+        const name = card.querySelector(`[name="participants[${index}][name]"]`)?.value || '';
+        const patronymic = card.querySelector(`[name="participants[${index}][patronymic]"]`)?.value || '';
+        const candidateFio = [surname, name, patronymic].map((part) => String(part || '').trim()).filter(Boolean).join(' ');
+
+        if (!candidateFio) {
+            return;
+        }
+
+        const matchedBlocked = (blockedContestParticipants || []).find((entry) => isLikelySameParticipantFio(candidateFio, entry?.fio || ''));
+        if (!matchedBlocked) {
+            return;
+        }
+
+        blocked.push({
+            index,
+            fio: candidateFio,
+            blockedFio: matchedBlocked.fio || candidateFio,
+            blockedParticipantId: Number(matchedBlocked.participant_id || 0),
+            blockedApplicationId: Number(matchedBlocked.application_id || 0),
+        });
+    });
+
+    return blocked;
+}
+
+function highlightBlockedParticipants(blockedEntries) {
+    clearBlockedParticipantHighlights();
+    blockedEntries.forEach((entry) => {
+        const card = document.querySelector(`.participant-form[data-index="${entry.index}"]`);
+        card?.classList.add('participant-form--blocked');
+    });
+}
+
+function focusFirstBlockedParticipant(blockedEntries) {
+    const firstBlocked = blockedEntries?.[0];
+    if (!firstBlocked) return;
+    focusDuplicateParticipantByIndex(firstBlocked.index);
 }
 
 function focusFirstDuplicateParticipant(groups) {
@@ -1944,7 +2219,10 @@ function renderReview() {
         `;
     });
 
+    const blockedParticipants = getBlockedParticipantsInDraft();
+    highlightBlockedParticipants(blockedParticipants);
     const ready = isApplicationReadyToSubmit();
+    const blockedParticipantsListHtml = blockedParticipants.map((item) => `<li><strong>${item.fio}</strong> (участник ${item.index + 1})</li>`).join('');
     review.innerHTML = `
         <div class="review-block">
             <h4>Заявитель</h4>
@@ -1984,7 +2262,14 @@ function renderReview() {
             <p>${paymentReceiptSource ? 'Файл готов к отправке вместе с заявкой.' : 'Без квитанции кнопка отправки останется неактивной.'}</p>
             <button type="button" class="btn btn--ghost" onclick="goStep(${paymentStepNumber})">Изменить</button>
         </div>` : ''}
-        <div class="alert ${ready ? 'alert--success' : 'alert--error'}">${ready ? 'Заявка готова к отправке.' : needsPaymentReceipt ? 'Заполните все обязательные поля, добавьте рисунки и прикрепите квитанцию об оплате.' : 'Заполните все обязательные поля и добавьте рисунки.'}</div>`;
+        ${blockedParticipants.length > 0 ? `
+        <div class="alert alert--error">
+            <strong>Обнаружены участники, которые ранее нарушили пользовательское соглашение в этом конкурсе.</strong>
+            <p class="mt-sm">Удалите их из заявки. Пока они остаются в списке участников, отправка заявки невозможна.</p>
+            <ul>${blockedParticipantsListHtml}</ul>
+            <button type="button" class="btn btn--ghost" onclick="goStep(2)">Перейти к участникам и удалить</button>
+        </div>` : ''}
+        <div class="alert ${ready ? 'alert--success' : 'alert--error'}">${ready ? 'Заявка готова к отправке.' : needsPaymentReceipt ? 'Заполните все обязательные поля, добавьте рисунки, проверьте участников и прикрепите квитанцию об оплате.' : 'Заполните все обязательные поля, добавьте рисунки и проверьте участников.'}</div>`;
     syncNavigationButtons(ready);
 }
 
@@ -2326,6 +2611,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('applicationForm').addEventListener('input', (e) => {
         if (e.target.matches('input[name^="participants["][name$="[surname]"], input[name^="participants["][name$="[name]"], input[name^="participants["][name$="[patronymic]"]')) {
             clearDuplicateParticipantHighlights();
+            highlightBlockedParticipants(getBlockedParticipantsInDraft());
         }
         if (e.target.matches('input[name^="participants["][name$="[age]"]')) {
             validateAgeField(e.target);
@@ -2360,6 +2646,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (action === 'submit') {
             isSubmittingApplication = true;
+            const blockedParticipants = getBlockedParticipantsInDraft();
+            if (blockedParticipants.length > 0) {
+                isSubmittingApplication = false;
+                e.preventDefault();
+                highlightBlockedParticipants(blockedParticipants);
+                goStep(2);
+                focusFirstBlockedParticipant(blockedParticipants);
+                alert('В заявке есть участники, которые ранее нарушили условия пользовательского соглашения в этом конкурсе. Удалите этих участников, после этого отправка станет доступна.');
+                return;
+            }
             if (currentStep !== steps.length || !isApplicationReadyToSubmit()) {
                 isSubmittingApplication = false;
                 e.preventDefault();
