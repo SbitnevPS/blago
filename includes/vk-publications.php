@@ -351,7 +351,7 @@ function getVkPublicationSettings(): array
         'auth_mode' => 'group_access_token',
         'token_source_setting' => trim((string) ($settings['vk_publication_token_source'] ?? 'oauth_vk_admin_login')),
         'group_id' => trim((string) ($settings['vk_publication_group_id'] ?? '')),
-        'api_version' => trim((string) ($settings['vk_publication_api_version'] ?? VK_API_VERSION)),
+        'api_version' => VK_API_VERSION,
         'from_group' => (int) ($settings['vk_publication_from_group'] ?? 1) === 1,
         'post_template' => trim((string) ($settings['vk_publication_post_template'] ?? defaultVkPostTemplate())),
         'group_name' => trim((string) ($settings['vk_publication_group_name'] ?? '')),
@@ -387,7 +387,7 @@ function getVkPublicationRuntimeSettings(bool $preferSessionToken = true, bool $
             : 'none',
         'scope_required_for_publication' => ['wall'],
         'group_id' => (string) ($settings['group_id'] ?? ''),
-        'api_version' => (string) ($settings['api_version'] ?? VK_API_VERSION),
+        'api_version' => VK_API_VERSION,
         'from_group' => !empty($settings['from_group']),
         'post_template' => (string) ($settings['post_template'] ?? defaultVkPostTemplate()),
         'group_name' => (string) ($settings['group_name'] ?? ''),
@@ -579,7 +579,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
         'capabilities' => ['ok' => true, 'matrix' => vkPublicationCapabilityMatrixAdminUserToken()],
         'token_present' => ['ok' => false, 'message' => 'ключ доступа сообщества отсутствует'],
         'group_id' => ['ok' => false, 'message' => 'group_id не задан'],
-        'token_expired' => ['ok' => null, 'message' => 'Проверяется по expires_at и текущему запросу VK API'],
+        'token_expired' => ['ok' => null, 'message' => 'Для ключа сообщества этот шаг не используется'],
         'wall_post' => ['ok' => null, 'message' => 'Проверяется при фактической публикации текста'],
     ];
 
@@ -588,13 +588,7 @@ function verifyVkPublicationReadiness(bool $attemptRefresh = true, bool $preferS
         $issues[] = 'Ключ доступа сообщества не задан.';
     } else {
         $steps['token_present'] = ['ok' => true, 'message' => 'ключ доступа сообщества найден'];
-        $expiresAt = (int) ($adminTokenState['expires_at'] ?? 0);
-        if ($expiresAt > 0 && $expiresAt <= time()) {
-            $issues[] = 'Срок действия user token истёк.';
-            $steps['token_expired'] = ['ok' => false, 'message' => 'user token истёк'];
-        } else {
-            $steps['token_expired'] = ['ok' => true, 'message' => 'user token активен'];
-        }
+        $steps['token_expired'] = ['ok' => true, 'message' => 'Для ключа сообщества expires_at не используется'];
     }
 
     if ($settings['group_id'] === '' || (int) $settings['group_id'] <= 0) {
