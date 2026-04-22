@@ -11,6 +11,58 @@ const EXPORT_ARCHIVE_STAGE_COPY = 'копирование файлов';
 const EXPORT_ARCHIVE_STAGE_ARCHIVE = 'архивирование';
 const EXPORT_ARCHIVE_STAGE_FINISH = 'завершение';
 
+
+function exportArchiveEnsureTable(PDO $pdo, ?string &$error = null): bool
+{
+    static $checked = false;
+    static $ok = false;
+    static $cachedError = '';
+
+    if ($checked) {
+        $error = $cachedError !== '' ? $cachedError : null;
+        return $ok;
+    }
+
+    $sql = <<<'SQL'
+CREATE TABLE IF NOT EXISTS export_archive_jobs (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    status ENUM('draft','processing','done','error') NOT NULL DEFAULT 'draft',
+    filters_json JSON NULL,
+    applications_count INT UNSIGNED NOT NULL DEFAULT 0,
+    participants_count INT UNSIGNED NOT NULL DEFAULT 0,
+    archive_file_path VARCHAR(500) NULL,
+    archive_file_name VARCHAR(255) NULL,
+    archive_size BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    progress_percent TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    progress_stage VARCHAR(120) NULL,
+    error_message TEXT NULL,
+    created_by_admin_id BIGINT UNSIGNED NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at DATETIME NULL,
+    finished_at DATETIME NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_export_archive_jobs_status (status),
+    KEY idx_export_archive_jobs_created_at (created_at),
+    KEY idx_export_archive_jobs_admin (created_by_admin_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+SQL;
+
+    try {
+        $pdo->exec($sql);
+        $ok = true;
+        $cachedError = '';
+    } catch (Throwable $e) {
+        $ok = false;
+        $cachedError = 'Не удалось подготовить таблицу выгрузки архивов: ' . $e->getMessage();
+    }
+
+    $checked = true;
+    $error = $cachedError !== '' ? $cachedError : null;
+
+    return $ok;
+}
+
 function exportArchiveNormalizeFilters(array $input): array
 {
     return [

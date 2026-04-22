@@ -1,12 +1,21 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/init.php';
+require_once __DIR__ . '/../includes/export-archive.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
 if (!isAdmin()) {
     http_response_code(403);
     echo json_encode(['error' => 'forbidden']);
+    exit;
+}
+
+
+$initError = null;
+if (!exportArchiveEnsureTable($pdo, $initError)) {
+    http_response_code(500);
+    echo json_encode(['error' => 'table_init_failed', 'message' => $initError], JSON_UNESCAPED_UNICODE);
     exit;
 }
 

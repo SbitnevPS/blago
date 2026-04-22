@@ -18,6 +18,10 @@ $headerBackLabel = 'К списку заданий';
 
 $contests = $pdo->query('SELECT id, title FROM contests ORDER BY created_at DESC')->fetchAll() ?: [];
 $errors = [];
+$initError = null;
+if (!exportArchiveEnsureTable($pdo, $initError)) {
+    $errors[] = (string) $initError;
+}
 $summary = null;
 $listRows = [];
 $showList = false;
@@ -36,6 +40,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
         $errors[] = 'Ошибка безопасности (CSRF).';
     } else {
+        if ($initError !== null) {
+            $errors[] = (string) $initError;
+        }
+
         $summary = exportArchiveGetSelectionSummary($pdo, $filters);
 
         if ($action === 'show_list') {
