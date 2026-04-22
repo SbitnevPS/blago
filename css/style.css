@@ -2163,6 +2163,16 @@ h4 {
 		font-size: var(--font-size-base);
 	}
 
+	.contest-card__image-box {
+		background: #f8fafc;
+	}
+
+	.contest-card__image {
+		aspect-ratio: auto;
+		height: auto;
+		object-fit: contain;
+	}
+
 	.contest-list-grid,
 	.contests-benefits__grid {
 		grid-template-columns: 1fr;
