@@ -624,7 +624,8 @@ if (!empty($_SESSION['error_message'])) {
                         <?php endif; ?>
                         <span><strong>Конкурс:</strong> <?= htmlspecialchars($app['contest_title'] ?? '—') ?></span>
                         <span><strong>Участников:</strong> <?= (int) $app['participants_count'] ?></span>
-                        <span><strong>Опубликовано:</strong> <?= (int) ($vkStatus['published_count'] ?? 0) ?> из <?= (int) ($app['participants_count'] ?? 0) ?></span>
+                        <span><strong>Готово к публикации:</strong> <?= (int) ($vkStatus['ready_count'] ?? 0) ?> из <?= (int) ($vkStatus['total_count'] ?? 0) ?></span>
+                        <span><strong>Уже опубликовано:</strong> <?= (int) ($vkStatus['published_count'] ?? 0) ?></span>
                     </div>
                     <div class="admin-list-card__actions">
                         <label class="select-col" style="display:none;">
