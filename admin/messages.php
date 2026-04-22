@@ -1970,13 +1970,16 @@ function buildAttachmentPreviewMarkup(file) {
  if (isImage) {
   const objectUrl = URL.createObjectURL(file);
   return (
-   `<button type="button" class="chat-composer__attachment-preview-item chat-composer__attachment-preview-item--image js-local-image-preview" data-image-src="${escapeHtml(objectUrl)}" data-image-title="${fileName}" title="${fileName}">` +
+   `<div class="chat-composer__attachment-preview-item chat-composer__attachment-preview-item--image" title="${fileName}">` +
+   `<button type="button" class="chat-composer__attachment-preview-main js-local-image-preview" data-image-src="${escapeHtml(objectUrl)}" data-image-title="${fileName}" title="${fileName}">` +
    `<img src="${escapeHtml(objectUrl)}" alt="${fileName}" class="chat-composer__attachment-preview-thumb">` +
    `<span class="chat-composer__attachment-preview-name">${fileName}</span>` +
-   '</button>'
+   '</button>' +
+   '<button type="button" class="chat-composer__attachment-remove js-message-attachment-remove" title="Удалить вложение" aria-label="Удалить вложение"><i class="fas fa-times"></i></button>' +
+   '</div>'
   );
  }
- return `<div class="chat-composer__attachment-preview-item" title="${fileName}"><span class="chat-composer__attachment-preview-icon"><i class="fas fa-paperclip"></i></span><span class="chat-composer__attachment-preview-name">${fileName}</span></div>`;
+ return `<div class="chat-composer__attachment-preview-item" title="${fileName}"><span class="chat-composer__attachment-preview-icon"><i class="fas fa-paperclip"></i></span><span class="chat-composer__attachment-preview-name">${fileName}</span><button type="button" class="chat-composer__attachment-remove js-message-attachment-remove" title="Удалить вложение" aria-label="Удалить вложение"><i class="fas fa-times"></i></button></div>`;
 }
 
 function initMessageAttachmentField(input) {
@@ -1999,6 +2002,13 @@ function initMessageAttachmentField(input) {
      encodeURIComponent(button.dataset.imageSrc || ''),
      encodeURIComponent(button.dataset.imageTitle || 'Предпросмотр изображения')
     );
+   });
+  });
+  preview.querySelectorAll('.js-message-attachment-remove').forEach((button) => {
+   button.addEventListener('click', () => {
+    input.value = '';
+    preview.innerHTML = '';
+    preview.hidden = true;
    });
   });
  });

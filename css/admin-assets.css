@@ -1037,6 +1037,45 @@
   text-overflow: ellipsis;
 }
 
+.chat-composer__attachment-preview-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-composer__attachment-preview-item:not(.chat-composer__attachment-preview-item--image) .chat-composer__attachment-preview-main {
+  cursor: default;
+}
+
+.chat-composer__attachment-remove {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background .2s ease, color .2s ease;
+}
+
+.chat-composer__attachment-remove:hover {
+  background: #cbd5e1;
+  color: #0f172a;
+}
+
 .chat-composer__actions {
   display: flex;
   align-items: center;
