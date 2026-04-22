@@ -281,7 +281,20 @@ $archivedApplications = array_values(array_filter(
                                             <span class="badge badge--error">Сообщения: <?= (int) $unreadCount ?></span>
                                         <?php endif; ?>
                                     </div>
-                                    <div class="my-application-card__id">Заявка #<?= (int) ($app['id'] ?? 0) ?></div>
+                                    <div class="my-application-card__top-meta">
+                                        <div class="my-application-card__id">Заявка #<?= (int) ($app['id'] ?? 0) ?></div>
+                                        <button
+                                            type="button"
+                                            class="btn btn--ghost my-application-card__delete"
+                                            data-delete-application-trigger
+                                            data-application-id="<?= (int) ($app['id'] ?? 0) ?>"
+                                            data-application-title="<?= htmlspecialchars((string) $app['contest_title'], ENT_QUOTES, 'UTF-8') ?>"
+                                            aria-label="Удалить заявку #<?= (int) ($app['id'] ?? 0) ?>"
+                                            title="Удалить заявку"
+                                        >
+                                            <i class="fas fa-trash" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <h3 class="my-application-card__title"><?= htmlspecialchars((string) $app['contest_title']) ?></h3>
@@ -310,15 +323,6 @@ $archivedApplications = array_values(array_filter(
                                 <a href="/application/<?= (int) $app['id'] ?>" class="btn btn--primary btn--open-application">
                                     Открыть заявку <i class="fas fa-arrow-right"></i>
                                 </a>
-                                <button
-                                    type="button"
-                                    class="btn btn--ghost my-application-card__delete"
-                                    data-delete-application-trigger
-                                    data-application-id="<?= (int) ($app['id'] ?? 0) ?>"
-                                    data-application-title="<?= htmlspecialchars((string) $app['contest_title'], ENT_QUOTES, 'UTF-8') ?>"
-                                >
-                                    <i class="fas fa-trash"></i> Удалить заявку
-                                </button>
                             </div>
                         </div>
                     </article>

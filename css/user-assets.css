@@ -2872,6 +2872,17 @@
 .my-application-card {
   padding: 0;
   overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(226, 232, 240, .95);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .06);
+  transition: transform .24s ease, box-shadow .24s ease, border-color .24s ease;
+}
+
+.my-application-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(148, 163, 184, .45);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, .1);
 }
 
 .my-application-card--archived-contest {
@@ -2899,9 +2910,9 @@
 }
 
 .my-application-card__body {
-  padding: 16px;
+  padding: 14px;
   display: grid;
-  gap: 10px;
+  gap: 9px;
 }
 
 .my-application-card__top {
@@ -2910,6 +2921,12 @@
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.my-application-card__top-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .my-application-card__id {
@@ -2956,58 +2973,63 @@
 .my-application-card__meta {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 4px;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .my-application-card__meta-item {
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(15, 23, 42, .03);
+  padding: 7px 9px;
+  border-radius: 11px;
+  background: rgba(15, 23, 42, .025);
   border: 1px solid rgba(226, 232, 240, .95);
 }
 
 .my-application-card__meta-label {
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: .5px;
+  letter-spacing: .42px;
   color: var(--color-text-muted);
 }
 
 .my-application-card__meta-value {
-  margin-top: 6px;
-  font-size: 14px;
-  font-weight: 700;
+  margin-top: 3px;
+  font-size: 13px;
+  font-weight: 650;
   color: var(--color-text);
 }
 
 .my-application-card__actions {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 10px;
+  display: block;
   margin-top: 6px;
 }
 
 .my-application-card__actions .btn--open-application {
   width: 100%;
-  min-height: 48px;
-  font-size: 15px;
+  min-height: 44px;
+  font-size: 14px;
+  border-radius: 12px;
 }
 
 .my-application-card__delete {
-  min-height: 34px;
-  padding: 6px 12px;
-  font-size: 12px;
-  color: #b91c1c;
-  border-color: rgba(248, 113, 113, .38);
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-radius: 9px;
+  color: #64748b;
+  border-color: transparent;
+  background: rgba(148, 163, 184, .12);
 }
 
 .my-application-card__delete:hover {
-  background: #fef2f2;
-  color: #991b1b;
-  border-color: rgba(248, 113, 113, .52);
+  background: rgba(148, 163, 184, .2);
+  color: #475569;
+  border-color: transparent;
+}
+
+.my-application-card__delete:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, .24);
 }
 
 .my-application-card--revision {
