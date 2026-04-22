@@ -208,8 +208,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Обработка формы
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+ $isAutoSaveRequest = (int) ($_POST['autosave'] ?? 0) === 1;
  $isAjaxRequest = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest'
-     || (int) ($_POST['autosave'] ?? 0) === 1;
+     || $isAutoSaveRequest;
  if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
  $error = 'Ошибка безопасности. Обновите страницу.';
  if ($isAjaxRequest) {
@@ -413,6 +414,7 @@ $user['user_type'] = $user_type;
  $participant_count =0;
  $keptParticipantIds = [];
  $drawingFilesToDelete = [];
+ $autosaveParticipantSync = [];
                 
  foreach ($participants as $pIndex => $participant) {
  $surname = trim($participant['surname'] ?? '');
@@ -552,6 +554,14 @@ $user['user_type'] = $user_type;
  }
                     
  $participant_count++;
+
+ if ($isAutoSaveRequest) {
+ $autosaveParticipantSync[] = [
+ 'index' => (int) $pIndex,
+ 'participant_id' => (int) $participant_id,
+ 'drawing_file' => (string) $drawing_file,
+ ];
+ }
  }
 
  if (!empty($existingParticipantsById)) {
@@ -625,6 +635,7 @@ $user['user_type'] = $user_type;
          'message' => 'Черновик сохранён',
          'application_id' => (int) $application_id,
          'participant_count' => (int) $participant_count,
+         'participant_sync' => $isAutoSaveRequest ? $autosaveParticipantSync : [],
      ]);
  }
  $_SESSION['success_message'] = 'Заявка сохранена как черновик';
@@ -2082,6 +2093,29 @@ async function autoSaveDraft(options = {}) {
             const nextUrl = new URL(window.location.href);
             nextUrl.searchParams.set('edit', String(data.application_id));
             window.history.replaceState({}, '', nextUrl.toString());
+        }
+
+        if (Array.isArray(data.participant_sync)) {
+            data.participant_sync.forEach((participant) => {
+                const index = Number(participant?.index);
+                if (Number.isNaN(index)) return;
+
+                const participantIdField = document.querySelector(`[name="participants[${index}][participant_id]"]`);
+                if (participantIdField && participant?.participant_id) {
+                    participantIdField.value = String(participant.participant_id);
+                }
+
+                const existingField = document.getElementById(`existing_file_${index}`);
+                if (existingField && participant?.drawing_file) {
+                    existingField.value = String(participant.drawing_file);
+                }
+
+                const tempField = document.getElementById(`temp_file_${index}`);
+                if (tempField && participant?.drawing_file) {
+                    tempField.value = '';
+                }
+            });
+            updateSidebar();
         }
 
         lastAutoSaveSignature = signature;
