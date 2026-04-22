@@ -827,8 +827,9 @@ $currentPage = 'applications';
 .app-empty {text-align:center; padding:30px 16px; color:#64748B;}
 .app-skeleton {display:grid; gap:12px;}
 .app-skeleton__item {height:96px; border-radius:14px; background:linear-gradient(90deg,#EDF2F7 25%,#E2E8F0 37%,#EDF2F7 63%); background-size:400% 100%; animation:appShimmer 1.2s ease infinite;}
-.app-actions {display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start;}
-.app-actions__primary {padding:14px 20px; font-size:15px; font-weight:800; box-shadow:0 14px 28px rgba(76,175,80,.18);}
+.app-actions {display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; font-size:14px;}
+.app-actions .btn {font-size:14px;}
+.app-actions__primary {padding:12px 18px; font-size:14px; font-weight:800; box-shadow:0 14px 28px rgba(76,175,80,.18);}
 .app-actions__primary:hover:not(:disabled) {box-shadow:0 18px 34px rgba(76,175,80,.24);}
 .app-review-card {display:grid; gap:14px;}
 .app-review-card__lead {margin:0; color:#475569; font-size:14px; line-height:1.45;}
@@ -1080,7 +1081,7 @@ $currentPage = 'applications';
                         <i class="fas fa-comments"></i> Открыть чат с куратором
                     </a>
                 <?php endif; ?>
-                <a href="/my-applications" class="btn btn--secondary"><i class="fas fa-arrow-left"></i> К списку заяввок</a>
+                <a href="/my-applications" class="btn btn--secondary"><i class="fas fa-arrow-left"></i> К списку заявок</a>
             </div>
         </section>
         <?php if (!empty($unresolvedCorrections) || $application['status'] === 'revision'): ?>
