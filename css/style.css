@@ -1123,6 +1123,13 @@ h4 {
 	color: #1E40AF;
 }
 
+.badge--agreement-violation {
+	background: linear-gradient(135deg, #FEE2E2 0%, #FFE4E6 100%);
+	color: #9F1239;
+	border: 1px solid rgba(190, 24, 93, 0.22);
+	font-weight: 700;
+}
+
 .badge--reviewed,
 .badge--secondary {
 	background: #EEF2FF;

@@ -30,6 +30,7 @@ function getStatusGroup(array $application): string {
     return match ($statusCode) {
         'draft' => 'draft',
         'submitted', 'partial_reviewed', 'reviewed', 'corrected' => 'pending',
+        'agreement_violation' => 'revision',
         'revision' => 'revision',
         'approved' => 'accepted',
         'rejected', 'cancelled' => 'rejected',
@@ -261,7 +262,6 @@ $archivedApplications = array_values(array_filter(
                             $statusCode = (string) ($statusMeta['status_code'] ?? '');
                             $isRevision = getStatusGroup($app) === 'revision';
                             $isCorrected = $statusCode === 'corrected';
-                            $isAgreementDeclined = (int) ($app['agreement_declined'] ?? 0) === 1;
                             $unreadCount = (int) ($unreadByApplication[(int) ($app['id'] ?? 0)] ?? 0);
                             $isArchivedContest = isApplicationContestArchived($app);
                         ?>
@@ -304,10 +304,6 @@ $archivedApplications = array_values(array_filter(
                                 <?php elseif ($isCorrected): ?>
                                     <div class="my-application-card__note my-application-card__note--corrected">Исправления отправлены. Заявка снова на проверке.</div>
                                 <?php endif; ?>
-                                <?php if ($isAgreementDeclined): ?>
-                                    <div class="my-application-card__agreement-note">Пользовательское соглашение не подписано</div>
-                                <?php endif; ?>
-
                                 <div class="my-application-card__meta">
                                     <div class="my-application-card__meta-item">
                                         <div class="my-application-card__meta-label">Участников</div>

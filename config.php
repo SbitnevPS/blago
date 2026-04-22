@@ -1802,6 +1802,7 @@ function getApplicationUiStatusConfig(): array {
     return [
         'draft' => ['label' => 'Черновик', 'badge_class' => 'badge--secondary', 'row_style' => '', 'message_priority' => 'normal'],
         'submitted' => ['label' => 'Новая заявка на проверке', 'badge_class' => 'badge--primary', 'row_style' => '', 'message_priority' => 'normal'],
+        'agreement_violation' => ['label' => 'Заявка с нарушениями пользовательского соглашения', 'badge_class' => 'badge--agreement-violation', 'row_style' => 'background:#FFF1F2;', 'message_priority' => 'critical'],
         'revision' => ['label' => 'Требует исправлений', 'badge_class' => 'badge--warning', 'row_style' => 'background:#FEF9C3;', 'message_priority' => 'important'],
         'corrected' => ['label' => 'Исправлена, и отправлена на проверку', 'badge_class' => 'badge--info', 'row_style' => 'background:#EFF6FF;', 'message_priority' => 'important'],
         'partial_reviewed' => ['label' => 'Частично рассмотрена', 'badge_class' => 'badge--warning', 'row_style' => '', 'message_priority' => 'normal'],
@@ -1824,13 +1825,18 @@ function getApplicationUiStatus(array $application, ?array $workSummary = null):
     $storedStatus = getApplicationCanonicalStatus($application);
     $allowEdit = (int) ($application['allow_edit'] ?? 0) === 1;
     $hasUnresolvedCorrections = (int) ($application['has_unresolved_corrections'] ?? 0) > 0;
+    $hasAgreementViolation = (int) ($application['agreement_declined'] ?? 0) === 1;
 
-    if ($storedStatus === 'draft') {
-        return 'draft';
+    if ($hasAgreementViolation) {
+        return 'agreement_violation';
     }
 
     if ($hasUnresolvedCorrections || ($allowEdit && $storedStatus !== 'approved')) {
         return 'revision';
+    }
+
+    if ($storedStatus === 'draft') {
+        return 'draft';
     }
 
     if ($storedStatus === 'approved' || $storedStatus === 'rejected' || $storedStatus === 'cancelled') {
