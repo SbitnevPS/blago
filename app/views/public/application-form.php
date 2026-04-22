@@ -1646,7 +1646,7 @@ function createParticipantForm(index, data = null) {
                     <span class="form-label">Особенности</span>
                     <label class="field-correction-checkbox">
                         <input type="checkbox" name="participants[${index}][has_ovz]" value="1" ${data?.has_ovz ? 'checked' : ''}>
-                        <span>Ребёнок с ОВЗ</span>
+                        <span>Участник с ОВЗ</span>
                     </label>
                 </div>
             </div>
@@ -1901,7 +1901,7 @@ function renderReview() {
                 <div class="review-item__meta">
                     <strong>${fio || 'Участник'}</strong>
                     <span>Возраст: ${age}</span>
-                    <span>${hasOvz ? 'Ребёнок с ОВЗ' : 'Без отметки ОВЗ'}</span>
+                    <span>${hasOvz ? 'Участник с ОВЗ' : 'Без отметки ОВЗ'}</span>
                 </div>
                 <button type="button" class="btn btn--ghost" onclick="goStep(2)">Изменить</button>
             </li>
