@@ -18,6 +18,7 @@ $contest_id = $_GET['contest_id'] ?? '';
 $participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
 $participantId = (int) ($_GET['participant_id'] ?? 0);
 $ageCategory = trim((string) ($_GET['age_category'] ?? ''));
+$vkPublicationFilter = trim((string) ($_GET['vk_publication'] ?? ''));
 $showArchived = (int) ($_GET['show_archived'] ?? 0) === 1;
 $sameParticipantsThreshold = (int) ($_GET['same_participants'] ?? 0);
 $supportsContestArchive = contest_archive_column_exists();
@@ -49,6 +50,99 @@ $participantCategoryFilters = [
 
 if (!array_key_exists($ageCategory, $participantCategoryFilters)) {
     $ageCategory = '';
+}
+
+$vkPublicationFilters = [
+    '' => 'Все',
+    'published' => 'Опубликовано',
+    'not_published' => 'Не опубликовано',
+];
+if (!array_key_exists($vkPublicationFilter, $vkPublicationFilters)) {
+    $vkPublicationFilter = '';
+}
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    $action = (string) ($_POST['action'] ?? '');
+    if (in_array($action, ['toggle_participant_vk_publication', 'publish_participant_vk'], true)) {
+        if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            $_SESSION['error_message'] = 'Ошибка безопасности';
+            redirect('/admin/participants');
+        }
+
+        $targetParticipantId = max(0, (int) ($_POST['participant_id'] ?? 0));
+        $returnUrl = trim((string) ($_POST['return_url'] ?? '/admin/participants'));
+        if ($returnUrl === '' || !str_starts_with($returnUrl, '/admin/')) {
+            $returnUrl = '/admin/participants';
+        }
+
+        $targetStmt = $pdo->prepare("
+            SELECT p.id AS participant_id, w.id AS work_id, COALESCE(w.status, 'pending') AS work_status
+            FROM participants p
+            LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id
+            WHERE p.id = ?
+            LIMIT 1
+        ");
+        $targetStmt->execute([$targetParticipantId]);
+        $target = $targetStmt->fetch();
+
+        if (!$target || (int) ($target['work_id'] ?? 0) <= 0) {
+            $_SESSION['error_message'] = 'Работа участника не найдена.';
+            redirect($returnUrl);
+        }
+
+        if ((string) ($target['work_status'] ?? 'pending') !== 'accepted') {
+            $_SESSION['error_message'] = 'Публикация доступна только для статуса «Рисунок принят».';
+            redirect($returnUrl);
+        }
+
+        if ($action === 'toggle_participant_vk_publication') {
+            $isPublished = (int) ($_POST['is_published'] ?? 0) === 1;
+            if ($isPublished) {
+                $pdo->prepare("UPDATE works SET vk_published_at = NOW(), updated_at = NOW() WHERE id = ? LIMIT 1")
+                    ->execute([(int) $target['work_id']]);
+            } else {
+                $pdo->prepare("UPDATE works SET vk_published_at = NULL, vk_post_id = NULL, vk_post_url = NULL, updated_at = NOW() WHERE id = ? LIMIT 1")
+                    ->execute([(int) $target['work_id']]);
+            }
+            $_SESSION['success_message'] = 'Статус публикации обновлён.';
+            redirect($returnUrl);
+        }
+
+        ensureVkPublicationSchema();
+        $readiness = verifyVkPublicationReadiness(true, true, 'publish_text');
+        if (empty($readiness['ok'])) {
+            $issues = $readiness['issues'] ?? [];
+            $_SESSION['error_message'] = is_array($issues) && !empty($issues) ? (string) $issues[0] : 'VK не готов к публикации.';
+            redirect($returnUrl);
+        }
+
+        $filters = normalizeVkTaskFilters([
+            'work_status' => 'accepted',
+            'exclude_vk_published' => 1,
+            'required_data_only' => 1,
+            'work_ids_raw' => (string) ((int) $target['work_id']),
+        ]);
+        $preview = buildVkTaskPreview($filters, null);
+        if ((int) ($preview['ready_items'] ?? 0) <= 0) {
+            $_SESSION['error_message'] = 'Нет готовых данных для публикации участника в VK.';
+            redirect($returnUrl);
+        }
+
+        $taskId = createVkTaskFromPreview(
+            'Публикация участника #' . (int) $target['participant_id'] . ' от ' . date('d.m.Y H:i'),
+            (int) getCurrentAdminId(),
+            $preview,
+            'immediate'
+        );
+        $publishResult = publishVkTask($taskId);
+        $published = (int) ($publishResult['published'] ?? 0);
+        $failed = (int) ($publishResult['failed'] ?? 0);
+        $_SESSION[$published > 0 && $failed === 0 ? 'success_message' : 'error_message'] =
+            $published > 0 && $failed === 0
+                ? 'Публикация в VK выполнена успешно.'
+                : (trim((string) ($publishResult['error'] ?? '')) ?: 'Публикация в VK завершилась с ошибкой.');
+        redirect($returnUrl);
+    }
 }
 
 $isDocxExportRequest = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'
@@ -165,23 +259,32 @@ if ($ageCategory !== '') {
     }
 }
 
+if ($vkPublicationFilter === 'published') {
+    $where[] = 'w.vk_published_at IS NOT NULL';
+    $duplicateWhere[] = 'w2.vk_published_at IS NOT NULL';
+} elseif ($vkPublicationFilter === 'not_published') {
+    $where[] = 'w.vk_published_at IS NULL';
+    $duplicateWhere[] = 'w2.vk_published_at IS NULL';
+}
+
 $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 $duplicateWhereClause = 'WHERE ' . implode(' AND ', $duplicateWhere);
 $duplicateJoin = '';
 $duplicateSelect = '1 AS same_participants_count,';
 
 if ($sameParticipantsThreshold > 0) {
-    $duplicateJoin = "\n    INNER JOIN (\n        SELECT LOWER(TRIM(p2.fio)) AS fio_key, COUNT(*) AS same_participants_count\n        FROM participants p2\n        INNER JOIN applications a2 ON p2.application_id = a2.id\n        LEFT JOIN contests c2 ON a2.contest_id = c2.id\n        $duplicateWhereClause\n        GROUP BY LOWER(TRIM(p2.fio))\n        HAVING COUNT(*) >= ?\n    ) same_participants ON same_participants.fio_key = LOWER(TRIM(p.fio))\n";
+    $duplicateJoin = "\n    INNER JOIN (\n        SELECT LOWER(TRIM(p2.fio)) AS fio_key, COUNT(*) AS same_participants_count\n        FROM participants p2\n        INNER JOIN applications a2 ON p2.application_id = a2.id\n        LEFT JOIN contests c2 ON a2.contest_id = c2.id\n        LEFT JOIN works w2 ON w2.participant_id = p2.id AND w2.application_id = p2.application_id\n        $duplicateWhereClause\n        GROUP BY LOWER(TRIM(p2.fio))\n        HAVING COUNT(*) >= ?\n    ) same_participants ON same_participants.fio_key = LOWER(TRIM(p.fio))\n";
     $duplicateSelect = 'same_participants.same_participants_count,';
     $duplicateParams[] = $sameParticipantsThreshold;
 }
 
-$buildParticipantsUrl = static function (array $overrides = []) use ($contest_id, $participantQuery, $participantId, $ageCategory, $sameParticipantsThreshold, $showArchived): string {
+$buildParticipantsUrl = static function (array $overrides = []) use ($contest_id, $participantQuery, $participantId, $ageCategory, $vkPublicationFilter, $sameParticipantsThreshold, $showArchived): string {
     $query = [
         'contest_id' => $contest_id !== '' ? (string) $contest_id : null,
         'participant_query' => $participantQuery !== '' ? $participantQuery : null,
         'participant_id' => $participantId > 0 ? $participantId : null,
         'age_category' => $ageCategory !== '' ? $ageCategory : null,
+        'vk_publication' => $vkPublicationFilter !== '' ? $vkPublicationFilter : null,
         'same_participants' => $sameParticipantsThreshold > 0 ? (string) $sameParticipantsThreshold : null,
         'show_archived' => $showArchived ? '1' : null,
         'page' => null,
@@ -206,13 +309,13 @@ $queryParams = $sameParticipantsThreshold > 0
     ? array_merge($duplicateParams, $params)
     : $params;
 
-$countStmt = $pdo->prepare("\n    SELECT COUNT(*)\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    $duplicateJoin    $whereClause\n");
+$countStmt = $pdo->prepare("\n    SELECT COUNT(*)\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    $duplicateJoin    $whereClause\n");
 $countStmt->execute($queryParams);
 $totalParticipants = (int) $countStmt->fetchColumn();
 $totalPages = max(1, (int) ceil($totalParticipants / $perPage));
 
 $ovzSelect = $hasParticipantOvzColumn ? 'COALESCE(p.has_ovz, 0) AS has_ovz,' : '0 AS has_ovz,';
-$listStmt = $pdo->prepare("\n    SELECT p.id, p.public_number, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           $ovzSelect\n           $duplicateSelect\n           a.status AS application_status, a.allow_edit,\n           c.title AS contest_title, COALESCE(c.is_archived, 0) AS contest_is_archived,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $duplicateJoin    $whereClause\n    ORDER BY p.fio ASC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
+$listStmt = $pdo->prepare("\n    SELECT p.id, p.public_number, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           $ovzSelect\n           $duplicateSelect\n           a.status AS application_status, a.allow_edit,\n           COALESCE(w.status, 'pending') AS work_status, w.id AS work_id, w.vk_published_at,\n           pd.file_path AS diploma_file_path,\n           c.title AS contest_title, COALESCE(c.is_archived, 0) AS contest_is_archived,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    LEFT JOIN participant_diplomas pd ON pd.work_id = w.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $duplicateJoin    $whereClause\n    ORDER BY p.fio ASC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
 $listStmt->execute($queryParams);
 $participants = $listStmt->fetchAll();
 
@@ -275,7 +378,15 @@ require_once __DIR__ . '/includes/header.php';
                 <div id="participantSearchResults" class="user-results" data-live-search-results></div>
             </div>
             <button type="submit" class="btn btn--primary"><i class="fas fa-filter"></i> Применить</button>
-            <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0 || $ageCategory !== '' || $sameParticipantsThreshold > 0 || $showArchived): ?>
+            <div style="min-width: 200px;">
+                <label class="form-label">Публикация в VK</label>
+                <select name="vk_publication" class="form-select">
+                    <?php foreach ($vkPublicationFilters as $vkFilterKey => $vkFilterLabel): ?>
+                        <option value="<?= e($vkFilterKey) ?>" <?= $vkPublicationFilter === $vkFilterKey ? 'selected' : '' ?>><?= e($vkFilterLabel) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0 || $ageCategory !== '' || $vkPublicationFilter !== '' || $sameParticipantsThreshold > 0 || $showArchived): ?>
                 <a href="/admin/participants" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
@@ -295,11 +406,11 @@ require_once __DIR__ . '/includes/header.php';
                 </a>
             <?php endforeach; ?>
         </div>
-        <div class="form-hint" style="margin-top:8px;">
-            <?= $hasParticipantOvzColumn
-                ? 'Фильтр `С ОВЗ` работает по отдельной отметке участника в заявке.'
-                : 'Фильтр `С ОВЗ` ищет отметки в тексте заявки по ключевым словам: `ОВЗ`, `ограничен`, `инвалид`.' ?>
-        </div>
+        <?php if (!$hasParticipantOvzColumn): ?>
+            <div class="form-hint" style="margin-top:8px;">
+                Фильтр `С ОВЗ` ищет отметки в тексте заявки по ключевым словам: `ОВЗ`, `ограничен`, `инвалид`.
+            </div>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -319,17 +430,20 @@ require_once __DIR__ . '/includes/header.php';
         <div class="admin-list-cards">
             <?php foreach ($participants as $participant): ?>
                 <?php
-                    $statusMeta = getApplicationDisplayMeta([
-                        'status' => (string) ($participant['application_status'] ?? 'draft'),
-                        'allow_edit' => (int) ($participant['allow_edit'] ?? 0),
-                    ]);
+                    $rawWorkStatus = (string) ($participant['work_status'] ?? 'pending');
+                    $statusForDisplay = in_array($rawWorkStatus, ['reviewed', 'reviewed_non_competitive'], true)
+                        ? 'reviewed_non_competitive'
+                        : $rawWorkStatus;
+                    $statusMeta = getWorkUiStatusMeta($statusForDisplay);
                     $isArchivedContest = (int) ($participant['contest_is_archived'] ?? 0) === 1;
                     $participantAge = (int) ($participant['age'] ?? 0);
                     $participantAgeCategory = getParticipantAgeCategoryLabel($participantAge);
                     $drawingUrl = !empty($participant['drawing_file'])
                         ? getParticipantDrawingPreviewWebPath((string) ($participant['applicant_email'] ?? ''), (string) $participant['drawing_file'])
                         : '';
-                    $isDiplomaEnabled = (string) ($statusMeta['status_code'] ?? '') === 'approved';
+                    $hasGeneratedDiploma = trim((string) ($participant['diploma_file_path'] ?? '')) !== '';
+                    $isWorkAccepted = $rawWorkStatus === 'accepted';
+                    $isPublishedInVk = !empty($participant['vk_published_at']);
                     $sameParticipantsCount = max(1, (int) ($participant['same_participants_count'] ?? 1));
                 ?>
                 <article class="admin-list-card admin-list-card--participant <?= $isArchivedContest ? 'admin-list-card--archived' : '' ?>">
@@ -356,6 +470,18 @@ require_once __DIR__ . '/includes/header.php';
                             <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
                                 <?= e((string) ($statusMeta['label'] ?? '—')) ?>
                             </span>
+                            <?php if ($isWorkAccepted): ?>
+                                <form method="POST" style="display:inline-flex;">
+                                    <input type="hidden" name="csrf_token" value="<?= e(generateCSRFToken()) ?>">
+                                    <input type="hidden" name="action" value="toggle_participant_vk_publication">
+                                    <input type="hidden" name="participant_id" value="<?= (int) $participant['id'] ?>">
+                                    <input type="hidden" name="return_url" value="<?= e($participantsReturnUrl) ?>">
+                                    <input type="hidden" name="is_published" value="<?= $isPublishedInVk ? '0' : '1' ?>">
+                                    <button type="submit" class="btn btn--sm <?= $isPublishedInVk ? 'btn--secondary' : 'btn--ghost' ?>">
+                                        <?= $isPublishedInVk ? 'Опубликовано' : 'Не опубликовано' ?>
+                                    </button>
+                                </form>
+                            <?php endif; ?>
                             <?php if ($sameParticipantsCount >= 2): ?>
                                 <span class="badge badge--secondary">Совпадений: <?= $sameParticipantsCount ?></span>
                             <?php endif; ?>
@@ -374,8 +500,17 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                     <div class="admin-list-card__actions">
                         <a href="/admin/participant/<?= (int) $participant['id'] ?>" class="btn btn--ghost btn--sm"><i class="fas fa-eye"></i> Открыть</a>
-                        <?php if ($isDiplomaEnabled): ?>
+                        <?php if ($hasGeneratedDiploma): ?>
                             <a href="/admin/participant/<?= (int) $participant['id'] ?>#diploma-actions" class="btn btn--primary btn--sm"><i class="fas fa-award"></i> Диплом</a>
+                        <?php endif; ?>
+                        <?php if ($isWorkAccepted): ?>
+                            <form method="POST" style="display:inline-flex;">
+                                <input type="hidden" name="csrf_token" value="<?= e(generateCSRFToken()) ?>">
+                                <input type="hidden" name="action" value="publish_participant_vk">
+                                <input type="hidden" name="participant_id" value="<?= (int) $participant['id'] ?>">
+                                <input type="hidden" name="return_url" value="<?= e($participantsReturnUrl) ?>">
+                                <button type="submit" class="btn btn--secondary btn--sm"><i class="fab fa-vk"></i> Опубликовать в ВК</button>
+                            </form>
                         <?php endif; ?>
                     </div>
                 </article>
