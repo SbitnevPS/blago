@@ -735,13 +735,6 @@ unset($_SESSION['success_message']);
                                 <div><strong>group_access_token:</strong> <?= $vkAdminReady ? 'TOKEN_SAVED' : 'NOT_CONNECTED' ?></div>
                             </div>
 
-                            <?php if (empty($settings['vk_publication_admin_access_token_encrypted'])): ?>
-                                <div class="alert alert--warning" style="margin-top:12px;">
-                                    <i class="fas fa-triangle-exclamation"></i>
-                                    <?= htmlspecialchars('Требуется вход через VK для публикации на странице /admin/login.') ?>
-                                </div>
-                            <?php endif; ?>
-
                             <?php if (!empty($vkReadiness['issues'])): ?>
                                 <div class="alert alert--warning">
                                     <i class="fas fa-triangle-exclamation"></i>
@@ -750,9 +743,6 @@ unset($_SESSION['success_message']);
                             <?php endif; ?>
 
                             <div class="vk-connection-card__actions">
-                                <a href="/admin/login?redirect=/admin/settings%23vk-integration" class="btn btn--primary btn--sm">
-                                    <i class="fab fa-vk"></i> Войти через VK для публикации
-                                </a>
                                 <button type="button" class="btn btn--ghost btn--sm" id="vkCheckBtn">
                                     <i class="fas fa-plug-circle-check"></i> Проверить доступ
                                 </button>
@@ -776,7 +766,7 @@ unset($_SESSION['success_message']);
                         <div class="form-group">
                             <label class="form-label">Шаблон подписи поста VK</label>
                             <textarea name="vk_publication_post_template" id="vkPublicationTemplateInput" class="form-input" rows="8"><?= htmlspecialchars($settings['vk_publication_post_template'] ?? defaultVkPostTemplate()) ?></textarea>
-                            <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {organization_name}, {region_name}, {contest_title}, {participant_age}, {age_category}.</div>
+                            <div class="form-hint">Доступные переменные: {participant_name}, {participant_full_name}, {participant_number}, {organization_name}, {region_name}, {contest_title}, {participant_age}, {age_category}.</div>
                             <div class="form-hint" style="margin-top:8px;">Компактный шаблон (готовая альтернатива):</div>
                             <pre style="white-space:pre-wrap; background:#F8FAFC; padding:10px; border-radius:8px; border:1px solid #E2E8F0; margin-top:6px; font-size:12px;"><?= htmlspecialchars(compactVkPostTemplate()) ?></pre>
 	                            <div style="margin-top:12px;">
@@ -1091,6 +1081,7 @@ unset($_SESSION['success_message']);
         const sampleValues = {
             participant_name: 'Анна',
             participant_full_name: 'Иванова Анна Сергеевна',
+            participant_number: '#26112',
             organization_name: 'МБУ ДО «Детская школа искусств №1»',
             region_name: 'Московская область',
             contest_title: 'Мир глазами детей',
