@@ -398,6 +398,26 @@ if (!empty($_SESSION['error_message'])) {
         from { opacity: 0; transform: translateY(-8px); }
         to { opacity: 1; transform: translateY(0); }
     }
+
+    .vk-publication-badge-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: none;
+        background: #16a34a;
+        color: #fff;
+    }
+
+    .vk-publication-badge-btn:hover,
+    .vk-publication-badge-btn:focus-visible {
+        background: #15803d;
+        color: #fff;
+    }
+
+    .vk-publication-badge-note {
+        font-size: 12px;
+        color: #475569;
+    }
 </style>
 
 <div
@@ -618,16 +638,24 @@ if (!empty($_SESSION['error_message'])) {
                             <i class="fas fa-receipt"></i> Квитанция
                         </a>
                         <?php endif; ?>
-                        <?php if (($app['status'] ?? '') === 'approved'): ?>
+                        <?php $canShowVkPublicationBadge = in_array((string) ($statusMeta['status_code'] ?? ''), ['revision', 'approved'], true); ?>
+                        <?php if ($canShowVkPublicationBadge): ?>
                         <button
                             type="button"
-                            class="btn btn--secondary btn--sm js-open-vk-publish-modal"
+                            class="btn btn--sm js-open-vk-publish-modal vk-publication-badge-btn"
                             style="margin-left:auto;"
                             data-application-id="<?= (int) $app['id'] ?>"
                             data-has-publications="<?= ((int) ($vkStatus['published_count'] ?? 0) > 0 || (int) ($vkStatus['failed_count'] ?? 0) > 0) ? '1' : '0' ?>"
                         >
-                            <?= (int) ($vkStatus['published_count'] ?? 0) > 0 ? 'VK повтор' : 'VK Публикация' ?>
+                            <i class="fab fa-vk" aria-hidden="true"></i>
+                            Опубликовано в VK
                         </button>
+                        <?php if ((int) ($vkStatus['awaiting_decision_count'] ?? 0) > 0): ?>
+                            <span class="vk-publication-badge-note">
+                                Опубликовано: <?= (int) ($vkStatus['published_count'] ?? 0) ?>,
+                                ожидают решения: <?= (int) ($vkStatus['awaiting_decision_count'] ?? 0) ?>
+                            </span>
+                        <?php endif; ?>
                         <?php endif; ?>
                     </div>
                 </article>

@@ -214,6 +214,7 @@ function getApplicationVkPublicationStatus(int $applicationId): array
         'last_error' => '',
         'last_attempt_at' => null,
         'remaining_count' => 0,
+        'awaiting_decision_count' => 0,
     ];
 
     if ($applicationId <= 0) {
@@ -224,7 +225,8 @@ function getApplicationVkPublicationStatus(int $applicationId): array
         SELECT
             COUNT(*) AS total_works,
             SUM(CASE WHEN w.status = 'accepted' THEN 1 ELSE 0 END) AS accepted_works,
-            SUM(CASE WHEN w.vk_published_at IS NOT NULL THEN 1 ELSE 0 END) AS published_works
+            SUM(CASE WHEN w.vk_published_at IS NOT NULL THEN 1 ELSE 0 END) AS published_works,
+            SUM(CASE WHEN w.status NOT IN ('accepted', 'reviewed_non_competitive') AND w.vk_published_at IS NULL THEN 1 ELSE 0 END) AS awaiting_decision_works
         FROM works w
         WHERE w.application_id = ?
     ");
@@ -234,6 +236,7 @@ function getApplicationVkPublicationStatus(int $applicationId): array
     $totalWorks = (int) ($workCounts['total_works'] ?? 0);
     $acceptedWorks = (int) ($workCounts['accepted_works'] ?? 0);
     $publishedWorks = (int) ($workCounts['published_works'] ?? 0);
+    $awaitingDecisionWorks = (int) ($workCounts['awaiting_decision_works'] ?? 0);
     $readyTotal = $acceptedWorks;
 
     $taskStmt = $pdo->prepare("
@@ -260,6 +263,7 @@ function getApplicationVkPublicationStatus(int $applicationId): array
     $base['total_count'] = $readyTotal;
     $base['published_count'] = $publishedWorks;
     $base['remaining_count'] = max(0, $readyTotal - $publishedWorks);
+    $base['awaiting_decision_count'] = max(0, $awaitingDecisionWorks);
 
     if (!$lastTask) {
         if ($publishedWorks > 0) {
