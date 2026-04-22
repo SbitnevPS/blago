@@ -692,7 +692,7 @@ unset($_SESSION['success_message']);
                 <input type="hidden" name="settings_section" value="vk-integration">
                     <div class="settings-section__header">
                         <h4><i class="fab fa-vk"></i> Интеграция VK</h4>
-                        <p>Публикация работ в VK через user access token владельца сообщества.</p>
+                        <p>Публикация работ в VK через ключ доступа сообщества (group access token).</p>
                     </div>
 
                     <div class="settings-vk-card">
@@ -700,7 +700,7 @@ unset($_SESSION['success_message']);
                             <div class="vk-connection-card__header">
                                 <div>
                                     <strong>Публикация работ в VK</strong>
-                                    <div class="form-hint">Проект публикует только рисунок + текст по шаблону. Для этого нужен режим <code>admin_user_token</code> с загрузкой локального изображения.</div>
+                                    <div class="form-hint">Проект публикует только текст по шаблону. Достаточно ключа доступа сообщества с правом <code>wall</code>.</div>
                                 </div>
                                 <span class="badge <?= htmlspecialchars($vkStatusBadgeClass) ?>">
                                     <?= htmlspecialchars($vkIntegrationStatus) ?>
@@ -710,10 +710,10 @@ unset($_SESSION['success_message']);
                             <div class="vk-connection-card__meta">
                                 <div style="margin:2px 0 6px; font-weight:600;">Параметры ключа</div>
                                 <div><strong>Статус:</strong> <?= htmlspecialchars($vkStatusLabel) ?></div>
-                                <div><strong>Auth mode:</strong> admin_user_token</div>
+                                <div><strong>Auth mode:</strong> group_access_token</div>
                                 <div><strong>Источник токена:</strong> <?= htmlspecialchars(($vkPublicationSettings['token_source'] ?? '') === 'oauth_vk_admin_login' ? 'OAuth VK admin login' : 'не задан') ?></div>
                                 <div><strong>Маска ключа:</strong> <code><?= htmlspecialchars($vkPublicationSettings['token_masked'] !== '' ? $vkPublicationSettings['token_masked'] : '—') ?></code></div>
-                                <div><strong>Admin token:</strong> <code><?= htmlspecialchars(!empty($settings['vk_publication_admin_access_token_encrypted']) ? 'stored_encrypted' : '—') ?></code></div>
+                                <div><strong>Group token:</strong> <code><?= htmlspecialchars(!empty($settings['vk_publication_admin_access_token_encrypted']) ? 'stored_encrypted' : '—') ?></code></div>
                                 <div><strong>Тип ключа:</strong> <?= htmlspecialchars($vkTokenTypeLabel) ?></div>
                                 <div><strong>Права ключа:</strong> <?= htmlspecialchars($vkConfirmedPermissions) ?></div>
 
@@ -723,8 +723,6 @@ unset($_SESSION['success_message']);
                                 <div><strong>groups.getById:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'groups_getById')) ?></div>
 
                                 <div style="margin:10px 0 6px; font-weight:600;">Проверка VK API</div>
-                                <div><strong>photos.getWallUploadServer:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'photos_getWallUploadServer')) ?></div>
-                                <div><strong>photos.saveWallPhoto:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'photos_saveWallPhoto')) ?></div>
                                 <div><strong>wall.post:</strong> <?= htmlspecialchars($vkStepShortStatus($vkSteps, 'wall_post')) ?></div>
                                 <?php if (!empty($vkCapabilityMatrix)): ?>
                                     <div style="margin-top:10px;"><strong>Сценарии:</strong></div>
@@ -738,13 +736,12 @@ unset($_SESSION['success_message']);
                                     <?php if (isset($vkCapabilityMatrix['text_post_supported'])): ?>
                                         <div>Текстовая публикация (диагностика): <?= htmlspecialchars($fmt($vkCapabilityMatrix['text_post_supported']['supported'] ?? null)) ?></div>
                                         <div>Локальная загрузка рисунка: <?= htmlspecialchars($fmt($vkCapabilityMatrix['upload_local_image_supported']['supported'] ?? null)) ?></div>
-                                        <div>Attach media id: <?= htmlspecialchars($fmt($vkCapabilityMatrix['attach_existing_media_supported']['supported'] ?? null)) ?></div>
                                     <?php endif; ?>
                                 <?php endif; ?>
                                 <div><strong>Последняя ошибка VK:</strong> <?= htmlspecialchars($vkLastError) ?></div>
                                 <div><strong>Последняя техническая ошибка:</strong> <?= htmlspecialchars(!empty($vkSteps['vk_api_error']['technical']) ? (string) $vkSteps['vk_api_error']['technical'] : '—') ?></div>
                                 <div style="margin:10px 0 6px; font-weight:600;">Диагностика</div>
-                                <div><strong>admin_user_token:</strong> <?= $vkAdminReady ? 'TOKEN_SAVED' : 'NOT_CONNECTED' ?></div>
+                                <div><strong>group_access_token:</strong> <?= $vkAdminReady ? 'TOKEN_SAVED' : 'NOT_CONNECTED' ?></div>
                             </div>
 
                             <?php if (empty($settings['vk_publication_admin_access_token_encrypted'])): ?>
@@ -794,25 +791,25 @@ unset($_SESSION['success_message']);
 	
 	                        <div class="form-row">
 	                            <div class="form-group">
-	                                <label class="form-label">Admin access token (replace-only)</label>
+	                                <label class="form-label">Group access token (replace-only)</label>
                                 <textarea name="vk_publication_admin_access_token" class="form-input" rows="3" placeholder="Оставьте пустым, чтобы не менять"></textarea>
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Admin refresh token (replace-only)</label>
+                                <label class="form-label">Refresh token (optional, replace-only)</label>
                                 <textarea name="vk_publication_admin_refresh_token" class="form-input" rows="3" placeholder="Оставьте пустым, чтобы не менять"></textarea>
                             </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label class="form-label">Admin token expires_at (unix ts)</label>
+                                <label class="form-label">Token expires_at (unix ts, optional)</label>
                                 <input type="text" name="vk_publication_admin_token_expires_at" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_token_expires_at'] ?? '')) ?>" placeholder="0">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Admin device_id</label>
+                                <label class="form-label">Device_id (optional)</label>
                                 <input type="text" name="vk_publication_admin_device_id" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_device_id'] ?? '')) ?>" placeholder="device id">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Admin user_id</label>
+                                <label class="form-label">User_id (optional)</label>
                                 <input type="text" name="vk_publication_admin_user_id" class="form-input" value="<?= htmlspecialchars((string) ($settings['vk_publication_admin_user_id'] ?? '')) ?>" placeholder="vk user id">
                             </div>
                         </div>
@@ -1056,18 +1053,6 @@ unset($_SESSION['success_message']);
                 return '—';
             };
             lines.push(`groups.getById: ${fmtStep(steps.groups_getById)}`);
-            if (steps.photos_getWallUploadServer) {
-                const skipped = steps.photos_getWallUploadServer.skipped ? ' (SKIPPED)' : '';
-                lines.push(`photos.getWallUploadServer: ${fmtStep(steps.photos_getWallUploadServer)}${skipped}`);
-                if (!steps.photos_getWallUploadServer.ok && steps.photos_getWallUploadServer.message) {
-                    lines.push(`  причина: ${steps.photos_getWallUploadServer.message}`);
-                }
-            } else {
-                lines.push('photos.getWallUploadServer: —');
-            }
-            if (steps.photos_saveWallPhoto) {
-                lines.push(`photos.saveWallPhoto: ${fmtStep(steps.photos_saveWallPhoto)}`);
-            }
             if (steps.wall_post) {
                 lines.push(`wall.post: ${fmtStep(steps.wall_post)}`);
             }

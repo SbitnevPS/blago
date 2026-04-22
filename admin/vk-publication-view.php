@@ -58,8 +58,8 @@ $pageTitle = 'Задание #' . $taskId . ' / Публикации в ВК';
 $breadcrumb = 'Публикации в ВК / Просмотр задания';
 
 $statusMeta = getVkTaskStatusMeta((string) $task['task_status']);
-$taskPublicationType = 'standard';
-$taskPublicationTypeLabel = 'Обычная';
+$taskPublicationType = 'text_only';
+$taskPublicationTypeLabel = 'Только текст';
 $items = getVkTaskItems($taskId);
 
 require_once __DIR__ . '/includes/header.php';
@@ -181,7 +181,6 @@ require_once __DIR__ . '/includes/header.php';
             <thead>
             <tr>
                 <th>#</th>
-                <th>Работа</th>
                 <th>Участник</th>
                 <th>Организация / Регион</th>
                 <th>Конкурс</th>
@@ -196,13 +195,6 @@ require_once __DIR__ . '/includes/header.php';
                 <?php $itemStatus = getVkItemStatusMeta((string) $item['item_status']); ?>
                 <tr>
                     <td data-label="#">#<?= (int) $item['id'] ?></td>
-                    <td data-label="Работа">
-                        <?php if (!empty($item['work_image_preview_web_path'])): ?>
-                            <img src="<?= e($item['work_image_preview_web_path']) ?>" alt="work" style="width:72px; height:72px; object-fit:cover; border-radius:8px; border:1px solid #E5E7EB;">
-                        <?php else: ?>
-                            <span class="text-secondary">Нет изображения</span>
-                        <?php endif; ?>
-                    </td>
                     <td data-label="Участник"><?= e($item['participant_fio'] ?: '—') ?></td>
                     <td data-label="Организация / Регион">
                         <div><?= e($item['organization_name'] ?: '—') ?></div>
@@ -250,7 +242,7 @@ require_once __DIR__ . '/includes/header.php';
                 </tr>
             <?php endforeach; ?>
             <?php if (!$items): ?>
-                <tr><td colspan="9" class="text-center text-secondary" style="padding: 36px;">Элементов нет.</td></tr>
+                <tr><td colspan="8" class="text-center text-secondary" style="padding: 36px;">Элементов нет.</td></tr>
             <?php endif; ?>
             </tbody>
         </table>

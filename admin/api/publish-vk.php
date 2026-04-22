@@ -44,7 +44,7 @@ if (empty($workIds)) {
 }
 
 ensureVkPublicationSchema();
-$readiness = verifyVkPublicationReadiness(true, true, 'publish_local_image');
+$readiness = verifyVkPublicationReadiness(true, true, 'publish_text');
 if (empty($readiness['ok'])) {
     $issues = $readiness['issues'] ?? [];
     $message = is_array($issues) && !empty($issues) ? (string) $issues[0] : 'VK не готов к публикации.';
@@ -61,7 +61,7 @@ $preview = buildVkTaskPreview($filters, null);
 if ((int) ($preview['ready_items'] ?? 0) <= 0) {
     jsonResponse([
         'success' => false,
-        'error' => 'Нет готовых работ для публикации. Проверьте изображения и данные участников.',
+        'error' => 'Нет готовых работ для публикации. Проверьте данные участников и шаблон текста.',
     ], 422);
 }
 
@@ -82,7 +82,7 @@ $apiError = trim((string) ($publishResult['error'] ?? ''));
 if ($failed > 0 || $published <= 0) {
     vkPublicationLog('application_publish_failed', [
         'application_id' => $applicationId,
-        'publication_type' => 'standard',
+        'publication_type' => 'text_only',
         'task_id' => $taskId,
         'error' => $apiError,
         'failed' => $failed,
@@ -90,7 +90,7 @@ if ($failed > 0 || $published <= 0) {
     ]);
     jsonResponse([
         'success' => false,
-        'publication_type' => 'standard',
+        'publication_type' => 'text_only',
         'task_id' => $taskId,
         'published' => $published,
         'failed' => $failed,
@@ -102,7 +102,7 @@ if ($failed > 0 || $published <= 0) {
 jsonResponse([
     'success' => true,
     'task_id' => $taskId,
-    'publication_type' => 'standard',
+    'publication_type' => 'text_only',
     'published' => $published,
     'failed' => $failed,
     'total' => (int) ($publishResult['total'] ?? 0),
