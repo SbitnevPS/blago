@@ -39,6 +39,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 
 	    try {
+            if ($_POST['action'] === 'toggle_participant_vk_publication') {
+                $workId = (int) ($participant['work_id'] ?? 0);
+                if ($workId <= 0) {
+                    throw new RuntimeException('Работа участника не найдена.');
+                }
+                if ((string) ($participant['work_status'] ?? 'pending') !== 'accepted') {
+                    throw new RuntimeException('Публикация доступна только для статуса «Рисунок принят».');
+                }
+
+                $isPublished = (int) ($_POST['is_published'] ?? 0) === 1;
+                if ($isPublished) {
+                    $pdo->prepare("UPDATE works SET vk_published_at = NOW(), updated_at = NOW() WHERE id = ? LIMIT 1")->execute([$workId]);
+                    $_SESSION['success_message'] = 'Статус публикации: «Опубликовано».';
+                } else {
+                    $pdo->prepare("UPDATE works SET vk_published_at = NULL, vk_post_id = NULL, vk_post_url = NULL, updated_at = NOW() WHERE id = ? LIMIT 1")->execute([$workId]);
+                    $_SESSION['success_message'] = 'Статус публикации: «Не опубликовано».';
+                }
+                redirect('/admin/participant/' . $participantId);
+            }
+
+            if ($_POST['action'] === 'publish_participant_vk') {
+                $workId = (int) ($participant['work_id'] ?? 0);
+                if ($workId <= 0) {
+                    throw new RuntimeException('Работа участника не найдена.');
+                }
+                if ((string) ($participant['work_status'] ?? 'pending') !== 'accepted') {
+                    throw new RuntimeException('Публикация доступна только для статуса «Рисунок принят».');
+                }
+
+                ensureVkPublicationSchema();
+                $readiness = verifyVkPublicationReadiness(true, true, 'publish_text');
+                if (empty($readiness['ok'])) {
+                    $issues = $readiness['issues'] ?? [];
+                    $message = is_array($issues) && !empty($issues) ? (string) $issues[0] : 'VK не готов к публикации.';
+                    throw new RuntimeException($message);
+                }
+
+                $filters = normalizeVkTaskFilters([
+                    'work_status' => 'accepted',
+                    'exclude_vk_published' => 1,
+                    'required_data_only' => 1,
+                    'work_ids_raw' => (string) $workId,
+                ]);
+                $preview = buildVkTaskPreview($filters, null);
+                if ((int) ($preview['ready_items'] ?? 0) <= 0) {
+                    throw new RuntimeException('Нет готовых данных для публикации участника в VK.');
+                }
+
+                $taskId = createVkTaskFromPreview(
+                    'Публикация участника #' . $participantId . ' от ' . date('d.m.Y H:i'),
+                    (int) getCurrentAdminId(),
+                    $preview,
+                    'immediate'
+                );
+                $result = publishVkTask($taskId);
+                if ((int) ($result['published'] ?? 0) > 0 && (int) ($result['failed'] ?? 0) === 0) {
+                    $_SESSION['success_message'] = 'Публикация в VK выполнена успешно.';
+                } else {
+                    throw new RuntimeException(trim((string) ($result['error'] ?? '')) ?: 'Публикация в VK завершилась с ошибкой.');
+                }
+                redirect('/admin/participant/' . $participantId);
+            }
+
 	        if ($_POST['action'] === 'update_participant_profile') {
             $fio = trim((string) ($_POST['fio'] ?? ''));
             $age = (int) ($_POST['age'] ?? 0);
@@ -148,10 +211,11 @@ $pageStyles = ['admin-participant.css'];
 $headerBackUrl = $participantReturnUrl;
 $headerBackLabel = 'Назад';
 
-$statusMeta = getApplicationDisplayMeta([
-    'status' => (string) ($participant['application_status'] ?? 'draft'),
-    'allow_edit' => (int) ($participant['allow_edit'] ?? 0),
-]);
+$rawWorkStatus = (string) ($participant['work_status'] ?? 'pending');
+$statusForDisplay = in_array($rawWorkStatus, ['reviewed', 'reviewed_non_competitive'], true)
+    ? 'reviewed_non_competitive'
+    : $rawWorkStatus;
+$statusMeta = getWorkUiStatusMeta($statusForDisplay);
 $participantName = trim((string) ($participant['fio'] ?? '')) ?: '—';
 $applicantName = trim((($participant['user_surname'] ?? '') . ' ' . ($participant['user_name'] ?? '') . ' ' . ($participant['user_patronymic'] ?? ''))) ?: '—';
 $participantEmail = trim((string) ($participant['user_email'] ?: ($participant['organization_email'] ?? '')));
@@ -196,6 +260,8 @@ $drawingPreviewUrl = $drawingFileName !== '' ? getParticipantDrawingPreviewWebPa
 	$showDiplomaActionButtons = $existingWorkDiplomaTemplateId > 0
 	    && $selectedDiplomaTemplateId > 0
 	    && $selectedDiplomaTemplateId === $existingWorkDiplomaTemplateId;
+$isWorkAccepted = $rawWorkStatus === 'accepted';
+$isVkPublished = !empty($participant['vk_published_at']);
 
 $detailsMap = [
     'Участник' => [
@@ -216,7 +282,7 @@ $detailsMap = [
     'Конкурс и заявка' => [
         ['label' => 'Конкурс', 'value' => trim((string) ($participant['contest_title'] ?? '')) ?: '—'],
         ['label' => 'Заявка', 'value' => '<a class="participant-card-link" href="/admin/application/' . (int) $participant['application_id'] . '">Перейти к заявке #' . (int) $participant['application_id'] . '</a>', 'is_html' => true],
-        ['label' => 'Статус заявки', 'value' => '<span class="badge ' . e($statusMeta['badge_class']) . '">' . e($statusMeta['label']) . '</span>', 'is_html' => true],
+        ['label' => 'Статус рисунка', 'value' => '<span class="badge ' . e($statusMeta['badge_class']) . '">' . e($statusMeta['label']) . '</span>', 'is_html' => true],
     ],
 ];
 
@@ -248,6 +314,17 @@ require_once __DIR__ . '/includes/header.php';
             <p class="participant-hero__contest"><i class="fas fa-trophy"></i> <?= e(trim((string) ($participant['contest_title'] ?? '')) ?: 'Конкурс не указан') ?></p>
             <div class="participant-hero__chips">
                 <span class="badge <?= e($statusMeta['badge_class']) ?>"><?= e($statusMeta['label']) ?></span>
+                <?php if ($isWorkAccepted): ?>
+                    <form method="POST" style="display:inline-flex;">
+                        <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                        <input type="hidden" name="action" value="toggle_participant_vk_publication">
+                        <input type="hidden" name="is_published" value="<?= $isVkPublished ? '0' : '1' ?>">
+                        <button type="submit" class="btn btn--sm <?= $isVkPublished ? 'btn--secondary' : 'btn--ghost' ?>">
+                            <?= $isVkPublished ? 'Опубликовано' : 'Не опубликовано' ?>
+                        </button>
+                    </form>
+                <?php endif; ?>
                 <span class="participant-chip">Номер участника: #<?= e(getParticipantDisplayNumber((array) $participant)) ?></span>
                 <span class="participant-chip">ID заявки: #<?= (int) $participant['application_id'] ?></span>
             </div>
@@ -257,6 +334,14 @@ require_once __DIR__ . '/includes/header.php';
             <a href="/admin/application/<?= (int) $participant['application_id'] ?>" class="btn btn--secondary">
                 <i class="fas fa-file-alt"></i> Перейти к заявке
             </a>
+            <?php if ($isWorkAccepted): ?>
+                <form method="POST" style="display:inline-flex;">
+                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+                    <input type="hidden" name="action" value="publish_participant_vk">
+                    <button type="submit" class="btn btn--secondary"><i class="fab fa-vk"></i> Опубликовать в ВК</button>
+                </form>
+            <?php endif; ?>
         </div>
     </div>
 </section>
