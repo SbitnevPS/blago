@@ -115,24 +115,25 @@ $adminChatAttachmentInputId = preg_replace('/[^a-zA-Z0-9_-]/', '', $adminChatMod
                             accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.txt,.doc,.docx,.rtf,.xls,.xlsx,.csv,.zip,image/*,application/pdf,text/plain,text/csv">
                         <div class="message-attachment-preview chat-composer__attachment-preview js-message-attachment-preview" hidden></div>
                     <?php endif; ?>
-                    <div class="form-group">
-                        <label class="form-label"><?= htmlspecialchars($adminChatComposerLabel) ?></label>
-                        <textarea name="<?= htmlspecialchars($adminChatComposerTextareaName) ?>" class="form-textarea js-chat-hotkey" rows="4" placeholder="<?= htmlspecialchars($adminChatComposerPlaceholder) ?>"></textarea>
-                    </div>
-                    <div class="chat-composer__actions">
+                    <div class="chat-composer__row">
                         <?php if ($adminChatSupportsAttachments): ?>
                             <label class="chat-composer__attachment-trigger" for="<?= htmlspecialchars($adminChatAttachmentInputId) ?>" title="Прикрепить файл">
                                 <i class="fas fa-paperclip"></i>
-                                <span>Файл</span>
                             </label>
-                            <?php if ($adminChatAttachmentHelp !== ''): ?>
-                                <div class="chat-composer__attachment-help"><?= htmlspecialchars($adminChatAttachmentHelp) ?></div>
-                            <?php endif; ?>
                         <?php endif; ?>
-                        <button type="submit" class="btn btn--primary">
-                            <i class="fas fa-paper-plane"></i> <?= htmlspecialchars($adminChatComposerSubmitText) ?>
+                        <textarea
+                            name="<?= htmlspecialchars($adminChatComposerTextareaName) ?>"
+                            class="form-textarea js-chat-hotkey chat-composer__textarea"
+                            rows="1"
+                            placeholder="<?= htmlspecialchars($adminChatComposerPlaceholder) ?>"
+                            aria-label="<?= htmlspecialchars($adminChatComposerLabel) ?>"></textarea>
+                        <button type="submit" class="btn btn--primary chat-composer__submit" title="<?= htmlspecialchars($adminChatComposerSubmitText) ?>" aria-label="<?= htmlspecialchars($adminChatComposerSubmitText) ?>">
+                            <i class="fas fa-paper-plane"></i>
                         </button>
                     </div>
+                    <?php if ($adminChatSupportsAttachments && $adminChatAttachmentHelp !== ''): ?>
+                        <div class="chat-composer__attachment-help"><?= htmlspecialchars($adminChatAttachmentHelp) ?></div>
+                    <?php endif; ?>
                 </form>
             <?php else: ?>
                 <?= $adminChatExtraMiddleHtml ?>

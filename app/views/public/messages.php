@@ -672,20 +672,16 @@ $currentPage = 'messages';
                     <input type="hidden" name="chat_title" value="<?= htmlspecialchars($selectedChatTitle, ENT_QUOTES, 'UTF-8') ?>">
                     <input type="file" id="messagesFrontendChatAttachment" name="attachment" class="chat-composer__attachment-input js-message-attachment-input" accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.txt,.doc,.docx,.rtf,.xls,.xlsx,.csv,.zip,image/*,application/pdf,text/plain,text/csv">
                     <div class="message-attachment-preview chat-composer__attachment-preview js-message-attachment-preview" hidden></div>
-                    <div class="form-group">
-                        <label class="form-label"><?= $selectedChatType === 'curator' ? 'Сообщение куратору' : 'Сообщение администратору' ?></label>
-                        <textarea name="chat_message" class="form-textarea js-chat-hotkey" rows="4" placeholder="Напишите сообщение..."></textarea>
-                    </div>
-                    <div class="chat-composer__actions">
+                    <div class="chat-composer__row">
                         <label class="chat-composer__attachment-trigger" for="messagesFrontendChatAttachment" title="Прикрепить файл">
                             <i class="fas fa-paperclip"></i>
-                            <span>Файл</span>
                         </label>
-                        <div class="chat-composer__attachment-help">Изображение покажем миниатюрой, для остальных файлов сохраним название. До 10 МБ.</div>
-                        <button type="submit" class="btn btn--primary">
-                            <i class="fas fa-paper-plane"></i> Отправить
+                        <textarea name="chat_message" class="form-textarea js-chat-hotkey chat-composer__textarea" rows="1" placeholder="Напишите сообщение..." aria-label="<?= $selectedChatType === 'curator' ? 'Сообщение куратору' : 'Сообщение администратору' ?>"></textarea>
+                        <button type="submit" class="btn btn--primary chat-composer__submit" title="Отправить" aria-label="Отправить">
+                            <i class="fas fa-paper-plane"></i>
                         </button>
                     </div>
+                    <div class="chat-composer__attachment-help">Изображение покажем миниатюрой, для остальных файлов сохраним название. До 10 МБ.</div>
                 </form>
             <?php else: ?>
                 <div class="alert alert--secondary" style="margin-top:12px;">
