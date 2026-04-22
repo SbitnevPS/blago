@@ -2048,12 +2048,10 @@ h4 {
 }
 
 .contest-card__badges {
-	position: absolute;
-	left: var(--space-md);
-	top: var(--space-md);
 	display: flex;
 	gap: var(--space-sm);
 	flex-wrap: wrap;
+	margin-bottom: var(--space-md);
 }
 
 .contest-status-badge {
