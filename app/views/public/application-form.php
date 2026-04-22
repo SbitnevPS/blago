@@ -1561,6 +1561,17 @@ function updateProgress() {
     updateSidebar();
 }
 
+function scrollToStepHeader(step) {
+    const targetStep = Number(step);
+    if (Number.isNaN(targetStep)) return;
+
+    window.requestAnimationFrame(() => {
+        const header = document.querySelector(`.wizard-step[data-step="${targetStep}"] .card__header`);
+        if (!header) return;
+        header.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+}
+
 function goStep(step) {
     document.getElementById('formAction').value = 'submit';
     if (step > currentStep && !validateStep(currentStep)) return;
@@ -1573,6 +1584,7 @@ function goStep(step) {
     }
     currentStep = step;
     updateProgress();
+    scrollToStepHeader(currentStep);
     saveLocalDraft();
 }
 
@@ -2341,12 +2353,12 @@ document.addEventListener('DOMContentLoaded', function () {
             alert('Дождитесь завершения загрузки рисунков, затем повторите сохранение.');
             return;
         }
+        if (autoSaveInFlight) {
+            e.preventDefault();
+            pendingSubmitTrigger = submitter || document.getElementById('saveDraftBtn') || document.getElementById('submitBtn');
+            return;
+        }
         if (action === 'submit') {
-            if (autoSaveInFlight) {
-                e.preventDefault();
-                pendingSubmitTrigger = submitter || document.getElementById('submitBtn');
-                return;
-            }
             isSubmittingApplication = true;
             if (currentStep !== steps.length || !isApplicationReadyToSubmit()) {
                 isSubmittingApplication = false;

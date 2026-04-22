@@ -462,12 +462,12 @@ $currentPage = 'messages';
 </div>
 
 <?php if (!empty($threadChats)): ?>
-<div class="card mb-lg">
+<div class="card mb-lg messages-chats-card">
     <div class="card__header">
         <h3>Чаты по заявкам</h3>
     </div>
-    <div class="card__body" style="padding:0;">
-        <table class="table">
+    <div class="card__body messages-chats-card__body">
+        <table class="table messages-chats-table">
             <thead>
                 <tr>
                     <th>Тема</th>
@@ -479,28 +479,29 @@ $currentPage = 'messages';
             <tbody>
             <?php foreach ($threadChats as $chat): ?>
                 <?php $chatTitle = (string) ($chat['title'] ?? ''); ?>
-                <tr>
-                    <td data-label="Тема">
-                        <a class="font-semibold" href="/application/<?= (int) $chat['application_id'] ?>">
+                <tr class="messages-chats-table__row">
+                    <td data-label="Тема" class="messages-chats-table__topic-cell">
+                        <a class="font-semibold messages-chats-table__topic-link" href="/application/<?= (int) $chat['application_id'] ?>">
                             <?= htmlspecialchars($chatTitle) ?>
                         </a>
                         <?php if (!empty($chat['contest_title'])): ?>
-                            <div class="text-secondary" style="margin-top:4px; font-size:13px;">Конкурс: <?= htmlspecialchars($chat['contest_title']) ?></div>
+                            <div class="text-secondary messages-chats-table__meta">Конкурс: <?= htmlspecialchars($chat['contest_title']) ?></div>
                         <?php endif; ?>
-                        <div class="text-secondary" style="margin-top:4px; font-size:13px;"><?= htmlspecialchars(getMessageThreadLabel($chatTitle)) ?></div>
-                        <div style="margin-top:6px;">
+                        <div class="text-secondary messages-chats-table__meta"><?= htmlspecialchars(getMessageThreadLabel($chatTitle)) ?></div>
+                        <div class="messages-chats-table__badges">
                             <span class="badge <?= (int) ($chat['thread_chat_closed'] ?? 0) === 1 ? 'badge--secondary' : 'badge--success' ?>">
                                 <?= (int) ($chat['thread_chat_closed'] ?? 0) === 1 ? 'Чат закрыт' : 'Чат открыт' ?>
                             </span>
-                        </div>
+                        
                         <?php if ((int) $chat['unread_count'] > 0): ?>
-                            <span class="badge" style="background:#F59E0B; color:white; margin-top:4px;">Ответ администратора: <?= (int) $chat['unread_count'] ?></span>
+                            <span class="badge messages-chats-table__unread-badge">Ответ администратора: <?= (int) $chat['unread_count'] ?></span>
                         <?php endif; ?>
+                        </div>
                     </td>
-                    <td data-label="Последнее сообщение"><?= htmlspecialchars(mb_substr((string) ($chat['last_message'] ?? ''), 0, 120)) ?></td>
-                    <td data-label="Дата"><?= date('d.m.Y H:i', strtotime($chat['last_message_at'])) ?></td>
-                    <td data-label="Действия">
-                        <a class="btn btn--ghost btn--sm" href="/messages?chat_application_id=<?= (int) $chat['application_id'] ?>&chat_title=<?= urlencode($chatTitle) ?>">
+                    <td data-label="Последнее сообщение" class="messages-chats-table__message-cell"><?= htmlspecialchars(mb_substr((string) ($chat['last_message'] ?? ''), 0, 120)) ?></td>
+                    <td data-label="Дата" class="messages-chats-table__date-cell"><?= date('d.m.Y H:i', strtotime($chat['last_message_at'])) ?></td>
+                    <td data-label="Действия" class="messages-chats-table__actions-cell">
+                        <a class="btn btn--ghost btn--sm messages-chats-table__open-btn" href="/messages?chat_application_id=<?= (int) $chat['application_id'] ?>&chat_title=<?= urlencode($chatTitle) ?>">
                             <i class="fas fa-comments"></i> Открыть чат
                         </a>
                     </td>

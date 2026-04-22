@@ -3044,7 +3044,8 @@
 
 .my-applications-delete-modal {
   max-width: 520px;
-  width: min(520px, 94vw);
+  width: min(520px, calc(100vw - 32px));
+  margin: 0 auto;
 }
 
 .my-applications-delete-modal__body {
@@ -3088,6 +3089,9 @@
   width: 100%;
   background: #dc2626;
   color: #fff;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
 }
 
 .my-applications-delete-modal__submit:hover {
@@ -3108,6 +3112,31 @@
 @media (max-width: 640px) {
   .my-applications-grid {
     grid-template-columns: 1fr;
+  }
+
+  .my-applications-delete-modal {
+    width: min(100%, calc(100vw - 24px));
+    border-radius: 16px;
+  }
+
+  .my-applications-delete-modal__body {
+    padding: 20px 16px;
+  }
+
+  .my-applications-delete-modal__icon {
+    width: 60px;
+    height: 60px;
+    margin-bottom: 14px;
+    font-size: 26px;
+  }
+
+  .my-applications-delete-modal__title {
+    font-size: 20px;
+  }
+
+  .my-applications-delete-modal__text {
+    font-size: 14px;
+    line-height: 1.5;
   }
 
   .my-applications-section-head__title {

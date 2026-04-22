@@ -81,6 +81,44 @@
     background: #f59e0b;
 }
 
+.messages-chats-card__body {
+    padding: 0;
+}
+
+.messages-chats-table__topic-link {
+    display: inline-block;
+    line-height: 1.35;
+}
+
+.messages-chats-table__meta {
+    margin-top: 4px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.messages-chats-table__badges {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.messages-chats-table__unread-badge {
+    background: #f59e0b;
+    color: #fff;
+}
+
+.messages-chats-table__message-cell {
+    color: var(--color-text-secondary);
+    line-height: 1.45;
+}
+
+.messages-chats-table__date-cell {
+    white-space: nowrap;
+    color: var(--color-text-secondary);
+    font-size: 13px;
+}
+
 .message-detail-priority {
     color: #fff;
     font-size: 13px;
@@ -222,6 +260,61 @@
 @media (max-width: 768px) {
     .messages-container {
         padding: var(--space-lg) var(--space-md);
+    }
+
+    .messages-chats-card__body {
+        padding: var(--space-sm);
+    }
+
+    .messages-chats-table {
+        border: 0;
+    }
+
+    .messages-chats-table tbody {
+        display: grid;
+        gap: 10px;
+    }
+
+    .messages-chats-table__row {
+        margin-bottom: 0;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid var(--color-border);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .messages-chats-table td {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 6px;
+        padding: 10px 12px;
+        text-align: left;
+    }
+
+    .messages-chats-table td::before {
+        margin-bottom: 2px;
+    }
+
+    .messages-chats-table__topic-cell {
+        gap: 8px;
+    }
+
+    .messages-chats-table__message-cell {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .messages-chats-table__date-cell {
+        white-space: normal;
+    }
+
+    .messages-chats-table__actions-cell {
+        border-bottom: 0;
+    }
+
+    .messages-chats-table__open-btn {
+        width: 100%;
+        justify-content: center;
     }
 
     .message-detail__content {
