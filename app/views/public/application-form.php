@@ -1096,7 +1096,7 @@ generateCSRFToken();
                             <p>В случае несоблюдения указанных требований, а также при выявлении фактов нарушения правил Конкурса, представленная работа подлежит отклонению без уведомления и без права повторного участия.</p>
                         </div>
                         <div class="user-agreement__actions">
-                            <button type="button" class="btn btn--ghost user-agreement__sign-btn" id="signAgreementBtn">Подписать пользовательское соглашение!</button>
+                            <button type="button" class="btn btn--ghost user-agreement__sign-btn" id="signAgreementBtn" aria-pressed="false">Подписать пользовательское соглашение!</button>
                             <button type="submit" class="btn btn--secondary" id="declineAgreementBtn" data-form-action="save_draft">Я не принимаю условия.</button>
                         </div>
                     </div>
@@ -1818,6 +1818,10 @@ function syncAgreementButtons() {
         signBtn.classList.toggle('btn--primary', userAgreementSigned);
         signBtn.classList.toggle('btn--ghost', !userAgreementSigned);
         signBtn.classList.toggle('is-signed', userAgreementSigned);
+        signBtn.setAttribute('aria-pressed', userAgreementSigned ? 'true' : 'false');
+        signBtn.textContent = userAgreementSigned
+            ? 'Соглашение подписано ✓'
+            : 'Подписать пользовательское соглашение!';
     }
     if (declineBtn) {
         declineBtn.hidden = currentStep !== agreementStepNumber;
