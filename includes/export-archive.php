@@ -137,6 +137,7 @@ function exportArchiveGetSelectionRows(PDO $pdo, array $filters, ?int $limit = n
     $sql = "
         SELECT
             p.id,
+            p.public_number,
             p.fio,
             p.age,
             p.application_id,
@@ -368,7 +369,14 @@ function exportArchiveProcessJob(PDO $pdo, int $jobId): void
             continue;
         }
 
-        $targetName = exportArchiveResolveDuplicateName($folder, basename($sourceName));
+        $participantNumber = trim((string) ($row['public_number'] ?? ''));
+        if ($participantNumber === '') {
+            $participantNumber = (string) ((int) ($row['id'] ?? 0));
+        }
+        $targetName = exportArchiveResolveDuplicateName(
+            $folder,
+            $participantNumber . '_' . basename($sourceName)
+        );
         if (!@copy($sourceFsPath, $folder . '/' . $targetName)) {
             throw new RuntimeException('Не удалось скопировать файл рисунка в архив.');
         }
@@ -424,4 +432,29 @@ function exportArchiveProcessNextJob(PDO $pdo): bool
     }
 
     return true;
+}
+
+function exportArchiveDeleteJob(PDO $pdo, int $jobId): void
+{
+    $stmt = $pdo->prepare('SELECT status, archive_file_path FROM export_archive_jobs WHERE id = ? LIMIT 1');
+    $stmt->execute([$jobId]);
+    $job = $stmt->fetch();
+    if (!$job) {
+        throw new RuntimeException('Задание не найдено.');
+    }
+
+    if ((string) ($job['status'] ?? '') === EXPORT_ARCHIVE_STATUS_PROCESSING) {
+        throw new RuntimeException('Нельзя удалить задание, пока архив формируется.');
+    }
+
+    $archivePath = trim((string) ($job['archive_file_path'] ?? ''));
+    if ($archivePath !== '' && is_file($archivePath)) {
+        @unlink($archivePath);
+    }
+
+    $baseDir = dirname(__DIR__) . '/storage/export/' . $jobId;
+    exportArchiveRemoveDirectory($baseDir);
+
+    $deleteStmt = $pdo->prepare('DELETE FROM export_archive_jobs WHERE id = ?');
+    $deleteStmt->execute([$jobId]);
 }
