@@ -1078,13 +1078,16 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
 	                <div class="card vk-publication-card">
                     <div class="card__body">
                         <div class="vk-publication-card__title">Публикация в VK</div>
-                        <div class="flex items-center gap-sm vk-publication-card__meta">
+                        <div class="vk-publication-card__meta">
                             <span class="badge <?= e((string) ($applicationVkStatus['badge_class'] ?? 'badge--secondary')) ?>">
-                                <?= e((string) ($applicationVkStatus['status_label'] ?? 'Не опубликована')) ?>
+                                <?= e((string) ($applicationVkStatus['status_label'] ?? 'Заявка не публиковалась')) ?>
                             </span>
-                            <span class="text-secondary vk-publication-card__caption">
-                                Опубликовано <?= (int) ($applicationVkStatus['published_count'] ?? 0) ?> из <?= (int) ($applicationVkStatus['total_count'] ?? 0) ?>
-                            </span>
+                            <div class="text-secondary vk-publication-card__caption">
+                                Опубликовано: <?= (int) ($applicationVkStatus['ready_count'] ?? 0) ?> из <?= (int) ($applicationVkStatus['total_count'] ?? 0) ?>
+                            </div>
+                            <div class="text-secondary vk-publication-card__caption vk-publication-card__caption--muted">
+                                Уже опубликовано рисунков: <?= (int) ($applicationVkStatus['published_count'] ?? 0) ?>
+                            </div>
                         </div>
                         <?php if (!empty($applicationVkStatus['last_attempt_at'])): ?>
                             <div class="text-secondary vk-publication-card__text">

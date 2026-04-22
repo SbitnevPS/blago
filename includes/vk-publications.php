@@ -204,11 +204,13 @@ function getApplicationVkPublicationStatus(int $applicationId): array
 
     $base = [
         'status_code' => 'not_published',
-        'status_label' => 'Не опубликована',
+        'status_label' => 'Заявка не публиковалась',
         'badge_class' => 'badge--secondary',
         'published_count' => 0,
         'failed_count' => 0,
         'total_count' => 0,
+        'ready_count' => 0,
+        'correction_count' => 0,
         'last_task_id' => null,
         'last_post_url' => '',
         'last_error' => '',
@@ -225,19 +227,21 @@ function getApplicationVkPublicationStatus(int $applicationId): array
         SELECT
             COUNT(*) AS total_works,
             SUM(CASE WHEN w.status = 'accepted' THEN 1 ELSE 0 END) AS accepted_works,
+            SUM(CASE WHEN w.status = 'reviewed' THEN 1 ELSE 0 END) AS correction_works,
             SUM(CASE WHEN w.vk_published_at IS NOT NULL THEN 1 ELSE 0 END) AS published_works,
-            SUM(CASE WHEN w.status NOT IN ('accepted', 'reviewed_non_competitive') AND w.vk_published_at IS NULL THEN 1 ELSE 0 END) AS awaiting_decision_works
+            SUM(CASE WHEN w.status NOT IN ('accepted', 'reviewed', 'reviewed_non_competitive') AND w.vk_published_at IS NULL THEN 1 ELSE 0 END) AS awaiting_decision_works
         FROM works w
         WHERE w.application_id = ?
     ");
     $workStmt->execute([$applicationId]);
     $workCounts = $workStmt->fetch() ?: [];
 
-    $totalWorks = (int) ($workCounts['total_works'] ?? 0);
     $acceptedWorks = (int) ($workCounts['accepted_works'] ?? 0);
+    $correctionWorks = (int) ($workCounts['correction_works'] ?? 0);
     $publishedWorks = (int) ($workCounts['published_works'] ?? 0);
     $awaitingDecisionWorks = (int) ($workCounts['awaiting_decision_works'] ?? 0);
     $readyTotal = $acceptedWorks;
+    $publishScopeTotal = $acceptedWorks + $correctionWorks;
 
     $taskStmt = $pdo->prepare("
         SELECT
@@ -260,15 +264,17 @@ function getApplicationVkPublicationStatus(int $applicationId): array
     $taskStmt->execute([$applicationId]);
     $lastTask = $taskStmt->fetch() ?: null;
 
-    $base['total_count'] = $readyTotal;
+    $base['ready_count'] = $readyTotal;
+    $base['correction_count'] = $correctionWorks;
+    $base['total_count'] = $publishScopeTotal;
     $base['published_count'] = $publishedWorks;
     $base['remaining_count'] = max(0, $readyTotal - $publishedWorks);
     $base['awaiting_decision_count'] = max(0, $awaitingDecisionWorks);
 
     if (!$lastTask) {
         if ($publishedWorks > 0) {
-            $base['status_code'] = $publishedWorks >= $readyTotal && $readyTotal > 0 ? 'published' : 'partial';
-            $base['status_label'] = $base['status_code'] === 'published' ? 'Опубликована' : 'Частично опубликована';
+            $base['status_code'] = $publishedWorks >= $publishScopeTotal && $publishScopeTotal > 0 ? 'published' : 'partial';
+            $base['status_label'] = $base['status_code'] === 'published' ? 'Все рисунки опубликованы' : 'Заявка частично опубликована';
             $base['badge_class'] = $base['status_code'] === 'published' ? 'badge--success' : 'badge--warning';
         }
         return $base;
@@ -280,29 +286,29 @@ function getApplicationVkPublicationStatus(int $applicationId): array
     $base['failed_count'] = max(0, (int) ($lastTask['failed_items'] ?? 0));
     $base['last_attempt_at'] = (string) ($lastTask['item_published_at'] ?: ($lastTask['task_updated_at'] ?: $lastTask['task_created_at']));
 
-    if ($readyTotal <= 0) {
+    if ($publishScopeTotal <= 0) {
         $base['status_code'] = 'not_published';
-        $base['status_label'] = 'Не опубликована';
+        $base['status_label'] = 'Заявка не публиковалась';
         return $base;
     }
 
-    if ($publishedWorks >= $readyTotal && $readyTotal > 0) {
+    if ($publishedWorks >= $publishScopeTotal && $publishScopeTotal > 0) {
         $base['status_code'] = 'published';
-        $base['status_label'] = 'Опубликована';
+        $base['status_label'] = 'Все рисунки опубликованы';
         $base['badge_class'] = 'badge--success';
     } elseif ($publishedWorks > 0) {
         $base['status_code'] = 'partial';
-        $base['status_label'] = 'Частично опубликована';
+        $base['status_label'] = 'Заявка частично опубликована';
         $base['badge_class'] = 'badge--warning';
     } else {
         $taskStatus = (string) ($lastTask['task_status'] ?? '');
         if (in_array($taskStatus, ['draft', 'ready', 'publishing'], true)) {
             $base['status_code'] = 'pending_publish';
-            $base['status_label'] = 'Ожидает публикации';
+            $base['status_label'] = 'Заявка не публиковалась';
             $base['badge_class'] = 'badge--warning';
         } else {
             $base['status_code'] = 'failed';
-            $base['status_label'] = 'Ошибка публикации';
+            $base['status_label'] = 'Заявка не публиковалась';
             $base['badge_class'] = 'badge--error';
         }
     }
@@ -821,6 +827,7 @@ function getVkWorksByFilters(array $filters): array
             a.updated_at AS application_updated_at,
             c.title AS contest_title,
             p.fio AS participant_fio,
+            p.public_number AS participant_public_number,
             p.age AS participant_age,
             p.region,
             p.organization_name,
@@ -860,6 +867,9 @@ function buildVkPostText(array $workRow, string $template): string
     $vars = [
         'participant_name' => trim((string) ($parts[1] ?? $parts[0] ?? '')),
         'participant_full_name' => $participantFullName,
+        'participant_number' => trim((string) ($workRow['participant_public_number'] ?? '')) !== ''
+            ? '#' . trim((string) ($workRow['participant_public_number'] ?? ''))
+            : '',
         'organization_name' => trim((string) ($workRow['organization_name'] ?? '')),
         'region_name' => trim((string) ($workRow['region'] ?? '')),
         'work_title' => trim((string) ($workRow['work_title'] ?? '')),
