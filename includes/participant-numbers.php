@@ -81,21 +81,24 @@ function reserveNextParticipantOrdinal(int $contestId): int
         return 0;
     }
 
-    $initialOrdinal = getAssignedParticipantsCountInContest($contestId);
-
-    $stmtInit = $pdo->prepare("
-        INSERT INTO participant_number_counters (contest_id, last_ordinal)
-        VALUES (?, ?)
-        ON DUPLICATE KEY UPDATE contest_id = contest_id
-    ");
-    $stmtInit->execute([$contestId, $initialOrdinal]);
-
     $stmtBump = $pdo->prepare("
         UPDATE participant_number_counters
         SET last_ordinal = LAST_INSERT_ID(last_ordinal + 1)
         WHERE contest_id = ?
     ");
     $stmtBump->execute([$contestId]);
+
+    if ((int) $stmtBump->rowCount() === 0) {
+        $initialOrdinal = getAssignedParticipantsCountInContest($contestId);
+
+        $stmtInit = $pdo->prepare("
+            INSERT IGNORE INTO participant_number_counters (contest_id, last_ordinal)
+            VALUES (?, ?)
+        ");
+        $stmtInit->execute([$contestId, $initialOrdinal]);
+
+        $stmtBump->execute([$contestId]);
+    }
 
     return (int) $pdo->query("SELECT LAST_INSERT_ID()")->fetchColumn();
 }
@@ -114,9 +117,6 @@ function assignParticipantPublicNumber(int $participantId, int $contestId, ?arra
         return null;
     }
 
-    ensureParticipantPublicNumberSchema();
-    ensureParticipantNumberCountersSchema();
-
     try {
         $stmt = $pdo->prepare("SELECT public_number FROM participants WHERE id = ? LIMIT 1");
         $stmt->execute([$participantId]);
@@ -134,39 +134,33 @@ function assignParticipantPublicNumber(int $participantId, int $contestId, ?arra
         return null;
     }
 
-    $startedTransaction = false;
     try {
-        if (!$pdo->inTransaction()) {
-            $pdo->beginTransaction();
-            $startedTransaction = true;
-        }
-
         $participantOrdinal = reserveNextParticipantOrdinal($contestId);
         if ($participantOrdinal <= 0) {
-            if ($startedTransaction && $pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
             return null;
         }
 
         $public = computeParticipantPublicNumber((int) ($meta['year'] ?? 0), (int) ($meta['ordinal'] ?? 0), $participantOrdinal);
         if ($public === '') {
-            if ($startedTransaction && $pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
             return null;
         }
 
-        $pdo->prepare("UPDATE participants SET public_number = ? WHERE id = ?")->execute([$public, $participantId]);
-
-        if ($startedTransaction && $pdo->inTransaction()) {
-            $pdo->commit();
+        $stmtUpdate = $pdo->prepare("
+            UPDATE participants
+            SET public_number = ?
+            WHERE id = ?
+              AND (public_number IS NULL OR TRIM(public_number) = '')
+        ");
+        $stmtUpdate->execute([$public, $participantId]);
+        if ((int) $stmtUpdate->rowCount() === 0) {
+            $stmtExisting = $pdo->prepare("SELECT public_number FROM participants WHERE id = ? LIMIT 1");
+            $stmtExisting->execute([$participantId]);
+            $existing = trim((string) $stmtExisting->fetchColumn());
+            return $existing !== '' ? $existing : null;
         }
+
         return $public;
     } catch (Throwable $ignored) {
-        if ($startedTransaction && $pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
         return null;
     }
 }

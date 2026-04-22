@@ -222,7 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         
  if ($action === 'save_draft' || $action === 'submit') {
  try {
- $pdo->beginTransaction();
+ $transactionStarted = $pdo->beginTransaction();
                 $receiptFilesToDelete = [];
  $uploadedReceiptFiles = [];
  $existingParticipantsRows = [];
@@ -616,7 +616,9 @@ $user['user_type'] = $user_type;
  ")->execute([(int) $application_id, (int) $user['id']]);
  }
                 
+ if ($transactionStarted && $pdo->inTransaction()) {
  $pdo->commit();
+ }
  foreach ($drawingFilesToDelete as $drawingFilePath) {
  if (is_string($drawingFilePath) && $drawingFilePath !== '' && is_file($drawingFilePath)) {
  @unlink($drawingFilePath);
@@ -647,7 +649,7 @@ $user['user_type'] = $user_type;
  }
                 
  } catch (Exception $e) {
- if ($pdo->inTransaction()) {
+ if (($transactionStarted ?? false) && $pdo->inTransaction()) {
  $pdo->rollBack();
  }
  foreach ($uploadedReceiptFiles ?? [] as $receiptFilePath) {
