@@ -13,6 +13,22 @@ function ensureParticipantPublicNumberSchema(): void
     }
 }
 
+function ensureParticipantNumberCountersSchema(): void
+{
+    global $pdo;
+
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS participant_number_counters (
+                contest_id INT NOT NULL PRIMARY KEY,
+                last_ordinal INT NOT NULL DEFAULT 0,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        ");
+    } catch (Throwable $ignored) {
+    }
+}
+
 function buildContestOrdinalMapByYear(): array
 {
     global $pdo;
@@ -37,11 +53,11 @@ function buildContestOrdinalMapByYear(): array
     return $map;
 }
 
-function computeParticipantOrdinalInContest(int $contestId, int $participantId): int
+function getAssignedParticipantsCountInContest(int $contestId): int
 {
     global $pdo;
 
-    if ($contestId <= 0 || $participantId <= 0) {
+    if ($contestId <= 0) {
         return 0;
     }
 
@@ -50,10 +66,38 @@ function computeParticipantOrdinalInContest(int $contestId, int $participantId):
         FROM participants p
         INNER JOIN applications a ON a.id = p.application_id
         WHERE a.contest_id = ?
-          AND p.id <= ?
+          AND p.public_number IS NOT NULL
+          AND TRIM(p.public_number) <> ''
     ");
-    $stmt->execute([$contestId, $participantId]);
+    $stmt->execute([$contestId]);
     return (int) $stmt->fetchColumn();
+}
+
+function reserveNextParticipantOrdinal(int $contestId): int
+{
+    global $pdo;
+
+    if ($contestId <= 0) {
+        return 0;
+    }
+
+    $initialOrdinal = getAssignedParticipantsCountInContest($contestId);
+
+    $stmtInit = $pdo->prepare("
+        INSERT INTO participant_number_counters (contest_id, last_ordinal)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE contest_id = contest_id
+    ");
+    $stmtInit->execute([$contestId, $initialOrdinal]);
+
+    $stmtBump = $pdo->prepare("
+        UPDATE participant_number_counters
+        SET last_ordinal = LAST_INSERT_ID(last_ordinal + 1)
+        WHERE contest_id = ?
+    ");
+    $stmtBump->execute([$contestId]);
+
+    return (int) $pdo->query("SELECT LAST_INSERT_ID()")->fetchColumn();
 }
 
 function computeParticipantPublicNumber(int $contestYear, int $contestOrdinal, int $participantOrdinal): string
@@ -71,6 +115,7 @@ function assignParticipantPublicNumber(int $participantId, int $contestId, ?arra
     }
 
     ensureParticipantPublicNumberSchema();
+    ensureParticipantNumberCountersSchema();
 
     try {
         $stmt = $pdo->prepare("SELECT public_number FROM participants WHERE id = ? LIMIT 1");
@@ -89,20 +134,39 @@ function assignParticipantPublicNumber(int $participantId, int $contestId, ?arra
         return null;
     }
 
-    $participantOrdinal = computeParticipantOrdinalInContest($contestId, $participantId);
-    if ($participantOrdinal <= 0) {
-        return null;
-    }
-
-    $public = computeParticipantPublicNumber((int) ($meta['year'] ?? 0), (int) ($meta['ordinal'] ?? 0), $participantOrdinal);
-    if ($public === '') {
-        return null;
-    }
-
+    $startedTransaction = false;
     try {
+        if (!$pdo->inTransaction()) {
+            $pdo->beginTransaction();
+            $startedTransaction = true;
+        }
+
+        $participantOrdinal = reserveNextParticipantOrdinal($contestId);
+        if ($participantOrdinal <= 0) {
+            if ($startedTransaction && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            return null;
+        }
+
+        $public = computeParticipantPublicNumber((int) ($meta['year'] ?? 0), (int) ($meta['ordinal'] ?? 0), $participantOrdinal);
+        if ($public === '') {
+            if ($startedTransaction && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            return null;
+        }
+
         $pdo->prepare("UPDATE participants SET public_number = ? WHERE id = ?")->execute([$public, $participantId]);
+
+        if ($startedTransaction && $pdo->inTransaction()) {
+            $pdo->commit();
+        }
         return $public;
     } catch (Throwable $ignored) {
+        if ($startedTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         return null;
     }
 }
@@ -165,4 +229,3 @@ function getParticipantDisplayNumber(array $row): string
     $id = (int) ($row['id'] ?? $row['participant_id'] ?? 0);
     return $id > 0 ? (string) $id : '';
 }
-

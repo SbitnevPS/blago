@@ -347,8 +347,31 @@ function ensureApplicationPaymentReceiptSchema(PDO $pdo): void
     }
 }
 
+function ensureApplicationAgreementDeclinedSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        $applicationColumns = $pdo->query("SHOW COLUMNS FROM applications")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('agreement_declined', $applicationColumns, true)) {
+            $pdo->exec("
+                ALTER TABLE applications
+                ADD COLUMN agreement_declined TINYINT(1) NOT NULL DEFAULT 0
+                AFTER allow_edit
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('[SCHEMA] Application agreement declined schema check failed: ' . $e->getMessage());
+    }
+}
+
 ensureContestPaymentReceiptSchema($pdo);
 ensureApplicationPaymentReceiptSchema($pdo);
+ensureApplicationAgreementDeclinedSchema($pdo);
 
 
 // Настройки сессии

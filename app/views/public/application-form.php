@@ -307,6 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $nextAllowEdit = $action === 'submit'
      ? 0
      : ($currentStoredStatus === 'draft' ? 1 : (int) ($existingApplication['allow_edit'] ?? 0));
+ $agreementDeclined = $action === 'submit' ? 0 : ((int) ($_POST['agreement_declined'] ?? 0) === 1 ? 1 : 0);
                     
  $stmt = $pdo->prepare("
 	 UPDATE applications SET 
@@ -317,6 +318,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
          payment_receipt = ?,
 	 status = ?,
 	 allow_edit = ?,
+         agreement_declined = ?,
 	 updated_at = NOW()
  WHERE id = ? AND user_id = ?
  ");
@@ -328,6 +330,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
          $paymentReceipt,
 	 $nextStatus,
  $nextAllowEdit,
+ $agreementDeclined,
  $application_id,
  $user['id']
  ]);
@@ -347,8 +350,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
 
                 $stmt = $pdo->prepare("
-                INSERT INTO applications (user_id, contest_id, parent_fio, source_info, colleagues_info, recommendations_wishes, payment_receipt, status, allow_edit)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO applications (user_id, contest_id, parent_fio, source_info, colleagues_info, recommendations_wishes, payment_receipt, status, allow_edit, agreement_declined)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                 $user['id'],
@@ -360,6 +363,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $paymentReceipt,
                 $action === 'submit' ? 'submitted' : 'draft',
                 $action === 'submit' ? 0 : 1,
+                $action === 'submit' ? 0 : ((int) ($_POST['agreement_declined'] ?? 0) === 1 ? 1 : 0),
                 ]);
  $application_id = $pdo->lastInsertId();
  }
@@ -757,6 +761,7 @@ generateCSRFToken();
                 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                 <input type="hidden" name="action" value="submit" id="formAction">
                 <input type="hidden" name="application_id" value="<?= $editingApplication ? intval($editingApplication['id']) : '' ?>">
+                <input type="hidden" name="agreement_declined" id="agreementDeclined" value="<?= (int) ($editingApplication['agreement_declined'] ?? 0) === 1 ? '1' : '0' ?>">
                 <input type="hidden" name="existing_payment_receipt" id="existingPaymentReceipt" value="<?= e($existingPaymentReceipt) ?>">
                 <input type="hidden" name="remove_payment_receipt" id="removePaymentReceipt" value="0">
                 <input type="hidden" name="user_type" id="applicationUserType" value="<?= e((string) ($initialFormData['user_type'] ?? 'parent')) ?>">
@@ -1052,6 +1057,7 @@ let lastAutoSaveSignature = '';
 let isSubmittingApplication = false;
 let pendingSubmitTrigger = null;
 let userAgreementSigned = false;
+let agreementDeclined = <?= (int) ($editingApplication['agreement_declined'] ?? 0) === 1 ? 'true' : 'false' ?>;
 const autoSaveEnabled = <?= $canAutoSaveCurrentApplication ? 'true' : 'false' ?>;
 const isEditingServerDraft = <?= $editingApplication ? 'true' : 'false' ?>;
 const initialPaymentReceipt = <?= json_encode([
@@ -1501,8 +1507,12 @@ function syncAgreementButtons() {
     const signBtn = document.getElementById('signAgreementBtn');
     const declineBtn = document.getElementById('declineAgreementBtn');
     const agreementField = document.getElementById('userAgreementSigned');
+    const agreementDeclinedField = document.getElementById('agreementDeclined');
     if (agreementField) {
         agreementField.value = userAgreementSigned ? '1' : '0';
+    }
+    if (agreementDeclinedField) {
+        agreementDeclinedField.value = agreementDeclined ? '1' : '0';
     }
     if (signBtn) {
         signBtn.classList.toggle('btn--primary', userAgreementSigned);
@@ -2118,6 +2128,10 @@ function triggerSubmitAfterAutoSave(submitter = null) {
     form.submit();
 }
 
+function hasPendingDrawingUploads() {
+    return document.querySelectorAll('.upload-area--drawing.is-loading').length > 0;
+}
+
 function tryRestoreDraft() {
     if (isEditingServerDraft) return;
     const raw = localStorage.getItem(draftKey);
@@ -2180,9 +2194,15 @@ document.addEventListener('DOMContentLoaded', function () {
     userAgreementSigned = agreementField?.value === '1';
     document.getElementById('signAgreementBtn')?.addEventListener('click', () => {
         userAgreementSigned = true;
+        agreementDeclined = false;
         syncAgreementButtons();
         syncNavigationButtons(currentStep === finalReviewStep && isApplicationReadyToSubmit());
         saveLocalDraft();
+    });
+    document.getElementById('declineAgreementBtn')?.addEventListener('click', () => {
+        agreementDeclined = true;
+        userAgreementSigned = false;
+        syncAgreementButtons();
     });
 
     if (needsPaymentReceipt) {
@@ -2268,6 +2288,12 @@ document.addEventListener('DOMContentLoaded', function () {
             actionField.value = submitterAction;
         }
         const action = actionField.value;
+        if (hasPendingDrawingUploads()) {
+            e.preventDefault();
+            isSubmittingApplication = false;
+            alert('Дождитесь завершения загрузки рисунков, затем повторите сохранение.');
+            return;
+        }
         if (action === 'submit') {
             if (autoSaveInFlight) {
                 e.preventDefault();
