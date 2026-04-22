@@ -810,6 +810,8 @@ $currentPage = 'applications';
 .app-user-card__value {font-size:14px; line-height:1.45; color:#0F172A; word-break:break-word;}
 .app-sidebar {display:flex; flex-direction:column; gap:16px;}
 .app-sidebar__panel {display:flex; flex-direction:column; gap:16px;}
+#applicationActionsCard {order:1;}
+#applicationCorrectionCard {order:2;}
 .participants-grid {display:grid; grid-template-columns:1fr; gap:16px;}
 .participant-modern-card {overflow:hidden; padding:0; transition:transform .2s ease, box-shadow .2s ease;}
 .participant-modern-card:hover {transform:translateY(-2px); box-shadow:0 12px 32px rgba(15,23,42,.12);}
@@ -867,6 +869,8 @@ $currentPage = 'applications';
 .participant-edit-preview {max-width:100%; max-height:260px; border-radius:12px; border:1px solid #E5E7EB; display:none; object-fit:contain; background:#F8FAFC;}
 @media (min-width: 980px) {
  .application-content {grid-template-columns:minmax(0,1.55fr) minmax(320px,1fr);}
+ #applicationCorrectionCard {order:1;}
+ #applicationActionsCard {order:2;}
  .participant-modern-card__facts {grid-template-columns:repeat(2,minmax(0,1fr));}
  .participant-modern-card__image {max-height:560px;}
  .participant-edit-drawing-row {grid-template-columns:1fr 1fr; align-items:start;}
