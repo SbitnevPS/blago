@@ -78,15 +78,6 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 <i class="fas fa-cog"></i> Настройки
 </a>
 </nav>
-        
-<div class="admin-sidebar__bottom-links">
-<a href="/" class="admin-sidebar__link">
-<i class="fas fa-external-link-alt"></i> На сайт
-</a>
-<a href="/admin/logout" class="admin-sidebar__link admin-sidebar__link--logout">
-<i class="fas fa-sign-out-alt"></i> Выход
-</a>
-</div>
 </aside>
 <div class="admin-sidebar-overlay" id="adminSidebarOverlay" onclick="toggleSidebar(false)"></div>
 
@@ -119,12 +110,50 @@ $adminAvatar = getUserAvatarData($admin ?? []);
 </div>
  <?php endif; ?>
 <span class="admin-user__name"><?= htmlspecialchars(getUserDisplayName($admin ?? []) ?: 'Админ') ?></span>
+<a href="/" class="admin-user__site-link" target="_blanck" rel="noopener noreferrer" title="Перейти на сайт" aria-label="Перейти на сайт">
+<i class="fas fa-external-link-alt"></i>
+</a>
 <a href="/admin/logout" class="admin-user__logout">
 <i class="fas fa-sign-out-alt"></i>
 </a>
 </div>
 </div>
 </div>
+
+<nav class="admin-mobile-nav" aria-label="Мобильное меню админки">
+<a href="/admin/applications.php" class="admin-mobile-nav__link <?= $currentPage === 'applications' ? 'admin-mobile-nav__link--active' : '' ?>">
+<i class="fas fa-file-alt"></i>
+<span>Заявки</span>
+</a>
+<a href="/admin/participants" class="admin-mobile-nav__link <?= $currentPage === 'participants' ? 'admin-mobile-nav__link--active' : '' ?>">
+<i class="fas fa-user-friends"></i>
+<span>Участники</span>
+</a>
+<a href="/admin/contests.php" class="admin-mobile-nav__link <?= $currentPage === 'contests' ? 'admin-mobile-nav__link--active' : '' ?>">
+<i class="fas fa-trophy"></i>
+<span>Конкурсы</span>
+</a>
+<div class="admin-mobile-nav__user" id="adminMobileUserMenu">
+<button type="button" class="admin-mobile-nav__user-trigger" aria-expanded="false" aria-controls="adminMobileUserDropdown" id="adminMobileUserTrigger">
+<?php if ($adminAvatar['url'] !== ''): ?>
+<img src="<?= htmlspecialchars($adminAvatar['url'], ENT_QUOTES, 'UTF-8') ?>" class="admin-mobile-nav__avatar" alt="<?= htmlspecialchars($adminAvatar['label'], ENT_QUOTES, 'UTF-8') ?>">
+<?php else: ?>
+<div class="admin-mobile-nav__avatar admin-mobile-nav__avatar--fallback" title="<?= htmlspecialchars($adminAvatar['label'], ENT_QUOTES, 'UTF-8') ?>">
+<span><?= htmlspecialchars($adminAvatar['initials'], ENT_QUOTES, 'UTF-8') ?></span>
+</div>
+<?php endif; ?>
+<span>Профиль</span>
+</button>
+<div class="admin-mobile-nav__user-menu" id="adminMobileUserDropdown">
+<a href="/" target="_blanck" rel="noopener noreferrer" class="admin-mobile-nav__user-item">
+<i class="fas fa-external-link-alt"></i> Перейти на сайт
+</a>
+<a href="/admin/logout" class="admin-mobile-nav__user-item admin-mobile-nav__user-item--danger">
+<i class="fas fa-sign-out-alt"></i> Выход
+</a>
+</div>
+</div>
+</nav>
         
 <script>
  function toggleSidebar(forceState) {
@@ -151,6 +180,40 @@ $adminAvatar = getUserAvatarData($admin ?? []);
  sidebar.classList.remove('open');
  if (overlay) {
  overlay.classList.remove('active');
+ }
+ });
+
+ const mobileUserMenu = document.getElementById('adminMobileUserMenu');
+ const mobileUserTrigger = document.getElementById('adminMobileUserTrigger');
+
+ function toggleMobileUserMenu(forceState) {
+ if (!mobileUserMenu || !mobileUserTrigger) {
+ return;
+ }
+ const shouldOpen = typeof forceState === 'boolean' ? forceState : !mobileUserMenu.classList.contains('active');
+ mobileUserMenu.classList.toggle('active', shouldOpen);
+ mobileUserTrigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+ }
+
+ if (mobileUserTrigger) {
+ mobileUserTrigger.addEventListener('click', function () {
+ toggleMobileUserMenu();
+ });
+ }
+
+ document.addEventListener('click', function (event) {
+ if (!mobileUserMenu || !mobileUserMenu.classList.contains('active')) {
+ return;
+ }
+ if (mobileUserMenu.contains(event.target)) {
+ return;
+ }
+ toggleMobileUserMenu(false);
+ });
+
+ document.addEventListener('keydown', function (event) {
+ if (event.key === 'Escape') {
+ toggleMobileUserMenu(false);
  }
  });
 </script>
