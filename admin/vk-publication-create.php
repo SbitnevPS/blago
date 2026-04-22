@@ -152,19 +152,9 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="form-label">Наличие изображения</label>
-                    <select name="has_image" class="form-select">
-                        <option value="">Не важно</option>
-                        <option value="yes">Только с изображением</option>
-                        <option value="no">Только без изображения</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Ручной выбор работ (ID через запятую)</label>
-                    <input type="text" name="work_ids_raw" class="form-input" placeholder="12, 15, 18">
-                </div>
+            <div class="form-group">
+                <label class="form-label">Ручной выбор работ (ID через запятую)</label>
+                <input type="text" name="work_ids_raw" class="form-input" placeholder="12, 15, 18">
             </div>
 
             <div class="form-group">
@@ -178,7 +168,7 @@ require_once __DIR__ . '/includes/header.php';
                 <label class="form-checkbox">
                     <input type="checkbox" name="required_data_only" value="1">
                     <span class="form-checkbox__mark"></span>
-                    <span>Только записи с обязательными данными (ФИО + изображение)</span>
+                    <span>Только записи с обязательными данными (ФИО участника)</span>
                 </label>
             </div>
             <div class="form-group">
@@ -273,7 +263,7 @@ async function fetchPreview() {
         <div><strong>Готово к публикации:</strong> ${summary.ready_items || 0}</div>
         <div><strong>Будет пропущено:</strong> ${summary.skipped_items || 0}</div>
         ${reasonLines ? `<div style="margin-top:8px;"><strong>Причины пропуска:</strong><ul>${reasonLines}</ul></div>` : ''}
-        <div style="margin-top:8px;"><strong>Предупреждение:</strong> если у работы нет изображения или обязательных данных, она будет пропущена и останется в задании со статусом «Пропущено».</div>
+        <div style="margin-top:8px;"><strong>Предупреждение:</strong> если нет обязательных данных или текст по шаблону пустой, запись будет пропущена и останется в задании со статусом «Пропущено».</div>
     `;
 
     previewPostText.textContent = summary.sample_post_text || 'Нет данных для примера';

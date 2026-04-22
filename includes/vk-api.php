@@ -51,6 +51,11 @@ class VkApiClient
         return $this->postWallWithAttachment($message, $attachment, $fromGroup, $extraWallParams);
     }
 
+    public function publishTextPost(string $message, bool $fromGroup = true, array $extraWallParams = []): array
+    {
+        return $this->postWallWithAttachment($message, null, $fromGroup, $extraWallParams);
+    }
+
     public function uploadWallPhoto(string $imageFsPath): string
     {
         if (!is_file($imageFsPath) || !is_readable($imageFsPath)) {
@@ -91,14 +96,16 @@ class VkApiClient
         return 'photo' . $ownerId . '_' . $photoId;
     }
 
-    public function postWallWithAttachment(string $message, string $attachment, bool $fromGroup = true, array $extraWallParams = []): array
+    public function postWallWithAttachment(string $message, ?string $attachment, bool $fromGroup = true, array $extraWallParams = []): array
     {
         $wallPostParams = [
             'owner_id' => -1 * $this->groupId,
             'from_group' => $fromGroup ? 1 : 0,
             'message' => $message,
-            'attachments' => $attachment,
         ];
+        if (trim((string) $attachment) !== '') {
+            $wallPostParams['attachments'] = $attachment;
+        }
 
         foreach ($extraWallParams as $paramKey => $paramValue) {
             $normalizedKey = trim((string) $paramKey);
@@ -205,14 +212,6 @@ class VkApiClient
             );
         }
 
-        $isAdmin = (int) ($group['is_admin'] ?? 0) === 1 || (int) ($group['admin_level'] ?? 0) > 0;
-        if (!$isAdmin) {
-            throw new VkApiException(
-                'Пользователь не является владельцем или администратором сообщества VK.',
-                'groups.getById indicates no admin access'
-            );
-        }
-
         $canPost = (int) ($group['can_post'] ?? 1) === 1;
         if (!$canPost) {
             throw new VkApiException(
@@ -221,22 +220,9 @@ class VkApiClient
             );
         }
 
-        $uploadServer = $this->apiRequest('photos.getWallUploadServer', [
-            'group_id' => $this->groupId,
-        ]);
-        $uploadUrl = (string) ($uploadServer['upload_url'] ?? '');
-        if ($uploadUrl === '') {
-            throw new VkApiException(
-                'Нет прав на загрузку изображений в сообщество VK.',
-                'photos.getWallUploadServer returned empty upload_url for group_id=' . $this->groupId
-            );
-        }
-
         return [
             'group_name' => trim((string) ($group['name'] ?? '')),
-            'is_admin' => $isAdmin,
             'can_post' => $canPost,
-            'upload_url' => $uploadUrl,
         ];
     }
 
@@ -422,7 +408,7 @@ class VkApiClient
         }
 
         if ($errorCode === 100) {
-            return 'VK отклонил параметры запроса. Проверьте ID сообщества, текст и изображение публикации.';
+            return 'VK отклонил параметры запроса. Проверьте ID сообщества и текст публикации.';
         }
 
         if ($errorCode === 214) {
