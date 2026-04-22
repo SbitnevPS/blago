@@ -3123,6 +3123,28 @@
   margin-bottom: 12px;
 }
 
+.user-agreement {
+  display: grid;
+  gap: 12px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+}
+
+.user-agreement p {
+  margin: 0;
+}
+
+.user-agreement__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.user-agreement__sign-btn.is-signed {
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.22);
+}
+
 .review-info-list {
   display: grid;
   gap: 10px;
