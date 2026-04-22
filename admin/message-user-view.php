@@ -1077,6 +1077,22 @@ function restoreBodyScrollIfNoModals() {
     document.body.style.overflow = activeModal ? 'hidden' : '';
 }
 
+function autoResizeChatTextarea(textarea) {
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+}
+
+function bindAutoGrowingChatTextareas(scope = document) {
+    if (!scope) return;
+    scope.querySelectorAll('.chat-composer__textarea').forEach((textarea) => {
+        if (textarea.dataset.boundAutoResize === '1') return;
+        textarea.dataset.boundAutoResize = '1';
+        autoResizeChatTextarea(textarea);
+        textarea.addEventListener('input', () => autoResizeChatTextarea(textarea));
+    });
+}
+
 function showToast(message, type = 'success') {
     const toast = document.createElement('div');
     toast.className = 'alert ' + (type === 'success' ? 'alert--success' : 'alert--error');
@@ -1303,6 +1319,7 @@ function initAttachmentPreview(input) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    bindAutoGrowingChatTextareas();
     let threadPollTimerId = null;
     let isThreadChatOpen = Boolean(document.getElementById('threadChatModal'));
     let latestThreadMessageId = Math.max(
@@ -1415,6 +1432,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 buildNotificationCard(data.message);
                 updateUserMessageStats();
                 sendMessageForm.reset();
+                sendMessageForm.querySelectorAll('.chat-composer__textarea').forEach(autoResizeChatTextarea);
                 const preview = sendMessageForm.querySelector('.js-message-attachment-preview');
                 if (preview) {
                     preview.querySelectorAll('.js-local-image-preview').forEach((button) => {
@@ -1474,6 +1492,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 appendThreadMessage(data.message);
                 latestThreadMessageId = Math.max(latestThreadMessageId, Number(data.message?.id || 0));
                 threadChatForm.reset();
+                threadChatForm.querySelectorAll('.chat-composer__textarea').forEach(autoResizeChatTextarea);
                 const preview = threadChatForm.querySelector('.js-message-attachment-preview');
                 if (preview) {
                     preview.querySelectorAll('.js-local-image-preview').forEach((button) => {
