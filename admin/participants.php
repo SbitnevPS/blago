@@ -481,25 +481,37 @@ require_once __DIR__ . '/includes/header.php';
                     $sameParticipantsCount = max(1, (int) ($participant['same_participants_count'] ?? 1));
                 ?>
                 <article class="admin-list-card admin-list-card--participant <?= $isArchivedContest ? 'admin-list-card--archived' : '' ?>">
-                    <div class="admin-list-card__header">
-                        <div class="admin-list-card__title-wrap" style="display:flex; gap:12px; align-items:center;">
-                            <?php if ($drawingUrl !== ''): ?>
-                                <img src="<?= htmlspecialchars($drawingUrl) ?>" alt="Рисунок участника" loading="lazy" class="admin-list-card__thumb">
-                            <?php else: ?>
-                                <div class="admin-list-card__thumb admin-list-card__thumb--empty"><i class="fas fa-image"></i></div>
-                            <?php endif; ?>
-                            <div>
-                                <h4 class="admin-list-card__title"><?= htmlspecialchars($participant['fio'] ?: 'Без имени') ?></h4>
-                                <div class="admin-list-card__subtitle">
-                                    #<?= e(getParticipantDisplayNumber($participant)) ?>
-                                    ·
-                                    <a href="/admin/application/<?= (int) ($participant['application_id'] ?? 0) ?>" style="color:#7C3AED;text-decoration:none;">
-                                        Заявка #<?= (int) ($participant['application_id'] ?? 0) ?>
-                                    </a>
-                                    · <?= htmlspecialchars($participant['contest_title'] ?: 'Конкурс не указан') ?>
+                    <div class="admin-list-card__main">
+                        <div class="admin-list-card__header">
+                            <div class="admin-list-card__title-wrap" style="display:flex; gap:12px; align-items:center;">
+                                <?php if ($drawingUrl !== ''): ?>
+                                    <img src="<?= htmlspecialchars($drawingUrl) ?>" alt="Рисунок участника" loading="lazy" class="admin-list-card__thumb">
+                                <?php else: ?>
+                                    <div class="admin-list-card__thumb admin-list-card__thumb--empty"><i class="fas fa-image"></i></div>
+                                <?php endif; ?>
+                                <div>
+                                    <h4 class="admin-list-card__title"><?= htmlspecialchars($participant['fio'] ?: 'Без имени') ?></h4>
+                                    <div class="admin-list-card__subtitle">
+                                        #<?= e(getParticipantDisplayNumber($participant)) ?>
+                                        ·
+                                        <a href="/admin/application/<?= (int) ($participant['application_id'] ?? 0) ?>" style="color:#7C3AED;text-decoration:none;">
+                                            Заявка #<?= (int) ($participant['application_id'] ?? 0) ?>
+                                        </a>
+                                        · <?= htmlspecialchars($participant['contest_title'] ?: 'Конкурс не указан') ?>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+                        <div class="admin-list-card__meta">
+                            <span><strong>Возраст:</strong> <?= $participantAge ?: '—' ?></span>
+                            <?php if ($participantAgeCategory !== ''): ?>
+                                <span><strong>Категория:</strong> <?= e($participantAgeCategory) ?></span>
+                            <?php endif; ?>
+                            <span><strong>ОВЗ:</strong> <?= !empty($participant['has_ovz']) ? 'Да' : 'Нет' ?></span>
+                            <span><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?: '—') ?></span>
+                        </div>
+                    </div>
+                    <aside class="admin-list-card__sidebar">
                         <div class="admin-list-card__statuses">
                             <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
                                 <?= e((string) ($statusMeta['label'] ?? '—')) ?>
@@ -524,30 +536,22 @@ require_once __DIR__ . '/includes/header.php';
                                 <span class="badge badge--secondary">Архивный конкурс</span>
                             <?php endif; ?>
                         </div>
-                    </div>
-                    <div class="admin-list-card__meta">
-                        <span><strong>Возраст:</strong> <?= $participantAge ?: '—' ?></span>
-                        <?php if ($participantAgeCategory !== ''): ?>
-                            <span><strong>Категория:</strong> <?= e($participantAgeCategory) ?></span>
-                        <?php endif; ?>
-                        <span><strong>ОВЗ:</strong> <?= !empty($participant['has_ovz']) ? 'Да' : 'Нет' ?></span>
-                        <span><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?: '—') ?></span>
-                    </div>
-                    <div class="admin-list-card__actions">
-                        <a href="/admin/participant/<?= (int) $participant['id'] ?>" class="btn btn--ghost btn--sm"><i class="fas fa-eye"></i> Открыть</a>
-                        <?php if ($hasGeneratedDiploma): ?>
-                            <a href="/admin/participant/<?= (int) $participant['id'] ?>#diploma-actions" class="btn btn--primary btn--sm"><i class="fas fa-award"></i> Диплом</a>
-                        <?php endif; ?>
-                        <?php if ($isWorkAccepted): ?>
-                            <form method="POST" style="display:inline-flex;">
-                                <input type="hidden" name="csrf_token" value="<?= e(generateCSRFToken()) ?>">
-                                <input type="hidden" name="action" value="publish_participant_vk">
-                                <input type="hidden" name="participant_id" value="<?= (int) $participant['id'] ?>">
-                                <input type="hidden" name="return_url" value="<?= e($participantsReturnUrl) ?>">
-                                <button type="submit" class="btn btn--secondary btn--sm"><i class="fab fa-vk"></i> Опубликовать в ВК</button>
-                            </form>
-                        <?php endif; ?>
-                    </div>
+                        <div class="admin-list-card__actions">
+                            <a href="/admin/participant/<?= (int) $participant['id'] ?>" class="btn btn--ghost btn--sm"><i class="fas fa-eye"></i> Открыть</a>
+                            <?php if ($hasGeneratedDiploma): ?>
+                                <a href="/admin/participant/<?= (int) $participant['id'] ?>#diploma-actions" class="btn btn--primary btn--sm"><i class="fas fa-award"></i> Диплом</a>
+                            <?php endif; ?>
+                            <?php if ($isWorkAccepted): ?>
+                                <form method="POST" style="display:inline-flex;">
+                                    <input type="hidden" name="csrf_token" value="<?= e(generateCSRFToken()) ?>">
+                                    <input type="hidden" name="action" value="publish_participant_vk">
+                                    <input type="hidden" name="participant_id" value="<?= (int) $participant['id'] ?>">
+                                    <input type="hidden" name="return_url" value="<?= e($participantsReturnUrl) ?>">
+                                    <button type="submit" class="btn btn--secondary btn--sm"><i class="fab fa-vk"></i> Опубликовать в ВК</button>
+                                </form>
+                            <?php endif; ?>
+                        </div>
+                    </aside>
                 </article>
             <?php endforeach; ?>
         </div>
