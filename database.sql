@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS contests (
     id INT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     description TEXT,
+    short_description VARCHAR(400),
     document_file VARCHAR(255),
     requires_payment_receipt TINYINT(1) NOT NULL DEFAULT 0,
     cover_image VARCHAR(255) NULL,
