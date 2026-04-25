@@ -2098,6 +2098,56 @@ body:has(#application-actions) .admin-content {
   align-items: center;
 }
 
+.admin-list-card--participant {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 18px;
+  align-items: start;
+}
+
+.admin-list-card--participant .admin-list-card__main {
+  min-width: 0;
+}
+
+.admin-list-card--participant .admin-list-card__header {
+  justify-content: flex-start;
+}
+
+.admin-list-card--participant .admin-list-card__sidebar {
+  min-width: 210px;
+  max-width: 260px;
+  width: 100%;
+}
+
+.admin-list-card--participant .admin-list-card__statuses {
+  justify-content: flex-end;
+}
+
+.admin-list-card--participant .admin-list-card__statuses .badge,
+.admin-list-card--participant .admin-list-card__statuses form {
+  width: 100%;
+}
+
+.admin-list-card--participant .admin-list-card__statuses .badge {
+  justify-content: center;
+  text-align: center;
+}
+
+.admin-list-card--participant .admin-list-card__statuses .btn {
+  width: 100%;
+}
+
+.admin-list-card--participant .admin-list-card__actions {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.admin-list-card--participant .admin-list-card__actions > .btn,
+.admin-list-card--participant .admin-list-card__actions form,
+.admin-list-card--participant .admin-list-card__actions form .btn {
+  width: 100%;
+}
+
 .contest-archive-filter-toggle {
   display: inline-flex;
   align-items: center;
@@ -2148,6 +2198,39 @@ body:has(#application-actions) .admin-content {
   .admin-list-card__meta {
     display: grid;
     gap: 6px;
+  }
+
+  .admin-list-card--participant {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-list-card--participant .admin-list-card__sidebar {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .admin-list-card--participant .admin-list-card__statuses {
+    justify-content: flex-start;
+  }
+
+  .admin-list-card--participant .admin-list-card__statuses .badge,
+  .admin-list-card--participant .admin-list-card__statuses form {
+    width: auto;
+  }
+
+  .admin-list-card--participant .admin-list-card__statuses .btn {
+    width: auto;
+  }
+
+  .admin-list-card--participant .admin-list-card__actions {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .admin-list-card--participant .admin-list-card__actions > .btn,
+  .admin-list-card--participant .admin-list-card__actions form,
+  .admin-list-card--participant .admin-list-card__actions form .btn {
+    width: auto;
   }
 }
 
