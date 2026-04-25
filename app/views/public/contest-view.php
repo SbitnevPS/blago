@@ -86,73 +86,6 @@ $coverSrc = $coverImage !== ''
             </div>
         </div>
 
-        <section class="contest-prep" aria-labelledby="contestPrepTitle">
-            <div class="contest-prep__inner">
-                <span class="contest-prep__eyebrow">Перед подачей заявки</span>
-                <h2 class="contest-prep__title" id="contestPrepTitle">Что понадобится для участия</h2>
-                <p class="contest-prep__text">Подготовьте основную информацию заранее — так заполнение заявки займёт всего несколько минут.</p>
-
-                <div class="contest-prep__grid">
-                    <article class="contest-prep-card">
-                        <div class="contest-prep-card__icon" aria-hidden="true">
-                            <i class="fas fa-user"></i>
-                        </div>
-                        <h3 class="contest-prep-card__title">Данные участника</h3>
-                        <p class="contest-prep-card__text">Укажите ФИО участника и его возраст.</p>
-                    </article>
-
-                    <article class="contest-prep-card">
-                        <div class="contest-prep-card__icon" aria-hidden="true">
-                            <i class="fas fa-file-lines"></i>
-                        </div>
-                        <h3 class="contest-prep-card__title">Информация для заявки</h3>
-                        <p class="contest-prep-card__text">Понадобятся основные данные для заполнения формы и оформления участия.</p>
-                    </article>
-
-                    <article class="contest-prep-card">
-                        <div class="contest-prep-card__icon" aria-hidden="true">
-                            <i class="fas fa-image"></i>
-                        </div>
-                        <h3 class="contest-prep-card__title">Отдельный рисунок</h3>
-                        <p class="contest-prep-card__text">Для каждого участника нужно загрузить отдельную конкурсную работу.</p>
-                    </article>
-
-                    <?php if ($contestRequiresPaymentReceipt): ?>
-                    <article class="contest-prep-card">
-                        <div class="contest-prep-card__icon" aria-hidden="true">
-                            <i class="fas fa-receipt"></i>
-                        </div>
-                        <h3 class="contest-prep-card__title">Квитанция об оплате</h3>
-                        <p class="contest-prep-card__text">Подготовьте фото, скриншот или PDF-квитанцию: без неё заявку отправить не получится.</p>
-                    </article>
-                    <?php endif; ?>
-                </div>
-
-                <div class="contest-prep__highlights" aria-label="Ключевые условия подачи">
-                    <span class="contest-prep__highlight">1 участник = 1 работа</span>
-                    <span class="contest-prep__highlight">Можно добавить несколько участников</span>
-                    <span class="contest-prep__highlight">Подача заявки занимает несколько минут</span>
-                    <?php if ($contestRequiresPaymentReceipt): ?>
-                        <span class="contest-prep__highlight">Квитанция обязательна при отправке</span>
-                    <?php endif; ?>
-                </div>
-
-                <div class="contest-prep__tip" role="note" aria-label="Совет по заполнению">
-                    <h3 class="contest-prep__tip-title">
-                        <i class="fas fa-circle-info" aria-hidden="true"></i>
-                        Совет
-                    </h3>
-                    <p class="contest-prep__tip-text">
-                        <?php if ($contestRequiresPaymentReceipt): ?>
-                            Если участие в конкурсе оплачивается, заранее подготовьте и рисунки, и квитанцию. Так вы сможете заполнить и отправить заявку за один раз.
-                        <?php else: ?>
-                            Если вы планируете подать несколько работ, подготовьте рисунки заранее, чтобы быстрее заполнить заявку.
-                        <?php endif; ?>
-                    </p>
-                </div>
-            </div>
-        </section>
-
         <div class="contest-description">
             <figure class="contest-description__cover">
                 <img src="<?= htmlspecialchars($coverSrc) ?>" alt="Обложка конкурса «<?= htmlspecialchars($contest['title']) ?>»">
@@ -175,6 +108,73 @@ $coverSrc = $coverImage !== ''
 </div>
 
 <div class="flex gap-md mt-lg" style="flex-wrap:wrap;">
+    <section class="contest-prep" aria-labelledby="contestPrepTitle" style="flex-basis:100%;">
+        <div class="contest-prep__inner">
+            <span class="contest-prep__eyebrow">Перед подачей заявки</span>
+            <h2 class="contest-prep__title" id="contestPrepTitle">Что понадобится для участия</h2>
+            <p class="contest-prep__text">Подготовьте основную информацию заранее — так заполнение заявки займёт всего несколько минут.</p>
+
+            <div class="contest-prep__grid">
+                <article class="contest-prep-card">
+                    <div class="contest-prep-card__icon" aria-hidden="true">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <h3 class="contest-prep-card__title">Данные участника</h3>
+                    <p class="contest-prep-card__text">Укажите ФИО участника и его возраст.</p>
+                </article>
+
+                <article class="contest-prep-card">
+                    <div class="contest-prep-card__icon" aria-hidden="true">
+                        <i class="fas fa-file-lines"></i>
+                    </div>
+                    <h3 class="contest-prep-card__title">Информация для заявки</h3>
+                    <p class="contest-prep-card__text">Понадобятся основные данные для заполнения формы и оформления участия.</p>
+                </article>
+
+                <article class="contest-prep-card">
+                    <div class="contest-prep-card__icon" aria-hidden="true">
+                        <i class="fas fa-image"></i>
+                    </div>
+                    <h3 class="contest-prep-card__title">Отдельный рисунок</h3>
+                    <p class="contest-prep-card__text">Для каждого участника нужно загрузить отдельную конкурсную работу.</p>
+                </article>
+
+                <?php if ($contestRequiresPaymentReceipt): ?>
+                <article class="contest-prep-card">
+                    <div class="contest-prep-card__icon" aria-hidden="true">
+                        <i class="fas fa-receipt"></i>
+                    </div>
+                    <h3 class="contest-prep-card__title">Квитанция об оплате</h3>
+                    <p class="contest-prep-card__text">Подготовьте фото, скриншот или PDF-квитанцию: без неё заявку отправить не получится.</p>
+                </article>
+                <?php endif; ?>
+            </div>
+
+            <div class="contest-prep__highlights" aria-label="Ключевые условия подачи">
+                <span class="contest-prep__highlight">1 участник = 1 работа</span>
+                <span class="contest-prep__highlight">Можно добавить несколько участников</span>
+                <span class="contest-prep__highlight">Подача заявки занимает несколько минут</span>
+                <?php if ($contestRequiresPaymentReceipt): ?>
+                    <span class="contest-prep__highlight">Квитанция обязательна при отправке</span>
+                <?php endif; ?>
+            </div>
+
+            <div class="contest-prep__tip" role="note" aria-label="Совет по заполнению">
+                <h3 class="contest-prep__tip-title">
+                    <i class="fas fa-circle-info" aria-hidden="true"></i>
+                    Совет
+                </h3>
+                <p class="contest-prep__tip-text">
+                    <?php if ($contestRequiresPaymentReceipt): ?>
+                        Если участие в конкурсе оплачивается, заранее подготовьте и рисунки, и квитанцию. Так вы сможете заполнить и отправить заявку за один раз.
+                    <?php else: ?>
+                        Если вы планируете подать несколько работ, подготовьте рисунки заранее, чтобы быстрее заполнить заявку.
+                    <?php endif; ?>
+                </p>
+            </div>
+        </div>
+    </section>
+
     <?php if ($isGuest): ?>
         <a
             href="<?= htmlspecialchars($applicationUrl) ?>"
