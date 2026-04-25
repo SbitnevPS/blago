@@ -2163,9 +2163,9 @@ h4 {
 	}
 
 	.contest-card__image {
-		aspect-ratio: auto;
+		aspect-ratio: 16 / 10;
 		height: auto;
-		object-fit: contain;
+		object-fit: cover;
 	}
 
 	.contest-list-grid,
