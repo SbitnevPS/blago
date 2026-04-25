@@ -48,6 +48,7 @@ $hasArchivedColumn = $columnExists($pdo, 'contests', 'is_archived');
 $hasDateFromColumn = $columnExists($pdo, 'contests', 'date_from');
 $hasDateToColumn = $columnExists($pdo, 'contests', 'date_to');
 $hasUpdatedAtColumn = $columnExists($pdo, 'contests', 'updated_at');
+$hasShortDescriptionColumn = $columnExists($pdo, 'contests', 'short_description');
 
 // Получаем конкурс для редактирования
 if ($isEdit) {
@@ -62,6 +63,7 @@ if ($isEdit) {
     $contest = [
         'title' => '',
         'description' => '',
+        'short_description' => '',
         'document_file' => '',
         'cover_image' => '',
         'theme_style' => 'blue',
@@ -116,6 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $descriptionHtmlInput = (string) ($_POST['description_html'] ?? '');
         $descriptionTextareaInput = (string) ($_POST['description'] ?? '');
         $description = trim($descriptionHtmlInput) !== '' ? $descriptionHtmlInput : $descriptionTextareaInput;
+        $shortDescription = trim((string) ($_POST['short_description'] ?? ''));
         $is_published = isset($_POST['is_published']) ? 1 : 0;
         $is_archived = isset($_POST['is_archived']) ? 1 : 0;
         $theme_style = normalizeContestThemeStyle($_POST['theme_style'] ?? 'blue');
@@ -184,6 +187,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (empty($error) && $isEdit) {
                 $updateFields = ['title = ?', 'description = ?'];
                 $updateValues = [$title, $description];
+                if ($hasShortDescriptionColumn) {
+                    $updateFields[] = 'short_description = ?';
+                    $updateValues[] = $shortDescription;
+                }
 
                 if ($hasDocumentFileColumn) {
                     $updateFields[] = 'document_file = ?';
@@ -227,6 +234,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (empty($error)) {
                 $insertColumns = ['title', 'description'];
                 $insertValues = [$title, $description];
+                if ($hasShortDescriptionColumn) {
+                    $insertColumns[] = 'short_description';
+                    $insertValues[] = $shortDescription;
+                }
 
                 if ($hasDocumentFileColumn) {
                     $insertColumns[] = 'document_file';
@@ -383,6 +394,26 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
                         <textarea id="description_editor" name="description" class="form-textarea js-rich-editor" data-editor-upload-url="/admin/ckeditor-image-upload" data-contest-id="<?= (int) $contest_id ?>" rows="15"><?= htmlspecialchars($contest['description'] ?? '') ?></textarea>
                         <div class="form-hint">Здесь можно описать тему, условия участия, формат дипломов и важные организационные детали.</div>
                     </div>
+
+                    <?php if ($hasShortDescriptionColumn): ?>
+                        <div class="form-group mt-lg">
+                            <label class="form-label">Краткое описание конкурса</label>
+                            <textarea
+                                name="short_description"
+                                class="form-textarea"
+                                rows="3"
+                                maxlength="400"
+                                placeholder="Короткое описание в 2–3 строках для карточки на странице конкурсов"><?= htmlspecialchars((string)($contest['short_description'] ?? '')) ?></textarea>
+                            <div class="form-hint">Будет показано на странице «Конкурсы» под статусами карточки. Только текст, без форматирования.</div>
+                        </div>
+                    <?php else: ?>
+                        <div class="alert alert--warning mt-lg">
+                            <i class="fas fa-triangle-exclamation alert__icon"></i>
+                            <div class="alert__content">
+                                <div class="alert__message">Поле «Краткое описание конкурса» станет доступно после применения миграции базы данных.</div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </section>
 

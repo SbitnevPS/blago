@@ -69,6 +69,7 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
     $statusLabel = $statusMeta['label'] ?? 'Идёт приём работ';
     $statusClass = $statusMeta['class'] ?? 'contest-status--active';
     $coverImage = trim((string)($contest['cover_image'] ?? ''));
+    $shortDescription = trim((string)($contest['short_description'] ?? ''));
     $coverSrc = $coverImage !== ''
         ? '/uploads/contest-covers/' . rawurlencode($coverImage)
         : getContestThemePlaceholderPath($themeStyle);
@@ -85,6 +86,9 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
                 <span class="badge badge--info">Заявка уже подана</span>
             <?php endif; ?>
         </div>
+        <?php if ($shortDescription !== ''): ?>
+            <p class="contest-card__description"><?= nl2br(htmlspecialchars($shortDescription, ENT_QUOTES, 'UTF-8')) ?></p>
+        <?php endif; ?>
         <?php if ($hasDates): ?>
             <div class="contest-card__dates">
                 <i class="fas fa-calendar"></i>
