@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS participants (
     id INT AUTO_INCREMENT PRIMARY KEY,
     application_id INT NOT NULL,
     public_number VARCHAR(32) NULL,
+    views_count INT NOT NULL DEFAULT 0,
     fio VARCHAR(255) NOT NULL,
     age INT,
     has_ovz TINYINT(1) NOT NULL DEFAULT 0,

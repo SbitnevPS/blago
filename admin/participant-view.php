@@ -224,6 +224,7 @@ $organizationAddress = trim((string) ($participant['organization_address'] ?: ($
 $organizationRegion = trim((string) ($participant['user_organization_region'] ?? '')) ?: '—';
 $participantRegion = trim((string) ($participant['region'] ?? '')) ?: '—';
 $participantAge = (int) ($participant['age'] ?? 0);
+$participantViewsCount = max(0, (int) ($participant['views_count'] ?? 0));
 $drawingFileName = trim((string) ($participant['drawing_file'] ?? ''));
 $drawingUrl = $drawingFileName !== '' ? getParticipantDrawingWebPath($participant['user_email'] ?? '', $drawingFileName) : '';
 $drawingPreviewUrl = $drawingFileName !== '' ? getParticipantDrawingPreviewWebPath($participant['user_email'] ?? '', $drawingFileName) : '';
@@ -305,6 +306,7 @@ require_once __DIR__ . '/includes/header.php';
                 <button type="button" class="btn btn--ghost btn--sm" id="openParticipantEditBtn" title="Редактировать ФИО и возраст">
                     <i class="fas fa-pen"></i>
                 </button>
+                <span class="badge badge--secondary"><i class="fas fa-eye"></i> <?= $participantViewsCount ?></span>
             </p>
             <h2 class="participant-hero__title" id="participantFioTitle"><?= e($participantName) ?></h2>
             <p class="participant-hero__meta">

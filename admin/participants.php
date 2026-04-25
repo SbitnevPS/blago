@@ -19,6 +19,7 @@ $participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
 $participantId = (int) ($_GET['participant_id'] ?? 0);
 $ageCategory = trim((string) ($_GET['age_category'] ?? ''));
 $vkPublicationFilter = trim((string) ($_GET['vk_publication'] ?? ''));
+$viewsSort = trim((string) ($_GET['views_sort'] ?? ''));
 $showArchived = (int) ($_GET['show_archived'] ?? 0) === 1;
 $sameParticipantsThreshold = (int) ($_GET['same_participants'] ?? 0);
 $supportsContestArchive = contest_archive_column_exists();
@@ -36,6 +37,12 @@ if (!array_key_exists($sameParticipantsThreshold, $sameParticipantsOptions)) {
 $hasParticipantOvzColumn = false;
 try {
     $hasParticipantOvzColumn = (bool) $pdo->query("SHOW COLUMNS FROM participants LIKE 'has_ovz'")->fetch(PDO::FETCH_ASSOC);
+} catch (Throwable $ignored) {
+}
+
+$hasParticipantViewsColumn = false;
+try {
+    $hasParticipantViewsColumn = (bool) $pdo->query("SHOW COLUMNS FROM participants LIKE 'views_count'")->fetch(PDO::FETCH_ASSOC);
 } catch (Throwable $ignored) {
 }
 
@@ -59,6 +66,15 @@ $vkPublicationFilters = [
 ];
 if (!array_key_exists($vkPublicationFilter, $vkPublicationFilters)) {
     $vkPublicationFilter = '';
+}
+
+$viewsSortOptions = [
+    '' => 'По умолчанию',
+    'views_desc' => 'По просмотрам (сначала больше)',
+    'views_asc' => 'По просмотрам (сначала меньше)',
+];
+if (!array_key_exists($viewsSort, $viewsSortOptions)) {
+    $viewsSort = '';
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
@@ -278,13 +294,14 @@ if ($sameParticipantsThreshold > 0) {
     $duplicateParams[] = $sameParticipantsThreshold;
 }
 
-$buildParticipantsUrl = static function (array $overrides = []) use ($contest_id, $participantQuery, $participantId, $ageCategory, $vkPublicationFilter, $sameParticipantsThreshold, $showArchived): string {
+$buildParticipantsUrl = static function (array $overrides = []) use ($contest_id, $participantQuery, $participantId, $ageCategory, $vkPublicationFilter, $viewsSort, $sameParticipantsThreshold, $showArchived): string {
     $query = [
         'contest_id' => $contest_id !== '' ? (string) $contest_id : null,
         'participant_query' => $participantQuery !== '' ? $participantQuery : null,
         'participant_id' => $participantId > 0 ? $participantId : null,
         'age_category' => $ageCategory !== '' ? $ageCategory : null,
         'vk_publication' => $vkPublicationFilter !== '' ? $vkPublicationFilter : null,
+        'views_sort' => $viewsSort !== '' ? $viewsSort : null,
         'same_participants' => $sameParticipantsThreshold > 0 ? (string) $sameParticipantsThreshold : null,
         'show_archived' => $showArchived ? '1' : null,
         'page' => null,
@@ -315,7 +332,14 @@ $totalParticipants = (int) $countStmt->fetchColumn();
 $totalPages = max(1, (int) ceil($totalParticipants / $perPage));
 
 $ovzSelect = $hasParticipantOvzColumn ? 'COALESCE(p.has_ovz, 0) AS has_ovz,' : '0 AS has_ovz,';
-$listStmt = $pdo->prepare("\n    SELECT p.id, p.public_number, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           $ovzSelect\n           $duplicateSelect\n           a.status AS application_status, a.allow_edit,\n           COALESCE(w.status, 'pending') AS work_status, w.id AS work_id, w.vk_published_at,\n           pd.file_path AS diploma_file_path,\n           c.title AS contest_title, COALESCE(c.is_archived, 0) AS contest_is_archived,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    LEFT JOIN participant_diplomas pd ON pd.work_id = w.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $duplicateJoin    $whereClause\n    ORDER BY p.fio ASC, p.id DESC\n    LIMIT $perPage OFFSET $offset\n");
+$viewsSelect = $hasParticipantViewsColumn ? 'COALESCE(p.views_count, 0) AS views_count,' : '0 AS views_count,';
+$orderByClause = 'p.fio ASC, p.id DESC';
+if ($hasParticipantViewsColumn && $viewsSort === 'views_desc') {
+    $orderByClause = 'COALESCE(p.views_count, 0) DESC, p.fio ASC, p.id DESC';
+} elseif ($hasParticipantViewsColumn && $viewsSort === 'views_asc') {
+    $orderByClause = 'COALESCE(p.views_count, 0) ASC, p.fio ASC, p.id DESC';
+}
+$listStmt = $pdo->prepare("\n    SELECT p.id, p.public_number, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           $ovzSelect\n           $viewsSelect\n           $duplicateSelect\n           a.status AS application_status, a.allow_edit,\n           COALESCE(w.status, 'pending') AS work_status, w.id AS work_id, w.vk_published_at,\n           pd.file_path AS diploma_file_path,\n           c.title AS contest_title, COALESCE(c.is_archived, 0) AS contest_is_archived,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    LEFT JOIN participant_diplomas pd ON pd.work_id = w.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $duplicateJoin    $whereClause\n    ORDER BY $orderByClause\n    LIMIT $perPage OFFSET $offset\n");
 $listStmt->execute($queryParams);
 $participants = $listStmt->fetchAll();
 
@@ -386,7 +410,17 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
-            <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0 || $ageCategory !== '' || $vkPublicationFilter !== '' || $sameParticipantsThreshold > 0 || $showArchived): ?>
+            <?php if ($hasParticipantViewsColumn): ?>
+                <div style="min-width: 260px;">
+                    <label class="form-label">Сортировка по просмотрам</label>
+                    <select name="views_sort" class="form-select">
+                        <?php foreach ($viewsSortOptions as $viewsSortKey => $viewsSortLabel): ?>
+                            <option value="<?= e($viewsSortKey) ?>" <?= $viewsSort === $viewsSortKey ? 'selected' : '' ?>><?= e($viewsSortLabel) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            <?php endif; ?>
+            <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0 || $ageCategory !== '' || $vkPublicationFilter !== '' || $viewsSort !== '' || $sameParticipantsThreshold > 0 || $showArchived): ?>
                 <a href="/admin/participants" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
@@ -470,6 +504,7 @@ require_once __DIR__ . '/includes/header.php';
                             <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
                                 <?= e((string) ($statusMeta['label'] ?? '—')) ?>
                             </span>
+                            <span class="badge badge--secondary"><i class="fas fa-eye"></i> <?= (int) ($participant['views_count'] ?? 0) ?></span>
                             <?php if ($isWorkAccepted): ?>
                                 <form method="POST" style="display:inline-flex;">
                                     <input type="hidden" name="csrf_token" value="<?= e(generateCSRFToken()) ?>">
