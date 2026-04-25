@@ -1228,6 +1228,16 @@ h4 {
 	gap: 8px;
 }
 
+.contest-description__cover {
+	margin-bottom: 8px;
+}
+
+.contest-description__cover img {
+	width: 100%;
+	aspect-ratio: 16 / 10;
+	object-fit: cover;
+}
+
 .contest-description img {
 	display: block;
 	max-width: 100%;

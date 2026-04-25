@@ -13,6 +13,11 @@ if (!$contest || (int)($contest['is_published'] ?? 0) !== 1) {
 $currentPage = 'contests';
 $applicationUrl = getApplicationAccessUrl((int) $contest['id']);
 $contestRequiresPaymentReceipt = isContestPaymentReceiptRequired($contest);
+$themeStyle = normalizeContestThemeStyle($contest['theme_style'] ?? 'blue');
+$coverImage = trim((string)($contest['cover_image'] ?? ''));
+$coverSrc = $coverImage !== ''
+    ? '/uploads/contest-covers/' . rawurlencode($coverImage)
+    : getContestThemePlaceholderPath($themeStyle);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -149,6 +154,9 @@ $contestRequiresPaymentReceipt = isContestPaymentReceiptRequired($contest);
         </section>
 
         <div class="contest-description">
+            <figure class="contest-description__cover">
+                <img src="<?= htmlspecialchars($coverSrc) ?>" alt="Обложка конкурса «<?= htmlspecialchars($contest['title']) ?>»">
+            </figure>
             <?php if (trim((string) ($contest['description'] ?? '')) !== ''): ?>
                 <?= (string) $contest['description'] ?>
             <?php else: ?>
