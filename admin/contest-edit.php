@@ -95,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
         jsonResponse(['success' => false, 'message' => 'Не удалось подготовить каталог обложек'], 500);
     }
 
-    $uploadCoverResult = uploadContestCoverImage($_FILES['cover_image'], CONTEST_COVERS_PATH, 500);
+    $uploadCoverResult = uploadContestCoverImage($_FILES['cover_image'], CONTEST_COVERS_PATH, 800, 500);
     if (!$uploadCoverResult['success']) {
         jsonResponse(['success' => false, 'message' => $uploadCoverResult['message'] ?? 'Ошибка загрузки обложки'], 422);
     }
@@ -170,7 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             unlink(CONTEST_COVERS_PATH . '/' . $oldCoverImage);
                         }
                     } elseif (empty($error) && isset($_FILES['cover_image']) && $_FILES['cover_image']['error'] === UPLOAD_ERR_OK) {
-                        $uploadCoverResult = uploadContestCoverImage($_FILES['cover_image'], CONTEST_COVERS_PATH, 500);
+                        $uploadCoverResult = uploadContestCoverImage($_FILES['cover_image'], CONTEST_COVERS_PATH, 800, 500);
                         if ($uploadCoverResult['success']) {
                             $oldCoverImage = $cover_image;
                             $cover_image = $uploadCoverResult['filename'];
@@ -474,7 +474,7 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
                                     <input type="file" id="contestCoverInput" name="cover_image" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="file-upload__input" style="display:none;">
                                     <div class="upload-area__icon"><i class="fas fa-image"></i></div>
                                     <div class="upload-area__title" id="contestCoverUploadTitle"><?= !empty($contest['cover_image']) ? 'Обложка уже загружена' : 'Нажмите или перетащите изображение' ?></div>
-                                    <div class="upload-area__hint" id="contestCoverUploadHint">JPG, JPEG, PNG, WEBP. Итоговый размер: 500×500px.</div>
+                                    <div class="upload-area__hint" id="contestCoverUploadHint">JPG, JPEG, PNG, WEBP. Итоговый размер: 800×500px (16:10).</div>
                                 </div>
                                 <div class="contest-cover-preview mb-md" id="contestCoverPreviewWrap">
                                     <img src="<?= htmlspecialchars($coverPreviewSrc) ?>" alt="Обложка конкурса" id="contestCoverPreviewImage">

@@ -2224,7 +2224,7 @@ function uploadMessageAttachment(array $file, int $maxBytes = 10485760): array
     ];
 }
 
-function uploadContestCoverImage($file, $directory, $size = 500) {
+function uploadContestCoverImage($file, $directory, $targetWidth = 800, $targetHeight = 500) {
     if (!isset($file['error']) || is_array($file['error'])) {
         return ['success' => false, 'message' => 'Ошибка загрузки файла'];
     }
@@ -2277,17 +2277,29 @@ function uploadContestCoverImage($file, $directory, $size = 500) {
         return ['success' => false, 'message' => 'Некорректный размер изображения'];
     }
 
-    $cropSize = min($sourceWidth, $sourceHeight);
-    $srcX = (int) floor(($sourceWidth - $cropSize) / 2);
-    $srcY = (int) floor(($sourceHeight - $cropSize) / 2);
+    $targetRatio = $targetWidth / max(1, $targetHeight);
+    $sourceRatio = $sourceWidth / max(1, $sourceHeight);
 
-    $canvas = imagecreatetruecolor($size, $size);
+    if ($sourceRatio > $targetRatio) {
+        $cropHeight = $sourceHeight;
+        $cropWidth = (int) floor($sourceHeight * $targetRatio);
+    } else {
+        $cropWidth = $sourceWidth;
+        $cropHeight = (int) floor($sourceWidth / $targetRatio);
+    }
+
+    $cropWidth = max(1, min($sourceWidth, $cropWidth));
+    $cropHeight = max(1, min($sourceHeight, $cropHeight));
+    $srcX = (int) floor(($sourceWidth - $cropWidth) / 2);
+    $srcY = (int) floor(($sourceHeight - $cropHeight) / 2);
+
+    $canvas = imagecreatetruecolor($targetWidth, $targetHeight);
     imagealphablending($canvas, false);
     imagesavealpha($canvas, true);
     $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
-    imagefilledrectangle($canvas, 0, 0, $size, $size, $transparent);
+    imagefilledrectangle($canvas, 0, 0, $targetWidth, $targetHeight, $transparent);
 
-    imagecopyresampled($canvas, $source, 0, 0, $srcX, $srcY, $size, $size, $cropSize, $cropSize);
+    imagecopyresampled($canvas, $source, 0, 0, $srcX, $srcY, $targetWidth, $targetHeight, $cropWidth, $cropHeight);
 
     $newFileName = uniqid() . '_contest_cover.webp';
     $targetPath = rtrim($directory, '/') . '/' . $newFileName;
