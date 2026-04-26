@@ -12,6 +12,9 @@ if (!$contest || (int)($contest['is_published'] ?? 0) !== 1) {
 
 $currentPage = 'contests';
 $applicationUrl = getApplicationAccessUrl((int) $contest['id']);
+$currentUserId = (int) (getCurrentUserId() ?? 0);
+$isContestBlacklisted = !$isGuest && isUserBlacklistedForContest($currentUserId, (int) $contest['id']);
+$contestBlacklistMessage = getContestBlacklistRestrictionMessage();
 $contestRequiresPaymentReceipt = isContestPaymentReceiptRequired($contest);
 $themeStyle = normalizeContestThemeStyle($contest['theme_style'] ?? 'blue');
 $coverImage = trim((string)($contest['cover_image'] ?? ''));
@@ -31,6 +34,18 @@ $coverSrc = $coverImage !== ''
 <?php include dirname(__DIR__) . '/partials/header.php'; ?>
 
 <main class="container" style="padding: var(--space-xl) var(--space-lg);">
+<?php if (!empty($_SESSION['success_message'])): ?>
+<div class="alert alert--success mb-lg">
+    <i class="fas fa-check-circle"></i> <?= htmlspecialchars((string) $_SESSION['success_message'], ENT_QUOTES, 'UTF-8') ?>
+</div>
+<?php unset($_SESSION['success_message']); endif; ?>
+
+<?php if (!empty($_SESSION['error_message'])): ?>
+<div class="alert alert--error mb-lg">
+    <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars((string) $_SESSION['error_message'], ENT_QUOTES, 'UTF-8') ?>
+</div>
+<?php unset($_SESSION['error_message']); endif; ?>
+
 <div class="flex items-center gap-md mb-lg">
     <a href="/contests" class="btn btn--ghost">
         <i class="fas fa-arrow-left"></i> Назад
@@ -41,20 +56,29 @@ $coverSrc = $coverImage !== ''
     <div class="card__header">
         <div class="flex justify-between items-center" style="gap:12px; flex-wrap:wrap;">
             <h1 style="margin:0;"><?= htmlspecialchars($contest['title']) ?></h1>
-            <?php if ($isGuest): ?>
-                <a
-                    href="<?= htmlspecialchars($applicationUrl) ?>"
-                    class="btn btn--primary btn--lg"
-                    data-auth-required="1"
-                    data-target-url="/application-form?contest_id=<?= (int)$contest['id'] ?>"
-                >
-                    <i class="fas fa-paper-plane"></i> Подать заявку
-                </a>
-            <?php else: ?>
-                <a href="<?= htmlspecialchars($applicationUrl) ?>" class="btn btn--primary btn--lg">
-                    <i class="fas fa-paper-plane"></i> Подать заявку
-                </a>
-            <?php endif; ?>
+            <div class="contest-detail__cta">
+                <?php if ($isContestBlacklisted): ?>
+                    <button type="button" class="btn btn--primary btn--lg" disabled aria-disabled="true" title="Подача заявки недоступна">
+                        <i class="fas fa-paper-plane"></i> Подать заявку
+                    </button>
+                <?php elseif ($isGuest): ?>
+                    <a
+                        href="<?= htmlspecialchars($applicationUrl) ?>"
+                        class="btn btn--primary btn--lg"
+                        data-auth-required="1"
+                        data-target-url="/application-form?contest_id=<?= (int)$contest['id'] ?>"
+                    >
+                        <i class="fas fa-paper-plane"></i> Подать заявку
+                    </a>
+                <?php else: ?>
+                    <a href="<?= htmlspecialchars($applicationUrl) ?>" class="btn btn--primary btn--lg">
+                        <i class="fas fa-paper-plane"></i> Подать заявку
+                    </a>
+                <?php endif; ?>
+                <?php if ($isContestBlacklisted): ?>
+                    <p class="contest-detail__restriction-note"><?= htmlspecialchars($contestBlacklistMessage, ENT_QUOTES, 'UTF-8') ?></p>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
     <div class="card__body">

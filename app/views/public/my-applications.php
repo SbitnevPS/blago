@@ -42,6 +42,11 @@ function isApplicationContestArchived(array $application): bool {
     return (int) ($application['contest_is_archived'] ?? 0) === 1;
 }
 
+function canDeleteApplicationFromDashboard(array $application): bool {
+    $statusCode = (string) (getApplicationCardStatusMeta($application)['status_code'] ?? 'draft');
+    return in_array($statusCode, ['draft', 'submitted'], true);
+}
+
 $user = getCurrentUser();
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (string) ($_POST['action'] ?? '') === 'delete_application') {
@@ -57,7 +62,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (string) ($_POST['action
     }
 
     $stmt = $pdo->prepare("
-        SELECT id, user_id, payment_receipt
+        SELECT id, user_id, payment_receipt, status, allow_edit
         FROM applications
         WHERE id = ? AND user_id = ?
         LIMIT 1
@@ -67,6 +72,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (string) ($_POST['action
 
     if (!$applicationToDelete) {
         $_SESSION['error_message'] = 'Заявка не найдена или уже удалена.';
+        redirect('/my-applications');
+    }
+
+    if (!canDeleteApplicationFromDashboard($applicationToDelete)) {
+        $_SESSION['error_message'] = 'Удаление доступно только для черновиков и новых заявок на проверке.';
         redirect('/my-applications');
     }
 
@@ -265,6 +275,7 @@ $archivedApplications = array_values(array_filter(
                             $isCorrected = $statusCode === 'corrected';
                             $unreadCount = (int) ($unreadByApplication[(int) ($app['id'] ?? 0)] ?? 0);
                             $isArchivedContest = isApplicationContestArchived($app);
+                            $canDeleteApplication = canDeleteApplicationFromDashboard($app);
                         ?>
                         <article class="application-card application-card--dashboard my-application-card<?= $isRevision ? ' my-application-card--revision' : '' ?><?= $isCorrected ? ' my-application-card--corrected' : '' ?><?= $isArchivedContest ? ' my-application-card--archived-contest' : '' ?>">
                             <a class="my-application-card__media" href="/application/<?= (int) $app['id'] ?>" aria-label="Открыть заявку #<?= (int) ($app['id'] ?? 0) ?>">
@@ -284,17 +295,19 @@ $archivedApplications = array_values(array_filter(
                                     </div>
                                     <div class="my-application-card__top-meta">
                                         <div class="my-application-card__id">Заявка #<?= (int) ($app['id'] ?? 0) ?></div>
-                                        <button
-                                            type="button"
-                                            class="btn btn--ghost my-application-card__delete"
-                                            data-delete-application-trigger
-                                            data-application-id="<?= (int) ($app['id'] ?? 0) ?>"
-                                            data-application-title="<?= htmlspecialchars((string) $app['contest_title'], ENT_QUOTES, 'UTF-8') ?>"
-                                            aria-label="Удалить заявку #<?= (int) ($app['id'] ?? 0) ?>"
-                                            title="Удалить заявку"
-                                        >
-                                            <i class="fas fa-trash" aria-hidden="true"></i>
-                                        </button>
+                                        <?php if ($canDeleteApplication): ?>
+                                            <button
+                                                type="button"
+                                                class="btn btn--ghost my-application-card__delete"
+                                                data-delete-application-trigger
+                                                data-application-id="<?= (int) ($app['id'] ?? 0) ?>"
+                                                data-application-title="<?= htmlspecialchars((string) $app['contest_title'], ENT_QUOTES, 'UTF-8') ?>"
+                                                aria-label="Удалить заявку #<?= (int) ($app['id'] ?? 0) ?>"
+                                                title="Удалить заявку"
+                                            >
+                                                <i class="fas fa-trash" aria-hidden="true"></i>
+                                            </button>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
 

@@ -7,6 +7,8 @@ $isGuest = !isAuthenticated();
 $userId = (int) (getCurrentUserId() ?? 0);
 $contests = getActiveContests();
 $submittedContestIds = $isGuest ? [] : array_flip(getUserSubmittedContestIds($userId));
+$blacklistedContestIds = $isGuest ? [] : array_flip(getUserContestBlacklistContestIds($userId));
+$contestBlacklistMessage = getContestBlacklistRestrictionMessage();
 $isSingleContest = count($contests) === 1;
 $settings = getSystemSettings();
 $homepageHeroImage = trim((string)($settings['homepage_hero_image'] ?? ''));
@@ -40,6 +42,18 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
 </section>
 
 <section class="container contests-page__content">
+<?php if (!empty($_SESSION['success_message'])): ?>
+<div class="alert alert--success mb-lg">
+    <i class="fas fa-check-circle"></i> <?= htmlspecialchars((string) $_SESSION['success_message'], ENT_QUOTES, 'UTF-8') ?>
+</div>
+<?php unset($_SESSION['success_message']); endif; ?>
+
+<?php if (!empty($_SESSION['error_message'])): ?>
+<div class="alert alert--error mb-lg">
+    <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars((string) $_SESSION['error_message'], ENT_QUOTES, 'UTF-8') ?>
+</div>
+<?php unset($_SESSION['error_message']); endif; ?>
+
 <div class="flex justify-between items-center mb-lg">
 <h2>Актуальные конкурсы</h2>
 <?php if (!$isGuest): ?>
@@ -63,6 +77,7 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
 <?php $applicationUrl = getApplicationAccessUrl((int) $contest['id']); ?>
 <?php
     $isApplied = isset($submittedContestIds[(int)$contest['id']]);
+    $isBlacklistedForContest = isset($blacklistedContestIds[(int)$contest['id']]);
     $hasDates = !empty($contest['date_from']) || !empty($contest['date_to']);
     $themeStyle = normalizeContestThemeStyle($contest['theme_style'] ?? 'blue');
     $statusMeta = getContestPublicStatus($contest);
@@ -105,7 +120,11 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
         <a href="/contest/<?= (int)$contest['id'] ?>" class="btn btn--outline contest-card__btn-details">
             <i class="fas fa-info-circle"></i> Подробнее
         </a>
-        <?php if ($isGuest): ?>
+        <?php if ($isBlacklistedForContest): ?>
+            <button type="button" class="btn btn--primary" disabled aria-disabled="true" title="Подача заявки недоступна">
+                <i class="fas fa-paper-plane"></i> Подать заявку
+            </button>
+        <?php elseif ($isGuest): ?>
             <a
                 href="<?= htmlspecialchars($applicationUrl) ?>"
                 class="btn btn--primary"
@@ -120,6 +139,9 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
             </a>
         <?php endif; ?>
         </div>
+        <?php if ($isBlacklistedForContest): ?>
+            <p class="contest-card__restriction-note"><?= htmlspecialchars($contestBlacklistMessage, ENT_QUOTES, 'UTF-8') ?></p>
+        <?php endif; ?>
     </div>
 </article>
 <?php endforeach; ?>

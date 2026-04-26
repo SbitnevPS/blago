@@ -85,8 +85,11 @@ if (!$application) {
 }
 
 $applicantEmail = trim((string) ($application['email'] ?? ''));
-$blacklistEntry = $applicantEmail !== '' ? mailingGetBlacklistEntry($applicantEmail) : null;
-$isApplicantBlacklisted = $blacklistEntry !== null;
+$applicantUserId = (int) ($application['user_id'] ?? 0);
+$applicationContestId = (int) ($application['contest_id'] ?? 0);
+$isApplicantBlacklisted = $applicantUserId > 0 && $applicationContestId > 0
+    ? isUserBlacklistedForContest($applicantUserId, $applicationContestId)
+    : false;
 $applicationCurrentPageUrl = (string) ($_SERVER['REQUEST_URI'] ?? ('/admin/application/' . $application_id));
 
 try {
@@ -268,29 +271,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         redirect($applicationsReturnUrl);
 
     } elseif ($_POST['action'] === 'toggle_applicant_blacklist') {
-        if ($applicantEmail === '') {
+        if ($applicantUserId <= 0 || $applicationContestId <= 0) {
             if ($isAjaxRequest) {
-                jsonResponse(['success' => false, 'error' => 'У заявителя не указан email.'], 422);
+                jsonResponse(['success' => false, 'error' => 'Не удалось определить пользователя или конкурс.'], 422);
             }
-            throw new RuntimeException('У заявителя не указан email.');
+            throw new RuntimeException('Не удалось определить пользователя или конкурс.');
         }
 
         if ($isApplicantBlacklisted) {
-            mailingRemoveEmailFromBlacklist($applicantEmail);
-            $blacklistEntry = null;
+            removeUserFromContestBlacklist($applicantUserId, $applicationContestId);
             $isApplicantBlacklisted = false;
-            $message = 'Email удалён из чёрного списка рассылки.';
+            $message = 'Пользователь удалён из чёрного списка этого конкурса.';
         } else {
-            $blacklistEntry = mailingAddEmailToBlacklist($applicantEmail, 'Добавлено из карточки заявки #' . (int) $application_id);
+            addUserToContestBlacklist($applicantUserId, $applicationContestId, [
+                'application_id' => (int) $application_id,
+            ]);
             $isApplicantBlacklisted = true;
-            $message = 'Email добавлен в чёрный список рассылки.';
+            $message = 'Пользователь добавлен в чёрный список этого конкурса.';
         }
 
         if ($isAjaxRequest) {
             jsonResponse([
                 'success' => true,
                 'message' => $message,
-                'email' => (string) ($blacklistEntry['email'] ?? $applicantEmail),
                 'is_blacklisted' => $isApplicantBlacklisted ? 1 : 0,
             ]);
         }
@@ -916,20 +919,20 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                             <a href="mailto:<?= e($application['email'] ?? '') ?>" class="text-secondary"><?= e($application['email'] ?: '—') ?></a>
                             <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                                 <span class="badge <?= $isApplicantBlacklisted ? 'badge--error' : 'badge--secondary' ?>" id="applicantBlacklistBadge">
-                                    <?= $isApplicantBlacklisted ? 'В чёрном списке рассылки' : 'Не в чёрном списке' ?>
+                                    <?= $isApplicantBlacklisted ? 'В чёрном списке этого конкурса' : 'Не в чёрном списке этого конкурса' ?>
                                 </span>
-                                <?php if ($applicantEmail !== ''): ?>
+                                <?php if ($applicantUserId > 0 && $applicationContestId > 0): ?>
                                     <form method="POST" class="js-applicant-blacklist-form">
                                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                                         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
                                         <input type="hidden" name="action" value="toggle_applicant_blacklist">
                                         <button class="btn <?= $isApplicantBlacklisted ? 'btn--secondary' : 'btn--danger' ?> btn--sm" type="submit" id="applicantBlacklistButton">
-                                            <?= $isApplicantBlacklisted ? 'Убрать из чёрного списка' : 'Добавить в чёрный список' ?>
+                                            <?= $isApplicantBlacklisted ? 'Убрать из чёрного списка конкурса' : 'Добавить в чёрный список конкурса' ?>
                                         </button>
                                     </form>
                                 <?php endif; ?>
                             </div>
-                            <div class="text-secondary" style="margin-top:6px;font-size:12px;">Влияет только на модуль рассылки. Остальные действия с заявкой не ограничиваются.</div>
+                            <div class="text-secondary" style="margin-top:6px;font-size:12px;">Пользователь не сможет подать новую заявку именно на конкурс «<?= e((string) ($application['contest_title'] ?? '')) ?>» на публичной витрине.</div>
                         </div>
                     </div>
                     <dl class="application-kv-list"><dt>Тип профиля</dt><dd><?= e(getUserTypeLabel((string) ($application['user_type'] ?? 'parent'))) ?></dd><dt>ФИО родителя/куратора</dt><dd><?= e($application['parent_fio'] ?: '—') ?></dd></dl>
@@ -1658,13 +1661,13 @@ document.querySelectorAll('.js-applicant-blacklist-form').forEach((form) => {
 
    if (badge) {
     badge.className = 'badge ' + (Number(data.is_blacklisted) === 1 ? 'badge--error' : 'badge--secondary');
-    badge.textContent = Number(data.is_blacklisted) === 1 ? 'В чёрном списке рассылки' : 'Не в чёрном списке';
+    badge.textContent = Number(data.is_blacklisted) === 1 ? 'В чёрном списке этого конкурса' : 'Не в чёрном списке этого конкурса';
    }
    if (button) {
     button.disabled = false;
     button.removeAttribute('aria-disabled');
     button.className = 'btn ' + (Number(data.is_blacklisted) === 1 ? 'btn--secondary' : 'btn--danger') + ' btn--sm';
-    button.innerHTML = Number(data.is_blacklisted) === 1 ? 'Убрать из чёрного списка' : 'Добавить в чёрный список';
+    button.innerHTML = Number(data.is_blacklisted) === 1 ? 'Убрать из чёрного списка конкурса' : 'Добавить в чёрный список конкурса';
    }
    showToast(data.message || 'Статус чёрного списка обновлён', 'success');
   } catch (error) {

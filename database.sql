@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
     email_verification_sent_at DATETIME NULL,
     avatar_url TEXT,
     is_admin TINYINT(1) DEFAULT 0,
+    blacklisted_contests LONGTEXT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_vk_id (vk_id)

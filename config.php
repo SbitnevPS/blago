@@ -235,6 +235,35 @@ function ensureUserTypeSchema(PDO $pdo): void
 
 ensureUserTypeSchema($pdo);
 
+function ensureContestBlacklistSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT COLUMN_NAME
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'users'
+              AND COLUMN_NAME = 'blacklisted_contests'
+        ");
+        $stmt->execute();
+        $hasColumn = (bool) $stmt->fetchColumn();
+
+        if (!$hasColumn) {
+            $pdo->exec("ALTER TABLE users ADD COLUMN blacklisted_contests LONGTEXT NULL");
+        }
+    } catch (Throwable $e) {
+        error_log('[SCHEMA] Contest blacklist schema check failed: ' . $e->getMessage());
+    }
+}
+
+ensureContestBlacklistSchema($pdo);
+
 function ensureApplicationStatusSchema(PDO $pdo): void
 {
     static $checked = false;
@@ -1422,6 +1451,172 @@ function getApplicationAccessUrl(int $contestId): string
     }
 
     return $targetUrl;
+}
+
+function normalizeUserContestBlacklistEntries($rawValue): array
+{
+    if (is_string($rawValue)) {
+        $rawValue = trim($rawValue);
+        if ($rawValue === '') {
+            return [];
+        }
+
+        $decoded = json_decode($rawValue, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+    } elseif (is_array($rawValue)) {
+        $decoded = $rawValue;
+    } else {
+        return [];
+    }
+
+    $normalized = [];
+    foreach ($decoded as $entry) {
+        $contestId = 0;
+        $applicationId = 0;
+        $addedAt = '';
+
+        if (is_array($entry)) {
+            $contestId = (int) ($entry['contest_id'] ?? 0);
+            $applicationId = (int) ($entry['application_id'] ?? 0);
+            $addedAt = trim((string) ($entry['added_at'] ?? ''));
+        } elseif (is_scalar($entry) && is_numeric((string) $entry)) {
+            $contestId = (int) $entry;
+        }
+
+        if ($contestId <= 0) {
+            continue;
+        }
+
+        $key = (string) $contestId;
+        if (!isset($normalized[$key])) {
+            $normalized[$key] = [
+                'contest_id' => $contestId,
+                'application_id' => $applicationId > 0 ? $applicationId : 0,
+                'added_at' => $addedAt,
+            ];
+            continue;
+        }
+
+        if ((int) $normalized[$key]['application_id'] <= 0 && $applicationId > 0) {
+            $normalized[$key]['application_id'] = $applicationId;
+        }
+        if ((string) $normalized[$key]['added_at'] === '' && $addedAt !== '') {
+            $normalized[$key]['added_at'] = $addedAt;
+        }
+    }
+
+    return array_values($normalized);
+}
+
+function encodeUserContestBlacklistEntries(array $entries): ?string
+{
+    $normalized = normalizeUserContestBlacklistEntries($entries);
+    if (empty($normalized)) {
+        return null;
+    }
+
+    $encoded = json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    return $encoded !== false ? $encoded : null;
+}
+
+function getUserContestBlacklistStorageValue(int $userId): ?string
+{
+    if ($userId <= 0) {
+        return null;
+    }
+
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT blacklisted_contests FROM users WHERE id = ? LIMIT 1");
+    $stmt->execute([$userId]);
+    $value = $stmt->fetchColumn();
+
+    return is_string($value) ? $value : null;
+}
+
+function getUserContestBlacklistEntries(int $userId): array
+{
+    return normalizeUserContestBlacklistEntries(getUserContestBlacklistStorageValue($userId));
+}
+
+function getUserContestBlacklistContestIds(int $userId): array
+{
+    $ids = [];
+    foreach (getUserContestBlacklistEntries($userId) as $entry) {
+        $contestId = (int) ($entry['contest_id'] ?? 0);
+        if ($contestId > 0) {
+            $ids[] = $contestId;
+        }
+    }
+
+    return array_values(array_unique($ids));
+}
+
+function isUserBlacklistedForContest(int $userId, int $contestId): bool
+{
+    if ($userId <= 0 || $contestId <= 0) {
+        return false;
+    }
+
+    foreach (getUserContestBlacklistEntries($userId) as $entry) {
+        if ((int) ($entry['contest_id'] ?? 0) === $contestId) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function addUserToContestBlacklist(int $userId, int $contestId, array $context = []): array
+{
+    if ($userId <= 0 || $contestId <= 0) {
+        return [];
+    }
+
+    global $pdo;
+    $entries = getUserContestBlacklistEntries($userId);
+    foreach ($entries as $entry) {
+        if ((int) ($entry['contest_id'] ?? 0) === $contestId) {
+            return $entries;
+        }
+    }
+
+    $entries[] = [
+        'contest_id' => $contestId,
+        'application_id' => max(0, (int) ($context['application_id'] ?? 0)),
+        'added_at' => date('Y-m-d H:i:s'),
+    ];
+
+    $encoded = encodeUserContestBlacklistEntries($entries);
+    $stmt = $pdo->prepare("UPDATE users SET blacklisted_contests = ?, updated_at = NOW() WHERE id = ?");
+    $stmt->execute([$encoded, $userId]);
+
+    return normalizeUserContestBlacklistEntries($entries);
+}
+
+function removeUserFromContestBlacklist(int $userId, int $contestId): array
+{
+    if ($userId <= 0 || $contestId <= 0) {
+        return [];
+    }
+
+    global $pdo;
+    $entries = array_values(array_filter(
+        getUserContestBlacklistEntries($userId),
+        static fn(array $entry): bool => (int) ($entry['contest_id'] ?? 0) !== $contestId
+    ));
+
+    $encoded = encodeUserContestBlacklistEntries($entries);
+    $stmt = $pdo->prepare("UPDATE users SET blacklisted_contests = ?, updated_at = NOW() WHERE id = ?");
+    $stmt->execute([$encoded, $userId]);
+
+    return $entries;
+}
+
+function getContestBlacklistRestrictionMessage(): string
+{
+    return 'Так как Вы неоднократно нарушили условия текущего конкурса, то Вы не можете подавать заявку на этот конкурс.';
 }
 
 function getCurrentAdmin() {

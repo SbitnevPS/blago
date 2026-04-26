@@ -20,6 +20,10 @@ if (!$contest) {
 
 $user = getCurrentUser();
 requireVerifiedEmailOrRedirect($user);
+if (isUserBlacklistedForContest((int) ($user['id'] ?? 0), (int) $contest_id)) {
+    $_SESSION['error_message'] = getContestBlacklistRestrictionMessage();
+    redirect('/contest/' . (int) $contest_id);
+}
 $error = '';
 $editingApplicationId = intval($_GET['edit'] ?? ($_POST['application_id'] ?? 0));
 $editingApplication = null;
