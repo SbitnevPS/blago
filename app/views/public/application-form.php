@@ -13,6 +13,7 @@ if (!isAuthenticated()) {
 $contest_id = $_GET['contest_id'] ??0;
 $contest = getContestById($contest_id);
 $contestRequiresPaymentReceipt = isContestPaymentReceiptRequired($contest ?: []);
+$contestAllowsParticipantDuplicates = doesContestAllowParticipantDuplicates($contest ?: []);
 
 if (!$contest) {
  redirect('contests.php');
@@ -32,6 +33,7 @@ $formParticipants = [];
 $initialFormData = [];
 $postbackResolvedParticipants = [];
 $postbackExistingPaymentReceipt = '';
+$existingContestParticipants = [];
 
 check_csrf();
 $success = '';
@@ -57,6 +59,26 @@ if ($editingApplicationId > 0) {
 
     $formParticipants = $editingParticipants;
 }
+
+$existingContestParticipantsQuery = "
+    SELECT
+        p.id AS participant_id,
+        p.fio,
+        a.id AS application_id
+    FROM participants p
+    INNER JOIN applications a ON a.id = p.application_id
+    WHERE a.user_id = ?
+      AND a.contest_id = ?
+";
+$existingContestParticipantsParams = [(int) ($user['id'] ?? 0), (int) $contest_id];
+if ($editingApplicationId > 0) {
+    $existingContestParticipantsQuery .= " AND a.id <> ?";
+    $existingContestParticipantsParams[] = (int) $editingApplicationId;
+}
+$existingContestParticipantsQuery .= " ORDER BY p.id DESC";
+$existingContestParticipantsStmt = $pdo->prepare($existingContestParticipantsQuery);
+$existingContestParticipantsStmt->execute($existingContestParticipantsParams);
+$existingContestParticipants = $existingContestParticipantsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $blockedContestParticipantsStmt = $pdo->prepare("
     SELECT DISTINCT
@@ -208,6 +230,138 @@ function findBlockedParticipantsInDraft(array $submittedParticipants, array $blo
                 'blocked_fio' => $blockedFio,
                 'blocked_participant_id' => (int) ($blocked['participant_id'] ?? 0),
                 'blocked_application_id' => (int) ($blocked['application_id'] ?? 0),
+            ];
+            break;
+        }
+    }
+
+    return $matches;
+}
+
+function buildSubmittedParticipantsForChecks(array $participants): array
+{
+    $result = [];
+
+    foreach ($participants as $pIndex => $participant) {
+        $surname = trim((string) ($participant['surname'] ?? ''));
+        $name = trim((string) ($participant['name'] ?? ''));
+        $patronymic = trim((string) ($participant['patronymic'] ?? ''));
+        $legacyFio = trim((string) ($participant['fio'] ?? ''));
+        $fio = trim($surname . ' ' . $name . ' ' . $patronymic);
+
+        if ($fio === '' && $legacyFio !== '') {
+            $fio = $legacyFio;
+            $parts = preg_split('/\s+/u', $legacyFio) ?: [];
+            $surname = trim((string) ($parts[0] ?? ''));
+            $name = trim((string) ($parts[1] ?? ''));
+            $patronymic = trim((string) ($parts[2] ?? ''));
+        }
+
+        if ($fio === '' || $surname === '' || $name === '' || $patronymic === '') {
+            continue;
+        }
+
+        $result[] = [
+            'index' => (int) $pIndex,
+            'participant_id' => (int) ($participant['participant_id'] ?? 0),
+            'fio' => $fio,
+            'surname' => $surname,
+            'name' => $name,
+            'patronymic' => $patronymic,
+        ];
+    }
+
+    return $result;
+}
+
+function findDuplicateParticipantsInSubmission(array $submittedParticipants): array
+{
+    $groups = [];
+    $participants = array_values($submittedParticipants);
+    $visited = [];
+
+    foreach ($participants as $startIndex => $participant) {
+        if (!empty($visited[$startIndex])) {
+            continue;
+        }
+
+        $queue = [$startIndex];
+        $componentIndexes = [];
+
+        while (!empty($queue)) {
+            $currentIndex = array_shift($queue);
+            if (!isset($participants[$currentIndex]) || !empty($visited[$currentIndex])) {
+                continue;
+            }
+
+            $visited[$currentIndex] = true;
+            $componentIndexes[] = $currentIndex;
+            $currentFio = trim((string) ($participants[$currentIndex]['fio'] ?? ''));
+            if ($currentFio === '') {
+                continue;
+            }
+
+            foreach ($participants as $candidateIndex => $candidate) {
+                if ($candidateIndex === $currentIndex || !empty($visited[$candidateIndex])) {
+                    continue;
+                }
+
+                $candidateFio = trim((string) ($candidate['fio'] ?? ''));
+                if ($candidateFio === '') {
+                    continue;
+                }
+
+                if (isLikelySameParticipantByFio($currentFio, $candidateFio)) {
+                    $queue[] = $candidateIndex;
+                }
+            }
+        }
+
+        if (count($componentIndexes) > 1) {
+            $groups[] = array_map(
+                static fn(int $index): array => $participants[$index],
+                $componentIndexes
+            );
+        }
+    }
+
+    return $groups;
+}
+
+function findExistingContestDuplicateParticipants(array $submittedParticipants, array $existingContestParticipants): array
+{
+    $matches = [];
+
+    foreach ($submittedParticipants as $candidate) {
+        $candidateFio = trim((string) ($candidate['fio'] ?? ''));
+        if ($candidateFio === '') {
+            continue;
+        }
+
+        $currentParticipantId = (int) ($candidate['participant_id'] ?? 0);
+        foreach ($existingContestParticipants as $existingParticipant) {
+            $existingFio = trim((string) ($existingParticipant['fio'] ?? ''));
+            $existingParticipantId = (int) ($existingParticipant['participant_id'] ?? 0);
+
+            if ($existingFio === '') {
+                continue;
+            }
+
+            if ($currentParticipantId > 0 && $existingParticipantId === $currentParticipantId) {
+                continue;
+            }
+
+            if (!isLikelySameParticipantByFio($candidateFio, $existingFio)) {
+                continue;
+            }
+
+            $matches[] = [
+                'index' => (int) ($candidate['index'] ?? 0),
+                'participant_id' => $currentParticipantId,
+                'fio' => $candidateFio,
+                'existing_fio' => $existingFio,
+                'existing_participant_id' => $existingParticipantId,
+                'existing_application_id' => (int) ($existingParticipant['application_id'] ?? 0),
             ];
             break;
         }
@@ -557,7 +711,32 @@ $user['user_type'] = $user_type;
  $keptParticipantIds = [];
  $drawingFilesToDelete = [];
  $autosaveParticipantSync = [];
- $submittedParticipantsForCompliance = [];
+ $submittedParticipantsForCompliance = buildSubmittedParticipantsForChecks($participants);
+
+ if ($action === 'submit' && !$contestAllowsParticipantDuplicates) {
+     $duplicateParticipantsInSubmission = findDuplicateParticipantsInSubmission($submittedParticipantsForCompliance);
+     if (!empty($duplicateParticipantsInSubmission)) {
+         throw new Exception('В заявке обнаружены повторяющиеся участники. Удалите дубликаты и попробуйте снова.');
+     }
+
+     $existingContestDuplicates = findExistingContestDuplicateParticipants($submittedParticipantsForCompliance, $existingContestParticipants);
+     if (!empty($existingContestDuplicates)) {
+         throw new Exception('Такой участник в этом конкурсе уже есть, пожалуйста удалите его из заявки.');
+     }
+ }
+
+ if ($action === 'submit') {
+     $blockedInDraft = findBlockedParticipantsInDraft($submittedParticipantsForCompliance, $blockedContestParticipants);
+     if (!empty($blockedInDraft)) {
+         $blockedNames = array_values(array_unique(array_map(static fn($row) => trim((string) ($row['fio'] ?? '')), $blockedInDraft)));
+         $blockedLabel = implode(', ', array_filter($blockedNames, static fn($name) => $name !== ''));
+         throw new Exception(
+             'Обнаружены участники, ранее нарушившие пользовательское соглашение в этом конкурсе: '
+             . $blockedLabel
+             . '. Удалите этих участников из заявки, после этого отправка станет доступна.'
+         );
+     }
+ }
                 
  foreach ($participants as $pIndex => $participant) {
  $surname = trim($participant['surname'] ?? '');
@@ -573,10 +752,6 @@ $user['user_type'] = $user_type;
  $patronymic = $parts[2] ?? '';
  }
  if (empty($fio)) continue;
- $submittedParticipantsForCompliance[] = [
-     'index' => (int) $pIndex,
-     'fio' => $fio,
- ];
                     
  $age = intval($participant['age'] ??0);
  if ($age < 5 || $age > 17) {
@@ -747,19 +922,6 @@ $user['user_type'] = $user_type;
 
  if ($action === 'submit' && $participant_count === 0) {
  throw new Exception('Добавьте хотя бы одного участника с рисунком, чтобы отправить заявку.');
- }
-
- if ($action === 'submit') {
- $blockedInDraft = findBlockedParticipantsInDraft($submittedParticipantsForCompliance, $blockedContestParticipants);
- if (!empty($blockedInDraft)) {
-     $blockedNames = array_values(array_unique(array_map(static fn($row) => trim((string) ($row['fio'] ?? '')), $blockedInDraft)));
-     $blockedLabel = implode(', ', array_filter($blockedNames, static fn($name) => $name !== ''));
-     throw new Exception(
-         'Обнаружены участники, ранее нарушившие пользовательское соглашение в этом конкурсе: '
-         . $blockedLabel
-         . '. Удалите этих участников из заявки, после этого отправка станет доступна.'
-     );
- }
  }
 
  if (!empty($application_id)) {
@@ -1291,10 +1453,18 @@ const blockedContestParticipants = <?= json_encode(array_map(static function ($r
         'fio' => trim((string) ($row['fio'] ?? '')),
     ];
 }, $blockedContestParticipants), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+const existingContestParticipants = <?= json_encode(array_map(static function ($row) {
+    return [
+        'participant_id' => (int) ($row['participant_id'] ?? 0),
+        'application_id' => (int) ($row['application_id'] ?? 0),
+        'fio' => trim((string) ($row['fio'] ?? '')),
+    ];
+}, $existingContestParticipants), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
 const csrfToken = '<?= generateCSRFToken() ?>';
 const contestId = <?= e($contest_id) ?>;
 const needsPaymentReceipt = <?= $contestRequiresPaymentReceipt ? 'true' : 'false' ?>;
+const allowParticipantDuplicatesInContest = <?= $contestAllowsParticipantDuplicates ? 'true' : 'false' ?>;
 const paymentStepNumber = <?= $contestRequiresPaymentReceipt ? (int) $paymentStepNumber : 'null' ?>;
 const agreementStepNumber = <?= (int) $agreementStepNumber ?>;
 const finalReviewStep = <?= (int) $reviewStepNumber ?>;
@@ -1522,11 +1692,16 @@ function isApplicationReadyToSubmit() {
     });
 
     const blockedParticipants = getBlockedParticipantsInDraft();
+    const duplicateCandidates = allowParticipantDuplicatesInContest ? [] : getParticipantDuplicateCandidates();
+    const duplicateGroups = allowParticipantDuplicatesInContest ? [] : getParticipantDuplicateGroups(duplicateCandidates);
+    const existingContestDuplicates = allowParticipantDuplicatesInContest ? [] : getExistingContestDuplicates(duplicateCandidates);
     return requiredFieldsFilled
         && agesValid
         && participantsReady
         && (!needsPaymentReceipt || hasPaymentReceipt())
         && userAgreementSigned
+        && duplicateGroups.length === 0
+        && existingContestDuplicates.length === 0
         && blockedParticipants.length === 0;
 }
 
@@ -1652,42 +1827,84 @@ function isLikelySameParticipantFio(left, right) {
     return true;
 }
 
-function getParticipantDuplicateGroups() {
-    const groups = new Map();
+function getParticipantDuplicateCandidates() {
     const cards = [...document.querySelectorAll('#participantsContainer .participant-form')];
+    const candidates = [];
 
     cards.forEach((card) => {
         const index = Number(card.dataset.index);
+        const participantId = Number(card.querySelector(`[name="participants[${index}][participant_id]"]`)?.value || 0);
         const surname = card.querySelector(`[name="participants[${index}][surname]"]`)?.value || '';
         const name = card.querySelector(`[name="participants[${index}][name]"]`)?.value || '';
         const patronymic = card.querySelector(`[name="participants[${index}][patronymic]"]`)?.value || '';
-        const key = [
-            normalizeParticipantFioPart(surname),
-            normalizeParticipantFioPart(name),
-            normalizeParticipantFioPart(patronymic),
-        ].join('|');
 
-        if (!key || key === '||') {
+        if (!normalizeParticipantFioPart(surname) || !normalizeParticipantFioPart(name) || !normalizeParticipantFioPart(patronymic)) {
             return;
         }
 
         const previewNode = document.getElementById(`preview_img_${index}`);
         const displayName = [surname, name, patronymic].map((part) => String(part || '').trim()).filter(Boolean).join(' ');
-        const entry = {
+        candidates.push({
             index,
+            participantId,
             label: `Участник ${index + 1}`,
             fio: displayName || `Участник ${index + 1}`,
             previewUrl: previewNode?.src || '',
             fullPreviewUrl: previewNode?.dataset.fullSrc || previewNode?.src || '',
-        };
-
-        if (!groups.has(key)) {
-            groups.set(key, []);
-        }
-        groups.get(key).push(entry);
+        });
     });
 
-    return [...groups.values()].filter((items) => items.length > 1);
+    return candidates;
+}
+
+function getParticipantDuplicateGroups(candidates = null) {
+    const items = Array.isArray(candidates) ? candidates : getParticipantDuplicateCandidates();
+    const groups = [];
+    const visited = new Set();
+
+    items.forEach((entry, startIndex) => {
+        if (visited.has(startIndex)) {
+            return;
+        }
+
+        const queue = [startIndex];
+        const componentIndexes = [];
+
+        while (queue.length > 0) {
+            const currentIndex = queue.shift();
+            if (currentIndex == null || visited.has(currentIndex) || !items[currentIndex]) {
+                continue;
+            }
+
+            visited.add(currentIndex);
+            componentIndexes.push(currentIndex);
+            const currentFio = String(items[currentIndex].fio || '').trim();
+            if (!currentFio) {
+                continue;
+            }
+
+            items.forEach((candidate, candidateIndex) => {
+                if (candidateIndex === currentIndex || visited.has(candidateIndex)) {
+                    return;
+                }
+
+                const candidateFio = String(candidate?.fio || '').trim();
+                if (!candidateFio) {
+                    return;
+                }
+
+                if (isLikelySameParticipantFio(currentFio, candidateFio)) {
+                    queue.push(candidateIndex);
+                }
+            });
+        }
+
+        if (componentIndexes.length > 1) {
+            groups.push(componentIndexes.map((index) => items[index]).filter(Boolean));
+        }
+    });
+
+    return groups;
 }
 
 function clearDuplicateParticipantHighlights() {
@@ -1709,6 +1926,125 @@ function highlightDuplicateParticipantGroups(groups) {
             const card = document.querySelector(`.participant-form[data-index="${item.index}"]`);
             card?.classList.add('participant-form--duplicate');
         });
+    });
+}
+
+function clearParticipantInlineIssues() {
+    document.querySelectorAll('[data-participant-inline-issues]').forEach((node) => {
+        node.innerHTML = '';
+        node.hidden = true;
+    });
+}
+
+function renderParticipantInlineIssues(issueMap) {
+    clearParticipantInlineIssues();
+
+    issueMap.forEach((messages, index) => {
+        const card = document.querySelector(`.participant-form[data-index="${index}"]`);
+        const node = card?.querySelector('[data-participant-inline-issues]');
+        if (!node || !Array.isArray(messages) || messages.length === 0) {
+            return;
+        }
+
+        node.innerHTML = messages
+            .map((message) => `<div class="participant-form__inline-issue">${message}</div>`)
+            .join('');
+        node.hidden = false;
+    });
+}
+
+function buildParticipantDuplicateIssueMap(duplicateGroups, existingContestDuplicates) {
+    const issueMap = new Map();
+
+    duplicateGroups.forEach((group) => {
+        group.forEach((item) => {
+            const index = Number(item.index);
+            if (!issueMap.has(index)) {
+                issueMap.set(index, []);
+            }
+            issueMap.get(index).push('Такой участник уже есть в этой заявке. Пожалуйста, удалите повтор.');
+        });
+    });
+
+    existingContestDuplicates.forEach((item) => {
+        const index = Number(item.index);
+        if (!issueMap.has(index)) {
+            issueMap.set(index, []);
+        }
+        issueMap.get(index).push('Такой участник в этом конкурсе уже есть, пожалуйста удалите его из заявки.');
+    });
+
+    return issueMap;
+}
+
+function refreshParticipantDuplicateState() {
+    if (allowParticipantDuplicatesInContest) {
+        clearDuplicateParticipantHighlights();
+        clearParticipantInlineIssues();
+        syncNavigationButtons(currentStep === finalReviewStep && isApplicationReadyToSubmit());
+        return {
+            duplicateGroups: [],
+            existingContestDuplicates: [],
+            issueMap: new Map(),
+        };
+    }
+
+    const duplicateCandidates = getParticipantDuplicateCandidates();
+    const duplicateGroups = getParticipantDuplicateGroups(duplicateCandidates);
+    const existingContestDuplicates = getExistingContestDuplicates(duplicateCandidates);
+    const issueMap = buildParticipantDuplicateIssueMap(duplicateGroups, existingContestDuplicates);
+
+    if (duplicateGroups.length > 0) {
+        highlightDuplicateParticipantGroups(duplicateGroups);
+    } else if (existingContestDuplicates.length > 0) {
+        highlightExistingContestDuplicates(existingContestDuplicates);
+    } else {
+        clearDuplicateParticipantHighlights();
+    }
+
+    renderParticipantInlineIssues(issueMap);
+    syncNavigationButtons(currentStep === finalReviewStep && isApplicationReadyToSubmit());
+
+    return {
+        duplicateGroups,
+        existingContestDuplicates,
+        issueMap,
+    };
+}
+
+function getExistingContestDuplicates(candidates = null) {
+    const duplicates = [];
+    (Array.isArray(candidates) ? candidates : getParticipantDuplicateCandidates()).forEach((candidate) => {
+        const matchedExisting = (existingContestParticipants || []).find((entry) => {
+            const existingParticipantId = Number(entry?.participant_id || 0);
+            if (candidate.participantId > 0 && existingParticipantId === candidate.participantId) {
+                return false;
+            }
+
+            return isLikelySameParticipantFio(candidate.fio, entry?.fio || '');
+        });
+
+        if (!matchedExisting) {
+            return;
+        }
+
+        duplicates.push({
+            index: candidate.index,
+            fio: candidate.fio,
+            existingFio: matchedExisting.fio || candidate.fio,
+            existingParticipantId: Number(matchedExisting.participant_id || 0),
+            existingApplicationId: Number(matchedExisting.application_id || 0),
+        });
+    });
+
+    return duplicates;
+}
+
+function highlightExistingContestDuplicates(duplicates) {
+    clearDuplicateParticipantHighlights();
+    duplicates.forEach((item) => {
+        const card = document.querySelector(`.participant-form[data-index="${item.index}"]`);
+        card?.classList.add('participant-form--duplicate');
     });
 }
 
@@ -1771,6 +2107,13 @@ function focusFirstBlockedParticipant(blockedEntries) {
 
 function focusFirstDuplicateParticipant(groups) {
     const firstDuplicate = groups[0]?.[0];
+    if (!firstDuplicate) return;
+
+    focusDuplicateParticipantByIndex(firstDuplicate.index);
+}
+
+function focusFirstExistingContestDuplicate(duplicates) {
+    const firstDuplicate = duplicates?.[0];
     if (!firstDuplicate) return;
 
     focusDuplicateParticipantByIndex(firstDuplicate.index);
@@ -1880,7 +2223,13 @@ function syncNavigationButtons(isReadyToSubmit = false) {
 
     if (nextBtn) {
         const waitingAgreementSign = currentStep === agreementStepNumber && !userAgreementSigned;
-        nextBtn.disabled = isLastStep || waitingAgreementSign;
+        const duplicateCandidates = currentStep === 2 && !allowParticipantDuplicatesInContest
+            ? getParticipantDuplicateCandidates()
+            : [];
+        const hasParticipantDuplicateIssues = currentStep === 2
+            && !allowParticipantDuplicatesInContest
+            && (getParticipantDuplicateGroups(duplicateCandidates).length > 0 || getExistingContestDuplicates(duplicateCandidates).length > 0);
+        nextBtn.disabled = isLastStep || waitingAgreementSign || hasParticipantDuplicateIssues;
     }
 
     if (submitBtn) {
@@ -1969,10 +2318,15 @@ function scrollToStepHeader(step) {
 function goStep(step) {
     document.getElementById('formAction').value = 'submit';
     if (step > currentStep && !validateStep(currentStep)) return;
-    if (currentStep === 2 && step > currentStep) {
-        const duplicateGroups = getParticipantDuplicateGroups();
+    if (!allowParticipantDuplicatesInContest && currentStep === 2 && step > currentStep) {
+        const {duplicateGroups, existingContestDuplicates} = refreshParticipantDuplicateState();
         if (duplicateGroups.length > 0) {
-            openDuplicateParticipantsModal(duplicateGroups);
+            focusFirstDuplicateParticipant(duplicateGroups);
+            return;
+        }
+
+        if (existingContestDuplicates.length > 0) {
+            focusFirstExistingContestDuplicate(existingContestDuplicates);
             return;
         }
     }
@@ -2065,6 +2419,7 @@ function createParticipantForm(index, data = null) {
                 <button type="button" class="btn btn--ghost" onclick="toggleParticipant(${index})">Свернуть</button>
             </div>
         </div>
+        <div class="participant-form__inline-issues" data-participant-inline-issues hidden></div>
         <div class="participant-form__body">
             <div class="form-grid form-grid--3">
                 <div class="form-group"><label class="form-label form-label--required">Фамилия</label><input type="text" required name="participants[${index}][surname]" class="form-input" value="${data?.surname || ''}" placeholder="Иванов"></div>
@@ -2190,6 +2545,8 @@ function removeParticipant(index) {
 
 function updateParticipantsState() {
     document.getElementById('participantsEmpty').style.display = participantCount ? 'none' : 'block';
+    refreshParticipantDuplicateState();
+    syncNavigationButtons(currentStep === finalReviewStep && isApplicationReadyToSubmit());
     updateSidebar();
 }
 
@@ -2331,9 +2688,17 @@ function renderReview() {
     });
 
     const blockedParticipants = getBlockedParticipantsInDraft();
+    const {duplicateGroups, existingContestDuplicates} = refreshParticipantDuplicateState();
     highlightBlockedParticipants(blockedParticipants);
     const ready = isApplicationReadyToSubmit();
     const blockedParticipantsListHtml = blockedParticipants.map((item) => `<li><strong>${item.fio}</strong> (участник ${item.index + 1})</li>`).join('');
+    const duplicateParticipantsListHtml = duplicateGroups
+        .flat()
+        .map((item) => `<li><strong>${item.fio}</strong> (участник ${item.index + 1})</li>`)
+        .join('');
+    const existingContestDuplicatesListHtml = existingContestDuplicates
+        .map((item) => `<li><strong>${item.fio}</strong> (участник ${item.index + 1})</li>`)
+        .join('');
     review.innerHTML = `
         <div class="review-block">
             <h4>Заявитель</h4>
@@ -2378,6 +2743,19 @@ function renderReview() {
             <strong>Обнаружены участники, которые ранее нарушили пользовательское соглашение в этом конкурсе.</strong>
             <p class="mt-sm">Удалите их из заявки. Пока они остаются в списке участников, отправка заявки невозможна.</p>
             <ul>${blockedParticipantsListHtml}</ul>
+            <button type="button" class="btn btn--ghost" onclick="goStep(2)">Перейти к участникам и удалить</button>
+        </div>` : ''}
+        ${!allowParticipantDuplicatesInContest && duplicateGroups.length > 0 ? `
+        <div class="alert alert--error application-review__agreement-alert">
+            <strong>В заявке обнаружены повторяющиеся участники.</strong>
+            <p class="mt-sm">Удалите повторяющихся участников. Пока они остаются в заявке, отправка невозможна.</p>
+            <ul>${duplicateParticipantsListHtml}</ul>
+            <button type="button" class="btn btn--ghost" onclick="goStep(2)">Перейти к участникам и удалить</button>
+        </div>` : ''}
+        ${!allowParticipantDuplicatesInContest && existingContestDuplicates.length > 0 ? `
+        <div class="alert alert--error application-review__agreement-alert">
+            <strong>Такой участник в этом конкурсе уже есть, пожалуйста удалите его из заявки.</strong>
+            <ul>${existingContestDuplicatesListHtml}</ul>
             <button type="button" class="btn btn--ghost" onclick="goStep(2)">Перейти к участникам и удалить</button>
         </div>` : ''}
         <div class="alert ${ready ? 'alert--success' : 'alert--error'}">${ready ? 'Заявка готова к отправке.' : needsPaymentReceipt ? 'Заполните все обязательные поля, добавьте рисунки, проверьте участников и прикрепите квитанцию об оплате.' : 'Заполните все обязательные поля, добавьте рисунки и проверьте участников.'}</div>`;
@@ -2538,7 +2916,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('prevStepBtn').addEventListener('click', () => goStep(Math.max(currentStep - 1, 1)));
     document.getElementById('applicationForm').addEventListener('input', (e) => {
         if (e.target.matches('input[name^="participants["][name$="[surname]"], input[name^="participants["][name$="[name]"], input[name^="participants["][name$="[patronymic]"]')) {
-            clearDuplicateParticipantHighlights();
+            refreshParticipantDuplicateState();
             highlightBlockedParticipants(getBlockedParticipantsInDraft());
         }
         if (e.target.matches('input[name^="participants["][name$="[age]"]')) {
@@ -2567,6 +2945,24 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (action === 'submit') {
             isSubmittingApplication = true;
+            if (!allowParticipantDuplicatesInContest) {
+                const {duplicateGroups, existingContestDuplicates} = refreshParticipantDuplicateState();
+                if (duplicateGroups.length > 0) {
+                    isSubmittingApplication = false;
+                    e.preventDefault();
+                    goStep(2);
+                    focusFirstDuplicateParticipant(duplicateGroups);
+                    return;
+                }
+
+                if (existingContestDuplicates.length > 0) {
+                    isSubmittingApplication = false;
+                    e.preventDefault();
+                    goStep(2);
+                    focusFirstExistingContestDuplicate(existingContestDuplicates);
+                    return;
+                }
+            }
             const blockedParticipants = getBlockedParticipantsInDraft();
             if (blockedParticipants.length > 0) {
                 isSubmittingApplication = false;

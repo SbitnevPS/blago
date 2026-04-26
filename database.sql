@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS contests (
     short_description VARCHAR(400),
     document_file VARCHAR(255),
     requires_payment_receipt TINYINT(1) NOT NULL DEFAULT 0,
+    allow_participant_duplicates TINYINT(1) NOT NULL DEFAULT 0,
     cover_image VARCHAR(255) NULL,
     theme_style VARCHAR(50) NOT NULL DEFAULT 'blue',
     is_published TINYINT(1) DEFAULT 0,

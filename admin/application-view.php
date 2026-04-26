@@ -146,6 +146,7 @@ if ($hasDrawingCompliantColumn) {
 }
 $revisionButtonDisabled = $isApplicationApproved || !$allParticipantsDecidedForRevision || !$hasRevisionCandidate;
 $declineButtonDisabled = true;
+$canApproveApplication = canApproveApplicationByWorks($works);
 if (!empty($works)) {
     $allWorksFinallyRejected = true;
     foreach ($works as $workRow) {
@@ -235,6 +236,25 @@ function findParticipantWorkId(array $works, int $participantId): int {
         }
     }
     return 0;
+}
+
+function canApproveApplicationByWorks(array $works): bool {
+    if (empty($works)) {
+        return false;
+    }
+
+    $hasAcceptedWork = false;
+    foreach ($works as $workRow) {
+        $status = (string) ($workRow['status'] ?? 'pending');
+        if (!in_array($status, ['accepted', 'reviewed_non_competitive'], true)) {
+            return false;
+        }
+        if ($status === 'accepted') {
+            $hasAcceptedWork = true;
+        }
+    }
+
+    return $hasAcceptedWork;
 }
 
 function resetApplicationDecisionStatusIfNeeded(int $applicationId, string $currentStatus): array {
@@ -352,22 +372,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 	        $_SESSION['success_message'] = 'Статус работы обновлён';
 	        redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
     } elseif ($_POST['action'] === 'approve_application') {
-        if ($hasDrawingCompliantColumn) {
-            $unresolvedStmt = $pdo->prepare("
-                SELECT COUNT(*)
-                FROM works w
-                WHERE w.application_id = ?
-                  AND w.status NOT IN ('accepted', 'reviewed_non_competitive')
-            ");
-            $unresolvedStmt->execute([$application_id]);
-            if ((int)$unresolvedStmt->fetchColumn() > 0) {
-                $errorMessage = 'Нельзя принять заявку: не по всем рисункам принято решение.';
-                if ($isAjaxRequest) {
-                    jsonResponse(['success' => false, 'error' => $errorMessage], 422);
+        $worksForApproveCheck = getApplicationWorks((int) $application_id);
+        if (!canApproveApplicationByWorks($worksForApproveCheck)) {
+            $hasUndecidedWorks = false;
+            foreach ($worksForApproveCheck as $workRow) {
+                $status = (string) ($workRow['status'] ?? 'pending');
+                if (!in_array($status, ['accepted', 'reviewed_non_competitive'], true)) {
+                    $hasUndecidedWorks = true;
+                    break;
                 }
-                $_SESSION['error_message'] = $errorMessage;
-                redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
             }
+
+            $errorMessage = $hasUndecidedWorks
+                ? 'Нельзя принять заявку: не по всем рисункам принято решение.'
+                : 'Нельзя принять заявку: по всем рисункам выбрано решение «Рисунок отклонён».';
+            if ($isAjaxRequest) {
+                jsonResponse(['success' => false, 'error' => $errorMessage], 422);
+            }
+            $_SESSION['error_message'] = $errorMessage;
+            redirect('/admin/application/' . $application_id . (parse_url($applicationsReturnUrl, PHP_URL_QUERY) ? ('?' . parse_url($applicationsReturnUrl, PHP_URL_QUERY)) : ''));
         }
         $stmt = $pdo->prepare("UPDATE applications SET status = 'approved', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$application_id]);
@@ -828,7 +851,7 @@ $latestMessageStmt = $pdo->prepare("
 ");
 $latestMessageStmt->execute([(int) $application['user_id'], (int) $admin['id']]);
 $latestMessage = $latestMessageStmt->fetch() ?: null;
-$approveButtonDisabled = $isApplicationApproved;
+$approveButtonDisabled = $isApplicationApproved || !$canApproveApplication;
 $approveButtonIcon = $isApplicationApproved ? 'fa-check-double' : 'fa-check';
 $approveButtonText = $isApplicationApproved ? 'Заявка принята' : 'Принять заявку';
 $currentApplicationUiStatus = (string) ($statusMeta['status_code'] ?? 'draft');
@@ -1160,7 +1183,12 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                         <a href="<?= e($applicationsReturnUrl) ?>" class="btn btn--ghost"><i class="fas fa-list"></i> Закрыть</a>
                     <?php endif; ?>
                 </div>
-                <p class="application-sidebar-hint" style="<?= $isApplicationFinal || $approveButtonDisabled ? 'display:none;' : '' ?>">Кнопка станет активной, когда по каждой работе будет принято решение кнопкой «Рисунок принят» или «Рисунок отклонён».</p>
+                <p
+                    class="application-sidebar-hint"
+                    data-default-text="Кнопка станет активной, когда по каждой работе будет принято решение кнопкой «Рисунок принят» или «Рисунок отклонён»."
+                    data-rejected-text="Нельзя принять заявку, если по всем работам выбрано решение «Рисунок отклонён»."
+                    style="<?= $isApplicationFinal || !$approveButtonDisabled ? 'display:none;' : '' ?>"
+                ><?= e($canApproveApplication ? '' : (!empty($works) && !$declineButtonDisabled ? 'Нельзя принять заявку, если по всем работам выбрано решение «Рисунок отклонён».' : 'Кнопка станет активной, когда по каждой работе будет принято решение кнопкой «Рисунок принят» или «Рисунок отклонён».')) ?></p>
                 <p class="application-sidebar-hint" id="revisionApplicationHint" style="<?= $isApplicationFinal || !$revisionButtonDisabled ? 'display:none;' : '' ?>">Кнопка «На корректировку» станет активной, когда по всем участникам будет принято решение и хотя бы у одного участника будет выключен переключатель «Соответствует условиям конкурса».</p>
             </div>
         </div>
@@ -2012,16 +2040,27 @@ function syncApproveApplicationButtonState() {
   }
   return;
  }
- const hasInvalid = Array.from(document.querySelectorAll('[data-work-controls]')).some((controls) => {
+ const cards = Array.from(document.querySelectorAll('[data-work-controls]'));
+ const hasInvalid = cards.some((controls) => {
   const status = controls.dataset.workStatus || 'pending';
   return status !== 'accepted' && status !== 'reviewed_non_competitive';
  });
- approveButton.disabled = hasInvalid;
- approveButton.setAttribute('aria-disabled', hasInvalid ? 'true' : 'false');
+ const hasAccepted = cards.some((controls) => String(controls.dataset.workStatus || 'pending') === 'accepted');
+ const disabled = hasInvalid || !hasAccepted;
+ approveButton.disabled = disabled;
+ approveButton.setAttribute('aria-disabled', disabled ? 'true' : 'false');
  if (hint) {
-  hint.style.display = hasInvalid ? 'block' : 'none';
+  if (hasInvalid) {
+   hint.textContent = hint.dataset.defaultText || '';
+   hint.style.display = 'block';
+  } else if (!hasAccepted) {
+   hint.textContent = hint.dataset.rejectedText || '';
+   hint.style.display = 'block';
+  } else {
+   hint.style.display = 'none';
+  }
  }
- if (hasInvalid) {
+ if (disabled) {
   approveButton.setAttribute('tabindex', '-1');
  } else {
   approveButton.removeAttribute('tabindex');

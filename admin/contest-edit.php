@@ -43,6 +43,7 @@ $hasDocumentFileColumn = $columnExists($pdo, 'contests', 'document_file');
 $hasCoverImageColumn = $columnExists($pdo, 'contests', 'cover_image');
 $hasThemeStyleColumn = $columnExists($pdo, 'contests', 'theme_style');
 $hasRequiresPaymentReceiptColumn = $columnExists($pdo, 'contests', 'requires_payment_receipt');
+$hasAllowParticipantDuplicatesColumn = $columnExists($pdo, 'contests', 'allow_participant_duplicates');
 $hasPublishedColumn = $columnExists($pdo, 'contests', 'is_published');
 $hasArchivedColumn = $columnExists($pdo, 'contests', 'is_archived');
 $hasDateFromColumn = $columnExists($pdo, 'contests', 'date_from');
@@ -68,6 +69,7 @@ if ($isEdit) {
         'cover_image' => '',
         'theme_style' => 'blue',
         'requires_payment_receipt' => 0,
+        'allow_participant_duplicates' => 0,
         'is_published' => 0,
         'is_archived' => 0,
         'date_from' => date('Y-m-d'),
@@ -123,6 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $is_archived = isset($_POST['is_archived']) ? 1 : 0;
         $theme_style = normalizeContestThemeStyle($_POST['theme_style'] ?? 'blue');
         $requires_payment_receipt = isset($_POST['requires_payment_receipt']) ? 1 : 0;
+        $allow_participant_duplicates = isset($_POST['allow_participant_duplicates']) ? 1 : 0;
         $date_from = !empty($_POST['date_from']) ? $_POST['date_from'] : null;
         $date_to = !empty($_POST['date_to']) ? $_POST['date_to'] : null;
         
@@ -212,6 +215,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $updateFields[] = 'requires_payment_receipt = ?';
                     $updateValues[] = $requires_payment_receipt;
                 }
+                if ($hasAllowParticipantDuplicatesColumn) {
+                    $updateFields[] = 'allow_participant_duplicates = ?';
+                    $updateValues[] = $allow_participant_duplicates;
+                }
                 if ($hasPublishedColumn) {
                     $updateFields[] = 'is_published = ?';
                     $updateValues[] = $is_published;
@@ -258,6 +265,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($hasRequiresPaymentReceiptColumn) {
                     $insertColumns[] = 'requires_payment_receipt';
                     $insertValues[] = $requires_payment_receipt;
+                }
+                if ($hasAllowParticipantDuplicatesColumn) {
+                    $insertColumns[] = 'allow_participant_duplicates';
+                    $insertValues[] = $allow_participant_duplicates;
                 }
                 if ($hasPublishedColumn) {
                     $insertColumns[] = 'is_published';
@@ -313,6 +324,7 @@ $coverPreviewSrc = !empty($contest['cover_image'])
 $isPublished = (int) ($contest['is_published'] ?? 0) === 1;
 $isArchived = (int) ($contest['is_archived'] ?? 0) === 1;
 $requiresPaymentReceipt = (int) ($contest['requires_payment_receipt'] ?? 0) === 1;
+$allowParticipantDuplicates = (int) ($contest['allow_participant_duplicates'] ?? 0) === 1;
 $publicContestUrl = $isEdit ? '/contest/' . (int) $contest_id : '';
 $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (int) $contest_id : '';
 ?>
@@ -528,6 +540,19 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
                                 </div>
                                 <span class="ios-toggle">
                                     <input type="checkbox" name="requires_payment_receipt" id="contestReceiptRequiredInput" <?= $requiresPaymentReceipt ? 'checked' : '' ?>>
+                                    <span class="ios-toggle__slider"></span>
+                                </span>
+                            </label>
+                        <?php endif; ?>
+
+                        <?php if ($hasAllowParticipantDuplicatesColumn): ?>
+                            <label class="contest-editor-switch-card" for="contestAllowParticipantDuplicatesInput">
+                                <div class="contest-editor-switch-card__text">
+                                    <strong>Допускать повторы участников в конкурсе</strong>
+                                    <span>Если выключено, при переходе дальше и при отправке заявки проверим повторы внутри текущей заявки и среди уже сохранённых участников этого пользователя в этом конкурсе.</span>
+                                </div>
+                                <span class="ios-toggle">
+                                    <input type="checkbox" name="allow_participant_duplicates" id="contestAllowParticipantDuplicatesInput" <?= $allowParticipantDuplicates ? 'checked' : '' ?>>
                                     <span class="ios-toggle__slider"></span>
                                 </span>
                             </label>

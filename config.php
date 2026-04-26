@@ -354,6 +354,28 @@ function ensureContestPaymentReceiptSchema(PDO $pdo): void
     }
 }
 
+function ensureContestParticipantDuplicatesSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        $contestColumns = $pdo->query("SHOW COLUMNS FROM contests")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('allow_participant_duplicates', $contestColumns, true)) {
+            $pdo->exec("
+                ALTER TABLE contests
+                ADD COLUMN allow_participant_duplicates TINYINT(1) NOT NULL DEFAULT 0
+                AFTER requires_payment_receipt
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('[SCHEMA] Contest participant duplicates schema check failed: ' . $e->getMessage());
+    }
+}
+
 function ensureApplicationPaymentReceiptSchema(PDO $pdo): void
 {
     static $checked = false;
@@ -399,6 +421,7 @@ function ensureApplicationAgreementDeclinedSchema(PDO $pdo): void
 }
 
 ensureContestPaymentReceiptSchema($pdo);
+ensureContestParticipantDuplicatesSchema($pdo);
 ensureApplicationPaymentReceiptSchema($pdo);
 ensureApplicationAgreementDeclinedSchema($pdo);
 
@@ -2082,6 +2105,11 @@ function getApplicationStatusMeta($status) {
 function isContestPaymentReceiptRequired(array $contest): bool
 {
     return (int) ($contest['requires_payment_receipt'] ?? 0) === 1;
+}
+
+function doesContestAllowParticipantDuplicates(array $contest): bool
+{
+    return (int) ($contest['allow_participant_duplicates'] ?? 0) === 1;
 }
 
 function getPaymentReceiptWebPath(?string $fileName): string
