@@ -2563,8 +2563,12 @@
 }
 
 .wizard-nav__top {
-  display: flex;
+  display: none;
   justify-content: center;
+}
+
+.wizard-nav__top.is-visible {
+  display: flex;
 }
 
 .wizard-nav__top .btn {

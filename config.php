@@ -1831,12 +1831,12 @@ function getApplicationUiStatus(array $application, ?array $workSummary = null):
         return 'agreement_violation';
     }
 
-    if ($hasUnresolvedCorrections || ($allowEdit && $storedStatus !== 'approved')) {
-        return 'revision';
-    }
-
     if ($storedStatus === 'draft') {
         return 'draft';
+    }
+
+    if ($hasUnresolvedCorrections || ($allowEdit && $storedStatus !== 'approved')) {
+        return 'revision';
     }
 
     if ($storedStatus === 'approved' || $storedStatus === 'rejected' || $storedStatus === 'cancelled') {

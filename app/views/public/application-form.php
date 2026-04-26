@@ -431,10 +431,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  $currentStoredStatus = normalizeApplicationStoredStatus((string) ($existingApplication['status'] ?? 'draft'));
  $nextStatus = $action === 'submit'
      ? ($shouldMarkAsCorrected ? 'corrected' : 'submitted')
-     : ($currentStoredStatus === 'draft' ? 'draft' : $currentStoredStatus);
+     : 'draft';
  $nextAllowEdit = $action === 'submit'
      ? 0
-     : ($currentStoredStatus === 'draft' ? 1 : (int) ($existingApplication['allow_edit'] ?? 0));
+     : 1;
  $agreementDeclined = $action === 'submit' ? 0 : ((int) ($_POST['agreement_declined'] ?? 0) === 1 ? 1 : 0);
                     
  $stmt = $pdo->prepare("
@@ -1789,7 +1789,6 @@ function syncNavigationButtons(isReadyToSubmit = false) {
     const prevBtn = document.getElementById('prevStepBtn');
     const nextBtn = document.getElementById('nextStepBtn');
     const submitBtn = document.getElementById('submitBtn');
-    const participantAction = document.getElementById('wizardParticipantAction');
     const isLastStep = currentStep === steps.length;
 
     if (prevBtn) {
@@ -1804,9 +1803,14 @@ function syncNavigationButtons(isReadyToSubmit = false) {
     if (submitBtn) {
         submitBtn.disabled = !isLastStep || !isReadyToSubmit;
     }
+}
 
+function syncParticipantActionVisibility() {
+    const participantAction = document.getElementById('wizardParticipantAction');
     if (participantAction) {
-        participantAction.hidden = currentStep !== 2;
+        const isVisible = currentStep === 2;
+        participantAction.hidden = !isVisible;
+        participantAction.classList.toggle('is-visible', isVisible);
     }
 }
 
@@ -1854,6 +1858,7 @@ function updateProgress() {
 
     if (currentStep === finalReviewStep) renderReview();
     syncAgreementButtons();
+    syncParticipantActionVisibility();
     syncNavigationButtons(currentStep === finalReviewStep && isApplicationReadyToSubmit());
     updateSidebar();
 }
