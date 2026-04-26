@@ -1647,16 +1647,22 @@
   border: 1px solid var(--color-border);
 }
 
-.participant-form--duplicate {
+.participant-form--duplicate-local {
   border-color: rgba(239, 68, 68, .85);
   box-shadow: 0 0 0 3px rgba(254, 226, 226, .95);
   background: linear-gradient(180deg, #ffffff 0%, #fff5f5 100%);
 }
 
+.participant-form--duplicate-global {
+  border-color: rgba(249, 115, 22, .78);
+  box-shadow: 0 0 0 3px rgba(255, 237, 213, .95);
+  background: linear-gradient(180deg, #ffffff 0%, #fff7ed 100%);
+}
+
 .participant-form--blocked {
-  border-color: rgba(239, 68, 68, .85);
-  box-shadow: 0 0 0 3px rgba(254, 226, 226, .95);
-  background: linear-gradient(180deg, #ffffff 0%, #fff5f5 100%);
+  border-color: rgba(190, 24, 93, .82);
+  box-shadow: 0 0 0 3px rgba(251, 207, 232, .92);
+  background: linear-gradient(180deg, #ffffff 0%, #fdf2f8 100%);
 }
 
 .participant-form__header {
@@ -1682,6 +1688,18 @@
   color: #9f1239;
   font-size: var(--font-size-sm);
   line-height: 1.45;
+}
+
+.participant-form__inline-issue--local {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #9f1239;
+}
+
+.participant-form__inline-issue--global {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
 }
 
 .participant-form__title {
@@ -3441,52 +3459,6 @@
 .review-item__meta strong {
   color: var(--color-text);
   font-size: var(--font-size-base);
-}
-
-.application-duplicates-modal {
-  max-width: min(920px, 96vw);
-  width: min(920px, 96vw);
-  max-height: min(88vh, 920px);
-  display: flex;
-  flex-direction: column;
-}
-
-.application-duplicates-list {
-  margin-top: 18px;
-  max-height: min(54vh, 520px);
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.application-duplicates-list__item {
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  cursor: pointer;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
-}
-
-.application-duplicates-list__item:hover,
-.application-duplicates-list__item:focus-visible {
-  border-color: rgba(99, 102, 241, .42);
-  box-shadow: 0 0 0 3px rgba(224, 231, 255, .9);
-  transform: translateY(-1px);
-  outline: none;
-}
-
-.application-duplicates-list .review-item__thumb {
-  width: 58px;
-  height: 58px;
-  border-radius: 9px;
-}
-
-.application-duplicates-list .review-item__meta {
-  font-size: 13px;
-  gap: 3px;
-}
-
-.application-duplicates-list .review-item__meta strong {
-  font-size: 14px;
 }
 
 .participant-vk-card {
