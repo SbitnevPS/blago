@@ -375,6 +375,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_message') {
+    header('Content-Type: application/json');
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        echo json_encode(['success' => false, 'error' => 'Неверный CSRF токен']);
+        exit;
+    }
+
+    $messageId = max(0, (int) ($_POST['message_id'] ?? 0));
+    $isBroadcast = !empty($_POST['is_broadcast']);
+    if ($messageId <= 0) {
+        echo json_encode(['success' => false, 'error' => 'Сообщение не найдено']);
+        exit;
+    }
+
+    try {
+        $messageStmt = $pdo->prepare("
+            SELECT id, subject, admin_id, is_broadcast
+            FROM admin_messages
+            WHERE id = ?
+            LIMIT 1
+        ");
+        $messageStmt->execute([$messageId]);
+        $messageRow = $messageStmt->fetch();
+
+        if (!$messageRow) {
+            echo json_encode(['success' => false, 'error' => 'Сообщение не найдено']);
+            exit;
+        }
+
+        if ($isBroadcast || (int) ($messageRow['is_broadcast'] ?? 0) === 1) {
+            $deleteStmt = $pdo->prepare("
+                DELETE FROM admin_messages
+                WHERE admin_id = ?
+                  AND subject = ?
+                  AND is_broadcast = 1
+            ");
+            $deleteStmt->execute([
+                (int) ($messageRow['admin_id'] ?? 0),
+                (string) ($messageRow['subject'] ?? ''),
+            ]);
+        } else {
+            $deleteStmt = $pdo->prepare("DELETE FROM admin_messages WHERE id = ? LIMIT 1");
+            $deleteStmt->execute([$messageId]);
+        }
+
+        echo json_encode(['success' => true]);
+    } catch (Throwable $e) {
+        echo json_encode(['success' => false, 'error' => 'Не удалось удалить сообщение']);
+    }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_thread') {
+    header('Content-Type: application/json');
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        echo json_encode(['success' => false, 'error' => 'Неверный CSRF токен']);
+        exit;
+    }
+
+    $threadApplicationId = max(0, (int) ($_POST['chat_application_id'] ?? 0));
+    $threadTitle = trim((string) ($_POST['chat_title'] ?? ''));
+    if ($threadApplicationId <= 0 || $threadTitle === '') {
+        echo json_encode(['success' => false, 'error' => 'Чат не найден']);
+        exit;
+    }
+
+    try {
+        $deleteStmt = $pdo->prepare("
+            DELETE FROM messages
+            WHERE user_id = ?
+              AND application_id = ?
+              AND title = ?
+        ");
+        $deleteStmt->execute([$userId, $threadApplicationId, $threadTitle]);
+
+        echo json_encode([
+            'success' => true,
+            'deleted' => $deleteStmt->rowCount(),
+        ]);
+    } catch (Throwable $e) {
+        echo json_encode(['success' => false, 'error' => 'Не удалось удалить чат']);
+    }
+    exit;
+}
+
 if (($_GET['action'] ?? '') === 'poll_thread_messages') {
     $pollApplicationId = max(0, (int) ($_GET['chat_application_id'] ?? 0));
     $pollChatTitle = trim((string) ($_GET['chat_title'] ?? ''));
@@ -640,7 +725,10 @@ require_once __DIR__ . '/includes/header.php';
                             . '&chat_title=' . urlencode($threadTitle);
                     ?>
                     <?php $threadUnreadCount = (int) ($thread['unread_count'] ?? 0); ?>
-                    <article class="admin-list-card <?= $threadUnreadCount > 0 ? 'message-thread-card--unread' : '' ?>">
+                    <article
+                        class="admin-list-card message-thread-row <?= $threadUnreadCount > 0 ? 'message-thread-card--unread' : '' ?>"
+                        data-chat-application-id="<?= (int) ($thread['application_id'] ?? 0) ?>"
+                        data-chat-title="<?= htmlspecialchars($threadTitle, ENT_QUOTES, 'UTF-8') ?>">
                         <div class="admin-list-card__header">
                             <div class="admin-list-card__title-wrap">
                                 <h4 class="admin-list-card__title"><?= htmlspecialchars($threadTitle !== '' ? $threadTitle : 'Чат') ?></h4>
@@ -663,6 +751,9 @@ require_once __DIR__ . '/includes/header.php';
                             <a class="btn btn--primary btn--sm" href="<?= htmlspecialchars($threadUrl) ?>">
                                 <i class="fas fa-comments"></i> Открыть
                             </a>
+                            <button type="button" class="btn btn--ghost btn--sm js-delete-thread" style="color:#EF4444;">
+                                <i class="fas fa-trash"></i> Удалить
+                            </button>
                         </div>
                     </article>
                 <?php endforeach; ?>
@@ -689,6 +780,7 @@ require_once __DIR__ . '/includes/header.php';
                         data-message-subject="<?= htmlspecialchars((string) ($message['subject'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                         data-message-content="<?= htmlspecialchars((string) ($message['message'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                         data-message-priority="<?= htmlspecialchars($priorityClass, ENT_QUOTES, 'UTF-8') ?>"
+                        data-message-broadcast="<?= !empty($message['is_broadcast']) ? '1' : '0' ?>"
                         data-attachment-url="<?= !empty($message['attachment_file']) ? htmlspecialchars(buildMessageAttachmentPublicUrl((string) $message['attachment_file']), ENT_QUOTES, 'UTF-8') : '' ?>"
                         data-attachment-name="<?= htmlspecialchars((string) ($message['attachment_original_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                         data-attachment-is-image="<?= !empty($message['attachment_file']) && isImageMessageAttachment((string) ($message['attachment_mime_type'] ?? ''), (string) ($message['attachment_original_name'] ?? '')) ? '1' : '0' ?>">
@@ -710,6 +802,9 @@ require_once __DIR__ . '/includes/header.php';
                         <div class="admin-list-card__actions">
                             <button type="button" class="btn btn--primary btn--sm js-view-message">
                                 <i class="fas fa-eye"></i> Открыть
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm js-delete-message" style="color:#EF4444;">
+                                <i class="fas fa-trash"></i> Удалить
                             </button>
                         </div>
                     </article>
@@ -1108,13 +1203,22 @@ function showToast(message, type = 'success') {
     }, 2600);
 }
 
-function updateUserMessageStats() {
+function updateUserMessageStats(delta = 1) {
     const stats = Array.from(document.querySelectorAll('.message-user-hero__stat'));
     const messagesStat = stats.find((node) => node.textContent.includes('Сообщений отправлено'));
     if (!messagesStat) return;
     const match = messagesStat.textContent.match(/(\d+)/);
     const currentValue = match ? Number(match[1]) : 0;
-    messagesStat.textContent = 'Сообщений отправлено: ' + String(currentValue + 1);
+    messagesStat.textContent = 'Сообщений отправлено: ' + String(Math.max(0, currentValue + delta));
+}
+
+function updateUserChatStats(delta = 1) {
+    const stats = Array.from(document.querySelectorAll('.message-user-hero__stat'));
+    const chatsStat = stats.find((node) => node.textContent.includes('Чатов'));
+    if (!chatsStat) return;
+    const match = chatsStat.textContent.match(/(\d+)/);
+    const currentValue = match ? Number(match[1]) : 0;
+    chatsStat.textContent = 'Чатов: ' + String(Math.max(0, currentValue + delta));
 }
 
 function buildNotificationCard(messageData) {
@@ -1138,6 +1242,7 @@ function buildNotificationCard(messageData) {
     article.dataset.messageSubject = String(messageData.subject || '');
     article.dataset.messageContent = String(messageData.content || '');
     article.dataset.messagePriority = priority;
+    article.dataset.messageBroadcast = '0';
     article.dataset.attachmentUrl = attachmentUrl;
     article.dataset.attachmentName = attachmentName;
     article.dataset.attachmentIsImage = attachmentIsImage;
@@ -1156,6 +1261,7 @@ function buildNotificationCard(messageData) {
         '</div>' +
         '<div class="admin-list-card__actions">' +
             '<button type="button" class="btn btn--primary btn--sm js-view-message"><i class="fas fa-eye"></i> Открыть</button>' +
+            '<button type="button" class="btn btn--ghost btn--sm js-delete-message" style="color:#EF4444;"><i class="fas fa-trash"></i> Удалить</button>' +
         '</div>';
 
     const firstNotification = Array.from(cardsWrap.querySelectorAll('.message-row'))[0] || null;
@@ -1175,6 +1281,88 @@ function buildNotificationCard(messageData) {
         event.stopPropagation();
         viewMessage(article);
     });
+    article.querySelector('.js-delete-message')?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        deleteNotificationMessage(article);
+    });
+}
+
+async function deleteNotificationMessage(row) {
+    if (!row) return;
+
+    const messageId = Number(row.dataset.messageId || 0);
+    const isBroadcast = row.dataset.messageBroadcast === '1';
+    if (!messageId) return;
+
+    const confirmText = isBroadcast
+        ? 'Удалить это массовое сообщение у всех пользователей?'
+        : 'Удалить это сообщение?';
+    if (!confirm(confirmText)) {
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('action', 'delete_message');
+    formData.append('message_id', String(messageId));
+    formData.append('is_broadcast', isBroadcast ? '1' : '0');
+    formData.append('csrf_token', <?= json_encode(generateCSRFToken()) ?>);
+
+    try {
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось удалить сообщение');
+        }
+
+        row.remove();
+        updateUserMessageStats(-1);
+        if (currentViewedMessage && Number(currentViewedMessage.messageId || 0) === messageId) {
+            closeViewModal();
+        }
+        showToast(isBroadcast ? 'Массовое сообщение удалено' : 'Сообщение удалено', 'success');
+    } catch (error) {
+        showToast(error.message || 'Ошибка удаления сообщения', 'error');
+    }
+}
+
+async function deleteThreadCard(row) {
+    if (!row) return;
+
+    const chatApplicationId = Number(row.dataset.chatApplicationId || 0);
+    const chatTitle = String(row.dataset.chatTitle || '');
+    if (!chatApplicationId || !chatTitle) return;
+
+    if (!confirm('Удалить весь этот чат?')) {
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('action', 'delete_thread');
+    formData.append('chat_application_id', String(chatApplicationId));
+    formData.append('chat_title', chatTitle);
+    formData.append('csrf_token', <?= json_encode(generateCSRFToken()) ?>);
+
+    try {
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Не удалось удалить чат');
+        }
+
+        row.remove();
+        updateUserChatStats(-1);
+        showToast('Чат удалён', 'success');
+    } catch (error) {
+        showToast(error.message || 'Ошибка удаления чата', 'error');
+    }
 }
 
 function appendThreadMessage(messageData) {
@@ -1393,6 +1581,20 @@ document.addEventListener('DOMContentLoaded', () => {
         button.addEventListener('click', (event) => {
             event.stopPropagation();
             viewMessage(button.closest('.message-row'));
+        });
+    });
+
+    document.querySelectorAll('.js-delete-message').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            deleteNotificationMessage(button.closest('.message-row'));
+        });
+    });
+
+    document.querySelectorAll('.js-delete-thread').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            deleteThreadCard(button.closest('.message-thread-row'));
         });
     });
 

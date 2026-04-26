@@ -559,7 +559,7 @@ if ($selectedDisputeApplicationId > 0) {
 // --- Фильтры ---
 $search = $_GET['search'] ?? '';
 $priority = $_GET['priority'] ?? '';
-$sort = $_GET['sort'] ?? 'id_desc';
+$sort = $_GET['sort'] ?? 'date_desc';
 $filterUserId = max(0, (int) ($_GET['user_id'] ?? 0));
 $filterUserQuery = trim((string) ($_GET['user_query'] ?? ''));
 $allowedPriorities = ['normal', 'important', 'critical'];
@@ -568,151 +568,237 @@ $priority = '';
 }
 // --- Сортировка ---
 $sortMap = [
-'id_asc' => ['am.id', 'ASC'],
-'id_desc' => ['am.id', 'DESC'],
-'date_asc' => ['am.created_at', 'ASC'],
-'date_desc' => ['am.created_at', 'DESC'],
+'id_asc' => true,
+'id_desc' => true,
+'date_asc' => true,
+'date_desc' => true,
 ];
-[$sortField, $sortDir] = $sortMap[$sort] ?? $sortMap['id_desc'];
+if (!isset($sortMap[$sort])) {
+    $sort = 'date_desc';
+}
 // --- Пагинация ---
 $page = max(1, intval($_GET['page'] ??1));
 $perPage =20;
 $offset = ($page -1) * $perPage;
-// --- WHERE ---
-$where = "1=1";
-$params = [];
-if ($search) {
-$where .= " AND (am.subject LIKE ? OR am.message LIKE ? OR u.name LIKE ? OR u.surname LIKE ?)";
-$searchTerm = "%$search%";
-$params = array_fill(0,4, $searchTerm);
-}
-if ($filterUserId > 0) {
-    $where .= " AND am.user_id = ?";
-    $params[] = $filterUserId;
-} elseif ($filterUserQuery !== '') {
-    $userSearchConditions = build_user_search_conditions('u');
-    $where .= " AND (
-        " . implode("
-        OR ", $userSearchConditions) . "
-    )";
-    $userSearchTerm = '%' . $filterUserQuery . '%';
-    $params = array_merge($params, array_fill(0, count($userSearchConditions), $userSearchTerm));
-}
-if ($priority) {
-$where .= " AND am.priority = ?";
-$params[] = $priority;
-}
-// --- COUNT ---
-$countStmt = $pdo->prepare("
-SELECT COUNT(DISTINCT am.user_id)
-FROM admin_messages am
-LEFT JOIN users u ON am.user_id = u.id
-WHERE $where
-");
-$countStmt->execute($params);
-$totalMessages = $countStmt->fetchColumn();
-$totalPages = $perPage ? ceil($totalMessages / $perPage) :1;
-// --- ДАННЫЕ ---
-$stmt = $pdo->prepare("
-SELECT
-    am.user_id,
-    u.name as user_name,
-    u.surname as user_surname,
-    u.patronymic as user_patronymic,
-    u.email as user_email,
-    COUNT(am.id) as messages_count,
-    MAX(am.created_at) as last_message_at,
-    SUBSTRING_INDEX(
-        GROUP_CONCAT(am.subject ORDER BY am.created_at DESC, am.id DESC SEPARATOR '||__||'),
-        '||__||',
-        1
-    ) as last_subject,
-    SUBSTRING_INDEX(
-        GROUP_CONCAT(am.priority ORDER BY am.created_at DESC, am.id DESC SEPARATOR '||__||'),
-        '||__||',
-        1
-    ) as last_priority
-FROM admin_messages am
-LEFT JOIN users u ON am.user_id = u.id
-LEFT JOIN users ad ON am.admin_id = ad.id
-WHERE $where
-GROUP BY am.user_id, u.name, u.surname, u.patronymic, u.email
-ORDER BY MAX(am.created_at) DESC, am.user_id DESC
-LIMIT $perPage OFFSET $offset
-");
-$stmt->execute($params);
-$messages = $stmt->fetchAll();
-
+$adminMessagesByUser = [];
+$chatSummariesByUser = [];
 $chatUnreadByUser = [];
+
 try {
-    $chatUnreadStmt = $pdo->query("
+    $adminWhereParts = ['am.user_id IS NOT NULL', 'am.user_id > 0'];
+    $adminParams = [];
+
+    if ($search !== '') {
+        $adminUserSearchConditions = build_user_search_conditions('u');
+        $adminWhereParts[] = "(
+            am.subject LIKE ?
+            OR am.message LIKE ?
+            OR " . implode("
+            OR ", $adminUserSearchConditions) . "
+        )";
+        $adminSearchTerm = '%' . $search . '%';
+        $adminParams[] = $adminSearchTerm;
+        $adminParams[] = $adminSearchTerm;
+        $adminParams = array_merge($adminParams, array_fill(0, count($adminUserSearchConditions), $adminSearchTerm));
+    }
+
+    if ($filterUserId > 0) {
+        $adminWhereParts[] = 'am.user_id = ?';
+        $adminParams[] = $filterUserId;
+    } elseif ($filterUserQuery !== '') {
+        $adminFilterUserConditions = build_user_search_conditions('u');
+        $adminWhereParts[] = "(
+            " . implode("
+            OR ", $adminFilterUserConditions) . "
+        )";
+        $adminUserSearchTerm = '%' . $filterUserQuery . '%';
+        $adminParams = array_merge($adminParams, array_fill(0, count($adminFilterUserConditions), $adminUserSearchTerm));
+    }
+
+    if ($priority !== '') {
+        $adminWhereParts[] = 'am.priority = ?';
+        $adminParams[] = $priority;
+    }
+
+    $adminSummaryStmt = $pdo->prepare("
         SELECT
-            m.user_id,
-            COUNT(*) AS unread_count,
-            MAX(m.created_at) AS last_unread_at
-        FROM messages m
-        JOIN users author ON author.id = m.created_by
-        WHERE m.is_read = 0
-          AND author.is_admin = 0
-        GROUP BY m.user_id
+            am.user_id,
+            u.name AS user_name,
+            u.surname AS user_surname,
+            u.patronymic AS user_patronymic,
+            u.email AS user_email,
+            COUNT(am.id) AS messages_count,
+            MAX(am.created_at) AS last_message_at,
+            SUBSTRING_INDEX(
+                GROUP_CONCAT(am.subject ORDER BY am.created_at DESC, am.id DESC SEPARATOR '||__||'),
+                '||__||',
+                1
+            ) AS last_subject,
+            SUBSTRING_INDEX(
+                GROUP_CONCAT(am.priority ORDER BY am.created_at DESC, am.id DESC SEPARATOR '||__||'),
+                '||__||',
+                1
+            ) AS last_priority
+        FROM admin_messages am
+        LEFT JOIN users u ON am.user_id = u.id
+        WHERE " . implode(' AND ', $adminWhereParts) . "
+        GROUP BY am.user_id, u.name, u.surname, u.patronymic, u.email
     ");
-    foreach ($chatUnreadStmt->fetchAll() as $chatUnreadRow) {
-        $chatUnreadByUser[(int) ($chatUnreadRow['user_id'] ?? 0)] = [
-            'unread_count' => (int) ($chatUnreadRow['unread_count'] ?? 0),
-            'last_unread_at' => (string) ($chatUnreadRow['last_unread_at'] ?? ''),
-        ];
+    $adminSummaryStmt->execute($adminParams);
+
+    foreach ($adminSummaryStmt->fetchAll() as $row) {
+        $userId = (int) ($row['user_id'] ?? 0);
+        if ($userId <= 0) {
+            continue;
+        }
+        $adminMessagesByUser[$userId] = $row;
     }
 } catch (Throwable $e) {
+    $adminMessagesByUser = [];
+}
+
+try {
+    if ($priority === '') {
+        $chatWhereParts = ['m.user_id IS NOT NULL', 'm.user_id > 0'];
+        $chatParams = [];
+
+        if ($search !== '') {
+            $chatUserSearchConditions = build_user_search_conditions('u');
+            $chatWhereParts[] = "(
+                m.title LIKE ?
+                OR m.content LIKE ?
+                OR " . implode("
+                OR ", $chatUserSearchConditions) . "
+            )";
+            $chatSearchTerm = '%' . $search . '%';
+            $chatParams[] = $chatSearchTerm;
+            $chatParams[] = $chatSearchTerm;
+            $chatParams = array_merge($chatParams, array_fill(0, count($chatUserSearchConditions), $chatSearchTerm));
+        }
+
+        if ($filterUserId > 0) {
+            $chatWhereParts[] = 'm.user_id = ?';
+            $chatParams[] = $filterUserId;
+        } elseif ($filterUserQuery !== '') {
+            $chatFilterUserConditions = build_user_search_conditions('u');
+            $chatWhereParts[] = "(
+                " . implode("
+                OR ", $chatFilterUserConditions) . "
+            )";
+            $chatUserSearchTerm = '%' . $filterUserQuery . '%';
+            $chatParams = array_merge($chatParams, array_fill(0, count($chatFilterUserConditions), $chatUserSearchTerm));
+        }
+
+        $chatSummaryStmt = $pdo->prepare("
+            SELECT
+                m.user_id,
+                u.name AS user_name,
+                u.surname AS user_surname,
+                u.patronymic AS user_patronymic,
+                u.email AS user_email,
+                COUNT(DISTINCT CONCAT(IFNULL(m.application_id, 0), '||', IFNULL(m.title, ''))) AS chats_count,
+                COUNT(m.id) AS chat_messages_count,
+                MAX(m.created_at) AS last_chat_at,
+                SUBSTRING_INDEX(
+                    GROUP_CONCAT(
+                        CASE
+                            WHEN TRIM(IFNULL(m.title, '')) <> '' THEN m.title
+                            WHEN TRIM(IFNULL(m.content, '')) <> '' THEN m.content
+                            ELSE 'Чат с пользователем'
+                        END
+                        ORDER BY m.created_at DESC, m.id DESC SEPARATOR '||__||'
+                    ),
+                    '||__||',
+                    1
+                ) AS last_chat_subject,
+                SUM(CASE WHEN m.is_read = 0 AND author.is_admin = 0 THEN 1 ELSE 0 END) AS unread_count,
+                MAX(CASE WHEN m.is_read = 0 AND author.is_admin = 0 THEN m.created_at ELSE NULL END) AS last_unread_at
+            FROM messages m
+            JOIN users author ON author.id = m.created_by
+            LEFT JOIN users u ON m.user_id = u.id
+            WHERE " . implode(' AND ', $chatWhereParts) . "
+            GROUP BY m.user_id, u.name, u.surname, u.patronymic, u.email
+        ");
+        $chatSummaryStmt->execute($chatParams);
+
+        foreach ($chatSummaryStmt->fetchAll() as $row) {
+            $userId = (int) ($row['user_id'] ?? 0);
+            if ($userId <= 0) {
+                continue;
+            }
+            $chatSummariesByUser[$userId] = $row;
+            $chatUnreadByUser[$userId] = [
+                'unread_count' => (int) ($row['unread_count'] ?? 0),
+                'last_unread_at' => (string) ($row['last_unread_at'] ?? ''),
+            ];
+        }
+    }
+} catch (Throwable $e) {
+    $chatSummariesByUser = [];
     $chatUnreadByUser = [];
 }
 
-if (!empty($chatUnreadByUser)) {
-    $knownUserIds = [];
-    foreach ($messages as $messageRow) {
-        $knownUserIds[(int) ($messageRow['user_id'] ?? 0)] = true;
-    }
+$messageUsers = [];
+$allMessageUserIds = array_values(array_unique(array_merge(array_keys($adminMessagesByUser), array_keys($chatSummariesByUser))));
 
-    $missingUserIds = array_values(array_filter(array_keys($chatUnreadByUser), static function ($userId) use ($knownUserIds) {
-        return $userId > 0 && !isset($knownUserIds[(int) $userId]);
-    }));
+foreach ($allMessageUserIds as $userId) {
+    $adminRow = $adminMessagesByUser[$userId] ?? null;
+    $chatRow = $chatSummariesByUser[$userId] ?? null;
 
-    if (!empty($missingUserIds)) {
-        $placeholders = implode(',', array_fill(0, count($missingUserIds), '?'));
-        $missingUsersStmt = $pdo->prepare("
-            SELECT id, name, surname, patronymic, email
-            FROM users
-            WHERE id IN ($placeholders)
-            ORDER BY surname ASC, name ASC, id ASC
-        ");
-        $missingUsersStmt->execute($missingUserIds);
-        foreach ($missingUsersStmt->fetchAll() as $userRow) {
-            $userId = (int) ($userRow['id'] ?? 0);
-            if ($userId <= 0 || !isset($chatUnreadByUser[$userId])) {
-                continue;
-            }
-            $messages[] = [
-                'user_id' => $userId,
-                'user_name' => (string) ($userRow['name'] ?? ''),
-                'user_surname' => (string) ($userRow['surname'] ?? ''),
-                'user_patronymic' => (string) ($userRow['patronymic'] ?? ''),
-                'user_email' => (string) ($userRow['email'] ?? ''),
-                'messages_count' => 0,
-                'last_message_at' => (string) ($chatUnreadByUser[$userId]['last_unread_at'] ?? date('Y-m-d H:i:s')),
-                'last_subject' => 'Новый ответ пользователя в чате',
-                'last_priority' => 'important',
-            ];
-        }
+    $adminLastAt = (string) ($adminRow['last_message_at'] ?? '');
+    $chatLastAt = (string) ($chatRow['last_chat_at'] ?? '');
+    $adminLastTs = $adminLastAt !== '' ? (strtotime($adminLastAt) ?: 0) : 0;
+    $chatLastTs = $chatLastAt !== '' ? (strtotime($chatLastAt) ?: 0) : 0;
+    $chatUnreadCount = (int) ($chatUnreadByUser[$userId]['unread_count'] ?? 0);
+    $chatIsLatest = $chatLastTs > $adminLastTs;
 
-        usort($messages, static function (array $left, array $right): int {
-            $leftTime = strtotime((string) ($left['last_message_at'] ?? '')) ?: 0;
-            $rightTime = strtotime((string) ($right['last_message_at'] ?? '')) ?: 0;
-            if ($leftTime === $rightTime) {
-                return ((int) ($right['user_id'] ?? 0)) <=> ((int) ($left['user_id'] ?? 0));
-            }
-            return $rightTime <=> $leftTime;
-        });
-    }
+    $messageUsers[] = [
+        'user_id' => $userId,
+        'user_name' => (string) ($adminRow['user_name'] ?? $chatRow['user_name'] ?? ''),
+        'user_surname' => (string) ($adminRow['user_surname'] ?? $chatRow['user_surname'] ?? ''),
+        'user_patronymic' => (string) ($adminRow['user_patronymic'] ?? $chatRow['user_patronymic'] ?? ''),
+        'user_email' => (string) ($adminRow['user_email'] ?? $chatRow['user_email'] ?? ''),
+        'messages_count' => (int) ($adminRow['messages_count'] ?? 0),
+        'chats_count' => (int) ($chatRow['chats_count'] ?? 0),
+        'chat_messages_count' => (int) ($chatRow['chat_messages_count'] ?? 0),
+        'last_message_at' => $chatIsLatest ? $chatLastAt : $adminLastAt,
+        'last_subject' => $chatIsLatest
+            ? (string) ($chatRow['last_chat_subject'] ?? 'Чат с пользователем')
+            : (string) ($adminRow['last_subject'] ?? 'Без темы'),
+        'last_priority' => $chatIsLatest
+            ? ($chatUnreadCount > 0 ? 'important' : 'normal')
+            : (string) ($adminRow['last_priority'] ?? 'normal'),
+    ];
 }
+
+usort($messageUsers, static function (array $left, array $right) use ($sort): int {
+    if ($sort === 'id_asc') {
+        return ((int) ($left['user_id'] ?? 0)) <=> ((int) ($right['user_id'] ?? 0));
+    }
+
+    if ($sort === 'id_desc') {
+        return ((int) ($right['user_id'] ?? 0)) <=> ((int) ($left['user_id'] ?? 0));
+    }
+
+    $leftTime = strtotime((string) ($left['last_message_at'] ?? '')) ?: 0;
+    $rightTime = strtotime((string) ($right['last_message_at'] ?? '')) ?: 0;
+
+    if ($leftTime === $rightTime) {
+        return ((int) ($right['user_id'] ?? 0)) <=> ((int) ($left['user_id'] ?? 0));
+    }
+
+    return $sort === 'date_asc'
+        ? ($leftTime <=> $rightTime)
+        : ($rightTime <=> $leftTime);
+});
+
+$totalMessages = count($messageUsers);
+$totalPages = $perPage ? (int) ceil($totalMessages / $perPage) : 1;
+if ($totalPages > 0 && $page > $totalPages) {
+    $page = $totalPages;
+    $offset = ($page - 1) * $perPage;
+}
+$messages = array_slice($messageUsers, $offset, $perPage);
 // --- СТАТИСТИКА ---
 $priorityStats = $pdo->query("
 SELECT priority, COUNT(*) as count 
@@ -877,10 +963,26 @@ echo json_encode(['success' => false, 'error' => 'Пользователь не 
 exit;
 }
 try {
-    $stmt = $pdo->prepare("DELETE FROM admin_messages WHERE user_id = ?");
-    $stmt->execute([$userIdToDelete]);
-    echo json_encode(['success' => true]);
+    $pdo->beginTransaction();
+
+    $deleteAdminMessagesStmt = $pdo->prepare("DELETE FROM admin_messages WHERE user_id = ?");
+    $deleteAdminMessagesStmt->execute([$userIdToDelete]);
+    $deletedAdminMessages = $deleteAdminMessagesStmt->rowCount();
+
+    $deleteChatMessagesStmt = $pdo->prepare("DELETE FROM messages WHERE user_id = ?");
+    $deleteChatMessagesStmt->execute([$userIdToDelete]);
+    $deletedChatMessages = $deleteChatMessagesStmt->rowCount();
+
+    $pdo->commit();
+    echo json_encode([
+        'success' => true,
+        'deleted_admin_messages' => $deletedAdminMessages,
+        'deleted_chat_messages' => $deletedChatMessages,
+    ]);
 } catch (Exception $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     echo json_encode(['success' => false, 'error' => 'Не удалось удалить сообщения пользователя']);
 }
 exit;
@@ -1246,12 +1348,12 @@ require __DIR__ . '/includes/chat-thread-modal.php';
 <div class="card">
 <div class="card__header">
 <div class="flex justify-between items-center w-100 messages-toolbar">
-<h3>Пользователи с сообщениями (<?= e($totalMessages) ?>)</h3>
+<h3>Пользователи с сообщениями и чатами (<?= e($totalMessages) ?>)</h3>
 </div>
 </div>
 <div class="card__body">
 <?php if (empty($messages)): ?>
-<div class="text-center text-secondary" style="padding:40px;">Сообщений не найдено</div>
+<div class="text-center text-secondary" style="padding:40px;">Сообщения и чаты не найдены</div>
 <?php else: ?>
 <div class="admin-list-cards">
 <?php foreach ($messages as $msg): ?>
@@ -1284,9 +1386,10 @@ require __DIR__ . '/includes/chat-thread-modal.php';
         <?php endif; ?>
     </div>
     <div class="admin-list-card__meta">
-        <span><strong>Последнее сообщение:</strong> <?= date('d.m.Y H:i', strtotime((string) $msg['last_message_at'])) ?></span>
-        <span><strong>Тема:</strong> <?= htmlspecialchars((string) ($msg['last_subject'] ?? 'Без темы')) ?></span>
-        <span><strong>Всего сообщений:</strong> <?= (int) ($msg['messages_count'] ?? 0) ?></span>
+        <span><strong>Последняя активность:</strong> <?= !empty($msg['last_message_at']) ? date('d.m.Y H:i', strtotime((string) $msg['last_message_at'])) : 'Не указана' ?></span>
+        <span><strong>Последняя тема:</strong> <?= htmlspecialchars((string) ($msg['last_subject'] ?? 'Без темы')) ?></span>
+        <span><strong>Личных сообщений:</strong> <?= (int) ($msg['messages_count'] ?? 0) ?></span>
+        <span><strong>Чатов:</strong> <?= (int) ($msg['chats_count'] ?? 0) ?></span>
     </div>
     <div class="admin-list-card__actions">
         <a href="<?= e($userMessagesUrl) ?>" class="btn btn--primary btn--sm"><i class="fas fa-eye"></i> Открыть</a>
@@ -2302,7 +2405,7 @@ document.addEventListener('DOMContentLoaded', function() {
    event.stopPropagation();
    const userId = Number(button.dataset.userId || 0);
    if (!userId) return;
-   if (!confirm('Удалить все простые сообщения для этого пользователя?')) {
+   if (!confirm('Удалить для этого пользователя все личные сообщения и все чаты?')) {
     return;
    }
 
@@ -2324,7 +2427,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (row) {
      row.remove();
     }
-    showToast('Сообщения пользователя удалены', 'success');
+    showToast('Личные сообщения и чаты пользователя удалены', 'success');
    } catch (error) {
     showToast(error.message || 'Ошибка удаления', 'error');
    }

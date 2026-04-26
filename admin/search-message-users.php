@@ -30,9 +30,17 @@ try {
 
     $stmt = $pdo->prepare("
         SELECT DISTINCT u.id, u.name, u.surname, u.email
-        FROM admin_messages am
-        INNER JOIN users u ON u.id = am.user_id
-        WHERE am.user_id IS NOT NULL
+        FROM users u
+        INNER JOIN (
+            SELECT user_id
+            FROM admin_messages
+            WHERE user_id IS NOT NULL
+            UNION
+            SELECT user_id
+            FROM messages
+            WHERE user_id IS NOT NULL
+        ) contacts ON contacts.user_id = u.id
+        WHERE u.is_admin = 0
           AND (
             {$searchSql}
             OR (? > 0 AND u.id = ?)

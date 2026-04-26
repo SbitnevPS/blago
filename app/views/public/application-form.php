@@ -1026,9 +1026,6 @@ generateCSRFToken();
                             <div class="empty-state__text">В карточке участника сразу заполняются данные и загружается рисунок.</div>
                         </div>
                         <div id="participantsContainer"></div>
-                        <div class="wizard-step__footer-action">
-                            <button type="button" class="btn btn--secondary btn--lg" id="addParticipantBtn"><i class="fas fa-plus"></i> Добавить участника</button>
-                        </div>
                     </div>
                 </section>
 
@@ -1108,10 +1105,15 @@ generateCSRFToken();
                 </section>
 
                 <div class="wizard-nav mb-lg">
-                    <button type="button" class="btn btn--primary" id="prevStepBtn" disabled><i class="fas fa-arrow-left"></i> Назад</button>
-                    <button type="submit" class="btn btn--secondary" id="saveDraftBtn" data-form-action="save_draft"><i class="fas fa-save"></i> Сохранить черновик</button>
-                    <button type="button" class="btn btn--primary" id="nextStepBtn">Далее <i class="fas fa-arrow-right"></i></button>
-                    <button type="submit" class="btn btn--primary" id="submitBtn" data-form-action="submit" disabled><i class="fas fa-paper-plane"></i> Отправить заявку</button>
+                    <div class="wizard-nav__top" id="wizardParticipantAction" hidden>
+                        <button type="button" class="btn btn--secondary btn--lg" id="addParticipantBtn"><i class="fas fa-plus"></i> Добавить ещё одного участника</button>
+                    </div>
+                    <div class="wizard-nav__actions">
+                        <button type="button" class="btn btn--primary" id="prevStepBtn" disabled><i class="fas fa-arrow-left"></i> Назад</button>
+                        <button type="submit" class="btn btn--secondary" id="saveDraftBtn" data-form-action="save_draft"><i class="fas fa-save"></i> Сохранить черновик</button>
+                        <button type="button" class="btn btn--primary" id="nextStepBtn">Далее <i class="fas fa-arrow-right"></i></button>
+                        <button type="submit" class="btn btn--primary" id="submitBtn" data-form-action="submit" disabled><i class="fas fa-paper-plane"></i> Отправить заявку</button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -1787,6 +1789,7 @@ function syncNavigationButtons(isReadyToSubmit = false) {
     const prevBtn = document.getElementById('prevStepBtn');
     const nextBtn = document.getElementById('nextStepBtn');
     const submitBtn = document.getElementById('submitBtn');
+    const participantAction = document.getElementById('wizardParticipantAction');
     const isLastStep = currentStep === steps.length;
 
     if (prevBtn) {
@@ -1800,6 +1803,10 @@ function syncNavigationButtons(isReadyToSubmit = false) {
 
     if (submitBtn) {
         submitBtn.disabled = !isLastStep || !isReadyToSubmit;
+    }
+
+    if (participantAction) {
+        participantAction.hidden = currentStep !== 2;
     }
 }
 

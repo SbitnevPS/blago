@@ -2549,8 +2549,8 @@
 
 .wizard-nav {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 12px;
   position: sticky;
   bottom: 16px;
   z-index: 90;
@@ -2560,6 +2560,22 @@
   background: rgba(255, 255, 255, .96);
   box-shadow: 0 14px 34px rgba(15, 23, 42, .06);
   backdrop-filter: blur(14px);
+}
+
+.wizard-nav__top {
+  display: flex;
+  justify-content: center;
+}
+
+.wizard-nav__top .btn {
+  min-width: min(100%, 320px);
+  justify-content: center;
+}
+
+.wizard-nav__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .wizard-nav .btn {
@@ -3461,11 +3477,15 @@
   }
 
   .wizard-nav {
+    gap: 10px;
+    bottom: calc(76px + 10px);
+    padding: 12px;
+  }
+
+  .wizard-nav__actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
-    bottom: calc(76px + 10px);
-    padding: 12px;
   }
 
   .wizard-nav .btn {
@@ -3478,19 +3498,19 @@
     gap: 6px;
   }
 
-  .wizard-nav #prevStepBtn {
+  .wizard-nav__actions #prevStepBtn {
     order: 1;
   }
 
-  .wizard-nav #nextStepBtn {
+  .wizard-nav__actions #nextStepBtn {
     order: 2;
   }
 
-  .wizard-nav #saveDraftBtn {
+  .wizard-nav__actions #saveDraftBtn {
     order: 3;
   }
 
-  .wizard-nav #submitBtn {
+  .wizard-nav__actions #submitBtn {
     order: 4;
   }
 
@@ -3692,11 +3712,15 @@
 
 @media (max-width: 560px) {
   .wizard-nav {
-    grid-template-columns: 1fr;
-    gap: 6px;
+    gap: 8px;
     bottom: calc(72px + 8px);
     padding: 10px;
     border-radius: 16px;
+  }
+
+  .wizard-nav__actions {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .wizard-nav .btn {
