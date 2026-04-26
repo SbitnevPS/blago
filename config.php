@@ -1616,7 +1616,7 @@ function removeUserFromContestBlacklist(int $userId, int $contestId): array
 
 function getContestBlacklistRestrictionMessage(): string
 {
-    return 'Так как Вы неоднократно нарушили условия текущего конкурса, то Вы не можете подавать заявку на этот конкурс.';
+    return 'Так как Вы неоднократно нарушили условия текущего конкурса, то одача заявок на него больше недоступна.';
 }
 
 function getCurrentAdmin() {

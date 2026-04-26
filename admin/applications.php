@@ -199,6 +199,7 @@ try {
 
 $where = [];
 $params = [];
+$revisionWhereSql = "a.allow_edit = 1 AND a.status <> 'approved' AND a.status <> 'draft'";
 
 // Черновики не участвуют в админских сценариях обработки
 $where[] = "a.status <> 'draft'";
@@ -208,7 +209,7 @@ if ($status) {
         $status = 'rejected';
     }
     if ($status === 'revision') {
-        $where[] = "a.allow_edit = 1 AND a.status <> 'approved' AND a.status <> 'draft'";
+        $where[] = $revisionWhereSql;
     } else {
         $where[] = 'a.status = ?';
         $params[] = $status;
@@ -528,7 +529,7 @@ if (!empty($_SESSION['error_message'])) {
     $statCounts = [
         'all' => $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.status <> 'draft'" . $archiveFilterSql)->fetchColumn(),
         'submitted' => $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.status = 'submitted'" . $archiveFilterSql)->fetchColumn(),
-        'revision' => $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.allow_edit = 1 AND a.status <> 'approved'" . $archiveFilterSql)->fetchColumn(),
+        'revision' => $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE {$revisionWhereSql}" . $archiveFilterSql)->fetchColumn(),
         'corrected' => $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.status = 'corrected'" . $archiveFilterSql)->fetchColumn(),
         'rejected' => $pdo->query("SELECT COUNT(*) FROM applications a LEFT JOIN contests c ON a.contest_id = c.id WHERE a.status = 'rejected'" . $archiveFilterSql)->fetchColumn(),
     ];
