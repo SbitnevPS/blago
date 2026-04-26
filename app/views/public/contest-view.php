@@ -99,7 +99,7 @@ $coverSrc = $coverImage !== ''
 
         <?php if (!empty($contest['document_file'])): ?>
             <div class="mt-lg">
-                <a href="/uploads/documents/<?= htmlspecialchars($contest['document_file']) ?>" class="btn btn--secondary" target="_blank" download>
+                <a href="/uploads/documents/<?= rawurlencode((string) $contest['document_file']) ?>" class="btn btn--secondary" target="_blank" download>
                     <i class="fas fa-download"></i> Скачать положение о конкурсе
                 </a>
             </div>

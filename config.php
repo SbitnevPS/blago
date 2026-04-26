@@ -1968,7 +1968,55 @@ function saveSystemSettings(array $newValues) {
 }
 
 // Функции для работы с загрузками
-function uploadFile($file, $directory, $allowedTypes = []) {
+function normalizeUploadedFileName(string $fileName): string
+{
+    $fileName = trim($fileName);
+    if ($fileName === '') {
+        return '';
+    }
+
+    $parts = preg_split('#[\\\\/]+#', $fileName);
+    $fileName = trim((string) end($parts));
+    $fileName = preg_replace('/[\x00-\x1F\x7F]/u', '', $fileName);
+
+    if ($fileName === '.' || $fileName === '..') {
+        return '';
+    }
+
+    return $fileName;
+}
+
+function resolveUploadTargetFileName(string $directory, string $preferredFileName, string $replaceExistingFileName = ''): string
+{
+    $preferredFileName = normalizeUploadedFileName($preferredFileName);
+    $replaceExistingFileName = normalizeUploadedFileName($replaceExistingFileName);
+
+    if ($preferredFileName === '') {
+        return '';
+    }
+
+    $preferredPath = $directory . '/' . $preferredFileName;
+    if (!file_exists($preferredPath) || ($replaceExistingFileName !== '' && $preferredFileName === $replaceExistingFileName)) {
+        return $preferredFileName;
+    }
+
+    $baseName = pathinfo($preferredFileName, PATHINFO_FILENAME);
+    $extension = pathinfo($preferredFileName, PATHINFO_EXTENSION);
+    if ($baseName === '') {
+        $baseName = 'file';
+    }
+
+    $suffix = 2;
+    do {
+        $candidate = $baseName . '-' . $suffix . ($extension !== '' ? '.' . $extension : '');
+        $candidatePath = $directory . '/' . $candidate;
+        $suffix++;
+    } while (file_exists($candidatePath) && ($replaceExistingFileName === '' || $candidate !== $replaceExistingFileName));
+
+    return $candidate;
+}
+
+function uploadFile($file, $directory, $allowedTypes = [], array $options = []) {
     if (!isset($file['error']) || is_array($file['error'])) {
         return ['success' => false, 'message' => 'Ошибка загрузки файла'];
     }
@@ -1977,9 +2025,13 @@ function uploadFile($file, $directory, $allowedTypes = []) {
         return ['success' => false, 'message' => 'Ошибка: ' . $file['error']];
     }
 
-    $fileName = $file['name'];
+    $fileName = normalizeUploadedFileName((string) ($file['name'] ?? ''));
     $fileSize = $file['size'];
     $tmpName = $file['tmp_name'];
+
+    if ($fileName === '') {
+        return ['success' => false, 'message' => 'Некорректное имя файла'];
+    }
 
     // Проверка расширения
     $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
@@ -1988,8 +2040,19 @@ function uploadFile($file, $directory, $allowedTypes = []) {
         return ['success' => false, 'message' => 'Недопустимый тип файла'];
     }
 
-    // Генерация уникального имени
-    $newFileName = uniqid() . '_' . preg_replace('/[^a-zA-Z0-9_.-]/', '', $fileName);
+    $preserveOriginalName = !empty($options['preserve_original_name']);
+    $replaceExistingFileName = (string) ($options['replace_existing_file_name'] ?? '');
+
+    if ($preserveOriginalName) {
+        $newFileName = resolveUploadTargetFileName($directory, $fileName, $replaceExistingFileName);
+    } else {
+        $safeAsciiFileName = preg_replace('/[^a-zA-Z0-9_.-]/', '', $fileName);
+        if ($safeAsciiFileName === '') {
+            $safeAsciiFileName = 'file' . ($ext !== '' ? '.' . $ext : '');
+        }
+        $newFileName = uniqid() . '_' . $safeAsciiFileName;
+    }
+
     $targetPath = $directory . '/' . $newFileName;
 
     if (move_uploaded_file($tmpName, $targetPath)) {

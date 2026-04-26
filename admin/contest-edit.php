@@ -136,13 +136,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $uploadedNewDocument = false;
             if ($hasDocumentFileColumn && isset($_FILES['document_file']) && ($_FILES['document_file']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
-                $result = uploadFile($_FILES['document_file'], DOCUMENTS_PATH, ['pdf', 'doc', 'docx']);
+                $result = uploadFile($_FILES['document_file'], DOCUMENTS_PATH, ['pdf', 'doc', 'docx'], [
+                    'preserve_original_name' => true,
+                    'replace_existing_file_name' => (string) $document_file,
+                ]);
                 if ($result['success']) {
+                    $newDocumentFile = (string) ($result['filename'] ?? '');
                     // Удаляем старый файл
-                    if ($document_file && file_exists(DOCUMENTS_PATH . '/' . $document_file)) {
+                    if ($document_file && $document_file !== $newDocumentFile && file_exists(DOCUMENTS_PATH . '/' . $document_file)) {
                         unlink(DOCUMENTS_PATH . '/' . $document_file);
                     }
-                    $document_file = $result['filename'];
+                    $document_file = $newDocumentFile;
                     $uploadedNewDocument = true;
                 }
             }
@@ -439,7 +443,7 @@ $applicationsAdminUrl = $isEdit ? '/admin/application-list.php?contest_id=' . (i
                                             <span>Текущий файл положения конкурса</span>
                                         </div>
                                         <div style="display:flex; gap:8px; align-items:center; justify-content:flex-end; flex-wrap:wrap;">
-                                            <a href="/uploads/documents/<?= htmlspecialchars($contest['document_file']) ?>" target="_blank" class="btn btn--ghost btn--sm">
+                                            <a href="/uploads/documents/<?= rawurlencode((string) $contest['document_file']) ?>" target="_blank" class="btn btn--ghost btn--sm">
                                                 <i class="fas fa-eye"></i> Открыть
                                             </a>
                                             <button type="button" class="btn btn--ghost btn--sm" id="contestDocumentRemoveBtn">
