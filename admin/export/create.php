@@ -122,6 +122,7 @@ require_once __DIR__ . '/../includes/header.php';
                      'min_length' => 2,
                      'min_length_numeric' => 1,
                      'debounce' => 220,
+                     'preserve_input_on_select' => 1,
                  ]) ?>>
                 <label class="form-label">Поиск по участнику</label>
                 <input type="text" class="form-input" name="participant_label" value="<?= htmlspecialchars((string) $filters['participant_label'], ENT_QUOTES, 'UTF-8') ?>" data-live-search-input placeholder="Введите номер или ФИО участника">

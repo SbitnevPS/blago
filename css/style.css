@@ -65,7 +65,7 @@
 	--radius-lg: 0.75rem;
 	--radius-xl: 1rem;
 	--radius-2xl: 1.5rem;
-	--radius-full: 9999px;
+	--radius-full: 12px;
 
 	/* Тени */
 	--shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);

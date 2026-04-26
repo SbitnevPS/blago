@@ -70,6 +70,9 @@
     const selectUrlField = root.dataset.selectUrlField || '';
     const secondaryTemplate = root.dataset.secondaryTemplate || '';
     const emptyText = root.dataset.emptyText || 'Ничего не найдено';
+    const preserveInputOnSelect = root.dataset.preserveInputOnSelect === '1';
+    const showMoreLabel = normalizeText(root.dataset.showMoreLabel) || 'Показать остальные все результаты поиска';
+    const showMoreAction = normalizeText(root.dataset.showMoreAction).toLowerCase();
     const limitRaw = Number.parseInt(root.dataset.limit || '7', 10);
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 7) : 7;
     const minLength = Number.parseInt(root.dataset.minLength || '2', 10);
@@ -114,6 +117,7 @@
     let activeIndex = -1;
     let abortController = null;
     let renderedItems = [];
+    let hasMoreResults = false;
 
     results.id = results.id || listboxId;
     results.setAttribute('role', 'listbox');
@@ -143,6 +147,7 @@
 
     const hideResults = () => {
       renderedItems = [];
+      hasMoreResults = false;
       activeIndex = -1;
       if (abortController) {
         abortController.abort();
@@ -176,12 +181,31 @@
 
     const selectItem = (item) => {
       setHiddenValues(item);
-      input.value = item.value || '';
+      if (!preserveInputOnSelect) {
+        input.value = item.value || '';
+      }
       hideResults();
 
       if (selectUrlField) {
         navigateToAdminPath(item?.raw?.[selectUrlField] ?? item?.[selectUrlField]);
       }
+    };
+
+    const submitCurrentQuery = () => {
+      setHiddenValues(null);
+      hideResults();
+
+      const form = root.closest('form');
+      if (!form) {
+        return;
+      }
+
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+        return;
+      }
+
+      form.submit();
     };
 
     const setActiveIndex = (nextIndex) => {
@@ -202,12 +226,13 @@
       syncActiveItem();
     };
 
-    const renderItems = (items) => {
+    const renderItems = (items, nextHasMoreResults = false) => {
       renderedItems = Array.isArray(items)
         ? items
           .map((item) => formatItem(item, templateConfig))
           .filter((item) => item.id > 0 && item.primary !== '')
         : [];
+      hasMoreResults = Boolean(nextHasMoreResults);
 
       // Safety net: even if the backend ignores `limit`, keep the dropdown capped.
       if (Number.isFinite(limit) && limit > 0) {
@@ -223,7 +248,7 @@
         return;
       }
 
-      results.innerHTML = renderedItems.map((item, itemIndex) => {
+      const itemsHtml = renderedItems.map((item, itemIndex) => {
         const itemId = `${results.id}-item-${itemIndex}`;
         return `
           <button
@@ -238,6 +263,16 @@
           </button>
         `;
       }).join('');
+
+      const showMoreHtml = hasMoreResults && showMoreAction === 'submit'
+        ? `
+          <button type="button" class="user-results__more" data-live-search-show-more>
+            ${escapeHtml(showMoreLabel)}
+          </button>
+        `
+        : '';
+
+      results.innerHTML = itemsHtml + showMoreHtml;
 
       results.style.display = 'block';
       input.setAttribute('aria-expanded', 'true');
@@ -269,7 +304,11 @@
       }
 
       const payload = await response.json();
-      if (!Array.isArray(payload)) {
+      const payloadItems = Array.isArray(payload)
+        ? payload
+        : (Array.isArray(payload?.items) ? payload.items : null);
+
+      if (!payloadItems) {
         const message = typeof payload?.error === 'string' && payload.error.trim() !== ''
           ? payload.error.trim()
           : emptyText;
@@ -281,7 +320,7 @@
         abortController = null;
         return;
       }
-      renderItems(payload);
+      renderItems(payloadItems, Boolean(payload?.has_more));
       abortController = null;
     };
 
@@ -339,11 +378,11 @@
       }
 
       if (event.key === 'Enter') {
-        if (!renderedItems.length) {
+        if (!renderedItems.length || activeIndex < 0) {
           return;
         }
         event.preventDefault();
-        const selectedItem = renderedItems[activeIndex >= 0 ? activeIndex : 0];
+        const selectedItem = renderedItems[activeIndex];
         if (selectedItem) {
           selectItem(selectedItem);
         }
@@ -373,6 +412,14 @@
     });
 
     results.addEventListener('click', (event) => {
+      const showMoreButton = event.target.closest('[data-live-search-show-more]');
+      if (showMoreButton) {
+        if (showMoreAction === 'submit') {
+          submitCurrentQuery();
+        }
+        return;
+      }
+
       const item = event.target.closest('.user-results__item');
       if (!item) {
         return;

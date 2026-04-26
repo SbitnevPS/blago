@@ -763,6 +763,7 @@ try {
 
 $hasDisputeChat = !empty($disputeChatMessages);
 $canStartDisputeChat = getApplicationCanonicalStatus($application) === 'rejected';
+$showDisputeChatUi = false;
 
 $currentPage = 'applications';
 ?>
@@ -1051,8 +1052,8 @@ $currentPage = 'applications';
                     <?php endif; ?>
                     <?php if ($isAgreementDeclined): ?>
                     <div class="app-highlight app-highlight--danger-soft" style="width:100%;">
-                        <strong><i class="fas fa-triangle-exclamation"></i> Пользовательское соглашение не подписано.</strong>
-                        <div>Перейдите в раздел с пользовательским соглашением и дайте согласие, либо внесите изменения, которые не противоречат условиям конкурса, после чего снова нажмите «Подписать».</div>
+                        <strong><i class="fas fa-triangle-exclamation"></i> Пользовательское соглашение отклонено.</strong>
+                        <div>Если Вы хотите принять другое решение, то зайдите в заявку и измените его.</div>
                     </div>
                     <?php endif; ?>
 	                <?php elseif ($hasDiplomas): ?>
@@ -1065,15 +1066,15 @@ $currentPage = 'applications';
                 <?php elseif (getApplicationCanonicalStatus($application) === 'rejected'): ?>
                     <div class="app-highlight" style="width:100%;">
                         <strong>Заявка отклонена.</strong>
-                        <div>Причина доступна в комментариях администратора и чате оспаривания.</div>
+                        <div>Заявка не соответствует условиям конкурса.</div>
                     </div>
                 <?php else: ?>
                     <div style="color:#64748B;"><?= $effectiveApplicationStatus === 'corrected' ? 'Заявка повторно отправлена на проверку после исправлений.' : 'Заявка находится на рассмотрении.' ?></div>
                 <?php endif; ?>
                 <?php if ($isAgreementDeclined && !($effectiveApplicationStatus === 'revision' && $canEdit)): ?>
                     <div class="app-highlight app-highlight--danger-soft" style="width:100%;">
-                        <strong><i class="fas fa-triangle-exclamation"></i> Пользовательское соглашение не подписано.</strong>
-                        <div>Перейдите в раздел с пользовательским соглашением и дайте согласие, либо внесите изменения, которые не противоречат условиям конкурса, после чего снова нажмите «Подписать».</div>
+                        <strong><i class="fas fa-triangle-exclamation"></i> Пользовательское соглашение отклонено.</strong>
+                        <div>Если Вы хотите принять другое решение, то зайдите в заявку и измените его.</div>
                     </div>
                 <?php endif; ?>
                 <?php if ($hasCuratorChat): ?>
@@ -1128,7 +1129,7 @@ $currentPage = 'applications';
     </aside>
 </div>
 
-<?php if ($canStartDisputeChat || $hasDisputeChat): ?>
+<?php if ($showDisputeChatUi && ($canStartDisputeChat || $hasDisputeChat)): ?>
 <div class="card mb-lg" id="dispute-chat">
     <div class="card__header flex justify-between items-center">
         <h3>Оспаривание решения по заявке</h3>

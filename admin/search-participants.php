@@ -25,6 +25,7 @@ try {
 
     $limit = (int) ($_GET['limit'] ?? 7);
     $limit = max(1, min(7, $limit));
+    $fetchLimit = $limit + 1;
     $supportsContestArchive = contest_archive_column_exists();
     $archiveWhere = $supportsContestArchive ? ' AND COALESCE(c.is_archived, 0) = 0' : '';
 
@@ -46,7 +47,7 @@ try {
             WHERE p.public_number LIKE ?
             $archiveWhere
             ORDER BY p.public_number ASC, p.id ASC
-            LIMIT $limit
+            LIMIT $fetchLimit
         ");
         $stmt->execute([$publicLike]);
     } else {
@@ -68,12 +69,21 @@ try {
                OR u.email LIKE ?)
               $archiveWhere
             ORDER BY p.fio ASC, p.id ASC
-            LIMIT $limit
+            LIMIT $fetchLimit
         ");
         $stmt->execute([$searchTerm, $searchTerm, $searchTerm]);
     }
 
-    echo json_encode($stmt->fetchAll(), JSON_UNESCAPED_UNICODE);
+    $items = $stmt->fetchAll() ?: [];
+    $hasMore = count($items) > $limit;
+    if ($hasMore) {
+        $items = array_slice($items, 0, $limit);
+    }
+
+    echo json_encode([
+        'items' => $items,
+        'has_more' => $hasMore,
+    ], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {
     echo json_encode([]);
 }

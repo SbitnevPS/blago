@@ -939,6 +939,9 @@ function admin_live_search_attrs(array $config): string
         'min_length' => 'data-min-length',
         'min_length_numeric' => 'data-min-length-numeric',
         'debounce' => 'data-debounce',
+        'preserve_input_on_select' => 'data-preserve-input-on-select',
+        'show_more_label' => 'data-show-more-label',
+        'show_more_action' => 'data-show-more-action',
     ];
 
     $attrs = ['data-live-search' => true];
@@ -1802,7 +1805,7 @@ function getApplicationUiStatusConfig(): array {
     return [
         'draft' => ['label' => 'Черновик', 'badge_class' => 'badge--secondary', 'row_style' => '', 'message_priority' => 'normal'],
         'submitted' => ['label' => 'Новая заявка на проверке', 'badge_class' => 'badge--primary', 'row_style' => '', 'message_priority' => 'normal'],
-        'agreement_violation' => ['label' => 'Заявка с нарушениями пользовательского соглашения', 'badge_class' => 'badge--agreement-violation', 'row_style' => 'background:#FFF1F2;', 'message_priority' => 'critical'],
+        'agreement_violation' => ['label' => 'Пользовательское соглашение отклонено. Если Вы хотите принять другое решение, то зайдите в заявку и измените его.', 'badge_class' => 'badge--agreement-violation', 'row_style' => 'background:#FFF1F2;', 'message_priority' => 'critical'],
         'revision' => ['label' => 'Требует исправлений', 'badge_class' => 'badge--warning', 'row_style' => 'background:#FEF9C3;', 'message_priority' => 'important'],
         'corrected' => ['label' => 'Исправлена, и отправлена на проверку', 'badge_class' => 'badge--info', 'row_style' => 'background:#EFF6FF;', 'message_priority' => 'important'],
         'partial_reviewed' => ['label' => 'Частично рассмотрена', 'badge_class' => 'badge--warning', 'row_style' => '', 'message_priority' => 'normal'],
@@ -1825,11 +1828,6 @@ function getApplicationUiStatus(array $application, ?array $workSummary = null):
     $storedStatus = getApplicationCanonicalStatus($application);
     $allowEdit = (int) ($application['allow_edit'] ?? 0) === 1;
     $hasUnresolvedCorrections = (int) ($application['has_unresolved_corrections'] ?? 0) > 0;
-    $hasAgreementViolation = (int) ($application['agreement_declined'] ?? 0) === 1;
-
-    if ($hasAgreementViolation) {
-        return 'agreement_violation';
-    }
 
     if ($storedStatus === 'draft') {
         return 'draft';
@@ -2205,7 +2203,7 @@ function getMessageThreadLabel(?string $title): string
     $type = detectMessageThreadType($title);
 
     if ($type === 'dispute') {
-        return 'Чат оспаривания';
+        return 'Чат по заявке';
     }
 
     if ($type === 'curator') {

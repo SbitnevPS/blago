@@ -21,10 +21,13 @@ if (!$contest) {
 $user = getCurrentUser();
 requireVerifiedEmailOrRedirect($user);
 $error = '';
-$editingApplicationId = intval($_GET['edit'] ?? 0);
+$editingApplicationId = intval($_GET['edit'] ?? ($_POST['application_id'] ?? 0));
 $editingApplication = null;
 $editingParticipants = [];
+$formParticipants = [];
 $initialFormData = [];
+$postbackResolvedParticipants = [];
+$postbackExistingPaymentReceipt = '';
 
 check_csrf();
 $success = '';
@@ -47,6 +50,8 @@ if ($editingApplicationId > 0) {
 
     if (!empty($editingParticipants)) {
     }
+
+    $formParticipants = $editingParticipants;
 }
 
 $blockedContestParticipantsStmt = $pdo->prepare("
@@ -499,6 +504,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
  if ($action === 'submit' && $contestRequiresPaymentReceipt && trim($paymentReceipt) === '') {
      throw new Exception('Приложите квитанцию или скриншот об оплате участия, чтобы отправить заявку.');
  }
+
+$postbackExistingPaymentReceipt = trim((string) $paymentReceipt);
                 
 // Данные организации (общие для всех участников)
 $postedOrgRegion = normalizeRegionName(trim($_POST['organization_region'] ?? ''));
@@ -574,6 +581,10 @@ $user['user_type'] = $user_type;
  $hasOvz = !empty($participant['has_ovz']) ? 1 : 0;
  $workTitle = '';
  $existingParticipantId = (int) ($participant['participant_id'] ?? 0);
+ $persistedExistingDrawing = '';
+ if (!empty($existingParticipantsById) && $existingParticipantId > 0 && isset($existingParticipantsById[$existingParticipantId])) {
+ $persistedExistingDrawing = trim((string) ($existingParticipantsById[$existingParticipantId]['drawing_file'] ?? ''));
+ }
                     
  // Обработка временного файла рисунка
  $drawing_file = null;
@@ -609,6 +620,15 @@ $user['user_type'] = $user_type;
  if (empty($drawing_file) && !empty($existingDrawing)) {
  $drawing_file = $existingDrawing;
  }
+
+ if (empty($drawing_file) && !empty($persistedExistingDrawing)) {
+ $drawing_file = $persistedExistingDrawing;
+ }
+
+ $postbackResolvedParticipants[(int) $pIndex] = [
+ 'participant_id' => $existingParticipantId > 0 ? $existingParticipantId : 0,
+ 'drawing_file' => (string) $drawing_file,
+ ];
 
  if ($action === 'submit' && empty($drawing_file)) {
  throw new Exception('Загрузите рисунок для участника "' . ($fio !== '' ? $fio : ('#' . ($pIndex + 1))) . '", чтобы отправить заявку.');
@@ -797,11 +817,6 @@ $user['user_type'] = $user_type;
  if (($transactionStarted ?? false) && $pdo->inTransaction()) {
  $pdo->rollBack();
  }
- foreach ($uploadedReceiptFiles ?? [] as $receiptFilePath) {
- if (is_file($receiptFilePath)) {
- @unlink($receiptFilePath);
- }
- }
  $error = 'Ошибка при сохранении заявки: ' . $e->getMessage();
  if ($isAjaxRequest) {
      jsonResponse(['success' => false, 'message' => $error], 422);
@@ -842,6 +857,74 @@ if ($editingApplication) {
 	    ];
 }
 
+$existingPaymentReceipt = trim((string)($editingApplication['payment_receipt'] ?? ''));
+
+if ($error !== '' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $initialFormData = [
+        'parent_surname' => trim((string) ($_POST['parent_surname'] ?? '')),
+        'parent_name' => trim((string) ($_POST['parent_name'] ?? '')),
+        'parent_patronymic' => trim((string) ($_POST['parent_patronymic'] ?? '')),
+        'organization_region' => normalizeRegionName(trim((string) ($_POST['organization_region'] ?? ''))),
+        'organization_name' => trim((string) ($_POST['organization_name'] ?? '')),
+        'organization_address' => trim((string) ($_POST['organization_address'] ?? '')),
+        'user_type' => trim((string) ($_POST['user_type'] ?? ($initialFormData['user_type'] ?? 'parent'))),
+        'organization_email' => trim((string) ($_POST['organization_email'] ?? '')),
+        'source_info' => trim((string) ($_POST['source_info'] ?? '')),
+        'colleagues_info' => trim((string) ($_POST['colleagues_info'] ?? '')),
+        'recommendations_wishes' => trim((string) ($_POST['recommendations_wishes'] ?? '')),
+    ];
+
+    $rawParticipants = $_POST['participants'] ?? [];
+    $formParticipants = [];
+
+    foreach ($rawParticipants as $pIndex => $participant) {
+        $surname = trim((string) ($participant['surname'] ?? ''));
+        $name = trim((string) ($participant['name'] ?? ''));
+        $patronymic = trim((string) ($participant['patronymic'] ?? ''));
+        $legacyFio = trim((string) ($participant['fio'] ?? ''));
+        if ($surname === '' && $name === '' && $patronymic === '' && $legacyFio !== '') {
+            $parts = preg_split('/\s+/u', $legacyFio) ?: [];
+            $surname = trim((string) ($parts[0] ?? ''));
+            $name = trim((string) ($parts[1] ?? ''));
+            $patronymic = trim((string) ($parts[2] ?? ''));
+        }
+
+        $participantId = (int) ($participant['participant_id'] ?? 0);
+        $resolvedDrawing = trim((string) ($postbackResolvedParticipants[(int) $pIndex]['drawing_file'] ?? ($participant['existing_drawing_file'] ?? '')));
+        if ($resolvedDrawing === '' && $participantId > 0 && isset($existingParticipantsById[$participantId])) {
+            $resolvedDrawing = trim((string) ($existingParticipantsById[$participantId]['drawing_file'] ?? ''));
+        }
+
+        $tempFile = basename(trim((string) ($participant['temp_file'] ?? '')));
+        $previewUrl = null;
+        $fullPreviewUrl = null;
+        if ($resolvedDrawing !== '') {
+            $previewUrl = getParticipantDrawingPreviewWebPath($user['email'] ?? '', $resolvedDrawing);
+            $fullPreviewUrl = getParticipantDrawingWebPath($user['email'] ?? '', $resolvedDrawing);
+        } elseif ($tempFile !== '') {
+            $tempBaseName = pathinfo($tempFile, PATHINFO_FILENAME);
+            $previewUrl = '/uploads/drawings/temp/' . $tempBaseName . '_thumb.jpg';
+            $fullPreviewUrl = '/uploads/drawings/temp/' . $tempFile;
+        }
+
+        $formParticipants[] = [
+            'fio' => trim($surname . ' ' . $name . ' ' . $patronymic),
+            'surname' => $surname,
+            'name' => $name,
+            'patronymic' => $patronymic,
+            'age' => $participant['age'] ?? '',
+            'has_ovz' => !empty($participant['has_ovz']),
+            'participant_id' => $participantId > 0 ? $participantId : 0,
+            'temp_file' => $tempFile,
+            'existing_drawing_file' => $resolvedDrawing,
+            'preview' => $previewUrl,
+            'full_preview' => $fullPreviewUrl,
+        ];
+    }
+
+    $existingPaymentReceipt = trim((string) ($postbackExistingPaymentReceipt !== '' ? $postbackExistingPaymentReceipt : ($_POST['existing_payment_receipt'] ?? $existingPaymentReceipt)));
+}
+
 $editingApplicationStatus = $editingApplication
     ? normalizeApplicationStoredStatus((string) ($editingApplication['status'] ?? 'draft'))
     : 'draft';
@@ -852,7 +935,6 @@ $canAutoSaveCurrentApplication = !isset($show_success_modal)
         || (int) ($editingApplication['allow_edit'] ?? 0) === 1
     );
 
-$existingPaymentReceipt = trim((string)($editingApplication['payment_receipt'] ?? ''));
 $hasExistingPaymentReceipt = $existingPaymentReceipt !== '';
 $existingPaymentReceiptUrl = $hasExistingPaymentReceipt ? getPaymentReceiptWebPath($existingPaymentReceipt) : '';
 $existingPaymentReceiptIsImage = $hasExistingPaymentReceipt && preg_match('/\.(jpg|jpeg|png|webp)$/i', $existingPaymentReceipt);
@@ -924,6 +1006,7 @@ generateCSRFToken();
                 <input type="hidden" name="remove_payment_receipt" id="removePaymentReceipt" value="0">
                 <input type="hidden" name="user_type" id="applicationUserType" value="<?= e((string) ($initialFormData['user_type'] ?? 'parent')) ?>">
                 <input type="hidden" name="user_agreement_signed" id="userAgreementSigned" value="0">
+                <input type="hidden" name="current_step" id="currentStepInput" value="<?= max(1, min((int) ($_POST['current_step'] ?? 1), (int) $reviewStepNumber)) ?>">
 
                 <section class="wizard-progress card mb-lg">
                     <div class="card__body">
@@ -1093,9 +1176,10 @@ generateCSRFToken();
                             <p>В случае несоблюдения указанных требований, а также при выявлении фактов нарушения правил Конкурса, представленная работа подлежит отклонению без уведомления и без права повторного участия.</p>
                         </div>
                         <div class="user-agreement__actions">
-                            <button type="button" class="btn btn--ghost user-agreement__sign-btn" id="signAgreementBtn" aria-pressed="false">Подписать пользовательское соглашение!</button>
-                            <button type="submit" class="btn btn--secondary" id="declineAgreementBtn" data-form-action="save_draft">Я не принимаю условия.</button>
+                            <button type="button" class="btn user-agreement__choice-btn user-agreement__choice-btn--accept" id="signAgreementBtn" aria-pressed="false">Подписать пользовательское соглашение!</button>
+                            <button type="submit" class="btn user-agreement__choice-btn user-agreement__choice-btn--decline" id="declineAgreementBtn" data-form-action="save_draft" aria-pressed="false">Я не принимаю условия.</button>
                         </div>
+                        <div class="user-agreement__hint" id="agreementSignedHint" hidden>Теперь Вы можете продолжить заполенени заявки!</div>
                     </div>
                 </section>
 
@@ -1179,6 +1263,9 @@ generateCSRFToken();
 <script>
 const initialParticipants = <?= json_encode(array_map(function($p) use ($user) {
     $parts = preg_split('/\s+/', trim((string)($p['fio'] ?? '')));
+    $participantDrawingFile = (string) ($p['drawing_file'] ?? ($p['existing_drawing_file'] ?? ''));
+    $participantPreview = $p['preview'] ?? (!empty($participantDrawingFile) ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $participantDrawingFile) : null);
+    $participantFullPreview = $p['full_preview'] ?? (!empty($participantDrawingFile) ? getParticipantDrawingWebPath($user['email'] ?? '', $participantDrawingFile) : null);
     return [
         'fio' => $p['fio'] ?? '',
         'surname' => $parts[0] ?? '',
@@ -1186,13 +1273,13 @@ const initialParticipants = <?= json_encode(array_map(function($p) use ($user) {
         'patronymic' => $parts[2] ?? '',
         'age' => $p['age'] ?? '',
         'has_ovz' => !empty($p['has_ovz']),
-        'participant_id' => (int) ($p['id'] ?? 0),
-        'temp_file' => '',
-        'existing_drawing_file' => $p['drawing_file'] ?? '',
-        'preview' => !empty($p['drawing_file']) ? getParticipantDrawingPreviewWebPath($user['email'] ?? '', $p['drawing_file']) : null,
-        'full_preview' => !empty($p['drawing_file']) ? getParticipantDrawingWebPath($user['email'] ?? '', $p['drawing_file']) : null,
+        'participant_id' => (int) ($p['participant_id'] ?? ($p['id'] ?? 0)),
+        'temp_file' => (string) ($p['temp_file'] ?? ''),
+        'existing_drawing_file' => $participantDrawingFile,
+        'preview' => $participantPreview,
+        'full_preview' => $participantFullPreview,
     ];
-}, $editingParticipants), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+}, $formParticipants), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const blockedContestParticipants = <?= json_encode(array_map(static function ($row) {
     return [
         'participant_id' => (int) ($row['participant_id'] ?? 0),
@@ -1211,23 +1298,17 @@ const minParticipantAge = 5;
 const maxParticipantAge = 17;
 const duplicateParticipantsModal = document.getElementById('duplicateParticipantsModal');
 const duplicateParticipantsList = document.getElementById('duplicateParticipantsList');
-const applicationIdInput = document.querySelector('input[name="application_id"]');
 const steps = needsPaymentReceipt
     ? ['Заявитель', 'Участники и рисунки', 'Квитанция об оплате', 'Пользовательское соглашение', 'Проверка и отправка']
     : ['Заявитель', 'Участники и рисунки', 'Пользовательское соглашение', 'Проверка и отправка'];
-const draftKey = `applicationDraft:${contestId}:<?= intval($user['id'] ?? 0) ?>`;
-let currentStep = 1;
+let currentStep = <?= ($error !== '' && $_SERVER['REQUEST_METHOD'] === 'POST')
+    ? max(1, min((int) ($_POST['current_step'] ?? 2), (int) $reviewStepNumber))
+    : 1 ?>;
 let participantCount = 0;
-let autoSaveInFlight = false;
-let autoSaveQueued = false;
-let lastAutoSaveSignature = '';
 let isSubmittingApplication = false;
-let pendingSubmitTrigger = null;
 let userAgreementSigned = false;
 let agreementDeclined = <?= (int) ($editingApplication['agreement_declined'] ?? 0) === 1 ? 'true' : 'false' ?>;
 let lastFormSubmitter = null;
-const autoSaveEnabled = <?= $canAutoSaveCurrentApplication ? 'true' : 'false' ?>;
-const isEditingServerDraft = <?= $editingApplication ? 'true' : 'false' ?>;
 const initialPaymentReceipt = <?= json_encode([
     'fileName' => $hasExistingPaymentReceipt ? basename($existingPaymentReceipt) : '',
     'url' => $existingPaymentReceiptUrl,
@@ -1393,7 +1474,6 @@ function handlePaymentReceiptSelection(file) {
     });
     updateSidebar();
     if (currentStep === finalReviewStep) renderReview();
-    saveLocalDraft();
 }
 
 function removePaymentReceiptSelection() {
@@ -1418,7 +1498,6 @@ function removePaymentReceiptSelection() {
 
     updateSidebar();
     if (currentStep === finalReviewStep) renderReview();
-    saveLocalDraft();
 }
 
 function openPaymentReceiptPreview() {
@@ -1817,6 +1896,7 @@ function syncParticipantActionVisibility() {
 function syncAgreementButtons() {
     const signBtn = document.getElementById('signAgreementBtn');
     const declineBtn = document.getElementById('declineAgreementBtn');
+    const agreementHint = document.getElementById('agreementSignedHint');
     const agreementField = document.getElementById('userAgreementSigned');
     const agreementDeclinedField = document.getElementById('agreementDeclined');
     if (agreementField) {
@@ -1826,8 +1906,7 @@ function syncAgreementButtons() {
         agreementDeclinedField.value = agreementDeclined ? '1' : '0';
     }
     if (signBtn) {
-        signBtn.classList.toggle('btn--primary', userAgreementSigned);
-        signBtn.classList.toggle('btn--ghost', !userAgreementSigned);
+        signBtn.classList.toggle('is-active', userAgreementSigned);
         signBtn.classList.toggle('is-signed', userAgreementSigned);
         signBtn.setAttribute('aria-pressed', userAgreementSigned ? 'true' : 'false');
         signBtn.textContent = userAgreementSigned
@@ -1835,12 +1914,21 @@ function syncAgreementButtons() {
             : 'Подписать пользовательское соглашение!';
     }
     if (declineBtn) {
+        declineBtn.classList.toggle('is-active', agreementDeclined);
+        declineBtn.setAttribute('aria-pressed', agreementDeclined ? 'true' : 'false');
         declineBtn.hidden = currentStep !== agreementStepNumber;
+    }
+    if (agreementHint) {
+        agreementHint.hidden = !(currentStep === agreementStepNumber && userAgreementSigned);
     }
 }
 
 function updateProgress() {
     const percent = Math.round((currentStep / steps.length) * 100);
+    const currentStepField = document.getElementById('currentStepInput');
+    if (currentStepField) {
+        currentStepField.value = String(currentStep);
+    }
     document.getElementById('progressBar').style.width = `${percent}%`;
     document.getElementById('progressPercent').textContent = `${percent}%`;
     document.getElementById('mobileStepLabel').textContent = `Шаг ${currentStep} из ${steps.length}`;
@@ -1887,7 +1975,6 @@ function goStep(step) {
     currentStep = step;
     updateProgress();
     scrollToStepHeader(currentStep);
-    saveLocalDraft();
 }
 
 function buildDrawingActionButtons(index, hasFile, isLoading = false) {
@@ -2064,9 +2151,6 @@ function addParticipant(data = null, options = {}) {
     participantCount++;
     syncParticipantRemoveButtons();
     updateParticipantsState();
-    if (options.autoSave === true) {
-        autoSaveDraft({ force: true });
-    }
     if (options.scrollIntoView) {
         scrollToParticipantForm(card);
     }
@@ -2103,7 +2187,6 @@ function removeParticipant(index) {
 function updateParticipantsState() {
     document.getElementById('participantsEmpty').style.display = participantCount ? 'none' : 'block';
     updateSidebar();
-    saveLocalDraft();
 }
 
 function initUploadArea(index) {
@@ -2166,9 +2249,7 @@ function handleFileSelect(file, index) {
                 fullPreviewUrl: data.original_url || data.preview,
                 fileName: data.original_name || 'Файл загружен',
             });
-            saveLocalDraft();
             updateSidebar();
-            autoSaveDraft({ force: true });
         })
         .catch((error) => {
             if (previousPreviewUrl) {
@@ -2204,7 +2285,6 @@ function removeDrawing(index) {
         if (temp) temp.value = '';
         if (existing) existing.value = '';
         updateSidebar();
-        saveLocalDraft();
     };
 
     if (!tempFile) { clearUi(); return; }
@@ -2332,187 +2412,8 @@ function saveDraft() {
     }
 }
 
-function saveLocalDraft() {
-    if (isEditingServerDraft) return;
-    const data = Object.fromEntries(new FormData(document.getElementById('applicationForm')).entries());
-    delete data.payment_receipt;
-    data.currentStep = currentStep;
-    localStorage.setItem(draftKey, JSON.stringify(data));
-}
-
-function hasFilledParticipantData() {
-    const cards = [...document.querySelectorAll('#participantsContainer .participant-form')];
-    return cards.some((card) => {
-        const index = Number(card.dataset.index);
-        const values = [
-            card.querySelector(`[name="participants[${index}][surname]"]`)?.value || '',
-            card.querySelector(`[name="participants[${index}][name]"]`)?.value || '',
-            card.querySelector(`[name="participants[${index}][patronymic]"]`)?.value || '',
-            card.querySelector(`[name="participants[${index}][age]"]`)?.value || '',
-            document.getElementById(`temp_file_${index}`)?.value || '',
-            document.getElementById(`existing_file_${index}`)?.value || '',
-        ];
-
-        return values.some((value) => String(value || '').trim() !== '');
-    });
-}
-
-function getAutoSaveSignature() {
-    const form = document.getElementById('applicationForm');
-    if (!form) return '';
-
-    const formData = new FormData(form);
-    const entries = [];
-
-    for (const [key, value] of formData.entries()) {
-        if (key === 'csrf' || key === 'csrf_token') continue;
-
-        if (value instanceof File) {
-            entries.push(`${key}:${value.name}:${value.size}:${value.lastModified}`);
-        } else {
-            entries.push(`${key}:${String(value)}`);
-        }
-    }
-
-    entries.push(`step:${currentStep}`);
-    return entries.sort().join('|');
-}
-
-async function autoSaveDraft(options = {}) {
-    const {force = false, keepalive = false} = options;
-    if (!autoSaveEnabled) {
-        return;
-    }
-
-    if (isSubmittingApplication || autoSaveInFlight) {
-        if (!keepalive) {
-            autoSaveQueued = true;
-        }
-        return;
-    }
-
-    if (!hasFilledParticipantData()) {
-        return;
-    }
-
-    const signature = getAutoSaveSignature();
-    if (!force && signature !== '' && signature === lastAutoSaveSignature) {
-        return;
-    }
-
-    const form = document.getElementById('applicationForm');
-    if (!form) return;
-
-    autoSaveInFlight = true;
-    try {
-        const formData = new FormData(form);
-        formData.set('action', 'save_draft');
-        formData.set('autosave', '1');
-
-        const response = await fetch('/application-form?contest_id=' + contestId, {
-            method: 'POST',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json'
-            },
-            body: formData,
-            credentials: 'same-origin',
-            keepalive
-        });
-
-        const data = await response.json();
-        if (!response.ok || !data.success) {
-            throw new Error(data.message || 'Не удалось выполнить автосохранение.');
-        }
-
-        if (applicationIdInput && data.application_id) {
-            applicationIdInput.value = String(data.application_id);
-            const nextUrl = new URL(window.location.href);
-            nextUrl.searchParams.set('edit', String(data.application_id));
-            window.history.replaceState({}, '', nextUrl.toString());
-        }
-
-        if (Array.isArray(data.participant_sync)) {
-            data.participant_sync.forEach((participant) => {
-                const index = Number(participant?.index);
-                if (Number.isNaN(index)) return;
-
-                const participantIdField = document.querySelector(`[name="participants[${index}][participant_id]"]`);
-                if (participantIdField && participant?.participant_id) {
-                    participantIdField.value = String(participant.participant_id);
-                }
-
-                const existingField = document.getElementById(`existing_file_${index}`);
-                if (existingField && participant?.drawing_file) {
-                    existingField.value = String(participant.drawing_file);
-                }
-
-                const tempField = document.getElementById(`temp_file_${index}`);
-                if (tempField && participant?.drawing_file) {
-                    tempField.value = '';
-                }
-            });
-            updateSidebar();
-        }
-
-        lastAutoSaveSignature = signature;
-    } catch (error) {
-    } finally {
-        autoSaveInFlight = false;
-        if (pendingSubmitTrigger) {
-            const submitter = pendingSubmitTrigger;
-            pendingSubmitTrigger = null;
-            triggerSubmitAfterAutoSave(submitter);
-            return;
-        }
-        if (autoSaveQueued && !keepalive) {
-            autoSaveQueued = false;
-            autoSaveDraft({force: true});
-        }
-    }
-}
-
-function triggerSubmitAfterAutoSave(submitter = null) {
-    const form = document.getElementById('applicationForm');
-    if (!form) return;
-
-    if (submitter && typeof form.requestSubmit === 'function') {
-        form.requestSubmit(submitter);
-        return;
-    }
-
-    if (typeof form.requestSubmit === 'function') {
-        form.requestSubmit();
-        return;
-    }
-
-    form.submit();
-}
-
 function hasPendingDrawingUploads() {
     return document.querySelectorAll('.upload-area--drawing.is-loading').length > 0;
-}
-
-function tryRestoreDraft() {
-    if (isEditingServerDraft) return;
-    const raw = localStorage.getItem(draftKey);
-    if (!raw) return;
-    const data = JSON.parse(raw);
-    Object.entries(data).forEach(([key, value]) => {
-        const field = document.querySelector(`[name="${CSS.escape(key)}"]`);
-        if (!field || field.type === 'file') return;
-        if (field.type === 'checkbox') {
-            field.checked = value === '1' || value === 1 || value === true || value === 'true';
-            return;
-        }
-        field.value = value;
-    });
-    currentStep = Math.min(Math.max(Number(data.currentStep || 1), 1), steps.length);
-    const note = document.createElement('div');
-    note.className = 'alert alert--info mb-md';
-    note.innerHTML = '<i class="fas fa-info-circle alert__icon"></i><div class="alert__content"><div class="alert__message">Данные формы восстановлены из локального черновика.</div></div>';
-    const form = document.getElementById('applicationForm');
-    form.insertBefore(note, form.firstElementChild.nextElementSibling);
 }
 
 function viewDrawing(index) {
@@ -2558,7 +2459,6 @@ document.addEventListener('DOMContentLoaded', function () {
         agreementDeclined = false;
         syncAgreementButtons();
         syncNavigationButtons(currentStep === finalReviewStep && isApplicationReadyToSubmit());
-        saveLocalDraft();
     });
     document.getElementById('declineAgreementBtn')?.addEventListener('click', () => {
         agreementDeclined = true;
@@ -2622,16 +2522,13 @@ document.addEventListener('DOMContentLoaded', function () {
         addParticipant();
     }
     syncParticipantRemoveButtons();
-
-    tryRestoreDraft();
     userAgreementSigned = document.getElementById('userAgreementSigned')?.value === '1';
     syncAgreementButtons();
     updateProgress();
     updateSidebar();
-    lastAutoSaveSignature = getAutoSaveSignature();
 
     document.getElementById('addParticipantBtn').addEventListener('click', () => {
-        addParticipant(null, { scrollIntoView: true, autoSave: true });
+        addParticipant(null, { scrollIntoView: true });
     });
     document.getElementById('nextStepBtn').addEventListener('click', () => goStep(Math.min(currentStep + 1, steps.length)));
     document.getElementById('prevStepBtn').addEventListener('click', () => goStep(Math.max(currentStep - 1, 1)));
@@ -2646,11 +2543,9 @@ document.addEventListener('DOMContentLoaded', function () {
             clearFieldError(e.target);
         }
         updateSidebar();
-        saveLocalDraft();
     });
     document.getElementById('applicationForm').addEventListener('change', () => {
         updateSidebar();
-        saveLocalDraft();
     });
     document.getElementById('applicationForm').addEventListener('submit', function (e) {
         const actionField = document.getElementById('formAction');
@@ -2664,11 +2559,6 @@ document.addEventListener('DOMContentLoaded', function () {
             e.preventDefault();
             isSubmittingApplication = false;
             alert('Дождитесь завершения загрузки рисунков, затем повторите сохранение.');
-            return;
-        }
-        if (autoSaveInFlight) {
-            e.preventDefault();
-            pendingSubmitTrigger = submitter || document.getElementById('saveDraftBtn') || document.getElementById('submitBtn');
             return;
         }
         if (action === 'submit') {
@@ -2702,7 +2592,6 @@ document.addEventListener('DOMContentLoaded', function () {
             const btn = document.getElementById('submitBtn');
             btn.disabled = true;
             btn.innerHTML = '<span class="loading-spinner"></span> Отправляем...';
-            localStorage.removeItem(draftKey);
         } else {
             const btn = submitter;
             if (btn) {
@@ -2710,12 +2599,6 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
         lastFormSubmitter = null;
-    });
-
-    window.addEventListener('beforeunload', function () {
-        if (autoSaveEnabled && !isSubmittingApplication && hasFilledParticipantData()) {
-            autoSaveDraft({ force: true, keepalive: true });
-        }
     });
 
     <?php if (isset($show_success_modal) && $show_success_modal): ?>

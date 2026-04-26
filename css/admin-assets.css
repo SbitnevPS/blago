@@ -741,6 +741,27 @@
   font-size: 14px;
 }
 
+.user-results__more {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 12px 16px;
+  text-align: center;
+  cursor: pointer;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color .16s ease, color .16s ease;
+}
+
+.user-results__more:hover,
+.user-results__more:focus-visible {
+  background: #eff6ff;
+  color: #1d4ed8;
+  outline: none;
+}
+
 .broadcast-toggle {
   display: flex;
   align-items: center;
@@ -1359,6 +1380,63 @@ body:has(#application-actions) .admin-content {
   margin-top: 4px;
   text-decoration: none;
   color: #4338ca;
+}
+
+.application-agreement-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.application-agreement-status__label {
+  color: #4338ca;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.agreement-status-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-width: min(760px, calc(100vw - 32px)) !important;
+}
+
+.agreement-status-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.agreement-status-modal__text {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #334155;
+}
+
+.agreement-status-modal__text p {
+  margin: 0;
+}
+
+.agreement-status-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.agreement-status-modal__badge {
+  white-space: normal;
+  text-align: left;
+  max-width: 100%;
 }
 
 .application-work-summary {
@@ -2114,27 +2192,20 @@ body:has(#application-actions) .admin-content {
 }
 
 .admin-list-card--participant .admin-list-card__sidebar {
-  min-width: 210px;
-  max-width: 260px;
-  width: 100%;
+  min-width: 0;
+  max-width: none;
+  width: fit-content;
+  justify-self: end;
+  align-self: start;
 }
 
 .admin-list-card--participant .admin-list-card__statuses {
-  justify-content: flex-end;
-}
-
-.admin-list-card--participant .admin-list-card__statuses .badge,
-.admin-list-card--participant .admin-list-card__statuses form {
-  width: 100%;
+  justify-content: flex-start;
 }
 
 .admin-list-card--participant .admin-list-card__statuses .badge {
-  justify-content: center;
-  text-align: center;
-}
-
-.admin-list-card--participant .admin-list-card__statuses .btn {
-  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
 }
 
 .admin-list-card--participant .admin-list-card__actions {
@@ -2146,6 +2217,64 @@ body:has(#application-actions) .admin-content {
 .admin-list-card--participant .admin-list-card__actions form,
 .admin-list-card--participant .admin-list-card__actions form .btn {
   width: 100%;
+}
+
+.admin-list-card__sidebar--participant {
+  display: grid;
+  gap: 10px;
+  width: fit-content;
+}
+
+.participant-sidebar-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.96) 100%);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+  padding: 10px;
+}
+
+.participant-sidebar-panel__statuses {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.participant-sidebar-panel__statuses .badge {
+  width: auto;
+  max-width: 100%;
+  min-height: 0;
+  border-radius: 10px;
+  padding: 7px 10px;
+  line-height: 1.25;
+  font-size: 11px;
+}
+
+.participant-sidebar-panel--compact {
+  padding: 8px;
+  width: fit-content;
+  max-width: 220px;
+}
+
+.participant-sidebar-panel--compact .participant-sidebar-panel__statuses .badge {
+  font-size: 11px;
+}
+
+.admin-list-card--participant .admin-list-card__actions.admin-list-card__actions--participant-inline {
+  margin-top: 14px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-list-card--participant .admin-list-card__actions.admin-list-card__actions--participant-inline > .btn,
+.admin-list-card--participant .admin-list-card__actions.admin-list-card__actions--participant-inline form,
+.admin-list-card--participant .admin-list-card__actions.admin-list-card__actions--participant-inline form .btn {
+  width: auto;
+  flex: 0 0 auto;
 }
 
 .contest-archive-filter-toggle {
@@ -2207,19 +2336,21 @@ body:has(#application-actions) .admin-content {
   .admin-list-card--participant .admin-list-card__sidebar {
     min-width: 0;
     max-width: none;
+    width: 100%;
+    justify-self: stretch;
   }
 
   .admin-list-card--participant .admin-list-card__statuses {
     justify-content: flex-start;
   }
 
-  .admin-list-card--participant .admin-list-card__statuses .badge,
-  .admin-list-card--participant .admin-list-card__statuses form {
-    width: auto;
+  .participant-sidebar-panel {
+    padding: 10px;
   }
 
-  .admin-list-card--participant .admin-list-card__statuses .btn {
+  .participant-sidebar-panel__statuses .badge {
     width: auto;
+    max-width: 100%;
   }
 
   .admin-list-card--participant .admin-list-card__actions {
@@ -2379,6 +2510,11 @@ body:has(#application-actions) .admin-content {
 
   .chat-composer__attachment-preview-item {
     width: 100%;
+  }
+
+  .agreement-status-modal__footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

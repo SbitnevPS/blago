@@ -30,7 +30,7 @@ function getStatusGroup(array $application): string {
     return match ($statusCode) {
         'draft' => 'draft',
         'submitted', 'partial_reviewed', 'reviewed', 'corrected' => 'pending',
-        'agreement_violation' => 'revision',
+        'agreement_violation' => 'draft',
         'revision' => 'revision',
         'approved' => 'accepted',
         'rejected', 'cancelled' => 'rejected',
@@ -260,6 +260,7 @@ $archivedApplications = array_values(array_filter(
                             $statusLabel = (string) ($statusMeta['status_label'] ?? '—');
                             $badgeClass = (string) ($statusMeta['badge_class'] ?? 'badge--secondary');
                             $statusCode = (string) ($statusMeta['status_code'] ?? '');
+                            $isAgreementDeclined = (int) ($app['agreement_declined'] ?? 0) === 1;
                             $isRevision = getStatusGroup($app) === 'revision';
                             $isCorrected = $statusCode === 'corrected';
                             $unreadCount = (int) ($unreadByApplication[(int) ($app['id'] ?? 0)] ?? 0);
@@ -299,7 +300,9 @@ $archivedApplications = array_values(array_filter(
 
                                 <h3 class="my-application-card__title"><?= htmlspecialchars((string) $app['contest_title']) ?></h3>
 
-                                <?php if ($isRevision): ?>
+                                <?php if ($isAgreementDeclined): ?>
+                                    <div class="my-application-card__note my-application-card__note--agreement">Пользовательское соглашение отклонено. Если Вы хотите принять другое решение, то зайдите в заявку и измените его.</div>
+                                <?php elseif ($isRevision): ?>
                                     <div class="my-application-card__note my-application-card__note--revision">Нужны исправления: откройте заявку и следуйте комментариям организатора.</div>
                                 <?php elseif ($isCorrected): ?>
                                     <div class="my-application-card__note my-application-card__note--corrected">Исправления отправлены. Заявка снова на проверке.</div>

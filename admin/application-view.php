@@ -791,6 +791,13 @@ $statusMeta = getApplicationDisplayMeta($application, buildApplicationWorkSummar
 $submittedAt = !empty($application['created_at']) ? date('d.m.Y H:i', strtotime($application['created_at'])) : '—';
 $applicantName = trim((string) (($application['surname'] ?? '') . ' ' . ($application['name'] ?? '') . ' ' . ($application['patronymic'] ?? ''))) ?: '—';
 $receiptMeta = getApplicationPaymentReceiptMeta($application);
+$isAgreementDeclined = (int) ($application['agreement_declined'] ?? 0) === 1;
+$agreementStatusLabel = $isAgreementDeclined ? 'Не подписано' : 'Подписано';
+$agreementStatusBadgeClass = $isAgreementDeclined ? 'badge--error' : 'badge--success';
+$agreementModalBadgeText = $isAgreementDeclined
+    ? 'Пользователь не согласен с условиями пользовательского соглашения'
+    : 'Пользователь согласен с условиями пользовательского соглашения';
+$agreementModalBadgeClass = $isAgreementDeclined ? 'badge--error' : 'badge--success';
 $paymentReceipt = trim((string) ($application['payment_receipt'] ?? ''));
 $paymentReceiptName = $paymentReceipt !== '' ? basename($paymentReceipt) : '—';
 $paymentReceiptUrl = (string) ($receiptMeta['file_url'] ?? '');
@@ -856,12 +863,6 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
             </form>
             <button type="button" class="btn btn--primary" onclick="openMessageModal()"><i class="fas fa-paper-plane"></i> Связаться с заявителем</button>
             <a href="#application-actions" class="btn btn--ghost"><i class="fas fa-bolt"></i> К действиям</a>
-            <form method="POST">
-                <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
-                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
-                <input type="hidden" name="action" value="cancel_application">
-                <button type="submit" class="btn application-btn application-btn--warning"><i class="fas fa-ban"></i> Отмена</button>
-            </form>
             <form method="POST" onsubmit="return confirm('Удалить заявку?');">
                 <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                 <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -956,6 +957,19 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                     <dl class="application-kv-list">
                         <dt>Источник</dt><dd><?= e($application['source_info'] ?: '—') ?></dd>
                         <dt>Коллеги</dt><dd><?= e($application['colleagues_info'] ?: '—') ?></dd>
+                        <dt>Пользовательское соглашение</dt>
+                        <dd>
+                            <button
+                                type="button"
+                                class="application-agreement-status"
+                                id="openAgreementStatusModal"
+                                aria-haspopup="dialog"
+                                aria-controls="agreementStatusModal"
+                            >
+                                <span class="badge <?= e($agreementStatusBadgeClass) ?>"><?= e($agreementStatusLabel) ?></span>
+                                <span class="application-agreement-status__label">Открыть соглашение</span>
+                            </button>
+                        </dd>
                         <?php if (!empty($receiptMeta['is_required'])): ?>
                             <dt>Требуется квитанция</dt><dd>Да</dd>
                         <?php endif; ?>
@@ -1122,7 +1136,7 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                 </div>
                 <div class="application-sidebar-actions">
                     <form method="POST" class="js-application-secondary-action" id="sendToRevisionForm"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="send_to_revision"><button type="submit" class="btn application-btn application-btn--warning <?= $isRevisionApplicationState ? 'is-current' : '' ?>" id="sendToRevisionButton" <?= $revisionButtonDisabled ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>><i class="fas fa-edit"></i> На корректировку</button></form>
-                    <form method="POST" class="js-application-secondary-action"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger <?= $isRejectedApplicationState ? 'is-current' : '' ?>" id="declineApplicationButton" <?= $declineButtonDisabled ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>><i class="fas fa-times-circle"></i> Отклонить</button></form>
+                    <form method="POST" class="js-application-secondary-action"><input type="hidden" name="csrf" value="<?= csrf_token() ?>"><input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>"><input type="hidden" name="action" value="decline_application"><button type="submit" class="btn application-btn application-btn--danger <?= $isRejectedApplicationState ? 'is-current' : '' ?>" id="declineApplicationButton" <?= ($declineButtonDisabled || $isRejectedApplicationState) ? 'disabled aria-disabled="true" tabindex="-1"' : '' ?>><i class="fas fa-times-circle"></i> <?= $isRejectedApplicationState ? 'Заявка отклонена' : 'Отклонить' ?></button></form>
                     <form method="POST" id="approveApplicationForm">
                         <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
                         <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
@@ -1148,6 +1162,27 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
             </div>
         </div>
     </aside>
+</div>
+
+<div class="modal" id="agreementStatusModal">
+    <div class="modal__content agreement-status-modal">
+        <div class="modal__header">
+            <h3 class="modal__title">Пользовательское соглашение</h3>
+            <button type="button" class="modal__close" aria-label="Закрыть" onclick="closeAgreementStatusModal()">&times;</button>
+        </div>
+        <div class="modal__body agreement-status-modal__body">
+            <div class="agreement-status-modal__text">
+                <p>Я подтверждаю, что направленные на участие в Конкурсе рисунки созданы самостоятельно (своеручно) указанными участниками, без помощи третьих лиц (в том числе взрослых), без копирования или срисовки с готовых изображений, а также без использования компьютерных программ и технологий.</p>
+                <p>Я также подтверждаю, что получено согласие на обработку персональных данных от всех участников либо их законных представителей в соответствии с действующим законодательством Российской Федерации.</p>
+                <p>Мне известно и понятно, что подача на Конкурс работ, созданных полностью или частично не заявленными участниками, является нарушением условий Конкурса и может быть расценена как введение в заблуждение или мошенничество в соответствии с действующим законодательством Российской Федерации.</p>
+                <p>В случае несоблюдения указанных требований, а также при выявлении фактов нарушения правил Конкурса, представленная работа подлежит отклонению без уведомления и без права повторного участия.</p>
+            </div>
+        </div>
+        <div class="modal__footer agreement-status-modal__footer">
+            <span class="badge <?= e($agreementModalBadgeClass) ?> agreement-status-modal__badge"><?= e($agreementModalBadgeText) ?></span>
+            <button type="button" class="btn btn--secondary" onclick="closeAgreementStatusModal()">Закрыть</button>
+        </div>
+    </div>
 </div>
 
 <div class="modal" id="vkPublishPromptModal">
@@ -1309,6 +1344,7 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
 	let cropper = null;
 let currentRotation = 0;
 let editorDirty = false;
+const agreementStatusModal = document.getElementById('agreementStatusModal');
 const drawingEditorModal = document.getElementById('drawingEditorModal');
 const drawingViewerModal = document.getElementById('drawingViewerModal');
 const drawingViewerImage = document.getElementById('drawingViewerImage');
@@ -1373,6 +1409,19 @@ function closeDrawingViewer() {
  setPageModalScrollLocked(false);
 }
 
+function openAgreementStatusModal() {
+ if (!agreementStatusModal) return;
+ agreementStatusModal.classList.add('active');
+ setPageModalScrollLocked(true);
+}
+
+function closeAgreementStatusModal() {
+ if (!agreementStatusModal) return;
+ agreementStatusModal.classList.remove('active');
+ const otherModal = document.querySelector('.modal.active:not(#agreementStatusModal)');
+ setPageModalScrollLocked(Boolean(otherModal));
+}
+
 function rotateBy(deg) {
  if (!cropper) return;
  currentRotation += deg;
@@ -1406,11 +1455,13 @@ document.querySelectorAll('.js-open-drawing-viewer').forEach((button) => {
  button.addEventListener('click', () => openDrawingViewer(button.dataset.imageSrc, button.dataset.imageAlt));
 });
 
-[drawingEditorModal, drawingViewerModal].forEach((modal) => {
+[agreementStatusModal, drawingEditorModal, drawingViewerModal].forEach((modal) => {
  if (!modal) return;
  modal.addEventListener('click', (event) => {
   if (event.target === modal) {
-   if (modal === drawingEditorModal) {
+   if (modal === agreementStatusModal) {
+    closeAgreementStatusModal();
+   } else if (modal === drawingEditorModal) {
     closeDrawingEditor();
    } else if (modal === drawingViewerModal) {
     closeDrawingViewer();
@@ -1419,8 +1470,14 @@ document.querySelectorAll('.js-open-drawing-viewer').forEach((button) => {
  });
 });
 
+document.getElementById('openAgreementStatusModal')?.addEventListener('click', openAgreementStatusModal);
+
 document.addEventListener('keydown', (event) => {
  if (event.key !== 'Escape') return;
+ if (agreementStatusModal?.classList.contains('active')) {
+  closeAgreementStatusModal();
+  return;
+ }
  if (drawingEditorModal?.classList.contains('active')) {
   closeDrawingEditor();
   return;
@@ -1915,7 +1972,11 @@ function syncApplicationActionState(applicationStatus, options = {}) {
  }
 
  if (declineButton) {
-  declineButton.classList.toggle('is-current', normalizedStatus === 'rejected');
+  const isRejected = normalizedStatus === 'rejected';
+  declineButton.classList.toggle('is-current', isRejected);
+  declineButton.innerHTML = isRejected
+   ? '<i class="fas fa-times-circle"></i> Заявка отклонена'
+   : '<i class="fas fa-times-circle"></i> Отклонить';
  }
 
  if (shouldShowSecondaryActions) {
@@ -2007,7 +2068,8 @@ function syncRevisionApplicationButtonState() {
 function syncDeclineApplicationButtonState() {
  const declineButton = document.getElementById('declineApplicationButton');
  if (!declineButton) return;
- if (applicationDecisionLocked) {
+ const applicationStatus = String(document.getElementById('approveApplicationButton')?.dataset?.applicationStatus || 'submitted');
+ if (applicationDecisionLocked || applicationStatus === 'rejected') {
   declineButton.disabled = true;
   declineButton.setAttribute('aria-disabled', 'true');
   declineButton.setAttribute('tabindex', '-1');

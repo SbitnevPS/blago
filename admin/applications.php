@@ -312,7 +312,7 @@ $buildApplicationsUrl = static function (array $overrides = []) use ($status, $c
     $query = array_filter($query, static fn ($value) => $value !== null && $value !== '');
     $queryString = http_build_query($query);
 
-    return 'applications.php' . ($queryString !== '' ? '?' . $queryString : '');
+    return '/admin/applications' . ($queryString !== '' ? '?' . $queryString : '');
 };
 
 $buildApplicationViewUrl = static function (int $applicationId) use ($buildApplicationsUrl): string {
@@ -490,9 +490,13 @@ if (!empty($_SESSION['error_message'])) {
                     'primary_template' => '#{{public_number||id}} · {{fio||Без имени}}',
                     'secondary_template' => 'Регион: {{region||—}} · {{email||Email не указан}}',
                     'value_template' => '#{{public_number||id}} · {{fio||Без имени}}',
+                    'empty_text' => 'Участники не найдены',
                     'min_length' => 2,
                     'min_length_numeric' => 1,
                     'debounce' => 220,
+                    'preserve_input_on_select' => 1,
+                    'show_more_label' => 'Показать остальные все результаты поиска',
+                    'show_more_action' => 'submit',
                 ]) ?>>
                 <label class="form-label">Поиск по участнику</label>
                 <input
@@ -511,7 +515,7 @@ if (!empty($_SESSION['error_message'])) {
                 <i class="fas fa-filter"></i> Фильтр
             </button>
             <?php if ($status || $contest_id || $search || $searchApplicationId > 0 || $searchUserId > 0 || $participantId > 0 || $participantQuery !== '' || $queue || $showArchived): ?>
-                <a href="applications.php" class="btn btn--ghost">Сбросить</a>
+                <a href="/admin/applications" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
     </div>
@@ -805,7 +809,7 @@ if (!empty($_SESSION['error_message'])) {
 
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = '/admin/applications.php';
+        form.action = '/admin/applications';
 
         const csrfInput = document.createElement('input');
         csrfInput.type = 'hidden';

@@ -1073,7 +1073,7 @@ require_once __DIR__ . '/includes/header.php';
         <i class="fas fa-envelope"></i> Сообщения
     </a>
     <a href="/admin/messages?view=disputes" class="messages-tabs__tab <?= $messagesView === 'disputes' ? 'messages-tabs__tab--active' : '' ?>" style="position:relative;">
-        <i class="fas fa-comments"></i> Чаты оспаривания заявок · <?= (int) $disputeThreadsCount ?>
+        <i class="fas fa-comments"></i> Чаты по заявкам · <?= (int) $disputeThreadsCount ?>
         <?php if ($disputeUnreadTotal > 0): ?><span class="badge badge--warning" style="margin-left:8px;"><?= (int) $disputeUnreadTotal ?></span><?php endif; ?>
     </a>
     <a href="/admin/messages?view=disputes_archive" class="messages-tabs__tab <?= $messagesView === 'disputes_archive' ? 'messages-tabs__tab--active' : '' ?>">
@@ -1084,22 +1084,23 @@ require_once __DIR__ . '/includes/header.php';
 <?php if ($messagesView === 'disputes'): ?>
 <div class="card mb-lg">
     <div class="card__header">
-        <h3>Чаты: оспаривание решения по заявке</h3>
+        <h3>Чаты по заявкам</h3>
     </div>
     <div class="card__body">
         <?php if (empty($disputeThreads)): ?>
             <div class="empty-state" style="padding:20px;">
                 <div class="empty-state__icon"><i class="fas fa-comments"></i></div>
-                <h3 class="empty-state__title" style="font-size:18px;">Чатов оспаривания пока нет</h3>
-                <p class="empty-state__text">Когда пользователи откроют оспаривание по заявке, диалоги появятся здесь.</p>
+                <h3 class="empty-state__title" style="font-size:18px;">Чатов по заявкам пока нет</h3>
+                <p class="empty-state__text">Когда пользователи начнут переписку по заявке, диалоги появятся здесь.</p>
             </div>
         <?php else: ?>
         <div class="admin-list-cards">
             <?php foreach ($disputeThreads as $thread): ?>
+                <?php $threadDisplayTitle = !empty($thread['application_id']) ? ('Чат по заявке #' . (int) $thread['application_id']) : 'Чат по заявке'; ?>
                 <article class="admin-list-card <?= (int) ($thread['unread_count'] ?? 0) > 0 ? 'message-user-row--unread' : '' ?>">
                     <div class="admin-list-card__header">
                         <div class="admin-list-card__title-wrap">
-                            <h4 class="admin-list-card__title"><?= htmlspecialchars($thread['title']) ?></h4>
+                            <h4 class="admin-list-card__title"><?= htmlspecialchars($threadDisplayTitle) ?></h4>
                             <div class="admin-list-card__subtitle"><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 150)) ?></div>
                         </div>
                         <div class="admin-list-card__statuses">
@@ -1131,7 +1132,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php if ($messagesView === 'disputes_archive'): ?>
 <div class="card mb-lg">
     <div class="card__header">
-        <h3>Архив чатов оспаривания</h3>
+        <h3>Архив чатов по заявкам</h3>
     </div>
     <div class="card__body">
         <?php if (empty($disputeThreads)): ?>
@@ -1143,10 +1144,11 @@ require_once __DIR__ . '/includes/header.php';
         <?php else: ?>
         <div class="admin-list-cards">
             <?php foreach ($disputeThreads as $thread): ?>
+                <?php $threadDisplayTitle = !empty($thread['application_id']) ? ('Чат по заявке #' . (int) $thread['application_id']) : 'Чат по заявке'; ?>
                 <article class="admin-list-card">
                     <div class="admin-list-card__header">
                         <div class="admin-list-card__title-wrap">
-                            <h4 class="admin-list-card__title"><?= htmlspecialchars($thread['title']) ?></h4>
+                            <h4 class="admin-list-card__title"><?= htmlspecialchars($threadDisplayTitle) ?></h4>
                             <div class="admin-list-card__subtitle"><?= htmlspecialchars(mb_substr((string) ($thread['last_message'] ?? ''), 0, 150)) ?></div>
                         </div>
                         <span class="badge badge--secondary">Архив</span>

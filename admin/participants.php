@@ -46,6 +46,12 @@ try {
 } catch (Throwable $ignored) {
 }
 
+$hasAgreementDeclinedColumn = false;
+try {
+    $hasAgreementDeclinedColumn = (bool) $pdo->query("SHOW COLUMNS FROM applications LIKE 'agreement_declined'")->fetch(PDO::FETCH_ASSOC);
+} catch (Throwable $ignored) {
+}
+
 $participantCategoryFilters = [
     '' => ['label' => 'Все', 'type' => 'default'],
     '5-7' => ['label' => '5-7 лет', 'type' => 'age'],
@@ -79,7 +85,7 @@ if (!array_key_exists($viewsSort, $viewsSortOptions)) {
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = (string) ($_POST['action'] ?? '');
-    if (in_array($action, ['toggle_participant_vk_publication', 'publish_participant_vk'], true)) {
+    if ($action === 'publish_participant_vk') {
         if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
             $_SESSION['error_message'] = 'Ошибка безопасности';
             redirect('/admin/participants');
@@ -108,19 +114,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         if ((string) ($target['work_status'] ?? 'pending') !== 'accepted') {
             $_SESSION['error_message'] = 'Публикация доступна только для статуса «Рисунок принят».';
-            redirect($returnUrl);
-        }
-
-        if ($action === 'toggle_participant_vk_publication') {
-            $isPublished = (int) ($_POST['is_published'] ?? 0) === 1;
-            if ($isPublished) {
-                $pdo->prepare("UPDATE works SET vk_published_at = NOW(), updated_at = NOW() WHERE id = ? LIMIT 1")
-                    ->execute([(int) $target['work_id']]);
-            } else {
-                $pdo->prepare("UPDATE works SET vk_published_at = NULL, vk_post_id = NULL, vk_post_url = NULL, updated_at = NOW() WHERE id = ? LIMIT 1")
-                    ->execute([(int) $target['work_id']]);
-            }
-            $_SESSION['success_message'] = 'Статус публикации обновлён.';
             redirect($returnUrl);
         }
 
@@ -207,6 +200,11 @@ if ($contest_id !== '' && ctype_digit((string) $contest_id)) {
 if ($supportsContestArchive && !$showArchived) {
     $where[] = 'COALESCE(c.is_archived, 0) = 0';
     $duplicateWhere[] = 'COALESCE(c2.is_archived, 0) = 0';
+}
+
+if ($hasAgreementDeclinedColumn) {
+    $where[] = 'COALESCE(a.agreement_declined, 0) = 0';
+    $duplicateWhere[] = 'COALESCE(a2.agreement_declined, 0) = 0';
 }
 
 if ($participantId > 0) {
@@ -326,18 +324,18 @@ $queryParams = $sameParticipantsThreshold > 0
     ? array_merge($duplicateParams, $params)
     : $params;
 
-$countStmt = $pdo->prepare("\n    SELECT COUNT(*)\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    $duplicateJoin    $whereClause\n");
+$countStmt = $pdo->prepare("\n    SELECT COUNT(*)\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    LEFT JOIN users u ON a.user_id = u.id\n    $duplicateJoin    $whereClause\n");
 $countStmt->execute($queryParams);
 $totalParticipants = (int) $countStmt->fetchColumn();
 $totalPages = max(1, (int) ceil($totalParticipants / $perPage));
 
 $ovzSelect = $hasParticipantOvzColumn ? 'COALESCE(p.has_ovz, 0) AS has_ovz,' : '0 AS has_ovz,';
 $viewsSelect = $hasParticipantViewsColumn ? 'COALESCE(p.views_count, 0) AS views_count,' : '0 AS views_count,';
-$orderByClause = 'p.fio ASC, p.id DESC';
+$orderByClause = "CASE WHEN TRIM(COALESCE(p.public_number, '')) <> '' THEN 0 ELSE 1 END ASC, CAST(COALESCE(NULLIF(TRIM(p.public_number), ''), p.id) AS UNSIGNED) DESC, p.id DESC";
 if ($hasParticipantViewsColumn && $viewsSort === 'views_desc') {
-    $orderByClause = 'COALESCE(p.views_count, 0) DESC, p.fio ASC, p.id DESC';
+    $orderByClause = "COALESCE(p.views_count, 0) DESC, CASE WHEN TRIM(COALESCE(p.public_number, '')) <> '' THEN 0 ELSE 1 END ASC, CAST(COALESCE(NULLIF(TRIM(p.public_number), ''), p.id) AS UNSIGNED) DESC, p.id DESC";
 } elseif ($hasParticipantViewsColumn && $viewsSort === 'views_asc') {
-    $orderByClause = 'COALESCE(p.views_count, 0) ASC, p.fio ASC, p.id DESC';
+    $orderByClause = "COALESCE(p.views_count, 0) ASC, CASE WHEN TRIM(COALESCE(p.public_number, '')) <> '' THEN 0 ELSE 1 END ASC, CAST(COALESCE(NULLIF(TRIM(p.public_number), ''), p.id) AS UNSIGNED) DESC, p.id DESC";
 }
 $listStmt = $pdo->prepare("\n    SELECT p.id, p.public_number, p.fio, p.age, p.region, p.organization_email, p.created_at, p.application_id, p.drawing_file,\n           $ovzSelect\n           $viewsSelect\n           $duplicateSelect\n           a.status AS application_status, a.allow_edit,\n           COALESCE(w.status, 'pending') AS work_status, w.id AS work_id, w.vk_published_at,\n           pd.file_path AS diploma_file_path,\n           c.title AS contest_title, COALESCE(c.is_archived, 0) AS contest_is_archived,\n           u.email AS applicant_email\n    FROM participants p\n    INNER JOIN applications a ON p.application_id = a.id\n    LEFT JOIN contests c ON a.contest_id = c.id\n    LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id\n    LEFT JOIN participant_diplomas pd ON pd.work_id = w.id\n    LEFT JOIN users u ON a.user_id = u.id\n    $duplicateJoin    $whereClause\n    ORDER BY $orderByClause\n    LIMIT $perPage OFFSET $offset\n");
 $listStmt->execute($queryParams);
@@ -352,6 +350,34 @@ require_once __DIR__ . '/includes/header.php';
     <div class="card__body">
         <form method="GET" class="flex gap-md" style="align-items: flex-end; flex-wrap: wrap;">
             <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+            <div
+                style="flex:1; min-width: 260px; max-width: 420px; position:relative;"
+                <?= admin_live_search_attrs([
+                    'endpoint' => '/admin/search-participants',
+                    'primary_template' => '#{{public_number||id}} · {{fio||Без имени}}',
+                    'secondary_template' => 'Регион: {{region||—}} · {{email||Email не указан}}',
+                    'value_template' => '#{{public_number||id}} · {{fio||Без имени}}',
+                    'empty_text' => 'Участники не найдены',
+                    'min_length' => 2,
+                    'min_length_numeric' => 1,
+                    'debounce' => 220,
+                    'preserve_input_on_select' => 1,
+                    'show_more_label' => 'Показать остальные все результаты поиска',
+                    'show_more_action' => 'submit',
+                ]) ?>>
+                <label class="form-label">Поиск по участнику</label>
+                <input
+                    type="text"
+                    name="participant_query"
+                    id="participantSearchInput"
+                    data-live-search-input
+                    class="form-input"
+                    placeholder="Номер/ID участника, ФИО, регион или email заявителя"
+                    value="<?= htmlspecialchars($participantQuery) ?>"
+                    autocomplete="off">
+                <input type="hidden" name="participant_id" id="participantId" data-live-search-hidden value="<?= (int) $participantId ?>">
+                <div id="participantSearchResults" class="user-results" data-live-search-results></div>
+            </div>
             <div style="min-width: 280px;">
                 <label class="form-label">Конкурс</label>
                 <select name="contest_id" class="form-select">
@@ -376,30 +402,6 @@ require_once __DIR__ . '/includes/header.php';
                         </option>
                     <?php endforeach; ?>
                 </select>
-            </div>
-            <div
-                style="flex:1; min-width: 260px; max-width: 420px; position:relative;"
-                <?= admin_live_search_attrs([
-                    'endpoint' => '/admin/search-participants',
-                    'primary_template' => '#{{public_number||id}} · {{fio||Без имени}}',
-                    'secondary_template' => 'Регион: {{region||—}} · {{email||Email не указан}}',
-                    'value_template' => '#{{public_number||id}} · {{fio||Без имени}}',
-                    'min_length' => 2,
-                    'min_length_numeric' => 1,
-                    'debounce' => 220,
-                ]) ?>>
-                <label class="form-label">Поиск по участнику</label>
-                <input
-                    type="text"
-                    name="participant_query"
-                    id="participantSearchInput"
-                    data-live-search-input
-                    class="form-input"
-                    placeholder="Номер/ID участника, ФИО, регион или email заявителя"
-                    value="<?= htmlspecialchars($participantQuery) ?>"
-                    autocomplete="off">
-                <input type="hidden" name="participant_id" id="participantId" data-live-search-hidden value="<?= (int) $participantId ?>">
-                <div id="participantSearchResults" class="user-results" data-live-search-results></div>
             </div>
             <button type="submit" class="btn btn--primary"><i class="fas fa-filter"></i> Применить</button>
             <div style="min-width: 200px;">
@@ -510,34 +512,8 @@ require_once __DIR__ . '/includes/header.php';
                             <span><strong>ОВЗ:</strong> <?= !empty($participant['has_ovz']) ? 'Да' : 'Нет' ?></span>
                             <span><strong>Регион:</strong> <?= htmlspecialchars($participant['region'] ?: '—') ?></span>
                         </div>
-                    </div>
-                    <aside class="admin-list-card__sidebar">
-                        <div class="admin-list-card__statuses">
-                            <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
-                                <?= e((string) ($statusMeta['label'] ?? '—')) ?>
-                            </span>
-                            <span class="badge badge--secondary"><i class="fas fa-eye"></i> <?= (int) ($participant['views_count'] ?? 0) ?></span>
-                            <?php if ($isWorkAccepted): ?>
-                                <form method="POST" style="display:inline-flex;">
-                                    <input type="hidden" name="csrf_token" value="<?= e(generateCSRFToken()) ?>">
-                                    <input type="hidden" name="action" value="toggle_participant_vk_publication">
-                                    <input type="hidden" name="participant_id" value="<?= (int) $participant['id'] ?>">
-                                    <input type="hidden" name="return_url" value="<?= e($participantsReturnUrl) ?>">
-                                    <input type="hidden" name="is_published" value="<?= $isPublishedInVk ? '0' : '1' ?>">
-                                    <button type="submit" class="btn btn--sm <?= $isPublishedInVk ? 'btn--secondary' : 'btn--ghost' ?>">
-                                        <?= $isPublishedInVk ? 'Опубликовано' : 'Не опубликовано' ?>
-                                    </button>
-                                </form>
-                            <?php endif; ?>
-                            <?php if ($sameParticipantsCount >= 2): ?>
-                                <span class="badge badge--secondary">Совпадений: <?= $sameParticipantsCount ?></span>
-                            <?php endif; ?>
-                            <?php if ($isArchivedContest): ?>
-                                <span class="badge badge--secondary">Архивный конкурс</span>
-                            <?php endif; ?>
-                        </div>
-                        <div class="admin-list-card__actions">
-                            <a href="/admin/participant/<?= (int) $participant['id'] ?>" class="btn btn--ghost btn--sm"><i class="fas fa-eye"></i> Открыть</a>
+                        <div class="admin-list-card__actions admin-list-card__actions--participant-inline">
+                            <a href="/admin/participant/<?= (int) $participant['id'] ?>" class="btn btn--primary btn--sm"><i class="fas fa-eye"></i> Открыть</a>
                             <?php if ($hasGeneratedDiploma): ?>
                                 <a href="/admin/participant/<?= (int) $participant['id'] ?>#diploma-actions" class="btn btn--primary btn--sm"><i class="fas fa-award"></i> Диплом</a>
                             <?php endif; ?>
@@ -550,6 +526,27 @@ require_once __DIR__ . '/includes/header.php';
                                     <button type="submit" class="btn btn--secondary btn--sm"><i class="fab fa-vk"></i> Опубликовать в ВК</button>
                                 </form>
                             <?php endif; ?>
+                        </div>
+                    </div>
+                    <aside class="admin-list-card__sidebar admin-list-card__sidebar--participant">
+                        <div class="participant-sidebar-panel participant-sidebar-panel--compact">
+                            <div class="admin-list-card__statuses participant-sidebar-panel__statuses">
+                                <span class="badge <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>">
+                                    <?= e((string) ($statusMeta['label'] ?? '—')) ?>
+                                </span>
+                                <span class="badge badge--secondary"><i class="fas fa-eye"></i> <?= (int) ($participant['views_count'] ?? 0) ?></span>
+                                <?php if ($isWorkAccepted): ?>
+                                    <span class="badge <?= $isPublishedInVk ? 'badge--success' : 'badge--secondary' ?>">
+                                        <i class="fab fa-vk"></i> <?= $isPublishedInVk ? 'VK' : 'Без VK' ?>
+                                    </span>
+                                <?php endif; ?>
+                                <?php if ($sameParticipantsCount >= 2): ?>
+                                    <span class="badge badge--secondary">Совпадений: <?= $sameParticipantsCount ?></span>
+                                <?php endif; ?>
+                                <?php if ($isArchivedContest): ?>
+                                    <span class="badge badge--secondary">Архив</span>
+                                <?php endif; ?>
+                            </div>
                         </div>
                     </aside>
                 </article>
