@@ -977,18 +977,26 @@ body.is-modal-open {
 .contest-cover-modal__dialog {
     position: relative;
     z-index: 1;
-    width: min(90vw, 700px);
-    border-radius: 12px;
+    width: auto;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 32px);
+    padding: 16px;
+    border-radius: 16px;
     overflow: hidden;
     background: #0f172a;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .contest-cover-modal__dialog img {
-    width: 100%;
-    max-height: 85vh;
+    width: auto;
+    max-width: calc(100vw - 64px);
+    max-height: calc(100vh - 64px);
     object-fit: contain;
     display: block;
+    border-radius: 12px;
 }
 
 .contest-cover-modal__close {

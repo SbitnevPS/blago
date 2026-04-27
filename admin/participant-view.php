@@ -491,14 +491,14 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </section>
 
-<div class="modal" id="participantDrawingModal">
-    <div class="modal__content participant-drawing-modal">
+<div class="modal modal--image-preview" id="participantDrawingModal">
+    <div class="modal__content participant-drawing-modal modal__content--image-preview">
         <div class="modal__header">
             <h3>Рисунок участника</h3>
             <button type="button" class="modal__close" id="participantDrawingModalClose">&times;</button>
         </div>
-        <div class="modal__body participant-drawing-modal__body">
-            <img src="" alt="Рисунок участника" id="participantDrawingModalImage" class="participant-drawing-modal__image">
+        <div class="modal__body participant-drawing-modal__body modal__body--image-preview">
+            <img src="" alt="Рисунок участника" id="participantDrawingModalImage" class="participant-drawing-modal__image modal__preview-image">
         </div>
     </div>
 </div>

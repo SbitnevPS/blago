@@ -1390,14 +1390,14 @@ generateCSRFToken();
     </div>
 </div>
 
-<div class="modal" id="drawingPreviewModal" aria-hidden="true">
-    <div class="modal__content" style="max-width: 1100px; width: 96%;">
+<div class="modal modal--image-preview" id="drawingPreviewModal" aria-hidden="true">
+    <div class="modal__content modal__content--image-preview">
         <div class="modal__header">
             <h3 class="modal__title">Просмотр рисунка</h3>
             <button type="button" class="modal__close" onclick="closeDrawingPreviewModal()" aria-label="Закрыть">&times;</button>
         </div>
-        <div class="modal__body">
-            <img id="drawingPreviewModalImage" src="" alt="Рисунок участника" style="width:100%; max-height:min(70vh, calc(100vh - 260px)); object-fit:contain; border-radius:12px; background:#111;">
+        <div class="modal__body modal__body--image-preview">
+            <img id="drawingPreviewModalImage" src="" alt="Рисунок участника" class="modal__preview-image">
         </div>
     </div>
 </div>

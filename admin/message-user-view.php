@@ -957,14 +957,14 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
-<div class="modal" id="messageImagePreviewModal">
-    <div class="modal__content" style="max-width:min(1100px,96vw); width:96vw;">
+<div class="modal modal--image-preview" id="messageImagePreviewModal">
+    <div class="modal__content modal__content--image-preview">
         <div class="modal__header">
             <h3 id="messageImagePreviewTitle">Предпросмотр изображения</h3>
             <button type="button" class="modal__close" onclick="closeMessageImagePreview()">&times;</button>
         </div>
-        <div class="modal__body" style="display:flex; justify-content:center; align-items:center; max-height:80vh;">
-            <img id="messageImagePreviewImage" src="" alt="" style="display:block; max-width:100%; max-height:70vh; border-radius:16px; object-fit:contain;">
+        <div class="modal__body modal__body--image-preview">
+            <img id="messageImagePreviewImage" src="" alt="" class="modal__preview-image">
         </div>
     </div>
 </div>

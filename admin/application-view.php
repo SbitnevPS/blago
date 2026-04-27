@@ -1315,14 +1315,14 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
 </div>
 </div>
 
-<div class="modal" id="messageImagePreviewModal">
-<div class="modal__content" style="max-width:min(1100px,96vw); width:96vw;">
+<div class="modal modal--image-preview" id="messageImagePreviewModal">
+<div class="modal__content modal__content--image-preview">
 <div class="modal__header">
 <h3 id="messageImagePreviewTitle">Предпросмотр изображения</h3>
 <button type="button" class="modal__close" onclick="closeMessageImagePreview()">&times;</button>
 </div>
-<div class="modal__body" style="display:flex; justify-content:center; align-items:center; max-height:80vh;">
-<img id="messageImagePreviewImage" src="" alt="" style="display:block; max-width:100%; max-height:70vh; border-radius:16px; object-fit:contain;">
+<div class="modal__body modal__body--image-preview">
+<img id="messageImagePreviewImage" src="" alt="" class="modal__preview-image">
 </div>
 </div>
 </div>
@@ -1343,28 +1343,28 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
 <label class="drawing-editor-angle">Угол:
 <input type="number" id="rotationInput" value="0" step="1" class="form-input drawing-editor-angle__input">
 </label>
+<button type="button" id="cancelDrawingChanges" class="btn btn--ghost" onclick="resetDrawingEditor()" disabled aria-disabled="true">Сбросить</button>
 </div>
 <div class="drawing-editor-stage">
 <img id="editorImage" src="" alt="Рисунок">
 </div>
 </div>
-<div class="modal__footer">
-<button type="button" id="saveDrawingChanges" class="btn btn--primary is-hidden">Сохранить изменения</button>
-<button type="button" id="cancelDrawingChanges" class="btn btn--ghost is-hidden" onclick="resetDrawingEditor()">Отмена изменений</button>
+<div class="modal__footer drawing-editor-footer">
+<button type="button" id="saveDrawingChanges" class="btn btn--primary" disabled aria-disabled="true">Сохранить</button>
 <button type="button" class="btn btn--secondary" onclick="closeDrawingEditor()">Закрыть</button>
 </div>
 </div>
 </div>
 
-<div class="modal" id="drawingViewerModal">
-<div class="modal__content">
+<div class="modal modal--image-preview" id="drawingViewerModal">
+<div class="modal__content modal__content--image-preview">
 <div class="modal__header">
 <h3>Просмотр рисунка</h3>
 <button type="button" class="modal__close" onclick="closeDrawingViewer()">&times;</button>
 </div>
-<div class="modal__body">
-<div class="drawing-viewer-stage">
-<img id="drawingViewerImage" src="" alt="Рисунок участника">
+<div class="modal__body modal__body--image-preview">
+<div class="drawing-viewer-stage modal__image-stage">
+<img id="drawingViewerImage" src="" alt="Рисунок участника" class="modal__preview-image">
 </div>
 </div>
 <div class="modal__footer">
@@ -1374,9 +1374,11 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
 </div>
 
 	<script>
-	let cropper = null;
+let cropper = null;
 let currentRotation = 0;
 let editorDirty = false;
+let drawingEditorInitializing = false;
+let drawingEditorSuppressDirty = false;
 const agreementStatusModal = document.getElementById('agreementStatusModal');
 const drawingEditorModal = document.getElementById('drawingEditorModal');
 const drawingViewerModal = document.getElementById('drawingViewerModal');
@@ -1388,8 +1390,16 @@ function setPageModalScrollLocked(locked) {
 
 function markEditorDirty(dirty) {
  editorDirty = dirty;
- document.getElementById('saveDrawingChanges').style.display = dirty ? 'inline-flex' : 'none';
- document.getElementById('cancelDrawingChanges').style.display = dirty ? 'inline-flex' : 'none';
+ const saveButton = document.getElementById('saveDrawingChanges');
+ const resetButton = document.getElementById('cancelDrawingChanges');
+ if (saveButton) {
+  saveButton.disabled = !dirty;
+  saveButton.setAttribute('aria-disabled', dirty ? 'false' : 'true');
+ }
+ if (resetButton) {
+  resetButton.disabled = !dirty;
+  resetButton.setAttribute('aria-disabled', dirty ? 'false' : 'true');
+ }
 }
 
 function openDrawingEditor(participantId, imageSrc) {
@@ -1406,14 +1416,25 @@ function openDrawingEditor(participantId, imageSrc) {
   cropper.destroy();
  }
 
+ drawingEditorInitializing = true;
+ drawingEditorSuppressDirty = true;
  setTimeout(() => {
   cropper = new Cropper(image, {
    viewMode: 1,
-   autoCropArea: 0.9,
+   autoCropArea: 1,
    responsive: true,
    background: false,
-   ready: () => markEditorDirty(false),
-   crop: () => markEditorDirty(true),
+   ready: () => {
+    drawingEditorInitializing = false;
+    markEditorDirty(false);
+    requestAnimationFrame(() => {
+     drawingEditorSuppressDirty = false;
+    });
+   },
+   crop: () => {
+    if (drawingEditorInitializing || drawingEditorSuppressDirty) return;
+    markEditorDirty(true);
+   },
   });
  }, 50);
 }
@@ -1421,6 +1442,8 @@ function openDrawingEditor(participantId, imageSrc) {
 function closeDrawingEditor() {
  drawingEditorModal.classList.remove('active');
  setPageModalScrollLocked(false);
+ drawingEditorInitializing = false;
+ drawingEditorSuppressDirty = false;
  if (cropper) {
   cropper.destroy();
   cropper = null;
@@ -1465,10 +1488,14 @@ function rotateBy(deg) {
 
 function resetDrawingEditor() {
  if (!cropper) return;
+ drawingEditorSuppressDirty = true;
  cropper.reset();
  currentRotation = 0;
  document.getElementById('rotationInput').value = '0';
- markEditorDirty(false);
+ requestAnimationFrame(() => {
+  drawingEditorSuppressDirty = false;
+  markEditorDirty(false);
+ });
 }
 
 document.getElementById('rotationInput').addEventListener('change', function() {

@@ -696,14 +696,14 @@ $currentPage = 'messages';
 </div>
 </main>
 
-<div class="modal" id="messageImageModal">
-    <div class="modal__content" style="max-width:min(1100px,96vw); width:96vw;">
+<div class="modal modal--image-preview" id="messageImageModal">
+    <div class="modal__content modal__content--image-preview">
         <div class="modal__header">
             <h3 id="messageImageModalTitle">Просмотр изображения</h3>
             <button type="button" class="modal__close" onclick="closeMessageImageModal()">&times;</button>
         </div>
-        <div class="modal__body" style="display:flex; justify-content:center; align-items:center; max-height:80vh;">
-            <img id="messageImageModalImage" src="" alt="" style="display:block; max-width:100%; max-height:70vh; border-radius:16px; object-fit:contain;">
+        <div class="modal__body modal__body--image-preview">
+            <img id="messageImageModalImage" src="" alt="" class="modal__preview-image">
         </div>
     </div>
 </div>

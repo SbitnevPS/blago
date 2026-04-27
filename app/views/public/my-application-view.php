@@ -1248,14 +1248,14 @@ $currentPage = 'applications';
 </div>
 </main>
 
-<div class="modal" id="messageImageModal">
-<div class="modal__content" style="max-width:min(1100px,96vw); width:96vw;">
+<div class="modal modal--image-preview" id="messageImageModal">
+<div class="modal__content modal__content--image-preview">
 <div class="modal__header">
 <h3 id="messageImageModalTitle">Просмотр изображения</h3>
 <button type="button" class="modal__close" onclick="closeMessageImageModal()">&times;</button>
 </div>
-<div class="modal__body" style="display:flex; justify-content:center; align-items:center; max-height:80vh;">
-<img id="messageImageModalImage" src="" alt="" style="display:block; max-width:100%; max-height:70vh; border-radius:16px; object-fit:contain;">
+<div class="modal__body modal__body--image-preview">
+<img id="messageImageModalImage" src="" alt="" class="modal__preview-image">
 </div>
 </div>
 </div>
@@ -1313,15 +1313,15 @@ foreach ($participants as $participant) {
 </div>
 </div>
 <?php if (!empty($galleryImages)): ?>
-<div class="modal" id="galleryModal">
-<div class="modal__content" style="max-width: 1100px; width: 96%;">
+<div class="modal modal--image-preview" id="galleryModal">
+<div class="modal__content modal__content--image-preview">
 <div class="modal__header">
 <h3 id="galleryTitle">Просмотр рисунка</h3>
 <button type="button" class="modal__close" onclick="closeGallery()">&times;</button>
 </div>
-<div class="modal__body">
-<img id="galleryImage" src="" alt="Рисунок" style="width:100%; max-height:min(62vh, calc(100vh - 280px)); object-fit:contain; border-radius:12px; background:#111;">
-<div class="flex gap-sm mt-md" id="galleryThumbs" style="overflow:auto; max-height:96px;"></div>
+<div class="modal__body modal__body--image-preview">
+<img id="galleryImage" src="" alt="Рисунок" class="modal__preview-image">
+<div class="flex gap-sm mt-md modal__image-preview-strip" id="galleryThumbs" style="max-height:96px;"></div>
 </div>
 </div>
 </div>
