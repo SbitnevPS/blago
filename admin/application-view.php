@@ -1057,12 +1057,13 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                                         class="work-card__image-button js-open-drawing-viewer"
                                         data-image-src="<?= e($drawingUrl) ?>"
                                         data-image-alt="Рисунок участника <?= e($p['fio'] ?: '') ?>"
+                                        onclick="openDrawingViewer(this.dataset.imageSrc, this.dataset.imageAlt)"
                                         aria-label="Открыть рисунок участника"
                                     >
                                         <img src="<?= e($drawingPreviewUrl) ?>" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" class="js-admin-drawing work-card__image" alt="Рисунок участника">
                                         <span class="work-card__image-hint"><i class="fas fa-search-plus"></i> Нажмите для просмотра</span>
                                     </button>
-                                    <button type="button" class="btn btn--secondary js-open-editor mt-sm" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" data-image-src="<?= e($drawingUrl) ?>"><i class="fas fa-crop-alt"></i> Редактировать</button>
+                                    <button type="button" class="btn btn--secondary js-open-editor mt-sm" data-participant-id="<?= (int) ($p['participant_id'] ?? 0) ?>" data-image-src="<?= e($drawingUrl) ?>" onclick="openDrawingEditor(this.dataset.participantId, this.dataset.imageSrc)"><i class="fas fa-crop-alt"></i> Редактировать</button>
                                 <?php else: ?>
                                     <div class="drawing-empty-state"><i class="fas fa-image"></i><strong>Рисунок отсутствует</strong><span>Участник ещё не загрузил файл.</span></div>
                                 <?php endif; ?>
@@ -1309,6 +1310,7 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
 </div>
 </div>
 </div>
+</div>
 </form>
 </div>
 </div>
@@ -1476,14 +1478,6 @@ document.getElementById('rotationInput').addEventListener('change', function() {
  cropper.rotate(diff);
  currentRotation = target;
  markEditorDirty(true);
-});
-
-document.querySelectorAll('.js-open-editor').forEach((btn) => {
- btn.addEventListener('click', () => openDrawingEditor(btn.dataset.participantId, btn.dataset.imageSrc));
-});
-
-document.querySelectorAll('.js-open-drawing-viewer').forEach((button) => {
- button.addEventListener('click', () => openDrawingViewer(button.dataset.imageSrc, button.dataset.imageAlt));
 });
 
 [agreementStatusModal, drawingEditorModal, drawingViewerModal].forEach((modal) => {
