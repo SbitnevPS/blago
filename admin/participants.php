@@ -492,7 +492,10 @@ require_once __DIR__ . '/includes/header.php';
                                     <div class="admin-list-card__thumb admin-list-card__thumb--empty"><i class="fas fa-image"></i></div>
                                 <?php endif; ?>
                                 <div>
-                                    <h4 class="admin-list-card__title"><?= htmlspecialchars($participant['fio'] ?: 'Без имени') ?></h4>
+                                    <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;">
+                                        <h4 class="admin-list-card__title"><?= htmlspecialchars($participant['fio'] ?: 'Без имени') ?></h4>
+                                        <span style="font-size:12px; color:#6B7280;">Подана: <?= !empty($participant['created_at']) ? date('d.m.Y', strtotime((string) $participant['created_at'])) : '—' ?></span>
+                                    </div>
                                     <div class="admin-list-card__subtitle">
                                         #<?= e(getParticipantDisplayNumber($participant)) ?>
                                         ·
@@ -606,7 +609,7 @@ require_once __DIR__ . '/includes/header.php';
                             <span>Только принятые рисунки</span>
                         </label>
                     </div>
-                    <div class="form-hint">Если выбрать “только принятые”, в таблицу попадут участники, у которых статус работы = “Рисунок принят”.</div>
+                    <div class="form-hint">При выборе “Все” в таблицу попадут только статусы “Рисунок принят” и “Рисунок отклонён”; при выборе “только принятые” — только “Рисунок принят”.</div>
                 </div>
             </form>
 
