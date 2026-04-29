@@ -1152,9 +1152,9 @@ function sendEmailVerificationForUserId(int $userId): array
         'verification_url' => $verificationUrl,
     ]);
 
-    $sent = sendEmail((string) $user['email'], $subject, $html, ['alt_body' => $text]);
-    if (!$sent) {
-        return ['ok' => false, 'message' => 'Не удалось отправить письмо. Попробуйте позже.'];
+    $sendResult = sendEmailWithStatus((string) $user['email'], $subject, $html, ['alt_body' => $text]);
+    if (!$sendResult['ok']) {
+        return ['ok' => false, 'message' => (string) ($sendResult['user_message'] ?? 'Не удалось отправить письмо. Попробуйте позже.')];
     }
 
     return [
