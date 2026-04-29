@@ -22,6 +22,51 @@ function mailerLog(string $event, array $context = []): void {
     error_log('[MAILER] ' . $event . ' ' . json_encode($safe, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 
+
+
+function emailDomainHasMailDns(string $domain): bool
+{
+    $domain = strtolower(trim($domain));
+    if ($domain === '') {
+        return false;
+    }
+
+    if (function_exists('checkdnsrr')) {
+        if (checkdnsrr($domain, 'MX') || checkdnsrr($domain, 'A') || checkdnsrr($domain, 'AAAA')) {
+            return true;
+        }
+    }
+
+    if (function_exists('dns_get_record')) {
+        $mx = @dns_get_record($domain, DNS_MX);
+        if (is_array($mx) && !empty($mx)) {
+            return true;
+        }
+
+        $a = @dns_get_record($domain, DNS_A + DNS_AAAA);
+        if (is_array($a) && !empty($a)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function isEmailLikelyDeliverable(string $email): bool
+{
+    $email = trim($email);
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    $atPos = strrpos($email, '@');
+    if ($atPos === false) {
+        return false;
+    }
+
+    $domain = substr($email, $atPos + 1);
+    return emailDomainHasMailDns($domain);
+}
 function detectMailFileMimeType(string $path): string
 {
     $mimeType = '';
@@ -100,6 +145,28 @@ function sendEmail($to, string $subject, string $html, array $options = []): boo
     $recipients = array_values(array_filter(array_map('trim', $recipients), static function ($email): bool {
         return $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL);
     }));
+
+    $deliverabilityCheckEnabled = !array_key_exists('check_deliverability', $options) || (bool)$options['check_deliverability'];
+    if ($deliverabilityCheckEnabled) {
+        $invalidRecipients = [];
+        $recipients = array_values(array_filter($recipients, static function (string $email) use (&$invalidRecipients): bool {
+            $ok = isEmailLikelyDeliverable($email);
+            if (!$ok) {
+                $invalidRecipients[] = $email;
+            }
+            return $ok;
+        }));
+
+        if (!empty($invalidRecipients)) {
+            mailerLog('recipient_validation_failed', [
+                'to' => implode(',', $invalidRecipients),
+                'subject' => $subject,
+                'smtp_host' => $settings['smtp_host'],
+                'smtp_port' => (string)$settings['smtp_port'],
+                'error' => 'recipient domain has no mail DNS records',
+            ]);
+        }
+    }
 
     if (empty($recipients)) {
         return false;
