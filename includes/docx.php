@@ -70,7 +70,8 @@ function docxBuildDocumentXmlWithTable(
 
     $tbl = '<w:tbl>'
         . '<w:tblPr>'
-        . '<w:tblW w:w="0" w:type="auto"/>'
+        . '<w:tblW w:w="5000" w:type="pct"/>'
+        . '<w:tblLayout w:type="fixed"/>'
         . '<w:tblLook w:val="04A0"/>'
         . '</w:tblPr>'
         . $tblGrid
@@ -202,7 +203,7 @@ function buildParticipantsDocxBytes(array $rows, string $title = 'Список �
     }
 
     // Tuned for A4 landscape with tighter margins and compact type.
-    $widths = [900, 1700, 700, 1100, 1500, 1600, 1800, 1000];
+    $widths = [1300, 2700, 900, 1700, 2600, 2500, 2800, 1200];
     $xml = docxBuildDocumentXmlWithTable($title, $headers, $tableRows, $widths, true);
     return docxBuildBytes($xml);
 }
@@ -234,6 +235,8 @@ function fetchParticipantsRowsForDocxExport(array $filters = []): array
     }
     if ($onlyAccepted) {
         $where[] = "COALESCE(w.status, 'pending') = 'accepted'";
+    } else {
+        $where[] = "COALESCE(w.status, 'pending') IN ('accepted', 'reviewed_non_competitive', 'rejected')";
     }
     $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
