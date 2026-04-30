@@ -810,6 +810,94 @@ require_once __DIR__ . '/includes/header.php';
         text-decoration: none;
         font-weight: 600;
     }
+
+    .drawing-viewer-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 0 16px;
+        flex-wrap: wrap;
+    }
+
+    .drawing-viewer-toolbar__actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .drawing-viewer-toolbar__zoom {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 64px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 13px;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    #drawingViewerModal .modal__content {
+        width: min(calc(100vw - 32px), 1360px);
+    }
+
+    #drawingViewerModal .modal__body {
+        align-items: stretch;
+        justify-content: flex-start;
+        overflow: hidden;
+    }
+
+    .drawing-viewer-stage {
+        position: relative;
+        width: 100%;
+        height: min(72vh, 820px);
+        overflow: auto;
+        padding: 0;
+        border-radius: 18px;
+        overscroll-behavior: contain;
+        background:
+            radial-gradient(circle at top, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.98)),
+            linear-gradient(135deg, #f8fafc, #eef2ff);
+    }
+
+    .drawing-viewer-stage.is-draggable {
+        cursor: grab;
+    }
+
+    .drawing-viewer-stage.is-dragging {
+        cursor: grabbing;
+        user-select: none;
+    }
+
+    .drawing-viewer-stage__canvas {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 100%;
+        min-height: 100%;
+        padding: 16px;
+        box-sizing: border-box;
+    }
+
+    .drawing-viewer-stage__image {
+        display: block;
+        max-width: none;
+        max-height: none;
+        width: auto;
+        height: auto;
+        transition: width 0.18s ease, height 0.18s ease;
+        cursor: zoom-in;
+        flex: 0 0 auto;
+        user-select: none;
+    }
+
+    .drawing-viewer-stage__image.is-zoomed {
+        cursor: inherit;
+    }
 </style>
 
 <?php
@@ -1363,8 +1451,18 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
 <button type="button" class="modal__close" onclick="closeDrawingViewer()">&times;</button>
 </div>
 <div class="modal__body modal__body--image-preview">
-<div class="drawing-viewer-stage modal__image-stage">
-<img id="drawingViewerImage" src="" alt="Рисунок участника" class="modal__preview-image">
+<div class="drawing-viewer-toolbar">
+<div class="drawing-viewer-toolbar__actions">
+<button type="button" class="btn btn--secondary btn--sm" id="drawingViewerZoomOutBtn" aria-label="Уменьшить изображение"><i class="fas fa-search-minus"></i> -</button>
+<button type="button" class="btn btn--secondary btn--sm" id="drawingViewerZoomInBtn" aria-label="Увеличить изображение"><i class="fas fa-search-plus"></i> +</button>
+<button type="button" class="btn btn--ghost btn--sm" id="drawingViewerZoomResetBtn">Сброс</button>
+</div>
+<div class="drawing-viewer-toolbar__zoom" id="drawingViewerZoomValue">x1.0</div>
+</div>
+<div class="drawing-viewer-stage modal__image-stage" id="drawingViewerStage">
+<div class="drawing-viewer-stage__canvas" id="drawingViewerCanvas">
+<img id="drawingViewerImage" src="" alt="Рисунок участника" class="modal__preview-image drawing-viewer-stage__image">
+</div>
 </div>
 </div>
 <div class="modal__footer">
@@ -1379,10 +1477,28 @@ let currentRotation = 0;
 let editorDirty = false;
 let drawingEditorInitializing = false;
 let drawingEditorSuppressDirty = false;
+let drawingViewerScale = 1;
+let drawingViewerDragging = false;
+let drawingViewerDragStartX = 0;
+let drawingViewerDragStartY = 0;
+let drawingViewerDragScrollLeft = 0;
+let drawingViewerDragScrollTop = 0;
+let drawingViewerBaseWidth = 0;
+let drawingViewerBaseHeight = 0;
 const agreementStatusModal = document.getElementById('agreementStatusModal');
 const drawingEditorModal = document.getElementById('drawingEditorModal');
 const drawingViewerModal = document.getElementById('drawingViewerModal');
+const drawingViewerStage = document.getElementById('drawingViewerStage');
+const drawingViewerCanvas = document.getElementById('drawingViewerCanvas');
 const drawingViewerImage = document.getElementById('drawingViewerImage');
+const drawingViewerZoomValue = document.getElementById('drawingViewerZoomValue');
+const drawingViewerZoomInBtn = document.getElementById('drawingViewerZoomInBtn');
+const drawingViewerZoomOutBtn = document.getElementById('drawingViewerZoomOutBtn');
+const drawingViewerZoomResetBtn = document.getElementById('drawingViewerZoomResetBtn');
+const DRAWING_VIEWER_MIN_SCALE = 1;
+const DRAWING_VIEWER_MAX_SCALE = 3;
+const DRAWING_VIEWER_SCALE_STEP = 0.5;
+const DRAWING_VIEWER_CANVAS_PADDING = 32;
 
 function setPageModalScrollLocked(locked) {
  document.body.style.overflow = locked ? 'hidden' : '';
@@ -1400,6 +1516,165 @@ function markEditorDirty(dirty) {
   resetButton.disabled = !dirty;
   resetButton.setAttribute('aria-disabled', dirty ? 'false' : 'true');
  }
+}
+
+function clampDrawingViewerScale(scale) {
+ return Math.min(DRAWING_VIEWER_MAX_SCALE, Math.max(DRAWING_VIEWER_MIN_SCALE, Math.round(scale * 10) / 10));
+}
+
+function clampDrawingViewerScroll(value, maxValue) {
+ return Math.min(Math.max(0, value), Math.max(0, maxValue));
+}
+
+function getDrawingViewerStageRect() {
+ return drawingViewerStage ? drawingViewerStage.getBoundingClientRect() : null;
+}
+
+function isPointInsideRect(clientX, clientY, rect) {
+ return !!rect
+  && Number.isFinite(clientX)
+  && Number.isFinite(clientY)
+  && clientX >= rect.left
+  && clientX <= rect.right
+  && clientY >= rect.top
+  && clientY <= rect.bottom;
+}
+
+function resolveDrawingViewerFocus(point = null) {
+ if (!drawingViewerStage || !drawingViewerImage) return null;
+
+ const stageRect = getDrawingViewerStageRect();
+ const imageRect = drawingViewerImage.getBoundingClientRect();
+ const clientX = point && Number.isFinite(point.clientX) ? point.clientX : null;
+ const clientY = point && Number.isFinite(point.clientY) ? point.clientY : null;
+ const insideStage = isPointInsideRect(clientX, clientY, stageRect);
+ const insideImage = insideStage && isPointInsideRect(clientX, clientY, imageRect);
+
+ return {
+  focusOffsetX: insideStage ? (clientX - stageRect.left) : (drawingViewerStage.clientWidth / 2),
+  focusOffsetY: insideStage ? (clientY - stageRect.top) : (drawingViewerStage.clientHeight / 2),
+  ratioX: insideImage && imageRect.width > 0 ? ((clientX - imageRect.left) / imageRect.width) : 0.5,
+  ratioY: insideImage && imageRect.height > 0 ? ((clientY - imageRect.top) / imageRect.height) : 0.5,
+ };
+}
+
+function applyDrawingViewerFocus(focus) {
+ if (!focus || !drawingViewerStage || !drawingViewerImage) return;
+
+ const stageRect = getDrawingViewerStageRect();
+ const imageRect = drawingViewerImage.getBoundingClientRect();
+ const contentLeft = drawingViewerStage.scrollLeft + (imageRect.left - stageRect.left);
+ const contentTop = drawingViewerStage.scrollTop + (imageRect.top - stageRect.top);
+ const targetScrollLeft = contentLeft + (focus.ratioX * imageRect.width) - focus.focusOffsetX;
+ const targetScrollTop = contentTop + (focus.ratioY * imageRect.height) - focus.focusOffsetY;
+
+ drawingViewerStage.scrollLeft = clampDrawingViewerScroll(
+  targetScrollLeft,
+  drawingViewerStage.scrollWidth - drawingViewerStage.clientWidth
+ );
+ drawingViewerStage.scrollTop = clampDrawingViewerScroll(
+  targetScrollTop,
+  drawingViewerStage.scrollHeight - drawingViewerStage.clientHeight
+ );
+}
+
+function measureDrawingViewerBaseSize() {
+ if (!drawingViewerImage || !drawingViewerStage) return;
+ const naturalWidth = Number(drawingViewerImage.naturalWidth || 0);
+ const naturalHeight = Number(drawingViewerImage.naturalHeight || 0);
+ if (naturalWidth <= 0 || naturalHeight <= 0) return;
+
+ const availableWidth = Math.max(1, drawingViewerStage.clientWidth - DRAWING_VIEWER_CANVAS_PADDING);
+ const availableHeight = Math.max(1, drawingViewerStage.clientHeight - DRAWING_VIEWER_CANVAS_PADDING);
+ const fitRatio = Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight, 1);
+
+ drawingViewerBaseWidth = Math.max(1, Math.round(naturalWidth * fitRatio));
+ drawingViewerBaseHeight = Math.max(1, Math.round(naturalHeight * fitRatio));
+ syncDrawingViewerControls();
+}
+
+function syncDrawingViewerControls() {
+ if (drawingViewerImage && drawingViewerBaseWidth > 0 && drawingViewerBaseHeight > 0) {
+  const scaledWidth = Math.max(1, Math.round(drawingViewerBaseWidth * drawingViewerScale));
+  const scaledHeight = Math.max(1, Math.round(drawingViewerBaseHeight * drawingViewerScale));
+  drawingViewerImage.style.width = `${scaledWidth}px`;
+  drawingViewerImage.style.height = `${scaledHeight}px`;
+  drawingViewerImage.classList.toggle('is-zoomed', drawingViewerScale > DRAWING_VIEWER_MIN_SCALE);
+ }
+ if (drawingViewerCanvas && drawingViewerStage && drawingViewerBaseWidth > 0 && drawingViewerBaseHeight > 0) {
+  const canvasWidth = Math.max(drawingViewerStage.clientWidth, Math.round(drawingViewerBaseWidth * drawingViewerScale) + DRAWING_VIEWER_CANVAS_PADDING);
+  const canvasHeight = Math.max(drawingViewerStage.clientHeight, Math.round(drawingViewerBaseHeight * drawingViewerScale) + DRAWING_VIEWER_CANVAS_PADDING);
+  drawingViewerCanvas.style.width = `${canvasWidth}px`;
+  drawingViewerCanvas.style.height = `${canvasHeight}px`;
+ }
+ if (drawingViewerStage) {
+  drawingViewerStage.classList.toggle('is-draggable', drawingViewerScale > DRAWING_VIEWER_MIN_SCALE);
+ }
+ if (drawingViewerZoomValue) {
+  drawingViewerZoomValue.textContent = `x${drawingViewerScale.toFixed(1)}`;
+ }
+ if (drawingViewerZoomInBtn) {
+  drawingViewerZoomInBtn.disabled = drawingViewerScale >= DRAWING_VIEWER_MAX_SCALE;
+  drawingViewerZoomInBtn.setAttribute('aria-disabled', drawingViewerZoomInBtn.disabled ? 'true' : 'false');
+ }
+ if (drawingViewerZoomOutBtn) {
+  drawingViewerZoomOutBtn.disabled = drawingViewerScale <= DRAWING_VIEWER_MIN_SCALE;
+  drawingViewerZoomOutBtn.setAttribute('aria-disabled', drawingViewerZoomOutBtn.disabled ? 'true' : 'false');
+ }
+ if (drawingViewerZoomResetBtn) {
+  drawingViewerZoomResetBtn.disabled = drawingViewerScale === DRAWING_VIEWER_MIN_SCALE;
+  drawingViewerZoomResetBtn.setAttribute('aria-disabled', drawingViewerZoomResetBtn.disabled ? 'true' : 'false');
+ }
+}
+
+function setDrawingViewerScale(scale, point = null, preserveFocus = true) {
+ const focus = resolveDrawingViewerFocus(point);
+ drawingViewerScale = clampDrawingViewerScale(scale);
+ if (drawingViewerScale === DRAWING_VIEWER_MIN_SCALE) {
+  stopDrawingViewerDrag();
+ }
+ syncDrawingViewerControls();
+ if (preserveFocus && focus) {
+  requestAnimationFrame(() => applyDrawingViewerFocus(focus));
+ }
+}
+
+function resetDrawingViewerScale() {
+ stopDrawingViewerDrag();
+ setDrawingViewerScale(DRAWING_VIEWER_MIN_SCALE, null, false);
+ if (drawingViewerStage) {
+  drawingViewerStage.scrollTop = 0;
+  drawingViewerStage.scrollLeft = 0;
+ }
+}
+
+function startDrawingViewerDrag(event) {
+ if (!drawingViewerStage || drawingViewerScale <= DRAWING_VIEWER_MIN_SCALE) return;
+ drawingViewerDragging = true;
+ drawingViewerDragStartX = event.clientX;
+ drawingViewerDragStartY = event.clientY;
+ drawingViewerDragScrollLeft = drawingViewerStage.scrollLeft;
+ drawingViewerDragScrollTop = drawingViewerStage.scrollTop;
+ drawingViewerStage.classList.add('is-dragging');
+ document.body.style.userSelect = 'none';
+ event.preventDefault();
+}
+
+function moveDrawingViewerDrag(event) {
+ if (!drawingViewerDragging || !drawingViewerStage) return;
+ const deltaX = event.clientX - drawingViewerDragStartX;
+ const deltaY = event.clientY - drawingViewerDragStartY;
+ drawingViewerStage.scrollLeft = drawingViewerDragScrollLeft - deltaX;
+ drawingViewerStage.scrollTop = drawingViewerDragScrollTop - deltaY;
+}
+
+function stopDrawingViewerDrag() {
+ if (!drawingViewerDragging && !drawingViewerStage?.classList.contains('is-dragging')) return;
+ drawingViewerDragging = false;
+ if (drawingViewerStage) {
+  drawingViewerStage.classList.remove('is-dragging');
+ }
+ document.body.style.userSelect = '';
 }
 
 function openDrawingEditor(participantId, imageSrc) {
@@ -1452,9 +1727,16 @@ function closeDrawingEditor() {
 
 function openDrawingViewer(imageSrc, imageAlt) {
  if (!drawingViewerModal || !drawingViewerImage) return;
+ drawingViewerBaseWidth = 0;
+ drawingViewerBaseHeight = 0;
+ if (drawingViewerCanvas) {
+  drawingViewerCanvas.style.width = '100%';
+  drawingViewerCanvas.style.height = '100%';
+ }
+ resetDrawingViewerScale();
  drawingViewerImage.src = imageSrc;
  drawingViewerImage.alt = imageAlt || 'Рисунок участника';
- drawingViewerModal.classList.add('active');
+  drawingViewerModal.classList.add('active');
  setPageModalScrollLocked(true);
 }
 
@@ -1462,8 +1744,71 @@ function closeDrawingViewer() {
  if (!drawingViewerModal || !drawingViewerImage) return;
  drawingViewerModal.classList.remove('active');
  drawingViewerImage.src = '';
- setPageModalScrollLocked(false);
+ drawingViewerImage.alt = 'Рисунок участника';
+ drawingViewerBaseWidth = 0;
+ drawingViewerBaseHeight = 0;
+ if (drawingViewerCanvas) {
+  drawingViewerCanvas.style.width = '100%';
+  drawingViewerCanvas.style.height = '100%';
+ }
+ resetDrawingViewerScale();
+ const otherModal = document.querySelector('.modal.active:not(#drawingViewerModal)');
+ setPageModalScrollLocked(Boolean(otherModal));
 }
+
+function zoomDrawingViewerBy(delta, point = null) {
+ setDrawingViewerScale(drawingViewerScale + delta, point);
+}
+
+if (drawingViewerZoomInBtn) {
+ drawingViewerZoomInBtn.addEventListener('click', () => zoomDrawingViewerBy(DRAWING_VIEWER_SCALE_STEP));
+}
+
+if (drawingViewerZoomOutBtn) {
+ drawingViewerZoomOutBtn.addEventListener('click', () => zoomDrawingViewerBy(-DRAWING_VIEWER_SCALE_STEP));
+}
+
+if (drawingViewerZoomResetBtn) {
+ drawingViewerZoomResetBtn.addEventListener('click', resetDrawingViewerScale);
+}
+
+if (drawingViewerStage) {
+ drawingViewerStage.addEventListener('wheel', (event) => {
+  if (!drawingViewerModal?.classList.contains('active')) return;
+  event.preventDefault();
+  zoomDrawingViewerBy(
+   event.deltaY < 0 ? DRAWING_VIEWER_SCALE_STEP : -DRAWING_VIEWER_SCALE_STEP,
+   { clientX: event.clientX, clientY: event.clientY }
+  );
+ }, { passive: false });
+ drawingViewerStage.addEventListener('mousedown', startDrawingViewerDrag);
+}
+
+if (drawingViewerImage) {
+ drawingViewerImage.setAttribute('draggable', 'false');
+ drawingViewerImage.addEventListener('load', () => {
+  drawingViewerScale = DRAWING_VIEWER_MIN_SCALE;
+  measureDrawingViewerBaseSize();
+  if (drawingViewerStage) {
+   drawingViewerStage.scrollTop = 0;
+   drawingViewerStage.scrollLeft = 0;
+  }
+ });
+}
+
+window.addEventListener('mousemove', moveDrawingViewerDrag);
+window.addEventListener('mouseup', stopDrawingViewerDrag);
+window.addEventListener('mouseleave', stopDrawingViewerDrag);
+window.addEventListener('resize', () => {
+ if (!drawingViewerModal?.classList.contains('active') || !drawingViewerImage?.src) return;
+ const focus = resolveDrawingViewerFocus(null);
+ measureDrawingViewerBaseSize();
+ if (focus) {
+  requestAnimationFrame(() => applyDrawingViewerFocus(focus));
+ }
+});
+
+syncDrawingViewerControls();
 
 function openAgreementStatusModal() {
  if (!agreementStatusModal) return;
