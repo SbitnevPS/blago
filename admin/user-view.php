@@ -73,8 +73,17 @@ $stmt = $pdo->prepare("
 $stmt->execute([$user_id]);
 $messages = $stmt->fetchAll();
 
+$userFullName = trim((string) (($user['surname'] ?? '') . ' ' . ($user['name'] ?? '') . ' ' . ($user['patronymic'] ?? '')));
+if ($userFullName === '') {
+    $userFullName = trim((string) ($user['email'] ?? '')) ?: 'Пользователь #' . (int) $user_id;
+}
+$emailVerified = (int) ($user['email_verified'] ?? 0) === 1;
+$vkId = trim((string) ($user['vk_id'] ?? ''));
+$userTypeLabel = getUserTypeLabel((string) ($user['user_type'] ?? 'parent'));
+$userCreatedAt = !empty($user['created_at']) ? date('d.m.Y H:i', strtotime((string) $user['created_at'])) : 'Не указана';
+
 $currentPage = 'users';
-$pageTitle = htmlspecialchars($user['name'] . ' ' . $user['surname']);
+$pageTitle = $userFullName;
 $breadcrumb = 'Пользователи / Просмотр';
 $headerBackUrl = $userReturnUrl;
 $headerBackLabel = 'Назад';
@@ -194,12 +203,12 @@ require_once __DIR__ . '/includes/header.php';
     </div>
     <div class="user-view-stat">
         <div class="user-view-stat__label">Дата регистрации</div>
-        <div class="user-view-stat__value user-view-stat__value--small"><?= date('d.m.Y', strtotime($user['created_at'])) ?></div>
+        <div class="user-view-stat__value user-view-stat__value--small"><?= htmlspecialchars($userCreatedAt) ?></div>
     </div>
 </div>
 
 <!-- Информация о пользователе -->
-<div class="card mb-lg">
+<div class="card user-view-info-card mb-lg">
 <div class="card__body">
 <div class="user-view-profile">
  <?php if ($userAvatar['url'] !== ''): ?>
@@ -211,53 +220,59 @@ require_once __DIR__ . '/includes/header.php';
  <?php endif; ?>
             
 <div class="user-view-profile__content">
-<h2><?= htmlspecialchars(getUserDisplayName($user ?? [], true)) ?></h2>
- <?php if ($user['is_admin']): ?>
-<span class="badge badge--primary mb-md">Администратор</span>
+<div class="user-view-profile__head">
+<div>
+<div class="user-view-profile__eyebrow">Пользователь #<?= (int) $user_id ?></div>
+<h2 class="user-view-profile__name"><?= htmlspecialchars($userFullName) ?></h2>
+<div class="user-view-profile__email"><?= htmlspecialchars($user['email'] ?: 'Email не указан') ?></div>
+</div>
+<div class="user-view-profile__badges">
+ <?php if ((int) ($user['is_admin'] ?? 0) === 1): ?>
+<span class="badge badge--primary">Администратор</span>
  <?php endif; ?>
-                
-<div class="form-row mt-lg">
-<div class="form-group">
-<label class="form-label">VK ID</label>
-<p><?= htmlspecialchars($user['vk_id'] ?? 'Не указан') ?></p>
-</div>
-<div class="form-group">
-<label class="form-label">Email</label>
-<p>
-    <?= htmlspecialchars($user['email'] ?: 'Не указан') ?>
-    <?php if (!empty($user['email'])): ?>
-        <?php $emailVerified = (int) ($user['email_verified'] ?? 0) === 1; ?>
-        <span class="badge <?= $emailVerified ? 'badge--success' : 'badge--warning' ?>">
-            <?= $emailVerified ? 'Подтверждён' : 'Не подтверждён' ?>
-        </span>
-    <?php endif; ?>
-</p>
-</div>
-<div class="form-group">
-<label class="form-label">Тип профиля</label>
-<p><?= htmlspecialchars(getUserTypeLabel((string) ($user['user_type'] ?? 'parent'))) ?></p>
-</div>
-<div class="form-group">
-<label class="form-label">Регион</label>
-<p><?= htmlspecialchars($user['organization_region'] ?? 'Не указан') ?></p>
-</div>
-<div class="form-group">
-<label class="form-label">Образовательное учреждение</label>
-<p><?= htmlspecialchars($user['organization_name'] ?? 'Не указано') ?></p>
-</div>
-<div class="form-group">
-<label class="form-label">Контактная информация организации</label>
-<p><?= htmlspecialchars($user['organization_address'] ?? 'Не указан') ?></p>
-</div>
-<div class="form-group">
-<label class="form-label">Дата регистрации</label>
-<p><?= date('d.m.Y H:i', strtotime($user['created_at'])) ?></p>
+ <?php if (!empty($user['email'])): ?>
+<span class="badge <?= $emailVerified ? 'badge--success' : 'badge--warning' ?>">
+    <?= $emailVerified ? 'Email подтверждён' : 'Email не подтверждён' ?>
+</span>
+ <?php endif; ?>
 </div>
 </div>
-                
- <?php if ($user['vk_id']): ?>
-<div class="mt-lg">
-<a href="https://vk.com/id<?= $user['vk_id'] ?>" target="_blank" class="btn btn--secondary">
+
+<div class="user-view-details-grid">
+<div class="user-view-detail user-view-detail--wide">
+<span class="user-view-detail__label">ФИО</span>
+<strong class="user-view-detail__value"><?= htmlspecialchars($userFullName) ?></strong>
+<span class="user-view-detail__hint">Фамилия Имя Отчество</span>
+</div>
+<div class="user-view-detail">
+<span class="user-view-detail__label">Тип профиля</span>
+<strong class="user-view-detail__value"><?= htmlspecialchars($userTypeLabel) ?></strong>
+</div>
+<div class="user-view-detail">
+<span class="user-view-detail__label">VK ID</span>
+<strong class="user-view-detail__value"><?= htmlspecialchars($vkId !== '' ? $vkId : 'Не указан') ?></strong>
+</div>
+<div class="user-view-detail">
+<span class="user-view-detail__label">Регион</span>
+<strong class="user-view-detail__value"><?= htmlspecialchars($user['organization_region'] ?: 'Не указан') ?></strong>
+</div>
+<div class="user-view-detail user-view-detail--wide">
+<span class="user-view-detail__label">Образовательное учреждение</span>
+<strong class="user-view-detail__value"><?= htmlspecialchars($user['organization_name'] ?: 'Не указано') ?></strong>
+</div>
+<div class="user-view-detail user-view-detail--wide">
+<span class="user-view-detail__label">Контактная информация организации</span>
+<strong class="user-view-detail__value"><?= nl2br(htmlspecialchars($user['organization_address'] ?: 'Не указана')) ?></strong>
+</div>
+<div class="user-view-detail">
+<span class="user-view-detail__label">Дата регистрации</span>
+<strong class="user-view-detail__value"><?= htmlspecialchars($userCreatedAt) ?></strong>
+</div>
+</div>
+
+ <?php if ($vkId !== ''): ?>
+<div class="user-view-profile__footer">
+<a href="https://vk.com/id<?= htmlspecialchars($vkId, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener" class="btn btn--secondary">
 <i class="fab fa-vk"></i> Открыть профиль VK
 </a>
 </div>
