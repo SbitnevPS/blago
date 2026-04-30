@@ -208,7 +208,8 @@ if ($action === 'process_batch') {
             continue;
         }
 
-        $ok = sendEmail($email, (string) ($mailing['subject'] ?? ''), (string) ($mailing['body'] ?? ''), ['attachments' => $sendAttachments]);
+        $sendResult = sendEmailWithStatus($email, (string) ($mailing['subject'] ?? ''), (string) ($mailing['body'] ?? ''), ['attachments' => $sendAttachments]);
+        $ok = (bool) ($sendResult['ok'] ?? false);
 
         $logStmt = $pdo->prepare('INSERT INTO mailing_send_logs (mailing_id, user_id, email, send_status, error_message, sent_at) VALUES (?, ?, ?, ?, ?, ?)');
         if ($ok) {
@@ -216,7 +217,11 @@ if ($action === 'process_batch') {
             $logStmt->execute([$id, $userId, $email, 'sent', null, date('Y-m-d H:i:s')]);
         } else {
             $failed++;
-            $logStmt->execute([$id, $userId, $email, 'failed', 'sendEmail вернул false', null]);
+            $logErrorMessage = (string) ($sendResult['user_message'] ?? 'Не удалось отправить письмо.');
+            if (($sendResult['error_type'] ?? '') === 'smtp_config') {
+                $logErrorMessage = 'Ошибка SMTP/настроек отправки: проверьте SMTP-конфигурацию и логи сервера.';
+            }
+            $logStmt->execute([$id, $userId, $email, 'failed', $logErrorMessage, null]);
         }
     }
 

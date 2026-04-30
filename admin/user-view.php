@@ -223,7 +223,15 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <div class="form-group">
 <label class="form-label">Email</label>
-<p><?= htmlspecialchars($user['email'] ?: 'Не указан') ?></p>
+<p>
+    <?= htmlspecialchars($user['email'] ?: 'Не указан') ?>
+    <?php if (!empty($user['email'])): ?>
+        <?php $emailVerified = (int) ($user['email_verified'] ?? 0) === 1; ?>
+        <span class="badge <?= $emailVerified ? 'badge--success' : 'badge--warning' ?>">
+            <?= $emailVerified ? 'Подтверждён' : 'Не подтверждён' ?>
+        </span>
+    <?php endif; ?>
+</p>
 </div>
 <div class="form-group">
 <label class="form-label">Тип профиля</label>

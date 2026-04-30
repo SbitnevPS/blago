@@ -22,6 +22,51 @@ function mailerLog(string $event, array $context = []): void {
     error_log('[MAILER] ' . $event . ' ' . json_encode($safe, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 
+
+
+function emailDomainHasMailDns(string $domain): bool
+{
+    $domain = strtolower(trim($domain));
+    if ($domain === '') {
+        return false;
+    }
+
+    if (function_exists('checkdnsrr')) {
+        if (checkdnsrr($domain, 'MX') || checkdnsrr($domain, 'A') || checkdnsrr($domain, 'AAAA')) {
+            return true;
+        }
+    }
+
+    if (function_exists('dns_get_record')) {
+        $mx = @dns_get_record($domain, DNS_MX);
+        if (is_array($mx) && !empty($mx)) {
+            return true;
+        }
+
+        $a = @dns_get_record($domain, DNS_A + DNS_AAAA);
+        if (is_array($a) && !empty($a)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function isEmailLikelyDeliverable(string $email): bool
+{
+    $email = trim($email);
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    $atPos = strrpos($email, '@');
+    if ($atPos === false) {
+        return false;
+    }
+
+    $domain = substr($email, $atPos + 1);
+    return emailDomainHasMailDns($domain);
+}
 function detectMailFileMimeType(string $path): string
 {
     $mimeType = '';
@@ -90,10 +135,15 @@ function buildEmailSettings(array $overrides = []): array {
  * @param string|array<int,string> $to
  * @param array<string,mixed> $options
  */
-function sendEmail($to, string $subject, string $html, array $options = []): bool {
+/**
+ * @param string|array<int,string> $to
+ * @param array<string,mixed> $options
+ * @return array{ok:bool,error_type:?string,user_message:?string,technical_message:?string}
+ */
+function sendEmailWithStatus($to, string $subject, string $html, array $options = []): array {
     $settings = buildEmailSettings((array)($options['settings_override'] ?? []));
     if (!$settings['notifications_enabled']) {
-        return false;
+        return ['ok' => false, 'error_type' => 'notifications_disabled', 'user_message' => 'Отправка писем отключена в настройках.', 'technical_message' => 'notifications disabled'];
     }
 
     $recipients = is_array($to) ? $to : [$to];
@@ -101,8 +151,36 @@ function sendEmail($to, string $subject, string $html, array $options = []): boo
         return $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL);
     }));
 
+    $deliverabilityCheckEnabled = !array_key_exists('check_deliverability', $options) || (bool)$options['check_deliverability'];
+    if ($deliverabilityCheckEnabled) {
+        $invalidRecipients = [];
+        $recipients = array_values(array_filter($recipients, static function (string $email) use (&$invalidRecipients): bool {
+            $ok = isEmailLikelyDeliverable($email);
+            if (!$ok) {
+                $invalidRecipients[] = $email;
+            }
+            return $ok;
+        }));
+
+        if (!empty($invalidRecipients)) {
+            mailerLog('recipient_validation_failed', [
+                'to' => implode(',', $invalidRecipients),
+                'subject' => $subject,
+                'smtp_host' => $settings['smtp_host'],
+                'smtp_port' => (string)$settings['smtp_port'],
+                'error' => 'recipient domain has no mail DNS records',
+            ]);
+            return [
+                'ok' => false,
+                'error_type' => 'recipient_invalid',
+                'user_message' => 'Проверьте адрес электронной почты: возможно, в нём есть ошибка, поэтому письмо не было отправлено.',
+                'technical_message' => 'recipient domain has no mail DNS records',
+            ];
+        }
+    }
+
     if (empty($recipients)) {
-        return false;
+        return ['ok' => false, 'error_type' => 'recipient_invalid', 'user_message' => 'Проверьте адрес электронной почты: возможно, в нём есть ошибка, поэтому письмо не было отправлено.', 'technical_message' => 'empty or invalid recipients'];
     }
 
     if (!class_exists(PHPMailer::class)) {
@@ -113,7 +191,7 @@ function sendEmail($to, string $subject, string $html, array $options = []): boo
             'smtp_port' => (string)$settings['smtp_port'],
             'error' => 'PHPMailer not installed',
         ]);
-        return false;
+        return ['ok' => false, 'error_type' => 'smtp_config', 'user_message' => 'Не удалось отправить письмо из‑за ошибки настроек отправки. Обратитесь к администратору.', 'technical_message' => 'PHPMailer not installed'];
     }
 
     $plainText = trim((string)($options['text'] ?? ($options['alt_body'] ?? '')));
@@ -258,7 +336,9 @@ function sendEmail($to, string $subject, string $html, array $options = []): boo
             ]);
         }
 
-        return $sent;
+        return $sent
+            ? ['ok' => true, 'error_type' => null, 'user_message' => null, 'technical_message' => null]
+            : ['ok' => false, 'error_type' => 'smtp_config', 'user_message' => 'Не удалось отправить письмо из‑за ошибки настроек отправки. Попробуйте позже.', 'technical_message' => 'mail->send returned false'];
     } catch (Throwable $e) {
         mailerLog('send_failed', [
             'to' => implode(',', $recipients),
@@ -268,6 +348,14 @@ function sendEmail($to, string $subject, string $html, array $options = []): boo
             'embedded_images_requested' => isset($embeddedImages) ? count($embeddedImages) : 0,
             'error' => $e->getMessage(),
         ]);
-        return false;
+        return ['ok' => false, 'error_type' => 'smtp_config', 'user_message' => 'Не удалось отправить письмо из‑за ошибки настроек отправки. Попробуйте позже.', 'technical_message' => $e->getMessage()];
     }
+}
+
+/**
+ * @param string|array<int,string> $to
+ * @param array<string,mixed> $options
+ */
+function sendEmail($to, string $subject, string $html, array $options = []): bool {
+    return sendEmailWithStatus($to, $subject, $html, $options)['ok'];
 }
