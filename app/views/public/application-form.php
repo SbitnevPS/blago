@@ -1102,6 +1102,7 @@ $existingPaymentReceiptIsImage = $hasExistingPaymentReceipt && preg_match('/\.(j
 $paymentStepNumber = $contestRequiresPaymentReceipt ? 3 : null;
 $agreementStepNumber = $contestRequiresPaymentReceipt ? 4 : 3;
 $reviewStepNumber = $contestRequiresPaymentReceipt ? 5 : 4;
+$showNewApplicationNoticeModal = !$editingApplication && $editingApplicationId <= 0 && $_SERVER['REQUEST_METHOD'] === 'GET';
 
 generateCSRFToken();
 ?>
@@ -1125,15 +1126,16 @@ generateCSRFToken();
         <div class="application-hero__inner">
             <div class="application-hero__eyebrow"><i class="fas fa-bolt"></i> Онлайн-подача</div>
             <h1 class="application-hero__title"><?= e($contest['title']) ?></h1>
+            <p class="application-hero__lead">Заполните заявку по шагам: данные сохраняются в черновик, а перед отправкой всё можно проверить.</p>
             <div class="application-prep-grid">
-                <div class="application-prep-item">👤 Данные участника</div>
-                <div class="application-prep-item">🖼 Отдельный рисунок</div>
+                <div class="application-prep-item"><i class="fas fa-user"></i><span>Данные участника</span></div>
+                <div class="application-prep-item"><i class="fas fa-image"></i><span>Рисунок каждого ребёнка</span></div>
                 <?php if ($contestRequiresPaymentReceipt): ?>
-                    <div class="application-prep-item">🧾 Квитанция или скриншот оплаты</div>
+                    <div class="application-prep-item"><i class="fas fa-receipt"></i><span>Квитанция или скриншот оплаты</span></div>
                 <?php else: ?>
-                    <div class="application-prep-item">⏱ 3–5 минут</div>
+                    <div class="application-prep-item"><i class="fas fa-clock"></i><span>3–5 минут</span></div>
                 <?php endif; ?>
-                <div class="application-prep-item">✅ Отправка онлайн</div>
+                <div class="application-prep-item"><i class="fas fa-check"></i><span>Отправка онлайн</span></div>
             </div>
         </div>
     </section>
@@ -1181,20 +1183,23 @@ generateCSRFToken();
                 </section>
 
                 <section class="wizard-step card mb-lg" data-step="1">
-                    <div class="card__header"><h3>Шаг 1. Данные заявителя</h3></div>
+                    <div class="card__header">
+                        <h3>Шаг 1. Данные заявителя</h3>
+                        <p class="wizard-step__hint">Укажите взрослого или организацию, с кем организаторы смогут связаться по заявке.</p>
+                    </div>
                     <div class="card__body">
                         <div class="form-grid form-grid--3">
                             <div class="form-group">
+                                <label class="form-label form-label--required">Фамилия</label>
+                                <input type="text" name="parent_surname" class="form-input" required autocomplete="family-name" placeholder="Например: Иванова" value="<?= htmlspecialchars($initialFormData['parent_surname']) ?>">
+                            </div>
+                            <div class="form-group">
                                 <label class="form-label form-label--required">Имя</label>
-                                <input type="text" name="parent_name" class="form-input" required placeholder="Например: Анна" value="<?= htmlspecialchars($initialFormData['parent_name']) ?>">
+                                <input type="text" name="parent_name" class="form-input" required autocomplete="given-name" placeholder="Например: Анна" value="<?= htmlspecialchars($initialFormData['parent_name']) ?>">
                             </div>
                             <div class="form-group">
                                 <label class="form-label form-label--required">Отчество</label>
-                                <input type="text" name="parent_patronymic" class="form-input" required placeholder="Например: Сергеевна" value="<?= htmlspecialchars($initialFormData['parent_patronymic']) ?>">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label form-label--required">Фамилия</label>
-                                <input type="text" name="parent_surname" class="form-input" required placeholder="Например: Иванова" value="<?= htmlspecialchars($initialFormData['parent_surname']) ?>">
+                                <input type="text" name="parent_patronymic" class="form-input" required autocomplete="additional-name" placeholder="Например: Сергеевна" value="<?= htmlspecialchars($initialFormData['parent_patronymic']) ?>">
                             </div>
                         </div>
                         <div class="form-grid form-grid--2">
@@ -1209,11 +1214,11 @@ generateCSRFToken();
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Email организации</label>
-                                <input type="email" name="organization_email" class="form-input" id="orgEmail" value="<?= htmlspecialchars($initialFormData['organization_email']) ?>" placeholder="school@example.ru">
+                                <label class="form-label">Email для связи</label>
+                                <input type="email" name="organization_email" class="form-input" id="orgEmail" autocomplete="email" value="<?= htmlspecialchars($initialFormData['organization_email']) ?>" placeholder="school@example.ru">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Название образовательного учреждения</label>
+                                <label class="form-label">Учреждение или организация</label>
                                 <input type="text" name="organization_name" class="form-input" id="orgName" placeholder="Например: ДШИ №1" value="<?= htmlspecialchars($initialFormData['organization_name']) ?>">
                             </div>
                             <div class="form-group" id="orgAddressGroup" <?= (($initialFormData['user_type'] ?? 'parent') === 'parent') ? 'style="display:none;"' : '' ?>>
@@ -1222,10 +1227,13 @@ generateCSRFToken();
                             </div>
                         </div>
                         <div class="form-section form-section--boxed">
-                            <h4 class="form-section__title">Дополнительная информация</h4>
+                            <div class="form-section__head">
+                                <h4 class="form-section__title">Дополнительная информация</h4>
+                                <span class="form-section__badge">Можно пропустить</span>
+                            </div>
                             <div class="form-grid">
                                 <div class="form-group">
-                                    <label class="form-label" for="sourceInfo">Поделитесь, пожалуйста, откуда вы узнали о конкурсе?</label>
+                                    <label class="form-label" for="sourceInfo">Откуда вы узнали о конкурсе?</label>
                                     <textarea
                                         name="source_info"
                                         class="form-textarea"
@@ -1235,7 +1243,7 @@ generateCSRFToken();
                                     ><?= htmlspecialchars($initialFormData['source_info']) ?></textarea>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label" for="colleaguesInfo">Рассказывали ли вы о конкурсе своим коллегам и знакомым из других организаций? Если да, укажите, пожалуйста, примерное количество</label>
+                                    <label class="form-label" for="colleaguesInfo">Рассказывали ли вы о конкурсе коллегам?</label>
                                     <textarea
                                         name="colleagues_info"
                                         class="form-textarea"
@@ -1262,6 +1270,7 @@ generateCSRFToken();
                 <section class="wizard-step card mb-lg" data-step="2" hidden>
                     <div class="card__header">
                         <h3>Шаг 2. Участники</h3>
+                        <p class="wizard-step__hint">На каждого участника заполните ФИО, возраст и сразу приложите его рисунок.</p>
                     </div>
                     <div class="card__body">
                         <div id="participantsEmpty" class="empty-state" style="display:none;">
@@ -1275,7 +1284,10 @@ generateCSRFToken();
 
                 <?php if ($contestRequiresPaymentReceipt): ?>
                 <section class="wizard-step card mb-lg" data-step="<?= (int) $paymentStepNumber ?>" hidden>
-                    <div class="card__header"><h3>Шаг 3. Оплата участия</h3></div>
+                    <div class="card__header">
+                        <h3>Шаг 3. Оплата участия</h3>
+                        <p class="wizard-step__hint">Подойдёт фото, скриншот или PDF, где хорошо видно подтверждение оплаты.</p>
+                    </div>
                     <div class="card__body">
                         <div class="payment-receipt-grid">
                             <article class="payment-receipt-card payment-receipt-card--info">
@@ -1328,7 +1340,10 @@ generateCSRFToken();
                 <?php endif; ?>
 
                 <section class="wizard-step card mb-lg" data-step="<?= (int) $agreementStepNumber ?>" hidden>
-                    <div class="card__header"><h3>Шаг <?= (int) $agreementStepNumber ?>. Подписание пользовательского соглашения</h3></div>
+                    <div class="card__header">
+                        <h3>Шаг <?= (int) $agreementStepNumber ?>. Пользовательское соглашение</h3>
+                        <p class="wizard-step__hint">Прочитайте условия и подтвердите их, чтобы перейти к отправке заявки.</p>
+                    </div>
                     <div class="card__body">
                         <div class="user-agreement">
                             <p>Я подтверждаю, что направленные на участие в Конкурсе рисунки созданы самостоятельно (своеручно) указанными участниками, без помощи третьих лиц (в том числе взрослых), без копирования или срисовки с готовых изображений, а также без использования компьютерных программ и технологий.</p>
@@ -1337,15 +1352,18 @@ generateCSRFToken();
                             <p>В случае несоблюдения указанных требований, а также при выявлении фактов нарушения правил Конкурса, представленная работа подлежит отклонению без уведомления и без права повторного участия.</p>
                         </div>
                         <div class="user-agreement__actions">
-                            <button type="button" class="btn user-agreement__choice-btn user-agreement__choice-btn--accept" id="signAgreementBtn" aria-pressed="false">Подписать пользовательское соглашение!</button>
-                            <button type="submit" class="btn user-agreement__choice-btn user-agreement__choice-btn--decline" id="declineAgreementBtn" data-form-action="save_draft" aria-pressed="false">Я не принимаю условия.</button>
+                            <button type="button" class="btn user-agreement__choice-btn user-agreement__choice-btn--accept" id="signAgreementBtn" aria-pressed="false">Подписать соглашение</button>
+                            <button type="submit" class="btn user-agreement__choice-btn user-agreement__choice-btn--decline" id="declineAgreementBtn" data-form-action="save_draft" aria-pressed="false">Я не принимаю условия</button>
                         </div>
-                        <div class="user-agreement__hint" id="agreementSignedHint" hidden>Теперь Вы можете продолжить заполенени заявки!</div>
+                        <div class="user-agreement__hint" id="agreementSignedHint" hidden>Соглашение подписано. Можно продолжить заполнение заявки.</div>
                     </div>
                 </section>
 
                 <section class="wizard-step card mb-lg" data-step="<?= (int) $reviewStepNumber ?>" hidden>
-                    <div class="card__header"><h3>Шаг <?= (int) $reviewStepNumber ?>. Проверка и отправка</h3></div>
+                    <div class="card__header">
+                        <h3>Шаг <?= (int) $reviewStepNumber ?>. Проверка и отправка</h3>
+                        <p class="wizard-step__hint">Проверьте участников, рисунки и контактные данные перед отправкой.</p>
+                    </div>
                     <div class="card__body" id="reviewContainer"></div>
                 </section>
 
@@ -1402,6 +1420,35 @@ generateCSRFToken();
     </div>
 </div>
 
+<?php if ($showNewApplicationNoticeModal): ?>
+<div class="modal application-start-modal" id="applicationStartNoticeModal" aria-hidden="true">
+    <div class="modal__content application-start-modal__content" role="dialog" aria-modal="true" aria-labelledby="applicationStartNoticeTitle" aria-describedby="applicationStartNoticeText">
+        <div class="modal__header application-start-modal__header">
+            <div>
+                <span class="application-start-modal__eyebrow">Важная информация</span>
+                <h3 class="modal__title application-start-modal__title" id="applicationStartNoticeTitle">Одной заявки достаточно для нескольких участников</h3>
+            </div>
+            <button type="button" class="modal__close" data-application-start-close aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="modal__body application-start-modal__body">
+            <div class="application-start-modal__icon" aria-hidden="true">
+                <i class="fas fa-users"></i>
+            </div>
+            <div class="application-start-modal__copy" id="applicationStartNoticeText">
+                <p>Если вы подаёте работы нескольких участников, не нужно создавать отдельную заявку для каждого из них.</p>
+                <p>На втором шаге формы нажмите кнопку <strong>«Добавить ещё одного участника»</strong>, чтобы внести данные следующего участника и загрузить его рисунок в этой же заявке.</p>
+            </div>
+            <div class="application-start-modal__note">
+                Так организаторам будет проще обработать вашу заявку, а вам — отслеживать всех участников в одном месте.
+            </div>
+        </div>
+        <div class="modal__footer application-start-modal__footer">
+            <button type="button" class="btn btn--primary btn--lg" data-application-start-close data-application-start-primary>Хорошо!</button>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>
 
 <script>
@@ -1446,6 +1493,7 @@ const participantDuplicateValidationEnabled = <?= $contestDuplicateValidationEna
 const paymentStepNumber = <?= $contestRequiresPaymentReceipt ? (int) $paymentStepNumber : 'null' ?>;
 const agreementStepNumber = <?= (int) $agreementStepNumber ?>;
 const finalReviewStep = <?= (int) $reviewStepNumber ?>;
+const shouldShowNewApplicationNotice = <?= $showNewApplicationNoticeModal ? 'true' : 'false' ?>;
 const minParticipantAge = 5;
 const maxParticipantAge = 17;
 const steps = needsPaymentReceipt
@@ -2192,7 +2240,7 @@ function syncAgreementButtons() {
         signBtn.setAttribute('aria-pressed', userAgreementSigned ? 'true' : 'false');
         signBtn.textContent = userAgreementSigned
             ? 'Соглашение подписано ✓'
-            : 'Подписать пользовательское соглашение!';
+            : 'Подписать соглашение';
     }
     if (declineBtn) {
         declineBtn.classList.toggle('is-active', agreementDeclined);
@@ -2310,7 +2358,7 @@ function renderDrawingUploader(index, options = {}) {
             </div>
         `;
     } else {
-        title.textContent = options.message || 'Перетащите рисунок сюда или нажмите для выбора файла';
+        title.textContent = options.message || 'Нажмите, чтобы выбрать рисунок';
         hint.textContent = options.hint || 'JPG, PNG, GIF, WebP, TIF до 15MB';
         preview.classList.remove('visible');
         preview.innerHTML = '';
@@ -2344,16 +2392,16 @@ function createParticipantForm(index, data = null) {
         <div class="participant-form__header">
             <div class="participant-form__title"><span class="participant-form__number">${index + 1}</span> Участник ${index + 1}</div>
             <div class="flex gap-sm">
-                <button type="button" class="btn btn--ghost" onclick="toggleParticipant(${index})">Свернуть</button>
+                <button type="button" class="btn btn--ghost btn--sm" onclick="toggleParticipant(${index})">Свернуть</button>
             </div>
         </div>
         <div class="participant-form__inline-issues" data-participant-inline-issues hidden></div>
         <div class="participant-form__body">
             <div class="form-grid form-grid--3">
-                <div class="form-group"><label class="form-label form-label--required">Фамилия</label><input type="text" required name="participants[${index}][surname]" class="form-input" value="${data?.surname || ''}" placeholder="Иванов"></div>
-                <div class="form-group"><label class="form-label form-label--required">Имя</label><input type="text" required name="participants[${index}][name]" class="form-input" value="${data?.name || ''}" placeholder="Иван"></div>
-                <div class="form-group"><label class="form-label form-label--required">Отчество</label><input type="text" required name="participants[${index}][patronymic]" class="form-input" value="${data?.patronymic || ''}" placeholder="Иванович"></div>
-                <div class="form-group"><label class="form-label form-label--required">Возраст</label><input type="number" required min="5" max="17" name="participants[${index}][age]" class="form-input" value="${data?.age || ''}"></div>
+                <div class="form-group"><label class="form-label form-label--required">Фамилия</label><input type="text" required autocomplete="family-name" name="participants[${index}][surname]" class="form-input" value="${data?.surname || ''}" placeholder="Иванов"></div>
+                <div class="form-group"><label class="form-label form-label--required">Имя</label><input type="text" required autocomplete="given-name" name="participants[${index}][name]" class="form-input" value="${data?.name || ''}" placeholder="Иван"></div>
+                <div class="form-group"><label class="form-label form-label--required">Отчество</label><input type="text" required autocomplete="additional-name" name="participants[${index}][patronymic]" class="form-input" value="${data?.patronymic || ''}" placeholder="Иванович"></div>
+                <div class="form-group"><label class="form-label form-label--required">Возраст</label><input type="number" required min="5" max="17" inputmode="numeric" name="participants[${index}][age]" class="form-input" value="${data?.age || ''}" placeholder="7"></div>
                 <div class="form-group">
                     <span class="form-label">Особенности</span>
                     <label class="field-correction-checkbox">
@@ -2366,14 +2414,17 @@ function createParticipantForm(index, data = null) {
             <input type="hidden" name="participants[${index}][temp_file]" id="temp_file_${index}" value="${data?.temp_file || ''}">
             <input type="hidden" name="participants[${index}][existing_drawing_file]" id="existing_file_${index}" value="${data?.existing_drawing_file || ''}">
             <div class="form-section form-section--boxed">
-                <h4 class="form-section__title">Рисунок участника</h4>
+                <div class="form-section__head">
+                    <h4 class="form-section__title">Рисунок участника</h4>
+                    <span class="form-section__badge">Обязательно</span>
+                </div>
                 <div class="drawing-layout">
                     <div class="drawing-upload-card">
                         <div class="upload-area upload-area--drawing ${hasPreview ? 'has-file' : ''}" id="drawingUpload_${index}">
                             <input type="file" accept="image/*" class="file-upload__input" data-index="${index}" style="display:none;">
                             <div class="drawing-upload-placeholder">
                                 <div class="upload-area__icon"><i class="fas fa-cloud-upload-alt"></i></div>
-                                <div class="upload-area__title" id="upload_title_${index}">${hasPreview ? 'Файл загружен' : 'Перетащите рисунок сюда или нажмите для выбора файла'}</div>
+                                <div class="upload-area__title" id="upload_title_${index}">${hasPreview ? 'Файл загружен' : 'Нажмите, чтобы выбрать рисунок'}</div>
                                 <div class="upload-area__hint" id="upload_hint_${index}">${hasPreview ? 'Нажмите на изображение, чтобы заменить файл' : 'JPG, PNG, GIF, WebP, TIF до 15MB'}</div>
                             </div>
                             <div class="drawing-upload-preview ${hasPreview ? 'visible' : ''}" id="preview_${index}">
@@ -2742,6 +2793,26 @@ function closeDrawingPreviewModal() {
     document.getElementById('drawingPreviewModalImage').src = '';
 }
 
+function openApplicationStartNoticeModal() {
+    const modal = document.getElementById('applicationStartNoticeModal');
+    if (!modal) return;
+
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    modal.querySelector('[data-application-start-primary]')?.focus();
+}
+
+function closeApplicationStartNoticeModal() {
+    const modal = document.getElementById('applicationStartNoticeModal');
+    if (!modal) return;
+
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+    const otherModal = document.querySelector('.modal.active');
+    document.body.style.overflow = otherModal ? 'hidden' : '';
+}
+
 function goToMyApplications() { window.location.href = '/my-applications'; }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -2830,6 +2901,26 @@ document.addEventListener('DOMContentLoaded', function () {
     syncAgreementButtons();
     updateProgress();
     updateSidebar();
+
+    if (shouldShowNewApplicationNotice) {
+        requestAnimationFrame(openApplicationStartNoticeModal);
+    }
+
+    document.querySelectorAll('[data-application-start-close]').forEach((button) => {
+        button.addEventListener('click', closeApplicationStartNoticeModal);
+    });
+
+    document.getElementById('applicationStartNoticeModal')?.addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) {
+            closeApplicationStartNoticeModal();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && document.getElementById('applicationStartNoticeModal')?.classList.contains('active')) {
+            closeApplicationStartNoticeModal();
+        }
+    });
 
     document.getElementById('addParticipantBtn').addEventListener('click', () => {
         addParticipant(null, { scrollIntoView: true });

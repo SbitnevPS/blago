@@ -220,6 +220,28 @@ function scaleToMinSide($image, $minSide = 1500) {
     return $scaled;
 }
 
+function appendFileVersionToUrl(string $url, ?string $fsPath): string {
+    if ($url === '' || $fsPath === null || !is_file($fsPath)) {
+        return $url;
+    }
+
+    $separator = str_contains($url, '?') ? '&' : '?';
+    return $url . $separator . 'v=' . filemtime($fsPath);
+}
+
+function getVersionedDrawingUrl(string $userEmail, string $drawingFile): string {
+    $url = (string) (getParticipantDrawingWebPath($userEmail, $drawingFile) ?? '');
+    $fsPath = getParticipantDrawingFsPath($userEmail, $drawingFile);
+    return appendFileVersionToUrl($url, $fsPath);
+}
+
+function getVersionedDrawingPreviewUrl(string $userEmail, string $drawingFile): string {
+    $url = (string) (getParticipantDrawingPreviewWebPath($userEmail, $drawingFile) ?? '');
+    $thumbFsPath = getParticipantDrawingThumbFsPath($userEmail, $drawingFile);
+    $sourceFsPath = getParticipantDrawingFsPath($userEmail, $drawingFile);
+    return appendFileVersionToUrl($url, $thumbFsPath ?: $sourceFsPath);
+}
+
 function findWorkParticipantId(array $works, int $workId): int {
     foreach ($works as $workRow) {
         if ((int) ($workRow['id'] ?? 0) === $workId) {
@@ -742,9 +764,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
      imagejpeg($final, $sourcePath, 92);
      imagedestroy($final);
 
+     $thumbDir = getParticipantDrawingThumbDirectory(dirname($sourcePath));
+     if (!is_dir($thumbDir) && !mkdir($thumbDir, 0777, true) && !is_dir($thumbDir)) {
+         echo json_encode(['success' => false, 'message' => 'Не удалось подготовить каталог превью.']);
+         exit;
+     }
+
+     $thumbFilename = basename((string) $participant['drawing_file']);
+     if (createThumbnail($sourcePath, $thumbDir, $thumbFilename, 630, 630) === false) {
+         echo json_encode(['success' => false, 'message' => 'Не удалось обновить превью изображения.']);
+         exit;
+     }
+
      echo json_encode([
          'success' => true,
-         'updated_url' => getParticipantDrawingWebPath($application['email'] ?? '', $participant['drawing_file']) . '?v=' . time(),
+         'updated_url' => getVersionedDrawingUrl((string) ($application['email'] ?? ''), (string) $participant['drawing_file']),
+         'updated_preview_url' => getVersionedDrawingPreviewUrl((string) ($application['email'] ?? ''), (string) $participant['drawing_file']),
      ]);
      exit;
  }
@@ -842,10 +877,15 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     #drawingViewerModal .modal__content {
-        width: min(calc(100vw - 32px), 1360px);
+        display: flex;
+        flex-direction: column;
+        width: min(calc(100vw - 48px), 1080px);
+        max-width: min(calc(100vw - 48px), 1080px);
     }
 
     #drawingViewerModal .modal__body {
+        width: 100%;
+        flex: 1 1 auto;
         align-items: stretch;
         justify-content: flex-start;
         overflow: hidden;
@@ -853,9 +893,11 @@ require_once __DIR__ . '/includes/header.php';
 
     .drawing-viewer-stage {
         position: relative;
+        flex: 1 1 auto;
+        min-width: 0;
         width: 100%;
         height: min(72vh, 820px);
-        overflow: auto;
+        overflow: hidden;
         padding: 0;
         border-radius: 18px;
         overscroll-behavior: contain;
@@ -874,29 +916,43 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     .drawing-viewer-stage__canvas {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 100%;
-        min-height: 100%;
-        padding: 16px;
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
         box-sizing: border-box;
     }
 
-    .drawing-viewer-stage__image {
+    #drawingViewerImage {
         display: block;
+        position: absolute;
+        left: 0;
+        top: 0;
         max-width: none;
         max-height: none;
         width: auto;
         height: auto;
-        transition: width 0.18s ease, height 0.18s ease;
         cursor: zoom-in;
-        flex: 0 0 auto;
         user-select: none;
     }
 
-    .drawing-viewer-stage__image.is-zoomed {
+    #drawingViewerImage.is-zoomed {
         cursor: inherit;
+    }
+
+    .drawing-viewer-stage.is-dragging #drawingViewerImage {
+        cursor: grabbing;
+    }
+
+    #drawingEditorModal .drawing-editor-stage {
+        padding: 0;
+        position: relative;
+        overflow: hidden;
+    }
+
+    #drawingEditorModal .cropper-container {
+        position: absolute !important;
+        inset: 0;
     }
 </style>
 
@@ -1138,8 +1194,8 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                         <div class="work-card__layout">
                             <div class="work-card__preview">
                                 <?php if ($p['drawing_file']): ?>
-                                    <?php $drawingUrl = getParticipantDrawingWebPath($application['email'] ?? '', $p['drawing_file']); ?>
-                                    <?php $drawingPreviewUrl = getParticipantDrawingPreviewWebPath($application['email'] ?? '', $p['drawing_file']); ?>
+                                    <?php $drawingUrl = getVersionedDrawingUrl((string) ($application['email'] ?? ''), (string) $p['drawing_file']); ?>
+                                    <?php $drawingPreviewUrl = getVersionedDrawingPreviewUrl((string) ($application['email'] ?? ''), (string) $p['drawing_file']); ?>
                                     <button
                                         type="button"
                                         class="work-card__image-button js-open-drawing-viewer"
@@ -1477,12 +1533,15 @@ let currentRotation = 0;
 let editorDirty = false;
 let drawingEditorInitializing = false;
 let drawingEditorSuppressDirty = false;
+const DRAWING_EDITOR_STAGE_SAFE_GAP = 12;
 let drawingViewerScale = 1;
 let drawingViewerDragging = false;
 let drawingViewerDragStartX = 0;
 let drawingViewerDragStartY = 0;
-let drawingViewerDragScrollLeft = 0;
-let drawingViewerDragScrollTop = 0;
+let drawingViewerPanX = 0;
+let drawingViewerPanY = 0;
+let drawingViewerDragStartPanX = 0;
+let drawingViewerDragStartPanY = 0;
 let drawingViewerBaseWidth = 0;
 let drawingViewerBaseHeight = 0;
 const agreementStatusModal = document.getElementById('agreementStatusModal');
@@ -1498,7 +1557,7 @@ const drawingViewerZoomResetBtn = document.getElementById('drawingViewerZoomRese
 const DRAWING_VIEWER_MIN_SCALE = 1;
 const DRAWING_VIEWER_MAX_SCALE = 3;
 const DRAWING_VIEWER_SCALE_STEP = 0.5;
-const DRAWING_VIEWER_CANVAS_PADDING = 32;
+const DRAWING_VIEWER_STAGE_PADDING = 32;
 
 function setPageModalScrollLocked(locked) {
  document.body.style.overflow = locked ? 'hidden' : '';
@@ -1522,8 +1581,11 @@ function clampDrawingViewerScale(scale) {
  return Math.min(DRAWING_VIEWER_MAX_SCALE, Math.max(DRAWING_VIEWER_MIN_SCALE, Math.round(scale * 10) / 10));
 }
 
-function clampDrawingViewerScroll(value, maxValue) {
- return Math.min(Math.max(0, value), Math.max(0, maxValue));
+function getDrawingViewerScaledSize(scale = drawingViewerScale) {
+ return {
+  width: Math.max(1, Math.round(drawingViewerBaseWidth * scale)),
+  height: Math.max(1, Math.round(drawingViewerBaseHeight * scale)),
+ };
 }
 
 function getDrawingViewerStageRect() {
@@ -1540,42 +1602,66 @@ function isPointInsideRect(clientX, clientY, rect) {
   && clientY <= rect.bottom;
 }
 
-function resolveDrawingViewerFocus(point = null) {
- if (!drawingViewerStage || !drawingViewerImage) return null;
+function clampDrawingViewerPan(scale = drawingViewerScale) {
+ if (!drawingViewerStage) return;
+ const size = getDrawingViewerScaledSize(scale);
+ const maxPanX = Math.max(0, (size.width - drawingViewerStage.clientWidth) / 2);
+ const maxPanY = Math.max(0, (size.height - drawingViewerStage.clientHeight) / 2);
+ drawingViewerPanX = Math.min(maxPanX, Math.max(-maxPanX, drawingViewerPanX));
+ drawingViewerPanY = Math.min(maxPanY, Math.max(-maxPanY, drawingViewerPanY));
+}
 
- const stageRect = getDrawingViewerStageRect();
- const imageRect = drawingViewerImage.getBoundingClientRect();
- const clientX = point && Number.isFinite(point.clientX) ? point.clientX : null;
- const clientY = point && Number.isFinite(point.clientY) ? point.clientY : null;
- const insideStage = isPointInsideRect(clientX, clientY, stageRect);
- const insideImage = insideStage && isPointInsideRect(clientX, clientY, imageRect);
-
+function getDrawingViewerImageBounds(scale = drawingViewerScale, panX = drawingViewerPanX, panY = drawingViewerPanY) {
+ if (!drawingViewerStage) {
+  return { left: 0, top: 0, width: 0, height: 0 };
+ }
+ const size = getDrawingViewerScaledSize(scale);
  return {
-  focusOffsetX: insideStage ? (clientX - stageRect.left) : (drawingViewerStage.clientWidth / 2),
-  focusOffsetY: insideStage ? (clientY - stageRect.top) : (drawingViewerStage.clientHeight / 2),
-  ratioX: insideImage && imageRect.width > 0 ? ((clientX - imageRect.left) / imageRect.width) : 0.5,
-  ratioY: insideImage && imageRect.height > 0 ? ((clientY - imageRect.top) / imageRect.height) : 0.5,
+  left: ((drawingViewerStage.clientWidth - size.width) / 2) + panX,
+  top: ((drawingViewerStage.clientHeight - size.height) / 2) + panY,
+  width: size.width,
+  height: size.height,
  };
 }
 
-function applyDrawingViewerFocus(focus) {
- if (!focus || !drawingViewerStage || !drawingViewerImage) return;
+function resolveDrawingViewerFocus(point = null) {
+ if (!drawingViewerStage || !drawingViewerImage || drawingViewerBaseWidth <= 0 || drawingViewerBaseHeight <= 0) return null;
 
  const stageRect = getDrawingViewerStageRect();
- const imageRect = drawingViewerImage.getBoundingClientRect();
- const contentLeft = drawingViewerStage.scrollLeft + (imageRect.left - stageRect.left);
- const contentTop = drawingViewerStage.scrollTop + (imageRect.top - stageRect.top);
- const targetScrollLeft = contentLeft + (focus.ratioX * imageRect.width) - focus.focusOffsetX;
- const targetScrollTop = contentTop + (focus.ratioY * imageRect.height) - focus.focusOffsetY;
+ const clientX = point && Number.isFinite(point.clientX) ? point.clientX : null;
+ const clientY = point && Number.isFinite(point.clientY) ? point.clientY : null;
+ if (!isPointInsideRect(clientX, clientY, stageRect)) {
+  return {
+   stageX: drawingViewerStage.clientWidth / 2,
+   stageY: drawingViewerStage.clientHeight / 2,
+   ratioX: 0.5,
+   ratioY: 0.5,
+  };
+ }
 
- drawingViewerStage.scrollLeft = clampDrawingViewerScroll(
-  targetScrollLeft,
-  drawingViewerStage.scrollWidth - drawingViewerStage.clientWidth
- );
- drawingViewerStage.scrollTop = clampDrawingViewerScroll(
-  targetScrollTop,
-  drawingViewerStage.scrollHeight - drawingViewerStage.clientHeight
- );
+ const bounds = getDrawingViewerImageBounds();
+ const stageX = clientX - stageRect.left;
+ const stageY = clientY - stageRect.top;
+ const ratioX = bounds.width > 0 ? (stageX - bounds.left) / bounds.width : 0.5;
+ const ratioY = bounds.height > 0 ? (stageY - bounds.top) / bounds.height : 0.5;
+
+ return {
+  stageX,
+  stageY,
+  ratioX,
+  ratioY,
+ };
+}
+
+function renderDrawingViewer() {
+ if (!drawingViewerImage || !drawingViewerStage || drawingViewerBaseWidth <= 0 || drawingViewerBaseHeight <= 0) return;
+ clampDrawingViewerPan();
+ const bounds = getDrawingViewerImageBounds();
+ drawingViewerImage.style.width = `${bounds.width}px`;
+ drawingViewerImage.style.height = `${bounds.height}px`;
+ drawingViewerImage.style.left = `${bounds.left}px`;
+ drawingViewerImage.style.top = `${bounds.top}px`;
+ drawingViewerImage.classList.toggle('is-zoomed', drawingViewerScale > DRAWING_VIEWER_MIN_SCALE);
 }
 
 function measureDrawingViewerBaseSize() {
@@ -1584,8 +1670,8 @@ function measureDrawingViewerBaseSize() {
  const naturalHeight = Number(drawingViewerImage.naturalHeight || 0);
  if (naturalWidth <= 0 || naturalHeight <= 0) return;
 
- const availableWidth = Math.max(1, drawingViewerStage.clientWidth - DRAWING_VIEWER_CANVAS_PADDING);
- const availableHeight = Math.max(1, drawingViewerStage.clientHeight - DRAWING_VIEWER_CANVAS_PADDING);
+ const availableWidth = Math.max(1, drawingViewerStage.clientWidth - DRAWING_VIEWER_STAGE_PADDING);
+ const availableHeight = Math.max(1, drawingViewerStage.clientHeight - DRAWING_VIEWER_STAGE_PADDING);
  const fitRatio = Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight, 1);
 
  drawingViewerBaseWidth = Math.max(1, Math.round(naturalWidth * fitRatio));
@@ -1594,19 +1680,11 @@ function measureDrawingViewerBaseSize() {
 }
 
 function syncDrawingViewerControls() {
- if (drawingViewerImage && drawingViewerBaseWidth > 0 && drawingViewerBaseHeight > 0) {
-  const scaledWidth = Math.max(1, Math.round(drawingViewerBaseWidth * drawingViewerScale));
-  const scaledHeight = Math.max(1, Math.round(drawingViewerBaseHeight * drawingViewerScale));
-  drawingViewerImage.style.width = `${scaledWidth}px`;
-  drawingViewerImage.style.height = `${scaledHeight}px`;
-  drawingViewerImage.classList.toggle('is-zoomed', drawingViewerScale > DRAWING_VIEWER_MIN_SCALE);
+ if (drawingViewerCanvas) {
+  drawingViewerCanvas.style.width = '100%';
+  drawingViewerCanvas.style.height = '100%';
  }
- if (drawingViewerCanvas && drawingViewerStage && drawingViewerBaseWidth > 0 && drawingViewerBaseHeight > 0) {
-  const canvasWidth = Math.max(drawingViewerStage.clientWidth, Math.round(drawingViewerBaseWidth * drawingViewerScale) + DRAWING_VIEWER_CANVAS_PADDING);
-  const canvasHeight = Math.max(drawingViewerStage.clientHeight, Math.round(drawingViewerBaseHeight * drawingViewerScale) + DRAWING_VIEWER_CANVAS_PADDING);
-  drawingViewerCanvas.style.width = `${canvasWidth}px`;
-  drawingViewerCanvas.style.height = `${canvasHeight}px`;
- }
+ renderDrawingViewer();
  if (drawingViewerStage) {
   drawingViewerStage.classList.toggle('is-draggable', drawingViewerScale > DRAWING_VIEWER_MIN_SCALE);
  }
@@ -1632,20 +1710,25 @@ function setDrawingViewerScale(scale, point = null, preserveFocus = true) {
  drawingViewerScale = clampDrawingViewerScale(scale);
  if (drawingViewerScale === DRAWING_VIEWER_MIN_SCALE) {
   stopDrawingViewerDrag();
+  drawingViewerPanX = 0;
+  drawingViewerPanY = 0;
+ } else if (preserveFocus && focus && drawingViewerStage) {
+  const nextBounds = getDrawingViewerImageBounds(drawingViewerScale, drawingViewerPanX, drawingViewerPanY);
+  const targetLeft = focus.stageX - (focus.ratioX * nextBounds.width);
+  const targetTop = focus.stageY - (focus.ratioY * nextBounds.height);
+  const nextCenterX = targetLeft + (nextBounds.width / 2);
+  const nextCenterY = targetTop + (nextBounds.height / 2);
+  drawingViewerPanX = nextCenterX - (drawingViewerStage.clientWidth / 2);
+  drawingViewerPanY = nextCenterY - (drawingViewerStage.clientHeight / 2);
  }
- syncDrawingViewerControls();
- if (preserveFocus && focus) {
-  requestAnimationFrame(() => applyDrawingViewerFocus(focus));
- }
+  syncDrawingViewerControls();
 }
 
 function resetDrawingViewerScale() {
  stopDrawingViewerDrag();
+ drawingViewerPanX = 0;
+ drawingViewerPanY = 0;
  setDrawingViewerScale(DRAWING_VIEWER_MIN_SCALE, null, false);
- if (drawingViewerStage) {
-  drawingViewerStage.scrollTop = 0;
-  drawingViewerStage.scrollLeft = 0;
- }
 }
 
 function startDrawingViewerDrag(event) {
@@ -1653,8 +1736,8 @@ function startDrawingViewerDrag(event) {
  drawingViewerDragging = true;
  drawingViewerDragStartX = event.clientX;
  drawingViewerDragStartY = event.clientY;
- drawingViewerDragScrollLeft = drawingViewerStage.scrollLeft;
- drawingViewerDragScrollTop = drawingViewerStage.scrollTop;
+ drawingViewerDragStartPanX = drawingViewerPanX;
+ drawingViewerDragStartPanY = drawingViewerPanY;
  drawingViewerStage.classList.add('is-dragging');
  document.body.style.userSelect = 'none';
  event.preventDefault();
@@ -1664,8 +1747,9 @@ function moveDrawingViewerDrag(event) {
  if (!drawingViewerDragging || !drawingViewerStage) return;
  const deltaX = event.clientX - drawingViewerDragStartX;
  const deltaY = event.clientY - drawingViewerDragStartY;
- drawingViewerStage.scrollLeft = drawingViewerDragScrollLeft - deltaX;
- drawingViewerStage.scrollTop = drawingViewerDragScrollTop - deltaY;
+ drawingViewerPanX = drawingViewerDragStartPanX + deltaX;
+ drawingViewerPanY = drawingViewerDragStartPanY + deltaY;
+ renderDrawingViewer();
 }
 
 function stopDrawingViewerDrag() {
@@ -1675,6 +1759,107 @@ function stopDrawingViewerDrag() {
   drawingViewerStage.classList.remove('is-dragging');
  }
  document.body.style.userSelect = '';
+}
+
+function fitDrawingEditorImageToStage() {
+ if (!cropper) return;
+ const containerData = cropper.getContainerData();
+ const canvasData = cropper.getCanvasData();
+ const canvasNaturalWidth = Number(canvasData.naturalWidth || canvasData.width || 0);
+ const canvasNaturalHeight = Number(canvasData.naturalHeight || canvasData.height || 0);
+ if (!containerData.width || !containerData.height || !canvasNaturalWidth || !canvasNaturalHeight) {
+  return;
+ }
+
+ const availableWidth = Math.max(1, containerData.width - (DRAWING_EDITOR_STAGE_SAFE_GAP * 2));
+ const availableHeight = Math.max(1, containerData.height - (DRAWING_EDITOR_STAGE_SAFE_GAP * 2));
+ const fitRatio = Math.max(0.01, Math.min(availableWidth / canvasNaturalWidth, availableHeight / canvasNaturalHeight));
+ const canvasWidth = Math.max(1, Math.round(canvasNaturalWidth * fitRatio));
+ const canvasHeight = Math.max(1, Math.round(canvasNaturalHeight * fitRatio));
+
+ cropper.setCanvasData({
+  left: (containerData.width - canvasWidth) / 2,
+  top: (containerData.height - canvasHeight) / 2,
+  width: canvasWidth,
+  height: canvasHeight,
+ });
+}
+
+function expandDrawingEditorCropToCanvas() {
+ if (!cropper) return;
+ const containerData = cropper.getContainerData();
+ const canvasData = cropper.getCanvasData();
+ if (!containerData.width || !containerData.height || !canvasData.width || !canvasData.height) return;
+
+ const visibleLeft = Math.max(0, canvasData.left);
+ const visibleTop = Math.max(0, canvasData.top);
+ const visibleRight = Math.min(containerData.width, canvasData.left + canvasData.width);
+ const visibleBottom = Math.min(containerData.height, canvasData.top + canvasData.height);
+ const visibleWidth = Math.max(1, visibleRight - visibleLeft);
+ const visibleHeight = Math.max(1, visibleBottom - visibleTop);
+
+ cropper.setCropBoxData({
+  left: visibleLeft,
+  top: visibleTop,
+  width: visibleWidth,
+  height: visibleHeight,
+ });
+}
+
+function constrainDrawingEditorCropBox() {
+ if (!cropper) return;
+ const containerData = cropper.getContainerData();
+ const canvasData = cropper.getCanvasData();
+ const cropBoxData = cropper.getCropBoxData();
+ if (!containerData.width || !containerData.height || !canvasData.width || !canvasData.height || !cropBoxData.width || !cropBoxData.height) {
+  return;
+ }
+
+ const visibleLeft = Math.max(0, canvasData.left);
+ const visibleTop = Math.max(0, canvasData.top);
+ const visibleRight = Math.min(containerData.width, canvasData.left + canvasData.width);
+ const visibleBottom = Math.min(containerData.height, canvasData.top + canvasData.height);
+ const visibleWidth = Math.max(1, visibleRight - visibleLeft);
+ const visibleHeight = Math.max(1, visibleBottom - visibleTop);
+
+ let width = Math.min(cropBoxData.width, visibleWidth);
+ let height = Math.min(cropBoxData.height, visibleHeight);
+ let left = cropBoxData.left;
+ let top = cropBoxData.top;
+
+ left = Math.min(Math.max(left, visibleLeft), visibleRight - width);
+ top = Math.min(Math.max(top, visibleTop), visibleBottom - height);
+
+ cropper.setCropBoxData({
+  left,
+  top,
+  width,
+  height,
+ });
+}
+
+function resetDrawingEditorCropToFittedImage() {
+ if (!cropper) return;
+ cropper.clear();
+ fitDrawingEditorImageToStage();
+ cropper.crop();
+ expandDrawingEditorCropToCanvas();
+}
+
+function applyDrawingEditorRotation(angle, dirty = true) {
+ if (!cropper) return;
+ currentRotation = Math.round(Number(angle || 0));
+ document.getElementById('rotationInput').value = String(currentRotation);
+
+ drawingEditorSuppressDirty = true;
+ cropper.clear();
+ cropper.reset();
+ cropper.rotateTo(currentRotation);
+ requestAnimationFrame(() => {
+  resetDrawingEditorCropToFittedImage();
+  drawingEditorSuppressDirty = false;
+  markEditorDirty(dirty);
+ });
 }
 
 function openDrawingEditor(participantId, imageSrc) {
@@ -1699,12 +1884,32 @@ function openDrawingEditor(participantId, imageSrc) {
    autoCropArea: 1,
    responsive: true,
    background: false,
+   dragMode: 'move',
+   cropBoxMovable: false,
+   cropBoxResizable: true,
+   toggleDragModeOnDblclick: false,
+   wheelZoomRatio: 0.05,
    ready: () => {
     drawingEditorInitializing = false;
-    markEditorDirty(false);
+    currentRotation = 0;
+    resetDrawingEditorCropToFittedImage();
     requestAnimationFrame(() => {
      drawingEditorSuppressDirty = false;
+     markEditorDirty(false);
     });
+   },
+   zoom: () => {
+    if (drawingEditorInitializing || drawingEditorSuppressDirty) return;
+    requestAnimationFrame(() => constrainDrawingEditorCropBox());
+    markEditorDirty(true);
+   },
+   cropmove: () => {
+    if (drawingEditorInitializing || drawingEditorSuppressDirty) return;
+    requestAnimationFrame(() => constrainDrawingEditorCropBox());
+   },
+   cropend: () => {
+    if (drawingEditorInitializing || drawingEditorSuppressDirty) return;
+    requestAnimationFrame(() => constrainDrawingEditorCropBox());
    },
    crop: () => {
     if (drawingEditorInitializing || drawingEditorSuppressDirty) return;
@@ -1727,17 +1932,15 @@ function closeDrawingEditor() {
 
 function openDrawingViewer(imageSrc, imageAlt) {
  if (!drawingViewerModal || !drawingViewerImage) return;
+ drawingViewerPanX = 0;
+ drawingViewerPanY = 0;
  drawingViewerBaseWidth = 0;
  drawingViewerBaseHeight = 0;
- if (drawingViewerCanvas) {
-  drawingViewerCanvas.style.width = '100%';
-  drawingViewerCanvas.style.height = '100%';
- }
  resetDrawingViewerScale();
- drawingViewerImage.src = imageSrc;
- drawingViewerImage.alt = imageAlt || 'Рисунок участника';
-  drawingViewerModal.classList.add('active');
+ drawingViewerModal.classList.add('active');
  setPageModalScrollLocked(true);
+ drawingViewerImage.alt = imageAlt || 'Рисунок участника';
+ drawingViewerImage.src = imageSrc;
 }
 
 function closeDrawingViewer() {
@@ -1745,12 +1948,10 @@ function closeDrawingViewer() {
  drawingViewerModal.classList.remove('active');
  drawingViewerImage.src = '';
  drawingViewerImage.alt = 'Рисунок участника';
+ drawingViewerPanX = 0;
+ drawingViewerPanY = 0;
  drawingViewerBaseWidth = 0;
  drawingViewerBaseHeight = 0;
- if (drawingViewerCanvas) {
-  drawingViewerCanvas.style.width = '100%';
-  drawingViewerCanvas.style.height = '100%';
- }
  resetDrawingViewerScale();
  const otherModal = document.querySelector('.modal.active:not(#drawingViewerModal)');
  setPageModalScrollLocked(Boolean(otherModal));
@@ -1788,11 +1989,9 @@ if (drawingViewerImage) {
  drawingViewerImage.setAttribute('draggable', 'false');
  drawingViewerImage.addEventListener('load', () => {
   drawingViewerScale = DRAWING_VIEWER_MIN_SCALE;
+  drawingViewerPanX = 0;
+  drawingViewerPanY = 0;
   measureDrawingViewerBaseSize();
-  if (drawingViewerStage) {
-   drawingViewerStage.scrollTop = 0;
-   drawingViewerStage.scrollLeft = 0;
-  }
  });
 }
 
@@ -1801,11 +2000,16 @@ window.addEventListener('mouseup', stopDrawingViewerDrag);
 window.addEventListener('mouseleave', stopDrawingViewerDrag);
 window.addEventListener('resize', () => {
  if (!drawingViewerModal?.classList.contains('active') || !drawingViewerImage?.src) return;
- const focus = resolveDrawingViewerFocus(null);
  measureDrawingViewerBaseSize();
- if (focus) {
-  requestAnimationFrame(() => applyDrawingViewerFocus(focus));
- }
+ renderDrawingViewer();
+});
+window.addEventListener('resize', () => {
+ if (!drawingEditorModal?.classList.contains('active') || !cropper) return;
+ drawingEditorSuppressDirty = true;
+ resetDrawingEditorCropToFittedImage();
+ requestAnimationFrame(() => {
+  drawingEditorSuppressDirty = false;
+ });
 });
 
 syncDrawingViewerControls();
@@ -1825,18 +2029,17 @@ function closeAgreementStatusModal() {
 
 function rotateBy(deg) {
  if (!cropper) return;
- currentRotation += deg;
- cropper.rotate(deg);
- document.getElementById('rotationInput').value = String(Math.round(currentRotation));
- markEditorDirty(true);
+ applyDrawingEditorRotation(currentRotation + deg, true);
 }
 
 function resetDrawingEditor() {
  if (!cropper) return;
  drawingEditorSuppressDirty = true;
+ cropper.clear();
  cropper.reset();
  currentRotation = 0;
  document.getElementById('rotationInput').value = '0';
+ resetDrawingEditorCropToFittedImage();
  requestAnimationFrame(() => {
   drawingEditorSuppressDirty = false;
   markEditorDirty(false);
@@ -1845,11 +2048,7 @@ function resetDrawingEditor() {
 
 document.getElementById('rotationInput').addEventListener('change', function() {
  if (!cropper) return;
- const target = parseFloat(this.value || '0');
- const diff = target - currentRotation;
- cropper.rotate(diff);
- currentRotation = target;
- markEditorDirty(true);
+ applyDrawingEditorRotation(parseFloat(this.value || '0'), true);
 });
 
 [agreementStatusModal, drawingEditorModal, drawingViewerModal].forEach((modal) => {
@@ -1906,7 +2105,7 @@ document.getElementById('saveDrawingChanges').addEventListener('click', function
     return;
    }
    document.querySelectorAll(`.js-admin-drawing[data-participant-id="${participantId}"]`).forEach((img) => {
-    img.src = data.updated_url;
+    img.src = data.updated_preview_url || data.updated_url;
    });
    document.querySelectorAll(`.js-open-editor[data-participant-id="${participantId}"]`).forEach((button) => {
     button.dataset.imageSrc = data.updated_url;

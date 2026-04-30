@@ -1673,8 +1673,7 @@ body:has(#application-actions) .admin-content {
 }
 
 #drawingEditorModal .cropper-container,
-#drawingEditorModal .cropper-wrap-box,
-#drawingEditorModal .cropper-canvas {
+#drawingEditorModal .cropper-wrap-box {
   width: 100% !important;
   height: 100% !important;
 }
