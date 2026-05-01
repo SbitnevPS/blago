@@ -119,6 +119,8 @@ function ensureEmailVerificationSchema(PDO $pdo): void
         'email_verified_at' => "ADD COLUMN email_verified_at DATETIME NULL AFTER email_verified",
         'email_verification_token' => "ADD COLUMN email_verification_token VARCHAR(255) NULL AFTER email_verified_at",
         'email_verification_sent_at' => "ADD COLUMN email_verification_sent_at DATETIME NULL AFTER email_verification_token",
+        'pending_email' => "ADD COLUMN pending_email VARCHAR(255) NULL AFTER email",
+        'pending_email_requested_at' => "ADD COLUMN pending_email_requested_at DATETIME NULL AFTER pending_email",
     ];
 
     try {
@@ -126,7 +128,7 @@ function ensureEmailVerificationSchema(PDO $pdo): void
             SELECT COLUMN_NAME
             FROM information_schema.COLUMNS
             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'
-              AND COLUMN_NAME IN ('email_verified', 'email_verified_at', 'email_verification_token', 'email_verification_sent_at')
+              AND COLUMN_NAME IN ('email_verified', 'email_verified_at', 'email_verification_token', 'email_verification_sent_at', 'pending_email', 'pending_email_requested_at')
         ");
         $stmt->execute();
         $existing = $stmt->fetchAll(PDO::FETCH_COLUMN);
@@ -1123,15 +1125,24 @@ function sendEmailVerificationForUserId(int $userId): array
 {
     global $pdo;
 
-    $stmt = $pdo->prepare('SELECT id, name, email, email_verified FROM users WHERE id = ? LIMIT 1');
+    $stmt = $pdo->prepare('SELECT id, name, email, email_verified, pending_email FROM users WHERE id = ? LIMIT 1');
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
 
-    if (!$user || trim((string) ($user['email'] ?? '')) === '') {
+    if (!$user) {
+        return ['ok' => false, 'message' => 'Пользователь не найден'];
+    }
+
+    $targetEmail = trim((string) ($user['pending_email'] ?? ''));
+    if ($targetEmail === '') {
+        $targetEmail = trim((string) ($user['email'] ?? ''));
+    }
+
+    if ($targetEmail === '') {
         return ['ok' => false, 'message' => 'Укажите email в профиле'];
     }
 
-    if ((int) ($user['email_verified'] ?? 0) === 1) {
+    if ((int) ($user['email_verified'] ?? 0) === 1 && trim((string) ($user['pending_email'] ?? '')) === '') {
         return ['ok' => true, 'message' => 'Адрес уже подтверждён', 'already_verified' => true];
     }
 
@@ -1152,7 +1163,7 @@ function sendEmailVerificationForUserId(int $userId): array
         'verification_url' => $verificationUrl,
     ]);
 
-    $sendResult = sendEmailWithStatus((string) $user['email'], $subject, $html, ['alt_body' => $text]);
+    $sendResult = sendEmailWithStatus($targetEmail, $subject, $html, ['alt_body' => $text]);
     if (!$sendResult['ok']) {
         return ['ok' => false, 'message' => (string) ($sendResult['user_message'] ?? 'Не удалось отправить письмо. Попробуйте позже.')];
     }

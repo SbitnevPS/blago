@@ -132,12 +132,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
  if (empty($error)) {
  $emailChanged = $email !== (string) ($user['email'] ?? '');
- $verificationUpdateSql = $emailChanged
- ? ', email_verified = 0, email_verified_at = NULL, email_verification_token = NULL, email_verification_sent_at = NULL'
- : '';
+ $emailForProfile = $emailChanged ? (string) ($user['email'] ?? '') : $email;
+ $pendingEmailValue = $emailChanged ? $email : null;
 
- $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, organization_region = ?, organization_name = ?, organization_address = ?, user_type = ?, updated_at = NOW()' . $verificationUpdateSql . ' WHERE id = ?');
- $stmt->execute([$name, $patronymic, $surname, $email, $organization_region, $organization_name, $organization_address, $user_type, $user['id']]);
+ $stmt = $pdo->prepare('UPDATE users SET name = ?, patronymic = ?, surname = ?, email = ?, pending_email = ?, pending_email_requested_at = ?, organization_region = ?, organization_name = ?, organization_address = ?, user_type = ?, email_verification_token = NULL, email_verification_sent_at = NULL, updated_at = NOW() WHERE id = ?');
+ $stmt->execute([$name, $patronymic, $surname, $emailForProfile, $pendingEmailValue, $emailChanged ? date('Y-m-d H:i:s') : null, $organization_region, $organization_name, $organization_address, $user_type, $user['id']]);
+
+ if ($emailChanged) {
+     sendEmailVerificationForUserId((int) $user['id']);
+ }
 
  $user = resolveSessionUser((int) $user['id'], true);
  $emailVerified = isUserEmailVerified($user);
@@ -145,7 +148,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
  if ($isAjaxRequest) {
  jsonResponse([
  'success' => true,
- 'message' => 'Личная информация успешно сохранена',
+ 'message' => $emailChanged ? 'Новый email сохранён. Мы отправили письмо для подтверждения на новый адрес.' : 'Личная информация успешно сохранена',
  'user' => [
  'name' => (string) ($user['name'] ?? ''),
  'patronymic' => (string) ($user['patronymic'] ?? ''),
