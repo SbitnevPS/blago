@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(100) NOT NULL,
     surname VARCHAR(100),
     email VARCHAR(255),
+    pending_email VARCHAR(255) NULL,
+    pending_email_requested_at DATETIME NULL,
     password VARCHAR(255) NULL,
     recovery_old_password_hash VARCHAR(255) NULL,
     recovery_expires_at DATETIME NULL,

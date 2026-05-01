@@ -184,7 +184,7 @@ function vk_build_auth_url(array $sessionFlow): string
 {
     $flow = (string) ($sessionFlow['flow'] ?? 'user');
     $scope = $flow === 'admin'
-        ? vk_admin_publication_scope()
+        ? vk_scope_normalize(VKID_ADMIN_SCOPE, ',')
         : ($flow === 'publication'
             ? vk_scope_normalize(VKID_PUBLICATION_SCOPE, ',')
             : vk_scope_normalize(VKID_USER_SCOPE, ','));
@@ -1181,15 +1181,6 @@ function vk_admin_login_by_access_token(PDO $pdo, string $accessToken, string $r
         return ['ok' => false, 'error_code' => 'admin_access_denied'];
     }
 
-    $scope = vk_scope_normalize((string) ($claims['scope'] ?? ''), ',');
-    $scopeList = array_filter(array_map('trim', explode(',', $scope)));
-    $requiredScopes = ['wall', 'photos'];
-    foreach ($requiredScopes as $requiredScope) {
-        if (!in_array($requiredScope, $scopeList, true)) {
-            return ['ok' => false, 'error_code' => 'exchange_failed'];
-        }
-    }
-
     $_SESSION['admin_user_id'] = (int) $admin['id'];
     $_SESSION['is_admin'] = true;
     unset($_SESSION['admin_auth_redirect']);
@@ -1229,22 +1220,6 @@ function vk_admin_login_by_access_token(PDO $pdo, string $accessToken, string $r
             'vk_publication_token_source' => 'oauth_vk_admin_login',
             'vk_publication_status' => 'TOKEN_SAVED',
         ]);
-    }
-
-    if (function_exists('verifyVkPublicationReadiness')) {
-        $readiness = verifyVkPublicationReadiness(false, false, 'admin_login');
-        if (empty($readiness['ok'])) {
-            saveSystemSettings([
-                'vk_publication_admin_access_token_encrypted' => '',
-                'vk_publication_admin_refresh_token_encrypted' => '',
-                'vk_publication_admin_token_expires_at' => 0,
-                'vk_publication_admin_device_id' => '',
-                'vk_publication_admin_user_id' => 0,
-                'vk_publication_status' => 'CHECK_FAILED',
-            ]);
-            vk_admin_session_reset();
-            return ['ok' => false, 'error_code' => 'exchange_failed'];
-        }
     }
 
     return ['ok' => true, 'redirect_to' => $safeRedirect];
