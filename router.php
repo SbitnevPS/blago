@@ -98,6 +98,7 @@ $routes = [
  
  // Профиль
  '/profile' => ['file' => 'app/views/public/profile.php', 'name' => 'profile'],
+ '/user/legal-consents' => ['file' => 'app/views/public/user-legal-consents.php', 'name' => 'user-legal-consents'],
  '/email/send-verification' => ['file' => 'app/views/public/email-send-verification.php', 'name' => 'email-send-verification'],
  '/email/verification-status' => ['file' => 'app/views/public/email-verification-status.php', 'name' => 'email-verification-status'],
  '/email/verification-pending' => ['file' => 'app/views/public/email-verification-pending.php', 'name' => 'email-verification-pending'],

@@ -5,6 +5,8 @@ require_once dirname(__DIR__, 3) . '/config.php';
 $user = getCurrentUser();
 $userAvatar = getUserAvatarData($user ?? []);
 $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) :0;
+$requiresLegalConsents = isAuthenticated()
+    && ((int) ($user['agree_personal_data'] ?? 0) !== 1 || (int) ($user['agree_terms'] ?? 0) !== 1);
 ?>
 <div class="mobile-topbar">
     <div class="container">
@@ -148,6 +150,36 @@ $unreadMessages = isAuthenticated() ? getUnreadMessageCount(getCurrentUserId()) 
 </div>
 <?php endif; ?>
 
+<?php if ($requiresLegalConsents): ?>
+<div class="modal active" id="legalConsentsModal" aria-hidden="false">
+    <div class="modal__content profile-modal__content" role="dialog" aria-modal="true" aria-labelledby="legalConsentsTitle">
+        <div class="modal__header">
+            <h3 class="modal__title" id="legalConsentsTitle">Подтвердите обязательные согласия</h3>
+        </div>
+        <form id="legalConsentsForm" method="POST">
+            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+            <div class="modal__body">
+                <p style="margin:0 0 12px;">Для продолжения использования сайта необходимо подтвердить согласие на обработку персональных данных и принять пользовательское соглашение.</p>
+                <p style="margin:0 0 16px; color:var(--color-text-secondary);">Если согласия не будут подтверждены, мы не сможем продолжить сотрудничество и предоставлять сервис.</p>
+                <label style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
+                    <input type="checkbox" name="agree_personal_data" id="modalAgreePersonalData" value="1">
+                    <span>Даю согласие на обработку персональных данных согласно <a href="/legal/privacy" target="_blank" rel="noopener">Политике обработки персональных данных</a>.</span>
+                </label>
+                <label style="display:flex; gap:10px; align-items:flex-start;">
+                    <input type="checkbox" name="agree_terms" id="modalAgreeTerms" value="1">
+                    <span>Подтверждаю согласие с условиями <a href="/legal/terms" target="_blank" rel="noopener">Пользовательского соглашения</a>.</span>
+                </label>
+                <div id="legalConsentsError" class="form-hint" style="display:none; color:var(--color-error); margin-top:10px;"></div>
+            </div>
+            <div class="modal__footer" style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+                <a href="/logout" class="btn btn--ghost">Выйти из аккаунта</a>
+                <button type="submit" class="btn btn--primary" id="legalConsentsSubmit" disabled>Хорошо</button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
 function toggleUserMenu() {
 const dropdown = document.getElementById('userDropdown');
@@ -229,5 +261,62 @@ document.addEventListener('keydown', function (e) {
         closeAuthRequiredModal();
     }
 });
+<?php endif; ?>
+
+<?php if ($requiresLegalConsents): ?>
+(function () {
+    const form = document.getElementById('legalConsentsForm');
+    const submitButton = document.getElementById('legalConsentsSubmit');
+    const personalData = document.getElementById('modalAgreePersonalData');
+    const terms = document.getElementById('modalAgreeTerms');
+    const errorNode = document.getElementById('legalConsentsError');
+
+    function syncState() {
+        const enabled = Boolean(personalData?.checked) && Boolean(terms?.checked);
+        if (submitButton) {
+            submitButton.disabled = !enabled;
+        }
+    }
+
+    [personalData, terms].forEach((node) => {
+        node?.addEventListener('change', syncState);
+    });
+
+    form?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        syncState();
+        if (submitButton?.disabled) {
+            return;
+        }
+
+        submitButton.disabled = true;
+        if (errorNode) {
+            errorNode.style.display = 'none';
+            errorNode.textContent = '';
+        }
+
+        try {
+            const response = await fetch('/user/legal-consents', {
+                method: 'POST',
+                body: new FormData(form),
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                credentials: 'same-origin'
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Не удалось сохранить согласия.');
+            }
+            window.location.reload();
+        } catch (error) {
+            if (errorNode) {
+                errorNode.style.display = 'block';
+                errorNode.textContent = error.message || 'Не удалось сохранить согласия.';
+            }
+            syncState();
+        }
+    });
+
+    syncState();
+})();
 <?php endif; ?>
 </script>

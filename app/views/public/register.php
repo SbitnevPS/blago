@@ -38,6 +38,8 @@ $formData = [
     'email' => '',
     'user_type' => 'parent',
     'organization_region' => '',
+    'agree_personal_data' => false,
+    'agree_terms' => false,
 ];
 
 check_csrf();
@@ -57,8 +59,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         $password = (string) ($_POST['password'] ?? '');
         $passwordConfirm = (string) ($_POST['password_confirm'] ?? '');
+        $formData['agree_personal_data'] = isset($_POST['agree_personal_data']);
+        $formData['agree_terms'] = isset($_POST['agree_terms']);
 
-        if ($formData['name'] === '' || $formData['email'] === '' || $password === '') {
+        if (!$formData['agree_personal_data'] || !$formData['agree_terms']) {
+            $error = 'Для регистрации необходимо дать согласие на обработку персональных данных и принять пользовательское соглашение.';
+        } elseif ($formData['name'] === '' || $formData['email'] === '' || $password === '') {
             $error = 'Заполните все обязательные поля';
         } elseif (!filter_var($formData['email'], FILTER_VALIDATE_EMAIL)) {
             $error = 'Введите корректный email';
@@ -77,8 +83,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             } else {
                 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
                 $stmt = $pdo->prepare('
-                    INSERT INTO users (name, patronymic, surname, email, password, organization_region, user_type, is_admin, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, NOW())
+                    INSERT INTO users (
+                        name, patronymic, surname, email, password, organization_region, user_type,
+                        agree_personal_data, agree_personal_data_at, agree_terms, agree_terms_at,
+                        is_admin, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW(), 1, NOW(), 0, NOW())
                 ');
                 $stmt->execute([
                     $formData['name'],
@@ -260,13 +270,35 @@ generateCSRFToken();
 </div>
 </div>
 
-<button type="submit" class="btn-primary register-submit-btn">
+<div class="register-section-card">
+<div class="register-section-card__head">
+<h3>Юридические согласия</h3>
+<p>Для завершения регистрации подтвердите оба согласия.</p>
+</div>
+<div class="form-group">
+<label style="display:flex; gap:10px; align-items:flex-start;">
+<input type="checkbox" id="agreePersonalData" name="agree_personal_data" value="1" <?= $formData['agree_personal_data'] ? 'checked' : '' ?>>
+<span>Даю согласие на обработку персональных данных в соответствии с <a href="/legal/privacy" target="_blank" rel="noopener">Политикой обработки персональных данных</a>.</span>
+</label>
+</div>
+<div class="form-group">
+<label style="display:flex; gap:10px; align-items:flex-start;">
+<input type="checkbox" id="agreeTerms" name="agree_terms" value="1" <?= $formData['agree_terms'] ? 'checked' : '' ?>>
+<span>Подтверждаю, что ознакомлен(а) и согласен(на) с условиями <a href="/legal/terms" target="_blank" rel="noopener">Пользовательского соглашения</a>.</span>
+</label>
+</div>
+<div id="registerLegalNotice" class="form-hint" style="margin-top:8px; color:#92400e;">
+В соответствии с законодательством РФ регистрация возможна только после подтверждения обоих согласий. Пока согласия не даны, кнопка «Зарегистрироваться» и быстрая регистрация через VK ID недоступны.
+</div>
+</div>
+
+<button type="submit" class="btn-primary register-submit-btn" id="registerSubmitButton" disabled>
 <i class="fas fa-user-plus"></i> Зарегистрироваться
 </button>
 </form>
 
 <div class="divider">или</div>
-<div class="register-vkid-card">
+<div class="register-vkid-card" id="vkidCard" aria-disabled="true" style="opacity:.55; pointer-events:none;">
 <div class="register-vkid-card__head">
 <strong>Быстрая регистрация через VK ID</strong>
 <span>Если удобнее, можно создать аккаунт в один шаг и подтянуть данные из VK.</span>
@@ -464,23 +496,58 @@ document.querySelectorAll('.register-role-switch__option input').forEach((input)
     });
 });
 
+
+const agreePersonalData = document.getElementById('agreePersonalData');
+const agreeTerms = document.getElementById('agreeTerms');
+const registerSubmitButton = document.getElementById('registerSubmitButton');
+const vkidCard = document.getElementById('vkidCard');
+const registerLegalNotice = document.getElementById('registerLegalNotice');
+
+function syncLegalConsents() {
+    const accepted = Boolean(agreePersonalData?.checked) && Boolean(agreeTerms?.checked);
+    if (registerSubmitButton) {
+        registerSubmitButton.disabled = !accepted;
+    }
+    if (vkidCard) {
+        vkidCard.style.opacity = accepted ? '1' : '.55';
+        vkidCard.style.pointerEvents = accepted ? '' : 'none';
+        vkidCard.setAttribute('aria-disabled', accepted ? 'false' : 'true');
+    }
+    if (registerLegalNotice) {
+        registerLegalNotice.style.color = accepted ? '#166534' : '#92400e';
+        registerLegalNotice.textContent = accepted
+            ? 'Согласия подтверждены. Регистрация доступна.'
+            : 'В соответствии с законодательством РФ регистрация возможна только после подтверждения обоих согласий. Пока согласия не даны, кнопка «Зарегистрироваться» и быстрая регистрация через VK ID недоступны.';
+    }
+    return accepted;
+}
+
 const registerForm = document.getElementById('registerForm');
 const registerEmailInput = document.getElementById('registerEmailInput');
 const registerPasswordInput = document.getElementById('registerPasswordInput');
 const registerPasswordConfirmInput = document.getElementById('registerPasswordConfirmInput');
 
-[registerEmailInput, registerPasswordInput, registerPasswordConfirmInput].forEach((input) => {
-    input?.addEventListener('input', validateRegisterFields);
-    input?.addEventListener('blur', validateRegisterFields);
+[registerEmailInput, registerPasswordInput, registerPasswordConfirmInput, agreePersonalData, agreeTerms].forEach((input) => {
+    input?.addEventListener('input', () => {
+        validateRegisterFields();
+        syncLegalConsents();
+    });
+    input?.addEventListener('blur', () => {
+        validateRegisterFields();
+        syncLegalConsents();
+    });
 });
 
 registerForm?.addEventListener('submit', (event) => {
+    const legalAccepted = syncLegalConsents();
     const validation = validateRegisterFields();
 
-    if (!validation.emailValid || !validation.passwordValid || !validation.passwordsMatch) {
+    if (!legalAccepted || !validation.emailValid || !validation.passwordValid || !validation.passwordsMatch) {
         event.preventDefault();
 
-        if (!validation.emailValid) {
+        if (!legalAccepted) {
+            agreePersonalData?.focus();
+        } else if (!validation.emailValid) {
             registerEmailInput?.focus();
         } else if (!validation.passwordValid) {
             registerPasswordInput?.focus();
@@ -489,6 +556,8 @@ registerForm?.addEventListener('submit', (event) => {
         }
     }
 });
+
+syncLegalConsents();
 </script>
 <script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js" defer onload="initVkIdWidget()" onerror="setAuthError('Не удалось загрузить VK ID SDK. Попробуйте обновить страницу или зарегистрируйтесь по email.');"></script>
 </body>

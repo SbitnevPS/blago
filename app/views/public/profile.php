@@ -80,7 +80,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
  global $pdo;
 
- if ($profileAction === 'password') {
+ if ($profileAction === 'delete') {
+ $currentPassword = trim((string) ($_POST['delete_current_password'] ?? ''));
+ if (empty($user['password'])) {
+ $error = 'Удаление профиля недоступно, пока для аккаунта не задан пароль.';
+ } elseif ($currentPassword === '') {
+ $error = 'Введите текущий пароль для удаления профиля.';
+ } elseif (!password_verify($currentPassword, (string) $user['password'])) {
+ $error = 'Неверный текущий пароль.';
+ } else {
+ $stmt = $pdo->prepare('DELETE FROM users WHERE id = ?');
+ $stmt->execute([$user['id']]);
+ unset($_SESSION['user_id'], $_SESSION['vk_token']);
+ $_SESSION['success_message'] = 'Пользователь удалён.';
+ $_SESSION['show_profile_deleted_modal'] = true;
+ redirect('/');
+ }
+ } elseif ($profileAction === 'password') {
  $currentPassword = trim((string) ($_POST['current_password'] ?? ''));
  $hasExistingPassword = !empty($user['password']);
  if ($hasExistingPassword && $currentPassword === '') {
@@ -436,6 +452,11 @@ generateCSRFToken();
 </button>
 </div>
 </section>
+
+<div class="profile-delete-action">
+<a href="/logout" class="profile-delete-action__trigger" style="margin-right:12px;">Выйти из учётной записи</a>
+<button type="button" class="profile-delete-action__trigger" id="openDeleteProfileModalButton">Удалить профиль</button>
+</div>
 </form>
 </div>
 </div>
@@ -562,6 +583,31 @@ generateCSRFToken();
     </div>
 </div>
 
+<div class="modal" id="deleteProfileModal" aria-hidden="true">
+    <div class="modal__content profile-modal__content">
+        <div class="modal__header">
+            <h3 class="modal__title">Удаление профиля</h3>
+            <button type="button" class="modal__close" id="deleteProfileModalClose" aria-label="Закрыть">&times;</button>
+        </div>
+        <form method="POST" id="deleteProfileForm" novalidate>
+            <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
+            <input type="hidden" name="profile_action" value="delete">
+            <div class="modal__body">
+                <p>Это действие удалит ваш профиль без возможности восстановления.</p>
+                <div class="form-group">
+                    <label class="form-label">Текущий пароль</label>
+                    <input type="password" id="deleteProfileCurrentPassword" name="delete_current_password" class="form-input" placeholder="Введите текущий пароль" required>
+                </div>
+            </div>
+            <div class="modal__footer">
+                <button type="submit" class="btn btn--danger">Удалить</button>
+                <button type="button" class="btn btn--ghost" id="deleteProfileModalCancel">Закрыть</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>
 <script>
 (function () {
@@ -608,6 +654,11 @@ generateCSRFToken();
     const shouldShowEmailPrompt = <?= $showEmailPrompt ? 'true' : 'false' ?>;
     const shouldShowProfileSavedModal = <?= $showProfileSavedModal ? 'true' : 'false' ?>;
     const shouldShowPasswordChangedModal = <?= $showPasswordChangedModal ? 'true' : 'false' ?>;
+    const openDeleteProfileModalButton = document.getElementById('openDeleteProfileModalButton');
+    const deleteProfileModal = document.getElementById('deleteProfileModal');
+    const deleteProfileModalClose = document.getElementById('deleteProfileModalClose');
+    const deleteProfileModalCancel = document.getElementById('deleteProfileModalCancel');
+    const deleteProfileCurrentPassword = document.getElementById('deleteProfileCurrentPassword');
     const shouldOpenPasswordModal = <?= ($profileAction === 'password' && $error !== '') || $forcePasswordChange || $requiresPasswordSetup ? 'true' : 'false' ?>;
 
     function showMessage(message, isError = false) {
@@ -1148,6 +1199,19 @@ generateCSRFToken();
         if (event.target === emailPromptModal) {
             closeModal(emailPromptModal);
             focusEmailField();
+        }
+    });
+
+
+    openDeleteProfileModalButton?.addEventListener('click', () => {
+        openModal(deleteProfileModal);
+        window.setTimeout(() => deleteProfileCurrentPassword?.focus(), 60);
+    });
+    deleteProfileModalClose?.addEventListener('click', () => closeModal(deleteProfileModal));
+    deleteProfileModalCancel?.addEventListener('click', () => closeModal(deleteProfileModal));
+    deleteProfileModal?.addEventListener('click', (event) => {
+        if (event.target === deleteProfileModal) {
+            closeModal(deleteProfileModal);
         }
     });
 
