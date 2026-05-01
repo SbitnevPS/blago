@@ -1093,7 +1093,22 @@ function vk_user_login_by_access_token(PDO $pdo, string $accessToken, string $ra
     ], $attemptId);
     unset($_SESSION['user_auth_redirect']);
 
-    return ['ok' => true, 'redirect_to' => $isNewVkUser ? '/profile?required=1' : $safeRedirect];
+    $requiresPasswordSetup = false;
+    $userStmt = $pdo->prepare('SELECT vk_id, password, email_verified, email_verified_at FROM users WHERE id = ? LIMIT 1');
+    $userStmt->execute([$userId]);
+    $savedUser = $userStmt->fetch();
+    if (is_array($savedUser)) {
+        $hasVkId = trim((string) ($savedUser['vk_id'] ?? '')) !== '';
+        $hasPassword = trim((string) ($savedUser['password'] ?? '')) !== '';
+        $isEmailVerified = !empty($savedUser['email_verified']) || trim((string) ($savedUser['email_verified_at'] ?? '')) !== '';
+        $requiresPasswordSetup = $hasVkId && $isEmailVerified && !$hasPassword;
+    }
+
+    if ($isNewVkUser || $requiresPasswordSetup) {
+        return ['ok' => true, 'redirect_to' => '/profile?required=1'];
+    }
+
+    return ['ok' => true, 'redirect_to' => $safeRedirect];
 }
 
 function vk_admin_login_by_access_token(PDO $pdo, string $accessToken, string $rawRedirect = '/admin', string $vkUserIdHint = '', string $vkEmailHint = '', string $idToken = '', string $refreshToken = '', array $claims = []): array

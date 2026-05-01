@@ -21,6 +21,7 @@ $missingRequiredLabels = [];
 $showProfileSavedModal = (string) ($_GET['profile_saved'] ?? '') === '1';
 $showPasswordChangedModal = (string) ($_GET['password_changed'] ?? '') === '1';
 $forcePasswordChange = isForcedPasswordChangeRequiredForCurrentSession() || (string) ($_GET['force_password_change'] ?? '') === '1';
+$requiresPasswordSetup = !empty($user['vk_id']) && $emailVerified && empty($user['password']);
 $profileAction = trim((string) ($_POST['profile_action'] ?? 'info'));
 $showEmailPrompt = (string) ($_GET['required'] ?? '') === '1' && trim((string) ($user['email'] ?? '')) === '';
 $showOrganizationPrompt = (string) ($_GET['prompt_org_completion'] ?? '') === '1'
@@ -80,11 +81,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
  global $pdo;
 
  if ($profileAction === 'password') {
- if (trim((string) ($_POST['current_password'] ?? '')) === '') {
+ $currentPassword = trim((string) ($_POST['current_password'] ?? ''));
+ $hasExistingPassword = !empty($user['password']);
+ if ($hasExistingPassword && $currentPassword === '') {
  $error = 'Введите текущий пароль.';
  } elseif ($newPassword === '' || $confirmPassword === '') {
  $error = 'Заполните все поля для смены пароля.';
- } elseif (!empty($user['password']) && !password_verify((string) $_POST['current_password'], (string) $user['password'])) {
+ } elseif ($hasExistingPassword && !password_verify($currentPassword, (string) $user['password'])) {
  $error = 'Неверный текущий пароль.';
  } elseif (strlen($newPassword) < 6) {
  $error = 'Пароль должен быть не менее 6 символов';
@@ -519,10 +522,10 @@ generateCSRFToken();
     </div>
 </div>
 
-<div class="modal<?= $profileAction === 'password' && $error !== '' ? ' active' : '' ?>" id="passwordModal" aria-hidden="<?= $profileAction === 'password' && $error !== '' ? 'false' : 'true' ?>">
+<div class="modal<?= ($profileAction === 'password' && $error !== '') || $requiresPasswordSetup ? ' active' : '' ?>" id="passwordModal" aria-hidden="<?= ($profileAction === 'password' && $error !== '') || $requiresPasswordSetup ? 'false' : 'true' ?>">
     <div class="modal__content profile-modal__content">
         <div class="modal__header">
-            <h3 class="modal__title">Смена пароля</h3>
+            <h3 class="modal__title"><?= $requiresPasswordSetup ? 'Создайте пароль' : 'Смена пароля' ?></h3>
             <button type="button" class="modal__close" id="passwordModalClose" aria-label="Закрыть">&times;</button>
         </div>
         <form method="POST" id="passwordModalForm" novalidate>
@@ -530,10 +533,15 @@ generateCSRFToken();
             <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
             <input type="hidden" name="profile_action" value="password">
             <div class="modal__body profile-password-modal__body">
+                <?php if ($requiresPasswordSetup): ?>
+                <p style="margin:0 0 16px;">Чтобы продолжить работу на сайте без ограничений, придумайте пароль для вашего аккаунта. В дальнейшем вы сможете входить с ним и подтверждать важные изменения в профиле.</p>
+                <?php endif; ?>
+                <?php if (!empty($user['password'])): ?>
                 <div class="form-group">
                     <label class="form-label">Текущий пароль</label>
                     <input type="password" id="passwordModalCurrent" name="current_password" class="form-input" placeholder="Введите текущий пароль" required>
                 </div>
+                <?php endif; ?>
                 <div class="form-group">
                     <label class="form-label">Новый пароль</label>
                     <input type="password" id="passwordModalNew" name="new_password" class="form-input" placeholder="Минимум 6 символов" minlength="6" required>
@@ -548,7 +556,7 @@ generateCSRFToken();
             </div>
             <div class="modal__footer">
                 <button type="button" class="btn btn--ghost" id="passwordModalCancel">Отмена</button>
-                <button type="submit" class="btn btn--primary" id="passwordModalSubmit" disabled>Сохранить изменённый пароль</button>
+                <button type="submit" class="btn btn--primary" id="passwordModalSubmit" disabled><?= $requiresPasswordSetup ? 'Сохранить пароль' : 'Сохранить изменённый пароль' ?></button>
             </div>
         </form>
     </div>
@@ -600,7 +608,7 @@ generateCSRFToken();
     const shouldShowEmailPrompt = <?= $showEmailPrompt ? 'true' : 'false' ?>;
     const shouldShowProfileSavedModal = <?= $showProfileSavedModal ? 'true' : 'false' ?>;
     const shouldShowPasswordChangedModal = <?= $showPasswordChangedModal ? 'true' : 'false' ?>;
-    const shouldOpenPasswordModal = <?= ($profileAction === 'password' && $error !== '') || $forcePasswordChange ? 'true' : 'false' ?>;
+    const shouldOpenPasswordModal = <?= ($profileAction === 'password' && $error !== '') || $forcePasswordChange || $requiresPasswordSetup ? 'true' : 'false' ?>;
 
     function showMessage(message, isError = false) {
         if (!messageEl) return;
@@ -826,8 +834,10 @@ generateCSRFToken();
             setFieldStatus(passwordModalConfirm, passwordModalConfirmStatus, 'success', 'Пароли совпадают, всё в порядке.');
         }
 
+        const currentRequired = Boolean(passwordModalCurrent) && passwordModalCurrent.required;
+        const currentValid = !currentRequired || currentValue.trim() !== '';
         if (passwordModalSubmit) {
-            passwordModalSubmit.disabled = !(currentValue.trim() !== '' && newValid && confirmValid);
+            passwordModalSubmit.disabled = !(currentValid && newValid && confirmValid);
         }
     }
 
