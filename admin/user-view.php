@@ -128,6 +128,14 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
+    .user-view-applications-table tbody tr[data-href] {
+        cursor: pointer;
+    }
+
+    .user-view-applications-table tbody tr[data-href]:hover {
+        background: #f8fafc;
+    }
+
     .message-attachment-preview {
         display: block;
     }
@@ -340,8 +348,7 @@ require_once __DIR__ . '/includes/header.php';
 <h3>Заявки пользователя (<?= count($applications) ?>)</h3>
 </div>
 <div class="card__body card__body--compact">
-<table class="table">
-<thead>
+<table class="table user-view-applications-table"><thead>
 <tr>
 <th>ID</th>
 <th>Конкурс</th>
@@ -353,18 +360,19 @@ require_once __DIR__ . '/includes/header.php';
 </thead>
 <tbody>
  <?php foreach ($applications as $app): ?>
-<tr>
-<td data-label="ID">#<?= $app['id'] ?></td>
+<?php $appStatusMeta = getApplicationDisplayMeta($app); ?>
+<tr data-href="/admin/application/<?= (int) $app['id'] ?>" tabindex="0" role="link" aria-label="Открыть заявку #<?= (int) $app['id'] ?>">
+<td data-label="ID">#<?= (int) $app['id'] ?></td>
 <td data-label="Конкурс"><?= htmlspecialchars($app['contest_title']) ?></td>
-<td data-label="Участников"><?= $app['participants_count'] ?></td>
+<td data-label="Участников"><?= (int) $app['participants_count'] ?></td>
 <td data-label="Статус">
-<span class="badge <?= $app['status'] === 'submitted' ? 'badge--success' : 'badge--warning' ?>">
- <?= $app['status'] === 'submitted' ? 'Не обработанная заявка' : 'Черновик' ?>
+<span class="badge <?= htmlspecialchars((string) ($appStatusMeta['badge_class'] ?? 'badge--secondary')) ?>">
+ <?= htmlspecialchars((string) ($appStatusMeta['label'] ?? 'Статус не определён')) ?>
 </span>
 </td>
 <td data-label="Дата"><?= date('d.m.Y', strtotime($app['created_at'])) ?></td>
 <td data-label="Действия">
-<a href="/admin/application/<?= $app['id'] ?>" class="btn btn--ghost btn--sm">
+<a href="/admin/application/<?= (int) $app['id'] ?>" class="btn btn--ghost btn--sm" onclick="event.stopPropagation();">
 <i class="fas fa-eye"></i>
 </a>
 </td>
@@ -554,6 +562,28 @@ function closeMessageImagePreview() {
  const otherModal = document.querySelector('.modal.active:not(#messageImagePreviewModal)');
  document.body.style.overflow = otherModal ? 'hidden' : '';
 }
+
+document.querySelectorAll('.user-view-applications-table tbody tr[data-href]').forEach((row) => {
+ row.addEventListener('click', (event) => {
+  if (event.target.closest('a, button, input, textarea, select, label')) {
+   return;
+  }
+  const href = row.getAttribute('data-href');
+  if (href) {
+   window.location.href = href;
+  }
+ });
+ row.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') {
+   return;
+  }
+  event.preventDefault();
+  const href = row.getAttribute('data-href');
+  if (href) {
+   window.location.href = href;
+  }
+ });
+});
 
 const userViewDocumentModal = document.getElementById('userViewDocumentModal');
 const userViewDocumentModalTitle = document.getElementById('userViewDocumentModalTitle');
