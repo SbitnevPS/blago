@@ -81,6 +81,10 @@ $emailVerified = (int) ($user['email_verified'] ?? 0) === 1;
 $vkId = trim((string) ($user['vk_id'] ?? ''));
 $userTypeLabel = getUserTypeLabel((string) ($user['user_type'] ?? 'parent'));
 $userCreatedAt = !empty($user['created_at']) ? date('d.m.Y H:i', strtotime((string) $user['created_at'])) : 'Не указана';
+$hasPersonalDataConsent = (int) ($user['agree_personal_data'] ?? 0) === 1;
+$hasTermsConsent = (int) ($user['agree_terms'] ?? 0) === 1;
+$personalDataConsentAt = !empty($user['agree_personal_data_at']) ? date('d.m.Y H:i', strtotime((string) $user['agree_personal_data_at'])) : '';
+$termsConsentAt = !empty($user['agree_terms_at']) ? date('d.m.Y H:i', strtotime((string) $user['agree_terms_at'])) : '';
 
 $currentPage = 'users';
 $pageTitle = $userFullName;
@@ -212,7 +216,13 @@ require_once __DIR__ . '/includes/header.php';
 <div class="card__body">
 <div class="user-view-profile">
  <?php if ($userAvatar['url'] !== ''): ?>
+<?php if ($vkId !== ''): ?>
+<a href="https://vk.com/id<?= htmlspecialchars($vkId, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener" class="user-view-avatar-link" title="Открыть профиль VK">
 <img src="<?= htmlspecialchars($userAvatar['url']) ?>" class="user-view-avatar" alt="<?= htmlspecialchars($userAvatar['label']) ?>">
+</a>
+<?php else: ?>
+<img src="<?= htmlspecialchars($userAvatar['url']) ?>" class="user-view-avatar" alt="<?= htmlspecialchars($userAvatar['label']) ?>">
+<?php endif; ?>
  <?php else: ?>
 <div class="user-view-avatar user-view-avatar--placeholder">
 <span class="user-view-avatar__initials"><?= htmlspecialchars($userAvatar['initials']) ?></span>
@@ -226,24 +236,9 @@ require_once __DIR__ . '/includes/header.php';
 <h2 class="user-view-profile__name"><?= htmlspecialchars($userFullName) ?></h2>
 <div class="user-view-profile__email"><?= htmlspecialchars($user['email'] ?: 'Email не указан') ?></div>
 </div>
-<div class="user-view-profile__badges">
- <?php if ((int) ($user['is_admin'] ?? 0) === 1): ?>
-<span class="badge badge--primary">Администратор</span>
- <?php endif; ?>
- <?php if (!empty($user['email'])): ?>
-<span class="badge <?= $emailVerified ? 'badge--success' : 'badge--warning' ?>">
-    <?= $emailVerified ? 'Email подтверждён' : 'Email не подтверждён' ?>
-</span>
- <?php endif; ?>
-</div>
 </div>
 
 <div class="user-view-details-grid">
-<div class="user-view-detail user-view-detail--wide">
-<span class="user-view-detail__label">ФИО</span>
-<strong class="user-view-detail__value"><?= htmlspecialchars($userFullName) ?></strong>
-<span class="user-view-detail__hint">Фамилия Имя Отчество</span>
-</div>
 <div class="user-view-detail">
 <span class="user-view-detail__label">Тип профиля</span>
 <strong class="user-view-detail__value"><?= htmlspecialchars($userTypeLabel) ?></strong>
@@ -270,6 +265,23 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 </div>
 
+<div class="user-view-status-badges" aria-label="Статусы пользователя">
+ <?php if ((int) ($user['is_admin'] ?? 0) === 1): ?>
+<span class="badge badge--primary">Администратор</span>
+ <?php endif; ?>
+ <?php if (!empty($user['email'])): ?>
+<span class="badge <?= $emailVerified ? 'badge--success' : 'badge--warning' ?>">
+    <?= $emailVerified ? 'Email подтверждён' : 'Email не подтверждён' ?>
+</span>
+ <?php endif; ?>
+<button type="button" class="badge user-view-document-badge <?= $hasPersonalDataConsent ? 'badge--success' : 'badge--warning' ?>" data-document-modal-open="privacy" title="<?= $personalDataConsentAt !== '' ? 'Подписано: ' . htmlspecialchars($personalDataConsentAt, ENT_QUOTES, 'UTF-8') : 'Дата подписи не указана' ?>">
+    <?= $hasPersonalDataConsent ? 'Персональные данные подписаны' : 'Персональные данные не подписаны' ?>
+</button>
+<button type="button" class="badge user-view-document-badge <?= $hasTermsConsent ? 'badge--success' : 'badge--warning' ?>" data-document-modal-open="terms" title="<?= $termsConsentAt !== '' ? 'Подписано: ' . htmlspecialchars($termsConsentAt, ENT_QUOTES, 'UTF-8') : 'Дата подписи не указана' ?>">
+    <?= $hasTermsConsent ? 'Пользовательское соглашение подписано' : 'Пользовательское соглашение не подписано' ?>
+</button>
+</div>
+
  <?php if ($vkId !== ''): ?>
 <div class="user-view-profile__footer">
 <a href="https://vk.com/id<?= htmlspecialchars($vkId, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener" class="btn btn--secondary">
@@ -278,6 +290,46 @@ require_once __DIR__ . '/includes/header.php';
 </div>
  <?php endif; ?>
 </div>
+</div>
+</div>
+</div>
+
+<div class="modal user-view-document-modal" id="userViewDocumentModal" aria-hidden="true">
+<div class="modal__content user-view-document-modal__content">
+<div class="modal__header">
+<h3 class="modal__title" id="userViewDocumentModalTitle">Документ</h3>
+<button type="button" class="modal__close" id="userViewDocumentModalClose" aria-label="Закрыть">&times;</button>
+</div>
+<div class="modal__body user-view-document-modal__body">
+<section class="user-view-document-panel" data-document-panel="privacy" hidden>
+<h4>Политика конфиденциальности</h4>
+<p>Мы обрабатываем персональные данные пользователей только для работы платформы, регистрации, связи по заявкам и предоставления результатов конкурсов.</p>
+<h5>Какие данные собираются</h5>
+<ul>
+<li>контактные данные, указанные при регистрации и подаче заявки;</li>
+<li>данные профиля участника и загруженные материалы;</li>
+<li>технические данные об использовании сайта.</li>
+</ul>
+<h5>Цель обработки</h5>
+<p>Данные используются исключительно для оказания услуг сайта, ведения истории заявок, обратной связи и исполнения обязательств перед пользователями.</p>
+<h5>Передача третьим лицам</h5>
+<p>Персональные данные не продаются и не передаются третьим лицам, за исключением случаев, прямо предусмотренных законодательством Российской Федерации.</p>
+<h5>Сроки и защита</h5>
+<p>Мы применяем организационные и технические меры защиты данных и храним их не дольше, чем требуется для заявленных целей обработки.</p>
+</section>
+<section class="user-view-document-panel" data-document-panel="terms" hidden>
+<h4>Пользовательское соглашение</h4>
+<p>Используя сайт, пользователь подтверждает согласие с условиями настоящего соглашения и правилами участия в конкурсах.</p>
+<h5>Подача заявки</h5>
+<p>При отправке заявки пользователь подтверждает, что обладает необходимыми правами на загружаемые материалы и несет ответственность за их содержание.</p>
+<h5>Переход авторских прав</h5>
+<p>Отправляя заявку, пользователь соглашается, что все авторские права на рисунки переходят <?= htmlspecialchars(siteLegalRightsHolder(), ENT_QUOTES, 'UTF-8') ?> в объеме, необходимом для публикации, хранения, обработки и распространения материалов в рамках деятельности агентства и проведения конкурсов.</p>
+<h5>Ответственность сторон</h5>
+<p>Администрация сайта не несет ответственности за временные технические сбои, если они возникли по причинам, не зависящим от администрации.</p>
+</section>
+</div>
+<div class="modal__footer">
+<button type="button" class="btn btn--secondary" id="userViewDocumentModalConfirm">Закрыть</button>
 </div>
 </div>
 </div>
@@ -428,7 +480,6 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <div class="modal__footer flex gap-md">
 <div class="message-compose__footer">
-<div class="message-compose__footer-note">Поясняющий текст сделан компактнее, чтобы форма выглядела чище.</div>
 <div class="flex gap-md">
 <button type="button" class="btn btn--ghost" onclick="closeMessageModal()">Отмена</button>
 <button type="submit" class="btn btn--primary">
@@ -504,6 +555,52 @@ function closeMessageImagePreview() {
  document.body.style.overflow = otherModal ? 'hidden' : '';
 }
 
+const userViewDocumentModal = document.getElementById('userViewDocumentModal');
+const userViewDocumentModalTitle = document.getElementById('userViewDocumentModalTitle');
+
+function openUserViewDocumentModal(documentKey) {
+ const modal = userViewDocumentModal;
+ if (!modal) return;
+ const panels = modal.querySelectorAll('[data-document-panel]');
+ let activePanel = null;
+ panels.forEach((panel) => {
+  const isActive = panel.dataset.documentPanel === documentKey;
+  panel.hidden = !isActive;
+  if (isActive) {
+   activePanel = panel;
+  }
+ });
+ if (!activePanel) return;
+ if (userViewDocumentModalTitle) {
+  userViewDocumentModalTitle.textContent = documentKey === 'privacy'
+   ? 'Политика конфиденциальности'
+   : 'Пользовательское соглашение';
+ }
+ modal.classList.add('active');
+ modal.setAttribute('aria-hidden', 'false');
+ document.body.style.overflow = 'hidden';
+}
+
+function closeUserViewDocumentModal() {
+ const modal = userViewDocumentModal;
+ if (!modal) return;
+ modal.classList.remove('active');
+ modal.setAttribute('aria-hidden', 'true');
+ const otherModal = document.querySelector('.modal.active:not(#userViewDocumentModal)');
+ document.body.style.overflow = otherModal ? 'hidden' : '';
+}
+
+document.querySelectorAll('[data-document-modal-open]').forEach((button) => {
+ button.addEventListener('click', () => openUserViewDocumentModal(button.dataset.documentModalOpen || ''));
+});
+document.getElementById('userViewDocumentModalClose')?.addEventListener('click', closeUserViewDocumentModal);
+document.getElementById('userViewDocumentModalConfirm')?.addEventListener('click', closeUserViewDocumentModal);
+userViewDocumentModal?.addEventListener('click', (event) => {
+ if (event.target === userViewDocumentModal) {
+  closeUserViewDocumentModal();
+ }
+});
+
 function escapeAttachmentHtml(value) {
  return String(value || '')
   .replaceAll('&', '&amp;')
@@ -565,6 +662,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // Закрытие по Escape
 document.addEventListener('keydown', function(e) {
  if (e.key === 'Escape') {
+  closeUserViewDocumentModal();
   closeMessageModal();
   closeMessageImagePreview();
  }

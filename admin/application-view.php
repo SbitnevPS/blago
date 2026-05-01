@@ -71,7 +71,8 @@ if ($rawApplicationsReturnUrl !== '' && str_starts_with($rawApplicationsReturnUr
 $stmt = $pdo->prepare("
  SELECT a.*, c.title as contest_title, c.requires_payment_receipt AS contest_requires_payment_receipt,
  u.name, u.surname, u.patronymic, u.avatar_url, u.email, u.vk_id,
- u.organization_region, u.organization_name, u.organization_address, u.user_type
+ u.organization_region, u.organization_name, u.organization_address, u.user_type,
+ u.agree_personal_data, u.agree_personal_data_at, u.agree_terms, u.agree_terms_at
  FROM applications a
  JOIN contests c ON a.contest_id = c.id
  JOIN users u ON a.user_id = u.id
@@ -714,6 +715,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
      header('Content-Type: application/json');
      $participantId = intval($_POST['participant_id'] ?? 0);
      $rotation = floatval($_POST['rotation'] ?? 0);
+     $rotation = max(-180.0, min(180.0, $rotation));
      $cropX = max(0, floatval($_POST['crop_x'] ?? 0));
      $cropY = max(0, floatval($_POST['crop_y'] ?? 0));
      $cropW = max(1, floatval($_POST['crop_w'] ?? 1));
@@ -968,6 +970,10 @@ $agreementModalBadgeText = $isAgreementDeclined
     ? 'Пользователь не согласен с условиями пользовательского соглашения'
     : 'Пользователь согласен с условиями пользовательского соглашения';
 $agreementModalBadgeClass = $isAgreementDeclined ? 'badge--error' : 'badge--success';
+$hasPersonalDataConsent = (int) ($application['agree_personal_data'] ?? 0) === 1;
+$hasTermsConsent = (int) ($application['agree_terms'] ?? 0) === 1;
+$personalDataConsentAt = !empty($application['agree_personal_data_at']) ? date('d.m.Y H:i', strtotime((string) $application['agree_personal_data_at'])) : '';
+$termsConsentAt = !empty($application['agree_terms_at']) ? date('d.m.Y H:i', strtotime((string) $application['agree_terms_at'])) : '';
 $paymentReceipt = trim((string) ($application['payment_receipt'] ?? ''));
 $paymentReceiptName = $paymentReceipt !== '' ? basename($paymentReceipt) : '—';
 $paymentReceiptUrl = (string) ($receiptMeta['file_url'] ?? '');
@@ -1082,7 +1088,11 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                             <div class="application-applicant__avatar application-applicant__avatar--empty"><i class="fas fa-user"></i></div>
                         <?php endif; ?>
                         <div>
-                            <div class="font-semibold"><?= e($applicantName) ?></div>
+                            <?php if ($applicantUserId > 0): ?>
+                                <a href="/admin/user/<?= (int) $applicantUserId ?>" class="application-applicant__name-link"><?= e($applicantName) ?></a>
+                            <?php else: ?>
+                                <div class="font-semibold"><?= e($applicantName) ?></div>
+                            <?php endif; ?>
                             <a href="mailto:<?= e($application['email'] ?? '') ?>" class="text-secondary"><?= e($application['email'] ?: '—') ?></a>
                             <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                                 <span class="badge <?= $isApplicantBlacklisted ? 'badge--error' : 'badge--secondary' ?>" id="applicantBlacklistBadge">
@@ -1127,6 +1137,31 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
                     <dl class="application-kv-list">
                         <dt>Источник</dt><dd><?= e($application['source_info'] ?: '—') ?></dd>
                         <dt>Коллеги</dt><dd><?= e($application['colleagues_info'] ?: '—') ?></dd>
+                        <dt>Документы регистрации</dt>
+                        <dd class="application-document-badges">
+                            <button
+                                type="button"
+                                class="application-document-badge"
+                                data-application-document-open="privacy"
+                                title="<?= $personalDataConsentAt !== '' ? 'Подписано: ' . e($personalDataConsentAt) : 'Дата подписи не указана' ?>"
+                            >
+                                <span class="badge <?= $hasPersonalDataConsent ? 'badge--success' : 'badge--warning' ?>">
+                                    <?= $hasPersonalDataConsent ? 'Персональные данные подписаны' : 'Персональные данные не подписаны' ?>
+                                </span>
+                                <span class="application-agreement-status__label">Открыть</span>
+                            </button>
+                            <button
+                                type="button"
+                                class="application-document-badge"
+                                data-application-document-open="terms"
+                                title="<?= $termsConsentAt !== '' ? 'Подписано: ' . e($termsConsentAt) : 'Дата подписи не указана' ?>"
+                            >
+                                <span class="badge <?= $hasTermsConsent ? 'badge--success' : 'badge--warning' ?>">
+                                    <?= $hasTermsConsent ? 'Пользовательское соглашение подписано' : 'Пользовательское соглашение не подписано' ?>
+                                </span>
+                                <span class="application-agreement-status__label">Открыть</span>
+                            </button>
+                        </dd>
                         <dt>Пользовательское соглашение</dt>
                         <dd>
                             <button
@@ -1361,6 +1396,46 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
     </div>
 </div>
 
+<div class="modal" id="applicationDocumentsModal" aria-hidden="true">
+    <div class="modal__content agreement-status-modal">
+        <div class="modal__header">
+            <h3 class="modal__title" id="applicationDocumentsModalTitle">Документ</h3>
+            <button type="button" class="modal__close" id="applicationDocumentsModalClose" aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="modal__body agreement-status-modal__body">
+            <section class="agreement-status-modal__text" data-application-document-panel="privacy" hidden>
+                <h4>Политика конфиденциальности</h4>
+                <p>Мы обрабатываем персональные данные пользователей только для работы платформы, регистрации, связи по заявкам и предоставления результатов конкурсов.</p>
+                <h5>Какие данные собираются</h5>
+                <ul>
+                    <li>контактные данные, указанные при регистрации и подаче заявки;</li>
+                    <li>данные профиля участника и загруженные материалы;</li>
+                    <li>технические данные об использовании сайта.</li>
+                </ul>
+                <h5>Цель обработки</h5>
+                <p>Данные используются исключительно для оказания услуг сайта, ведения истории заявок, обратной связи и исполнения обязательств перед пользователями.</p>
+                <h5>Передача третьим лицам</h5>
+                <p>Персональные данные не продаются и не передаются третьим лицам, за исключением случаев, прямо предусмотренных законодательством Российской Федерации.</p>
+                <h5>Сроки и защита</h5>
+                <p>Мы применяем организационные и технические меры защиты данных и храним их не дольше, чем требуется для заявленных целей обработки.</p>
+            </section>
+            <section class="agreement-status-modal__text" data-application-document-panel="terms" hidden>
+                <h4>Пользовательское соглашение</h4>
+                <p>Используя сайт, пользователь подтверждает согласие с условиями настоящего соглашения и правилами участия в конкурсах.</p>
+                <h5>Подача заявки</h5>
+                <p>При отправке заявки пользователь подтверждает, что обладает необходимыми правами на загружаемые материалы и несет ответственность за их содержание.</p>
+                <h5>Переход авторских прав</h5>
+                <p>Отправляя заявку, пользователь соглашается, что все авторские права на рисунки переходят <?= e(siteLegalRightsHolder()) ?> в объеме, необходимом для публикации, хранения, обработки и распространения материалов в рамках деятельности агентства и проведения конкурсов.</p>
+                <h5>Ответственность сторон</h5>
+                <p>Администрация сайта не несет ответственности за временные технические сбои, если они возникли по причинам, не зависящим от администрации.</p>
+            </section>
+        </div>
+        <div class="modal__footer agreement-status-modal__footer">
+            <button type="button" class="btn btn--secondary" id="applicationDocumentsModalConfirm">Закрыть</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal" id="vkPublishPromptModal">
     <div class="modal__content vk-publish-modal__content">
         <div class="modal__header">
@@ -1484,8 +1559,12 @@ $isRejectedApplicationState = (string) ($application['status'] ?? '') === 'rejec
 <button type="button" class="btn btn--secondary" onclick="rotateBy(45)">+45°</button>
 <button type="button" class="btn btn--secondary" onclick="rotateBy(-90)">-90°</button>
 <button type="button" class="btn btn--secondary" onclick="rotateBy(90)">+90°</button>
+<label class="drawing-editor-rotation-slider">
+<span>Поворот</span>
+<input type="range" id="rotationRange" min="-180" max="180" step="1" value="0">
+</label>
 <label class="drawing-editor-angle">Угол:
-<input type="number" id="rotationInput" value="0" step="1" class="form-input drawing-editor-angle__input">
+<input type="number" id="rotationInput" value="0" min="-180" max="180" step="1" class="form-input drawing-editor-angle__input">
 </label>
 <button type="button" id="cancelDrawingChanges" class="btn btn--ghost" onclick="resetDrawingEditor()" disabled aria-disabled="true">Сбросить</button>
 </div>
@@ -1545,6 +1624,8 @@ let drawingViewerDragStartPanY = 0;
 let drawingViewerBaseWidth = 0;
 let drawingViewerBaseHeight = 0;
 const agreementStatusModal = document.getElementById('agreementStatusModal');
+const applicationDocumentsModal = document.getElementById('applicationDocumentsModal');
+const applicationDocumentsModalTitle = document.getElementById('applicationDocumentsModalTitle');
 const drawingEditorModal = document.getElementById('drawingEditorModal');
 const drawingViewerModal = document.getElementById('drawingViewerModal');
 const drawingViewerStage = document.getElementById('drawingViewerStage');
@@ -1554,6 +1635,10 @@ const drawingViewerZoomValue = document.getElementById('drawingViewerZoomValue')
 const drawingViewerZoomInBtn = document.getElementById('drawingViewerZoomInBtn');
 const drawingViewerZoomOutBtn = document.getElementById('drawingViewerZoomOutBtn');
 const drawingViewerZoomResetBtn = document.getElementById('drawingViewerZoomResetBtn');
+const rotationInput = document.getElementById('rotationInput');
+const rotationRange = document.getElementById('rotationRange');
+const DRAWING_ROTATION_MIN = -180;
+const DRAWING_ROTATION_MAX = 180;
 const DRAWING_VIEWER_MIN_SCALE = 1;
 const DRAWING_VIEWER_MAX_SCALE = 3;
 const DRAWING_VIEWER_SCALE_STEP = 0.5;
@@ -1574,6 +1659,21 @@ function markEditorDirty(dirty) {
  if (resetButton) {
   resetButton.disabled = !dirty;
   resetButton.setAttribute('aria-disabled', dirty ? 'false' : 'true');
+ }
+}
+
+function clampDrawingEditorRotation(angle) {
+ const parsed = Math.round(Number(angle || 0));
+ return Math.min(DRAWING_ROTATION_MAX, Math.max(DRAWING_ROTATION_MIN, parsed));
+}
+
+function syncDrawingEditorRotationControls(angle) {
+ const nextAngle = String(clampDrawingEditorRotation(angle));
+ if (rotationInput) {
+  rotationInput.value = nextAngle;
+ }
+ if (rotationRange) {
+  rotationRange.value = nextAngle;
  }
 }
 
@@ -1848,8 +1948,8 @@ function resetDrawingEditorCropToFittedImage() {
 
 function applyDrawingEditorRotation(angle, dirty = true) {
  if (!cropper) return;
- currentRotation = Math.round(Number(angle || 0));
- document.getElementById('rotationInput').value = String(currentRotation);
+ currentRotation = clampDrawingEditorRotation(angle);
+ syncDrawingEditorRotationControls(currentRotation);
 
  drawingEditorSuppressDirty = true;
  cropper.clear();
@@ -1869,7 +1969,7 @@ function openDrawingEditor(participantId, imageSrc) {
  drawingEditorModal.classList.add('active');
  setPageModalScrollLocked(true);
  currentRotation = 0;
- document.getElementById('rotationInput').value = '0';
+ syncDrawingEditorRotationControls(0);
  markEditorDirty(false);
 
  if (cropper) {
@@ -2027,6 +2127,36 @@ function closeAgreementStatusModal() {
  setPageModalScrollLocked(Boolean(otherModal));
 }
 
+function openApplicationDocumentsModal(documentKey) {
+ if (!applicationDocumentsModal) return;
+ const panels = applicationDocumentsModal.querySelectorAll('[data-application-document-panel]');
+ let activePanel = null;
+ panels.forEach((panel) => {
+  const isActive = panel.dataset.applicationDocumentPanel === documentKey;
+  panel.hidden = !isActive;
+  if (isActive) {
+   activePanel = panel;
+  }
+ });
+ if (!activePanel) return;
+ if (applicationDocumentsModalTitle) {
+  applicationDocumentsModalTitle.textContent = documentKey === 'privacy'
+   ? 'Политика конфиденциальности'
+   : 'Пользовательское соглашение';
+ }
+ applicationDocumentsModal.classList.add('active');
+ applicationDocumentsModal.setAttribute('aria-hidden', 'false');
+ setPageModalScrollLocked(true);
+}
+
+function closeApplicationDocumentsModal() {
+ if (!applicationDocumentsModal) return;
+ applicationDocumentsModal.classList.remove('active');
+ applicationDocumentsModal.setAttribute('aria-hidden', 'true');
+ const otherModal = document.querySelector('.modal.active:not(#applicationDocumentsModal)');
+ setPageModalScrollLocked(Boolean(otherModal));
+}
+
 function rotateBy(deg) {
  if (!cropper) return;
  applyDrawingEditorRotation(currentRotation + deg, true);
@@ -2038,7 +2168,7 @@ function resetDrawingEditor() {
  cropper.clear();
  cropper.reset();
  currentRotation = 0;
- document.getElementById('rotationInput').value = '0';
+ syncDrawingEditorRotationControls(0);
  resetDrawingEditorCropToFittedImage();
  requestAnimationFrame(() => {
   drawingEditorSuppressDirty = false;
@@ -2046,17 +2176,24 @@ function resetDrawingEditor() {
  });
 }
 
-document.getElementById('rotationInput').addEventListener('change', function() {
+rotationInput?.addEventListener('change', function() {
  if (!cropper) return;
  applyDrawingEditorRotation(parseFloat(this.value || '0'), true);
 });
 
-[agreementStatusModal, drawingEditorModal, drawingViewerModal].forEach((modal) => {
+rotationRange?.addEventListener('input', function() {
+ if (!cropper) return;
+ applyDrawingEditorRotation(parseFloat(this.value || '0'), true);
+});
+
+[agreementStatusModal, applicationDocumentsModal, drawingEditorModal, drawingViewerModal].forEach((modal) => {
  if (!modal) return;
  modal.addEventListener('click', (event) => {
   if (event.target === modal) {
    if (modal === agreementStatusModal) {
     closeAgreementStatusModal();
+   } else if (modal === applicationDocumentsModal) {
+    closeApplicationDocumentsModal();
    } else if (modal === drawingEditorModal) {
     closeDrawingEditor();
    } else if (modal === drawingViewerModal) {
@@ -2067,11 +2204,20 @@ document.getElementById('rotationInput').addEventListener('change', function() {
 });
 
 document.getElementById('openAgreementStatusModal')?.addEventListener('click', openAgreementStatusModal);
+document.querySelectorAll('[data-application-document-open]').forEach((button) => {
+ button.addEventListener('click', () => openApplicationDocumentsModal(button.dataset.applicationDocumentOpen || ''));
+});
+document.getElementById('applicationDocumentsModalClose')?.addEventListener('click', closeApplicationDocumentsModal);
+document.getElementById('applicationDocumentsModalConfirm')?.addEventListener('click', closeApplicationDocumentsModal);
 
 document.addEventListener('keydown', (event) => {
  if (event.key !== 'Escape') return;
  if (agreementStatusModal?.classList.contains('active')) {
   closeAgreementStatusModal();
+  return;
+ }
+ if (applicationDocumentsModal?.classList.contains('active')) {
+  closeApplicationDocumentsModal();
   return;
  }
  if (drawingEditorModal?.classList.contains('active')) {

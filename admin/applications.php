@@ -443,7 +443,7 @@ if (!empty($_SESSION['error_message'])) {
                     <option value="">Все статусы</option>
                     <option value="revision" <?= $status === 'revision' ? 'selected' : '' ?>>Требует исправлений</option>
                     <option value="corrected" <?= $status === 'corrected' ? 'selected' : '' ?>>Исправлена, и отправлена на проверку</option>
-                    <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>В работе</option>
+                    <option value="submitted" <?= $status === 'submitted' ? 'selected' : '' ?>>Новые заявки</option>
                     <option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Принятые</option>
                     <option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Отклонённые</option>
                     <option value="cancelled" <?= $status === 'cancelled' ? 'selected' : '' ?>>Отменённые</option>
@@ -550,7 +550,7 @@ if (!empty($_SESSION['error_message'])) {
     </a>
     <?php else: ?>
     <a href="<?= e($buildApplicationsUrl(['status' => 'submitted', 'queue' => null])) ?>" class="stat-pill <?= $status === 'submitted' ? 'stat-pill--active' : '' ?>">
-        В работе <span class="stat-pill__count"><?= $statCounts['submitted'] ?></span>
+        Новые заявки <span class="stat-pill__count"><?= $statCounts['submitted'] ?></span>
     </a>
     <?php endif; ?>
     <a href="<?= e($buildApplicationsUrl(['status' => 'revision', 'queue' => null])) ?>" class="stat-pill <?= $status === 'revision' ? 'stat-pill--active' : '' ?>">
@@ -596,7 +596,12 @@ if (!empty($_SESSION['error_message'])) {
                     $isCorrected = (string) ($statusMeta['status_code'] ?? '') === 'corrected';
                     $isArchivedContest = (int) ($app['contest_is_archived'] ?? 0) === 1;
                 ?>
-                <article class="admin-list-card admin-list-card--application <?= $isCorrected ? 'admin-list-card--corrected' : '' ?> <?= $isArchivedContest ? 'admin-list-card--archived' : '' ?>">
+                <article
+                    class="admin-list-card admin-list-card--application <?= $isCorrected ? 'admin-list-card--corrected' : '' ?> <?= $isArchivedContest ? 'admin-list-card--archived' : '' ?>"
+                    data-application-card-url="<?= e($buildApplicationViewUrl((int) $app['id'])) ?>"
+                    tabindex="0"
+                    role="link"
+                    aria-label="Открыть заявку #<?= (int) $app['id'] ?>">
                     <div class="admin-list-card__accent <?= e((string) ($statusMeta['badge_class'] ?? 'badge--secondary')) ?>"></div>
                     <div class="admin-list-card__header">
                         <div class="admin-list-card__title-wrap">
@@ -849,6 +854,41 @@ if (!empty($_SESSION['error_message'])) {
         checkbox.addEventListener('change', updateBulkSelectionState);
     });
     updateBulkSelectionState();
+})();
+
+(() => {
+    document.querySelectorAll('[data-application-card-url]').forEach((card) => {
+        const openCard = () => {
+            const url = card.dataset.applicationCardUrl || '';
+            if (url !== '') {
+                window.location.href = url;
+            }
+        };
+
+        card.addEventListener('click', (event) => {
+            if (event.target.closest('a, button, input, select, textarea, label')) {
+                return;
+            }
+            if (document.getElementById('bulkActionsBar')?.style.display === 'flex') {
+                return;
+            }
+            openCard();
+        });
+
+        card.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') {
+                return;
+            }
+            if (event.target.closest('a, button, input, select, textarea, label')) {
+                return;
+            }
+            if (document.getElementById('bulkActionsBar')?.style.display === 'flex') {
+                return;
+            }
+            event.preventDefault();
+            openCard();
+        });
+    });
 })();
 
 (() => {

@@ -474,8 +474,11 @@ require_once __DIR__ . '/includes/header.php';
                     $isArchivedContest = (int) ($participant['contest_is_archived'] ?? 0) === 1;
                     $participantAge = (int) ($participant['age'] ?? 0);
                     $participantAgeCategory = getParticipantAgeCategoryLabel($participantAge);
-                    $drawingUrl = !empty($participant['drawing_file'])
+                    $drawingPreviewUrl = !empty($participant['drawing_file'])
                         ? getParticipantDrawingPreviewWebPath((string) ($participant['applicant_email'] ?? ''), (string) $participant['drawing_file'])
+                        : '';
+                    $drawingUrl = !empty($participant['drawing_file'])
+                        ? getParticipantDrawingWebPath((string) ($participant['applicant_email'] ?? ''), (string) $participant['drawing_file'])
                         : '';
                     $hasGeneratedDiploma = trim((string) ($participant['diploma_file_path'] ?? '')) !== '';
                     $isWorkAccepted = $rawWorkStatus === 'accepted';
@@ -486,8 +489,18 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="admin-list-card__main">
                         <div class="admin-list-card__header">
                             <div class="admin-list-card__title-wrap" style="display:flex; gap:12px; align-items:center;">
-                                <?php if ($drawingUrl !== ''): ?>
-                                    <img src="<?= htmlspecialchars($drawingUrl) ?>" alt="Рисунок участника" loading="lazy" class="admin-list-card__thumb">
+                                <?php if ($drawingPreviewUrl !== ''): ?>
+                                    <button
+                                        type="button"
+                                        class="admin-list-card__thumb-button js-open-drawing-viewer"
+                                        data-image-src="<?= e($drawingUrl !== '' ? $drawingUrl : $drawingPreviewUrl) ?>"
+                                        data-image-alt="Рисунок участника <?= e($participant['fio'] ?: '') ?>"
+                                        data-application-url="/admin/application/<?= (int) ($participant['application_id'] ?? 0) ?>"
+                                        data-application-number="<?= (int) ($participant['application_id'] ?? 0) ?>"
+                                        aria-label="Открыть рисунок участника"
+                                    >
+                                        <img src="<?= e($drawingPreviewUrl) ?>" alt="Рисунок участника" loading="lazy" class="admin-list-card__thumb">
+                                    </button>
                                 <?php else: ?>
                                     <div class="admin-list-card__thumb admin-list-card__thumb--empty"><i class="fas fa-image"></i></div>
                                 <?php endif; ?>
@@ -573,6 +586,36 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
+<div class="modal modal--image-preview" id="drawingViewerModal" aria-hidden="true">
+    <div class="modal__content modal__content--image-preview">
+        <div class="modal__header">
+            <h3 class="modal__title">Просмотр рисунка</h3>
+            <a href="/admin/applications" class="btn btn--secondary btn--sm drawing-viewer-application-link" id="drawingViewerApplicationLink">
+                <i class="fas fa-external-link-alt"></i> Заявка
+            </a>
+            <button type="button" class="modal__close" id="drawingViewerCloseBtn" aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="modal__body modal__body--image-preview">
+            <div class="drawing-viewer-toolbar">
+                <div class="drawing-viewer-toolbar__actions">
+                    <button type="button" class="btn btn--secondary btn--sm" id="drawingViewerZoomOutBtn" aria-label="Уменьшить изображение"><i class="fas fa-search-minus"></i> -</button>
+                    <button type="button" class="btn btn--secondary btn--sm" id="drawingViewerZoomInBtn" aria-label="Увеличить изображение"><i class="fas fa-search-plus"></i> +</button>
+                    <button type="button" class="btn btn--ghost btn--sm" id="drawingViewerZoomResetBtn">Сброс</button>
+                </div>
+                <div class="drawing-viewer-toolbar__zoom" id="drawingViewerZoomValue">x1.0</div>
+            </div>
+            <div class="drawing-viewer-stage modal__image-stage" id="drawingViewerStage">
+                <div class="drawing-viewer-stage__canvas" id="drawingViewerCanvas">
+                    <img id="drawingViewerImage" src="" alt="Рисунок участника" class="modal__preview-image drawing-viewer-stage__image">
+                </div>
+            </div>
+        </div>
+        <div class="modal__footer">
+            <button type="button" class="btn btn--secondary" id="drawingViewerFooterCloseBtn">Закрыть</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal" id="participantsDocxModal" aria-hidden="true">
     <div class="modal__content" style="max-width:720px;">
         <div class="modal__header">
@@ -627,6 +670,265 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <script>
+(() => {
+    const modal = document.getElementById('drawingViewerModal');
+    const stage = document.getElementById('drawingViewerStage');
+    const canvas = document.getElementById('drawingViewerCanvas');
+    const image = document.getElementById('drawingViewerImage');
+    const zoomValue = document.getElementById('drawingViewerZoomValue');
+    const zoomInBtn = document.getElementById('drawingViewerZoomInBtn');
+    const zoomOutBtn = document.getElementById('drawingViewerZoomOutBtn');
+    const zoomResetBtn = document.getElementById('drawingViewerZoomResetBtn');
+    const applicationLink = document.getElementById('drawingViewerApplicationLink');
+    const closeButtons = [
+        document.getElementById('drawingViewerCloseBtn'),
+        document.getElementById('drawingViewerFooterCloseBtn'),
+    ];
+    if (!modal || !stage || !image) return;
+
+    const minScale = 1;
+    const maxScale = 3;
+    const scaleStep = 0.5;
+    const stagePadding = 32;
+    let scale = minScale;
+    let dragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let panX = 0;
+    let panY = 0;
+    let dragStartPanX = 0;
+    let dragStartPanY = 0;
+    let baseWidth = 0;
+    let baseHeight = 0;
+
+    const setPageModalScrollLocked = (locked) => {
+        document.body.style.overflow = locked ? 'hidden' : '';
+    };
+
+    const clampScale = (value) => Math.min(maxScale, Math.max(minScale, Math.round(value * 10) / 10));
+    const getScaledSize = (currentScale = scale) => ({
+        width: Math.max(1, Math.round(baseWidth * currentScale)),
+        height: Math.max(1, Math.round(baseHeight * currentScale)),
+    });
+
+    const clampPan = () => {
+        const size = getScaledSize();
+        const maxPanX = Math.max(0, (size.width - stage.clientWidth) / 2);
+        const maxPanY = Math.max(0, (size.height - stage.clientHeight) / 2);
+        panX = Math.min(maxPanX, Math.max(-maxPanX, panX));
+        panY = Math.min(maxPanY, Math.max(-maxPanY, panY));
+    };
+
+    const getImageBounds = (currentScale = scale, currentPanX = panX, currentPanY = panY) => {
+        const size = getScaledSize(currentScale);
+        return {
+            left: ((stage.clientWidth - size.width) / 2) + currentPanX,
+            top: ((stage.clientHeight - size.height) / 2) + currentPanY,
+            width: size.width,
+            height: size.height,
+        };
+    };
+
+    const render = () => {
+        if (zoomValue) zoomValue.textContent = `x${scale.toFixed(1)}`;
+        if (zoomInBtn) zoomInBtn.disabled = scale >= maxScale;
+        if (zoomOutBtn) zoomOutBtn.disabled = scale <= minScale;
+        if (zoomResetBtn) zoomResetBtn.disabled = scale === minScale;
+        if (baseWidth <= 0 || baseHeight <= 0) return;
+        clampPan();
+        const bounds = getImageBounds();
+        image.style.width = `${bounds.width}px`;
+        image.style.height = `${bounds.height}px`;
+        image.style.left = `${bounds.left}px`;
+        image.style.top = `${bounds.top}px`;
+        image.classList.toggle('is-zoomed', scale > minScale);
+        stage.classList.toggle('is-draggable', scale > minScale);
+        if (canvas) {
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
+        }
+    };
+
+    const measureBaseSize = () => {
+        const naturalWidth = Number(image.naturalWidth || 0);
+        const naturalHeight = Number(image.naturalHeight || 0);
+        if (naturalWidth <= 0 || naturalHeight <= 0) return;
+
+        const availableWidth = Math.max(1, stage.clientWidth - stagePadding);
+        const availableHeight = Math.max(1, stage.clientHeight - stagePadding);
+        const fitRatio = Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight, 1);
+        baseWidth = Math.max(1, Math.round(naturalWidth * fitRatio));
+        baseHeight = Math.max(1, Math.round(naturalHeight * fitRatio));
+        render();
+    };
+
+    const getFocus = (point = null) => {
+        const stageRect = stage.getBoundingClientRect();
+        const clientX = point && Number.isFinite(point.clientX) ? point.clientX : null;
+        const clientY = point && Number.isFinite(point.clientY) ? point.clientY : null;
+        const inside = Number.isFinite(clientX)
+            && Number.isFinite(clientY)
+            && clientX >= stageRect.left
+            && clientX <= stageRect.right
+            && clientY >= stageRect.top
+            && clientY <= stageRect.bottom;
+
+        if (!inside) {
+            return { stageX: stage.clientWidth / 2, stageY: stage.clientHeight / 2, ratioX: 0.5, ratioY: 0.5 };
+        }
+
+        const bounds = getImageBounds();
+        const stageX = clientX - stageRect.left;
+        const stageY = clientY - stageRect.top;
+        return {
+            stageX,
+            stageY,
+            ratioX: bounds.width > 0 ? (stageX - bounds.left) / bounds.width : 0.5,
+            ratioY: bounds.height > 0 ? (stageY - bounds.top) / bounds.height : 0.5,
+        };
+    };
+
+    const stopDrag = () => {
+        if (!dragging && !stage.classList.contains('is-dragging')) return;
+        dragging = false;
+        stage.classList.remove('is-dragging');
+        document.body.style.userSelect = '';
+    };
+
+    const setScale = (nextScale, point = null, preserveFocus = true) => {
+        const focus = getFocus(point);
+        scale = clampScale(nextScale);
+        if (scale === minScale) {
+            stopDrag();
+            panX = 0;
+            panY = 0;
+        } else if (preserveFocus && focus) {
+            const nextBounds = getImageBounds(scale, panX, panY);
+            const targetLeft = focus.stageX - (focus.ratioX * nextBounds.width);
+            const targetTop = focus.stageY - (focus.ratioY * nextBounds.height);
+            panX = targetLeft + (nextBounds.width / 2) - (stage.clientWidth / 2);
+            panY = targetTop + (nextBounds.height / 2) - (stage.clientHeight / 2);
+        }
+        render();
+    };
+
+    const resetScale = () => {
+        stopDrag();
+        panX = 0;
+        panY = 0;
+        setScale(minScale, null, false);
+    };
+
+    const open = (imageSrc, imageAlt, applicationUrl = '', applicationNumber = '') => {
+        if (!imageSrc) return;
+        panX = 0;
+        panY = 0;
+        baseWidth = 0;
+        baseHeight = 0;
+        scale = minScale;
+        image.style.width = '';
+        image.style.height = '';
+        image.style.left = '';
+        image.style.top = '';
+        image.classList.remove('is-zoomed');
+        stage.classList.remove('is-draggable', 'is-dragging');
+        render();
+        modal.classList.add('active');
+        modal.setAttribute('aria-hidden', 'false');
+        setPageModalScrollLocked(true);
+        image.alt = imageAlt || 'Рисунок участника';
+        image.src = imageSrc;
+        if (applicationLink) {
+            applicationLink.href = applicationUrl || '/admin/applications';
+            applicationLink.innerHTML = `<i class="fas fa-external-link-alt"></i> Заявка #${applicationNumber || ''}`.trim();
+        }
+    };
+
+    const close = () => {
+        modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+        image.src = '';
+        image.alt = 'Рисунок участника';
+        panX = 0;
+        panY = 0;
+        baseWidth = 0;
+        baseHeight = 0;
+        image.style.width = '';
+        image.style.height = '';
+        image.style.left = '';
+        image.style.top = '';
+        image.classList.remove('is-zoomed');
+        stage.classList.remove('is-draggable', 'is-dragging');
+        resetScale();
+        setPageModalScrollLocked(Boolean(document.querySelector('.modal.active:not(#drawingViewerModal)')));
+    };
+
+    document.querySelectorAll('.js-open-drawing-viewer').forEach((button) => {
+        button.addEventListener('click', () => {
+            open(
+                button.dataset.imageSrc || '',
+                button.dataset.imageAlt || '',
+                button.dataset.applicationUrl || '',
+                button.dataset.applicationNumber || ''
+            );
+        });
+    });
+
+    zoomInBtn?.addEventListener('click', () => setScale(scale + scaleStep));
+    zoomOutBtn?.addEventListener('click', () => setScale(scale - scaleStep));
+    zoomResetBtn?.addEventListener('click', resetScale);
+    closeButtons.forEach((button) => button?.addEventListener('click', close));
+
+    stage.addEventListener('wheel', (event) => {
+        if (!modal.classList.contains('active')) return;
+        event.preventDefault();
+        setScale(scale + (event.deltaY < 0 ? scaleStep : -scaleStep), { clientX: event.clientX, clientY: event.clientY });
+    }, { passive: false });
+
+    stage.addEventListener('mousedown', (event) => {
+        if (scale <= minScale) return;
+        dragging = true;
+        dragStartX = event.clientX;
+        dragStartY = event.clientY;
+        dragStartPanX = panX;
+        dragStartPanY = panY;
+        stage.classList.add('is-dragging');
+        document.body.style.userSelect = 'none';
+        event.preventDefault();
+    });
+
+    image.setAttribute('draggable', 'false');
+    image.addEventListener('load', () => {
+        scale = minScale;
+        panX = 0;
+        panY = 0;
+        measureBaseSize();
+    });
+
+    window.addEventListener('mousemove', (event) => {
+        if (!dragging) return;
+        panX = dragStartPanX + (event.clientX - dragStartX);
+        panY = dragStartPanY + (event.clientY - dragStartY);
+        render();
+    });
+    window.addEventListener('mouseup', stopDrag);
+    window.addEventListener('mouseleave', stopDrag);
+    window.addEventListener('resize', () => {
+        if (!modal.classList.contains('active') || !image.src) return;
+        measureBaseSize();
+        render();
+    });
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) close();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && modal.classList.contains('active')) close();
+    });
+
+    render();
+})();
+
 (() => {
     const modal = document.getElementById('participantsDocxModal');
     const openBtn = document.getElementById('exportParticipantsDocxBtn');

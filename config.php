@@ -1018,6 +1018,7 @@ function admin_live_search_attrs(array $config): string
         'primary_template' => 'data-primary-template',
         'secondary_template' => 'data-secondary-template',
         'value_template' => 'data-value-template',
+        'select_url_field' => 'data-select-url-field',
         'empty_text' => 'data-empty-text',
         'limit' => 'data-limit',
         'min_length' => 'data-min-length',

@@ -37,7 +37,7 @@ try {
  $searchSql = implode("\n     OR ", $searchConditions);
 
  $stmt = $pdo->prepare("
- SELECT id, name, surname, email 
+ SELECT id, name, surname, patronymic, email
  FROM users 
  WHERE (
      {$searchSql}
@@ -52,6 +52,10 @@ try {
  $params[] = $idQuery;
  $stmt->execute($params);
  $users = $stmt->fetchAll();
+ foreach ($users as &$user) {
+     $user['profile_url'] = '/admin/user/' . (int) ($user['id'] ?? 0);
+ }
+ unset($user);
 
  echo json_encode($users, JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {
