@@ -378,6 +378,7 @@ generateCSRFToken();
 <div class="form-group profile-email-password-group" id="profileEmailPasswordGroup" style="display:none;">
 <label class="form-label">Текущий пароль для смены email</label>
 <input type="password" id="profile-current-password-for-email" name="current_password_for_email" class="form-input" placeholder="Введите текущий пароль">
+</div>
 
 <div id="email-verification-block" class="profile-email-verification">
     <?php if ($emailVerified): ?>
@@ -395,7 +396,6 @@ generateCSRFToken();
     <?php endif; ?>
 </div>
 <div id="email-verification-message" class="form-hint" style="display:none; margin-top:8px; color:#166534;"></div>
-</div>
 </section>
 
 <section class="profile-section profile-section--card">
