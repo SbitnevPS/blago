@@ -38,6 +38,10 @@ $requiredFieldMeta = [
 ];
 
 $isSiteRegisteredAccount = empty($user['vk_id']);
+$isVkRequiredFlow = (string) ($_GET['required'] ?? '') === '1';
+$verificationLetterAlreadySent = $isVkRequiredFlow
+    && !$emailVerified
+    && (string) ($user['email_verification_sent_at'] ?? '') !== '';
 $userTypeOptions = getUserTypeOptions();
 
 check_csrf();
@@ -338,9 +342,15 @@ generateCSRFToken();
 <input type="email" id="profile-email" name="email" class="form-input<?= $emailVerified ? ' is-verified' : '' ?>" data-required-key="email" value="<?= htmlspecialchars($user['email'] ?? '') ?>" required>
  <?php if (!empty($user['vk_id'])): ?>
 <div class="form-hint" style="font-size:12px; color: var(--color-text-tertiary); margin-top:4px;">
-Вы авторизованы через VK. Для смены email введите текущий пароль ниже.
+Вы авторизованы через VK. Если VK передал адрес почты, подтверждать его не нужно. Если хотите сменить адрес — введите новый email и подтвердите его.
 </div>
  <?php endif; ?>
+<?php if ($verificationLetterAlreadySent): ?>
+<div class="form-hint" style="margin-top:8px; color:#1d4ed8;">
+Письмо с подтверждением адреса уже у вас на почте, проверьте входящие письма или папку «Спам».
+<button type="button" id="resend-verification-link" style="margin-left:6px; border:0; background:none; color:#2563eb; text-decoration:underline; cursor:pointer; padding:0;">Отправить повторно</button>
+</div>
+<?php endif; ?>
 <div id="profile-email-verified-hint" class="form-hint profile-email-verified-hint<?= $emailVerified ? ' is-visible' : '' ?>">
 Адрес электронной почты подтверждён.
 </div>
@@ -416,10 +426,10 @@ generateCSRFToken();
 <div class="profile-security-card">
 <div class="profile-security-card__copy">
 <strong>Изменение пароля</strong>
-<span>Откроем отдельное окно, где можно безопасно задать новый пароль.</span>
+<span><?= empty($user['password']) ? 'У вас ещё нет пароля. Задайте его, чтобы иметь возможность менять email и входить без VK.' : 'Откроем отдельное окно, где можно безопасно задать новый пароль.' ?></span>
 </div>
 <button type="button" class="btn btn--secondary" id="openPasswordModalButton">
-<i class="fas fa-lock"></i> Изменить пароль
+<i class="fas fa-lock"></i> <?= empty($user['password']) ? 'Задать пароль' : 'Изменить пароль' ?>
 </button>
 </div>
 </section>
@@ -953,6 +963,11 @@ generateCSRFToken();
         });
     }
     bindVerificationButton();
+    const resendVerificationLink = document.getElementById('resend-verification-link');
+    resendVerificationLink?.addEventListener('click', function () {
+        const verificationButton = document.getElementById('send-verification-btn');
+        verificationButton?.click();
+    });
 
     if (!emailVerified) {
         setInterval(checkVerificationStatus, 8000);

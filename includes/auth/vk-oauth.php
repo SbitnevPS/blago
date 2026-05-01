@@ -804,8 +804,8 @@ function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '',
             $params[] = $email;
 
             if ($email !== (string) ($existingUser['email'] ?? '')) {
-                $updates[] = 'email_verified = 0';
-                $updates[] = 'email_verified_at = NULL';
+                $updates[] = 'email_verified = 1';
+                $updates[] = 'email_verified_at = NOW()';
                 $updates[] = 'email_verification_token = NULL';
                 $updates[] = 'email_verification_sent_at = NULL';
             }
@@ -842,8 +842,9 @@ function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '',
     ], $attemptId);
 
     $insertStmt = $pdo->prepare(
-        'INSERT INTO users (vk_id, vk_access_token, name, surname, patronymic, avatar_url, email) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO users (vk_id, vk_access_token, name, surname, patronymic, avatar_url, email, email_verified, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
+    $emailVerified = $email !== '' ? 1 : 0;
     $insertStmt->execute([
         $vkUserId,
         $accessToken,
@@ -852,6 +853,8 @@ function vk_save_user_profile(PDO $pdo, array $mapped, string $accessToken = '',
         $patronymic,
         vk_is_valid_avatar_url($avatarUrl) ? $avatarUrl : '',
         $email,
+        $emailVerified,
+        $emailVerified ? date('Y-m-d H:i:s') : null,
     ]);
     $newUserId = (int) $pdo->lastInsertId();
     $wasCreated = true;
