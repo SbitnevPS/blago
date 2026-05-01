@@ -454,8 +454,10 @@ generateCSRFToken();
 </section>
 
 <div class="profile-delete-action">
-<a href="/logout" class="profile-delete-action__trigger" style="margin-right:12px;">Выйти из учётной записи</a>
-<button type="button" class="profile-delete-action__trigger" id="openDeleteProfileModalButton">Удалить профиль</button>
+<button type="button" class="btn btn--secondary" id="logoutProfileButton" style="margin-right:12px;">
+<i class="fas fa-sign-out-alt"></i> Выйти из учётной записи
+</button>
+<a href="#deleteProfileModal" class="profile-delete-action__trigger" id="openDeleteProfileModalButton">Удалить профиль</a>
 </div>
 </form>
 </div>
@@ -655,6 +657,7 @@ generateCSRFToken();
     const shouldShowProfileSavedModal = <?= $showProfileSavedModal ? 'true' : 'false' ?>;
     const shouldShowPasswordChangedModal = <?= $showPasswordChangedModal ? 'true' : 'false' ?>;
     const openDeleteProfileModalButton = document.getElementById('openDeleteProfileModalButton');
+    const logoutProfileButton = document.getElementById('logoutProfileButton');
     const deleteProfileModal = document.getElementById('deleteProfileModal');
     const deleteProfileModalClose = document.getElementById('deleteProfileModalClose');
     const deleteProfileModalCancel = document.getElementById('deleteProfileModalCancel');
@@ -907,7 +910,8 @@ generateCSRFToken();
 
     function renderVerifiedState() {
         if (!blockEl) return;
-        blockEl.innerHTML = '<div id="email-verified-status" class="profile-email-verification__status is-verified"><i class="fas fa-check-circle"></i><span>Адрес подтверждён</span></div>';
+        blockEl.innerHTML = '<div id="email-verified-status" class="profile-email-verification__status is-verified"><i class="fas fa-check-circle"></i><span>Адрес почты подтверждён.</span></div>';
+        showMessage('Адрес почты подтверждён.');
         emailInput?.classList.add('is-verified');
         emailVerifiedHint?.classList.add('is-visible');
         const warning = document.querySelector('.alert[style*="#fff7ed"]');
@@ -1203,7 +1207,12 @@ generateCSRFToken();
     });
 
 
-    openDeleteProfileModalButton?.addEventListener('click', () => {
+    logoutProfileButton?.addEventListener('click', () => {
+        window.location.href = '/logout';
+    });
+
+    openDeleteProfileModalButton?.addEventListener('click', (event) => {
+        event.preventDefault();
         openModal(deleteProfileModal);
         window.setTimeout(() => deleteProfileCurrentPassword?.focus(), 60);
     });
