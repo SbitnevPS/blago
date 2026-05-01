@@ -13,6 +13,8 @@ $isSingleContest = count($contests) === 1;
 $settings = getSystemSettings();
 $homepageHeroImage = trim((string)($settings['homepage_hero_image'] ?? ''));
 $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurlencode($homepageHeroImage) : '/public/contest-hero-placeholder.svg';
+$showProfileDeletedModal = !empty($_SESSION['show_profile_deleted_modal']);
+unset($_SESSION['show_profile_deleted_modal']);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -171,6 +173,44 @@ $homepageHeroSrc = $homepageHeroImage !== '' ? '/uploads/site-banners/' . rawurl
 </section>
 </main>
 
+
+<div class="modal<?= $showProfileDeletedModal ? ' active' : '' ?>" id="profileDeletedModal" aria-hidden="<?= $showProfileDeletedModal ? 'false' : 'true' ?>">
+    <div class="modal__content profile-modal__content">
+        <div class="modal__header">
+            <h3 class="modal__title">Профиль удалён</h3>
+            <button type="button" class="modal__close" id="profileDeletedModalClose" aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="modal__body">
+            <p>Ваш профиль успешно удалён.</p>
+        </div>
+        <div class="modal__footer">
+            <button type="button" class="btn btn--primary" id="profileDeletedModalConfirm">Закрыть</button>
+        </div>
+    </div>
+</div>
+
 <?php include dirname(__DIR__) . '/partials/site-footer.php'; ?>
+<script>
+(function () {
+    const modal = document.getElementById('profileDeletedModal');
+    const closeButton = document.getElementById('profileDeletedModalClose');
+    const confirmButton = document.getElementById('profileDeletedModalConfirm');
+
+    function closeModal() {
+        if (!modal) return;
+        modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+    }
+
+    closeButton?.addEventListener('click', closeModal);
+    confirmButton?.addEventListener('click', closeModal);
+    modal?.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeModal();
+        }
+    });
+})();
+</script>
+
 </body>
 </html>

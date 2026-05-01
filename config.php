@@ -264,6 +264,38 @@ function ensureContestBlacklistSchema(PDO $pdo): void
 
 ensureContestBlacklistSchema($pdo);
 
+function ensureUserLegalConsentsSchema(PDO $pdo): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    $requiredColumns = [
+        'agree_personal_data' => "ADD COLUMN agree_personal_data TINYINT(1) NOT NULL DEFAULT 0 AFTER user_type",
+        'agree_personal_data_at' => "ADD COLUMN agree_personal_data_at DATETIME NULL AFTER agree_personal_data",
+        'agree_terms' => "ADD COLUMN agree_terms TINYINT(1) NOT NULL DEFAULT 0 AFTER agree_personal_data_at",
+        'agree_terms_at' => "ADD COLUMN agree_terms_at DATETIME NULL AFTER agree_terms",
+    ];
+
+    try {
+        $stmt = $pdo->prepare("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME IN ('agree_personal_data', 'agree_personal_data_at', 'agree_terms', 'agree_terms_at')");
+        $stmt->execute();
+        $existing = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+        foreach ($requiredColumns as $column => $definition) {
+            if (!in_array($column, $existing, true)) {
+                $pdo->exec("ALTER TABLE users {$definition}");
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('[SCHEMA] User legal consents schema check failed: ' . $e->getMessage());
+    }
+}
+
+ensureUserLegalConsentsSchema($pdo);
+
 function ensureApplicationStatusSchema(PDO $pdo): void
 {
     static $checked = false;
