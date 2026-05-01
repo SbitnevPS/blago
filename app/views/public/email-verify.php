@@ -19,7 +19,7 @@ if ($userId > 0) {
     $user = $stmt->fetch();
 
     if ($user) {
-        $userEmail = trim((string) ($user['email'] ?? ''));
+        $userEmail = trim((string) (($user['pending_email'] ?? '') !== '' ? $user['pending_email'] : ($user['email'] ?? '')));
         if ((int) ($user['email_verified'] ?? 0) === 1) {
             $status = 'already';
             $title = 'Адрес уже был подтверждён ранее';
@@ -46,8 +46,9 @@ if ($userId > 0) {
                 $statusLabel = 'Ссылка устарела';
                 $statusBadge = 'Требуется повторная отправка';
             } else {
-                $pdo->prepare('UPDATE users SET email_verified = 1, email_verified_at = NOW(), email_verification_token = NULL, email_verification_sent_at = NULL, updated_at = NOW() WHERE id = ?')
-                    ->execute([(int) $user['id']]);
+                $newEmail = trim((string) ($user['pending_email'] ?? ''));
+                $pdo->prepare("UPDATE users SET email = COALESCE(NULLIF(?, ''), email), pending_email = NULL, pending_email_requested_at = NULL, email_verified = 1, email_verified_at = NOW(), email_verification_token = NULL, email_verification_sent_at = NULL, updated_at = NOW() WHERE id = ?")
+                    ->execute([$newEmail, (int) $user['id']]);
                 $status = 'success';
                 $title = 'Адрес электронной почты успешно подтверждён';
                 $message = 'Теперь вы можете переходить к конкурсам и пользоваться всеми возможностями личного кабинета.';

@@ -20,7 +20,7 @@ if (!is_array($user)) {
 }
 
 $postedEmail = trim((string) ($_POST['email'] ?? ''));
-if (empty($user['email']) && $postedEmail !== '') {
+if ($postedEmail !== '' && strcasecmp($postedEmail, (string) ($user['email'] ?? '')) !== 0) {
     if (!filter_var($postedEmail, FILTER_VALIDATE_EMAIL)) {
         jsonResponse(['success' => false, 'message' => 'Введите корректный email'], 422);
     }
@@ -31,12 +31,12 @@ if (empty($user['email']) && $postedEmail !== '') {
         jsonResponse(['success' => false, 'message' => 'Этот email уже используется другим пользователем'], 422);
     }
 
-    $stmt = $pdo->prepare('UPDATE users SET email = ?, email_verified = 0, email_verified_at = NULL, email_verification_token = NULL, email_verification_sent_at = NULL, updated_at = NOW() WHERE id = ?');
+    $stmt = $pdo->prepare('UPDATE users SET pending_email = ?, pending_email_requested_at = NOW(), email_verification_token = NULL, email_verification_sent_at = NULL, updated_at = NOW() WHERE id = ?');
     $stmt->execute([$postedEmail, (int) $user['id']]);
     $user = getCurrentUser();
 }
 
-if (!is_array($user) || empty($user['email'])) {
+if (!is_array($user) || (empty($user['email']) && empty($user['pending_email']))) {
     jsonResponse(['success' => false, 'message' => 'Укажите email в профиле'], 422);
 }
 
