@@ -114,11 +114,13 @@ overflow-x: hidden;
  flex-wrap: wrap;
  margin-bottom:24px;
  position: sticky;
- top: 0;
- z-index: 80;
+ top: max(0px, env(safe-area-inset-top));
+ z-index: 220;
  background: rgba(248, 250, 252, 0.96);
  backdrop-filter: blur(6px);
  padding: 10px 0;
+ border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+ box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
  }
         
  .admin-header__title {
