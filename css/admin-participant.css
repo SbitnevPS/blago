@@ -1,7 +1,7 @@
 .admin-header {
   position: sticky;
-  top: 0;
-  z-index: 70;
+  top: max(0px, env(safe-area-inset-top));
+  z-index: 230;
   background: rgba(248, 250, 252, 0.92);
   backdrop-filter: blur(14px);
   border-radius: 0 0 18px 18px;
