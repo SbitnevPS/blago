@@ -19,6 +19,7 @@ $participantQuery = trim((string) ($_GET['participant_query'] ?? ''));
 $participantId = (int) ($_GET['participant_id'] ?? 0);
 $ageCategory = trim((string) ($_GET['age_category'] ?? ''));
 $vkPublicationFilter = trim((string) ($_GET['vk_publication'] ?? ''));
+$workStatus = trim((string) ($_GET['work_status'] ?? ''));
 $viewsSort = trim((string) ($_GET['views_sort'] ?? ''));
 $showArchived = (int) ($_GET['show_archived'] ?? 0) === 1;
 $sameParticipantsThreshold = (int) ($_GET['same_participants'] ?? 0);
@@ -72,6 +73,17 @@ $vkPublicationFilters = [
 ];
 if (!array_key_exists($vkPublicationFilter, $vkPublicationFilters)) {
     $vkPublicationFilter = '';
+}
+
+$workStatusFilters = [
+    '' => 'Все статусы',
+    'pending' => 'На рассмотрении',
+    'accepted' => 'Рисунок принят',
+    'rejected' => 'Рисунок отклонён',
+    'reviewed_non_competitive' => 'Вне конкурса',
+];
+if (!array_key_exists($workStatus, $workStatusFilters)) {
+    $workStatus = '';
 }
 
 $viewsSortOptions = [
@@ -281,6 +293,18 @@ if ($vkPublicationFilter === 'published') {
     $duplicateWhere[] = 'w2.vk_published_at IS NULL';
 }
 
+if ($workStatus !== '') {
+    if ($workStatus === 'reviewed_non_competitive') {
+        $where[] = "COALESCE(w.status, 'pending') IN ('reviewed', 'reviewed_non_competitive')";
+        $duplicateWhere[] = "COALESCE(w2.status, 'pending') IN ('reviewed', 'reviewed_non_competitive')";
+    } else {
+        $where[] = "COALESCE(w.status, 'pending') = ?";
+        $params[] = $workStatus;
+        $duplicateWhere[] = "COALESCE(w2.status, 'pending') = ?";
+        $duplicateParams[] = $workStatus;
+    }
+}
+
 $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 $duplicateWhereClause = 'WHERE ' . implode(' AND ', $duplicateWhere);
 $duplicateJoin = '';
@@ -292,13 +316,14 @@ if ($sameParticipantsThreshold > 0) {
     $duplicateParams[] = $sameParticipantsThreshold;
 }
 
-$buildParticipantsUrl = static function (array $overrides = []) use ($contest_id, $participantQuery, $participantId, $ageCategory, $vkPublicationFilter, $viewsSort, $sameParticipantsThreshold, $showArchived): string {
+$buildParticipantsUrl = static function (array $overrides = []) use ($contest_id, $participantQuery, $participantId, $ageCategory, $vkPublicationFilter, $workStatus, $viewsSort, $sameParticipantsThreshold, $showArchived): string {
     $query = [
         'contest_id' => $contest_id !== '' ? (string) $contest_id : null,
         'participant_query' => $participantQuery !== '' ? $participantQuery : null,
         'participant_id' => $participantId > 0 ? $participantId : null,
         'age_category' => $ageCategory !== '' ? $ageCategory : null,
         'vk_publication' => $vkPublicationFilter !== '' ? $vkPublicationFilter : null,
+        'work_status' => $workStatus !== '' ? $workStatus : null,
         'views_sort' => $viewsSort !== '' ? $viewsSort : null,
         'same_participants' => $sameParticipantsThreshold > 0 ? (string) $sameParticipantsThreshold : null,
         'show_archived' => $showArchived ? '1' : null,
@@ -412,6 +437,14 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
+            <div style="min-width: 220px;">
+                <label class="form-label">Статус рисунка</label>
+                <select name="work_status" class="form-select">
+                    <?php foreach ($workStatusFilters as $statusValue => $statusLabel): ?>
+                        <option value="<?= e($statusValue) ?>" <?= $workStatus === $statusValue ? 'selected' : '' ?>><?= e($statusLabel) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
             <?php if ($hasParticipantViewsColumn): ?>
                 <div style="min-width: 260px;">
                     <label class="form-label">Сортировка по просмотрам</label>
@@ -422,7 +455,7 @@ require_once __DIR__ . '/includes/header.php';
                     </select>
                 </div>
             <?php endif; ?>
-            <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0 || $ageCategory !== '' || $vkPublicationFilter !== '' || $viewsSort !== '' || $sameParticipantsThreshold > 0 || $showArchived): ?>
+            <?php if ($contest_id !== '' || $participantQuery !== '' || $participantId > 0 || $ageCategory !== '' || $vkPublicationFilter !== '' || $workStatus !== '' || $viewsSort !== '' || $sameParticipantsThreshold > 0 || $showArchived): ?>
                 <a href="/admin/participants" class="btn btn--ghost">Сбросить</a>
             <?php endif; ?>
         </form>
@@ -448,6 +481,35 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         <?php endif; ?>
     </div>
+</div>
+
+<div class="flex gap-lg mb-lg" style="flex-wrap: wrap;">
+    <?php
+    $participantsArchiveFilterSql = $supportsContestArchive && !$showArchived ? ' AND COALESCE(c.is_archived, 0) = 0' : '';
+    $participantsStatsBaseWhere = $hasAgreementDeclinedColumn ? "COALESCE(a.agreement_declined, 0) = 0" : '1=1';
+    $participantsStatCounts = [
+        'all' => (int) $pdo->query("SELECT COUNT(*) FROM participants p INNER JOIN applications a ON p.application_id = a.id LEFT JOIN contests c ON a.contest_id = c.id LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id WHERE {$participantsStatsBaseWhere}{$participantsArchiveFilterSql}")->fetchColumn(),
+        'pending' => (int) $pdo->query("SELECT COUNT(*) FROM participants p INNER JOIN applications a ON p.application_id = a.id LEFT JOIN contests c ON a.contest_id = c.id LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id WHERE {$participantsStatsBaseWhere} AND COALESCE(w.status, 'pending') = 'pending'{$participantsArchiveFilterSql}")->fetchColumn(),
+        'accepted' => (int) $pdo->query("SELECT COUNT(*) FROM participants p INNER JOIN applications a ON p.application_id = a.id LEFT JOIN contests c ON a.contest_id = c.id LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id WHERE {$participantsStatsBaseWhere} AND COALESCE(w.status, 'pending') = 'accepted'{$participantsArchiveFilterSql}")->fetchColumn(),
+        'rejected' => (int) $pdo->query("SELECT COUNT(*) FROM participants p INNER JOIN applications a ON p.application_id = a.id LEFT JOIN contests c ON a.contest_id = c.id LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id WHERE {$participantsStatsBaseWhere} AND COALESCE(w.status, 'pending') = 'rejected'{$participantsArchiveFilterSql}")->fetchColumn(),
+        'reviewed_non_competitive' => (int) $pdo->query("SELECT COUNT(*) FROM participants p INNER JOIN applications a ON p.application_id = a.id LEFT JOIN contests c ON a.contest_id = c.id LEFT JOIN works w ON w.participant_id = p.id AND w.application_id = p.application_id WHERE {$participantsStatsBaseWhere} AND COALESCE(w.status, 'pending') IN ('reviewed', 'reviewed_non_competitive'){$participantsArchiveFilterSql}")->fetchColumn(),
+    ];
+    ?>
+    <a href="<?= e($buildParticipantsUrl(['work_status' => null])) ?>" class="stat-pill <?= $workStatus === '' ? 'stat-pill--active' : '' ?>">
+        Все <span class="stat-pill__count"><?= $participantsStatCounts['all'] ?></span>
+    </a>
+    <a href="<?= e($buildParticipantsUrl(['work_status' => 'pending'])) ?>" class="stat-pill <?= $workStatus === 'pending' ? 'stat-pill--active' : '' ?>">
+        На рассмотрении <span class="stat-pill__count"><?= $participantsStatCounts['pending'] ?></span>
+    </a>
+    <a href="<?= e($buildParticipantsUrl(['work_status' => 'accepted'])) ?>" class="stat-pill <?= $workStatus === 'accepted' ? 'stat-pill--active' : '' ?>">
+        Рисунок принят <span class="stat-pill__count"><?= $participantsStatCounts['accepted'] ?></span>
+    </a>
+    <a href="<?= e($buildParticipantsUrl(['work_status' => 'rejected'])) ?>" class="stat-pill <?= $workStatus === 'rejected' ? 'stat-pill--active' : '' ?>">
+        Рисунок отклонён <span class="stat-pill__count"><?= $participantsStatCounts['rejected'] ?></span>
+    </a>
+    <a href="<?= e($buildParticipantsUrl(['work_status' => 'reviewed_non_competitive'])) ?>" class="stat-pill <?= $workStatus === 'reviewed_non_competitive' ? 'stat-pill--active' : '' ?>">
+        Вне конкурса <span class="stat-pill__count"><?= $participantsStatCounts['reviewed_non_competitive'] ?></span>
+    </a>
 </div>
 
 <div class="card">
